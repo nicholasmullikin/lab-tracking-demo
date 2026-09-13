@@ -1,0 +1,49 @@
+# Dataset inputs, licensed annotations, and generated experiment outputs.
+/data/
+/runs/
+/artifacts/
+/rrd/
+/recordings/
+
+# Model checkpoints, framework caches, and local model servers.
+/models/
+/model/
+/.cache/
+/.hf/
+/.huggingface/
+/.torch/
+/.rerun/
+/rerun/
+
+# Local proxies and credentials.
+/proxies/
+/.proxy/
+*.pem
+*.key
+*.crt
+.env
+.env.*
+!.env.example
+
+# Python / uv environments and artifacts.
+.venv/
+venv/
+.python-version.local
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Editor and operating-system artifacts.
+.DS_Store
+.idea/
+.vscode/

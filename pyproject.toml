@@ -1,0 +1,39 @@
+[project]
+name = "battle"
+version = "0.1.0"
+description = "Inference-free schemas and Rerun export fixtures for a video-understanding method lab."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "numpy>=2.5.3",
+    "pillow>=12.3.0",
+    "pydantic==2.13.5",
+    "rerun-sdk==0.37.1",
+]
+
+[project.scripts]
+battle-export-fixture = "battle.exporter:main"
+battle-muggled-smoke = "battle.muggled_smoke:main"
+battle-muggled-calibrate = "battle.muggled_calibration:main"
+battle-muggled-calibration-web = "battle.muggled_calibration_web:main"
+battle-build-ego-static-comparison = "battle.rerun_comparison:main"
+
+[build-system]
+requires = ["uv_build>=0.11.2,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest==9.1.1",
+    "ruff==0.16.6",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
