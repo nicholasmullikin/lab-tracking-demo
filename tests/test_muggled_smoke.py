@@ -1,0 +1,404 @@
+from __future__ import annotations
+
+import json
+from collections import deque
+from datetime import UTC, datetime
+from pathlib import Path
+
+import pytest
+
+from battle.muggled_calibration import build_manifest, finalize_correction_schedule
+from battle.muggled_smoke import (
+    CONCEPTS,
+    E4_CANDIDATE_FRAMES,
+    FULL_EGO_MANUAL_SEED_FRAMES,
+    G3_STATIC_FRAMES,
+    SMOKE_FRAMES,
+    _load_manual_seed_multiplex,
+    _load_multi_keyframe_correction_schedule,
+    load_manual_seed_target_config,
+    load_observations,
+    make_run_id,
+    require_e4_candidate_range,
+    require_full_ego_manual_seed_range,
+    require_g3_static_range,
+    require_smoke_range,
+    sha256_file,
+)
+from battle.muggled_worker import (
+    _corrections_by_frame,
+    _is_numpy_mask,
+    _replace_prompt_memory_for_correction,
+    _validate_manual_seed_slots,
+)
+from battle.schemas import (
+    ChunkContinuityPolicy,
+    G2PreprocessingManifest,
+    MuggledSAMCalibrationCandidate,
+    MuggledSAMEgoConditionConfig,
+    MuggledSAMProposedTrackingPromptConfig,
+    ProposedTrackingSeed,
+)
+
+
+def test_numpy_masks_use_the_opencv_adapter_despite_numpy_device_attribute() -> None:
+    numpy = pytest.importorskip("numpy")
+    mask = numpy.zeros((2, 2), dtype=bool)
+
+    assert mask.device == "cpu"
+    assert _is_numpy_mask(mask)
+
+
+def test_worker_accepts_four_ordered_manual_multiplex_slots() -> None:
+    concepts = ("left_hand", "right_hand", "yellow_toy_top", "black_toy_top_base")
+    seed_records = [
+        {"target": target, "initial_multiplex_slot": slot}
+        for slot, target in enumerate(concepts)
+    ]
+
+    _validate_manual_seed_slots(seed_records, concepts)
+
+    with pytest.raises(ValueError, match="one mask for each"):
+        _validate_manual_seed_slots(seed_records[:3], concepts)
+
+
+def test_correction_orchestration_replaces_prompt_and_resets_frame_history() -> None:
+    numpy = pytest.importorskip("numpy")
+    prompt_memories = deque(["old-prompt"], maxlen=1)
+    frame_memories = deque(["older-frame", "latest-frame"], maxlen=4)
+    predicted = numpy.zeros((4, 2, 3), dtype=bool)
+    predicted[0, :, :] = True
+    corrected = numpy.zeros((2, 3), dtype=bool)
+    corrected[1, 2] = True
+    calls: list[object] = []
+
+    result = _replace_prompt_memory_for_correction(
+        predicted_source_masks=predicted,
+        correction_masks_by_slot={2: corrected},
+        prompt_memories=prompt_memories,
+        frame_memories=frame_memories,
+        encoded_frame="encoded-frame",
+        encode_prompt_memory_from_mask=lambda frame, masks: calls.append((frame, masks.copy()))
+        or "replacement-prompt",
+    )
+
+    assert result[2].tolist() == corrected.tolist()
+    assert result[0].tolist() == predicted[0].tolist()
+    assert list(prompt_memories) == ["replacement-prompt"]
+    assert not frame_memories
+    assert calls[0][0] == "encoded-frame"
+
+
+def test_worker_rejects_ambiguous_correction_slot_assignments() -> None:
+    with pytest.raises(ValueError, match="ambiguous"):
+        _corrections_by_frame(
+            {
+                "memory_semantics": "replace_prompt_memory_and_reset_frame_memory",
+                "seeds": [
+                    {"target": "left_hand", "initial_multiplex_slot": 0},
+                    {"target": "right_hand", "initial_multiplex_slot": 1},
+                ],
+                "corrections": [
+                    {"frame_index": 30, "multiplex_slot": 0, "target": "left_hand"},
+                    {"frame_index": 30, "multiplex_slot": 0, "target": "left_hand"},
+                ],
+            },
+            ("left_hand", "right_hand"),
+        )
+
+
+def test_smoke_range_is_exactly_the_approved_first_ten_seconds() -> None:
+    frame_range = require_smoke_range(start_frame=0, max_frames=SMOKE_FRAMES)
+
+    assert frame_range.start_frame == 0
+    assert frame_range.end_frame_exclusive == 300
+    with pytest.raises(ValueError, match="only proxy frames"):
+        require_smoke_range(start_frame=1, max_frames=SMOKE_FRAMES)
+    with pytest.raises(ValueError, match="only proxy frames"):
+        require_smoke_range(start_frame=0, max_frames=299)
+
+
+def test_g3_range_allows_only_the_approved_static_full_proxy() -> None:
+    frame_range = require_g3_static_range(
+        "static-c10379", start_frame=0, max_frames=G3_STATIC_FRAMES
+    )
+
+    assert frame_range.frame_count == 5400
+    with pytest.raises(ValueError, match="only static"):
+        require_g3_static_range("ego-hmc21110305", start_frame=0, max_frames=G3_STATIC_FRAMES)
+
+
+def test_e4_candidate_range_allows_only_the_approved_sixty_seconds() -> None:
+    frame_range = require_e4_candidate_range(
+        "ego-hmc21179183", start_frame=0, max_frames=E4_CANDIDATE_FRAMES
+    )
+
+    assert frame_range.frame_count == 1800
+    with pytest.raises(ValueError, match="only ego-hmc21179183"):
+        require_e4_candidate_range("ego-hmc21110305", start_frame=0, max_frames=E4_CANDIDATE_FRAMES)
+
+
+def test_full_ego_manual_seed_range_allows_only_the_approved_proxy() -> None:
+    frame_range = require_full_ego_manual_seed_range(
+        "ego-hmc21179183", start_frame=0, max_frames=FULL_EGO_MANUAL_SEED_FRAMES
+    )
+
+    assert frame_range.frame_count == 5400
+    with pytest.raises(ValueError, match="only ego-hmc21179183"):
+        require_full_ego_manual_seed_range(
+            "ego-hmc21110305", start_frame=0, max_frames=FULL_EGO_MANUAL_SEED_FRAMES
+        )
+
+
+def test_streaming_policy_uses_no_chunks() -> None:
+    policy = ChunkContinuityPolicy(overlap_seconds=0.0, max_allowed_gap_seconds=0.0)
+
+    assert policy.chunk_duration_seconds is None
+    assert policy.preserve_track_ids
+    assert policy.carry_context_across_chunks
+
+
+def test_worker_observations_are_validated_line_by_line(tmp_path: Path) -> None:
+    observations_path = tmp_path / "observations.jsonl"
+    observations_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "view_id": "static-c10379",
+                "analysis_frame_index": 0,
+                "source_seconds": 215.0,
+                "objects": [
+                    {
+                        "object_id": "sam3-00",
+                        "label": CONCEPTS[0],
+                        "confidence": 0.9,
+                        "box": {"x": 0.1, "y": 0.2, "width": 0.3, "height": 0.4},
+                    }
+                ],
+                "hands": [],
+            }
+        )
+        + "\n"
+    )
+
+    observations = load_observations(observations_path)
+
+    assert len(observations) == 1
+    assert observations[0].objects[0].label == "hand"
+
+
+def test_worker_observation_contract_rejects_unbounded_boxes(tmp_path: Path) -> None:
+    observations_path = tmp_path / "observations.jsonl"
+    observations_path.write_text(
+        '{"view_id":"static-c10379","analysis_frame_index":0,"source_seconds":215,'
+        '"objects":[{"object_id":"sam3-00","label":"hand","confidence":0.9,'
+        '"box":{"x":0.9,"y":0.2,"width":0.3,"height":0.4}}]}\n'
+    )
+
+    with pytest.raises(ValueError, match="invalid observation"):
+        load_observations(observations_path)
+
+
+def test_run_identifier_is_portable_lowercase() -> None:
+    run_id = make_run_id(
+        "ego-hmc21110305",
+        now=datetime(2026, 9, 8, 22, 53, tzinfo=UTC),
+    )
+
+    assert run_id == "muggledsam-sam3-smoke-ego-hmc21110305-20260908t225300z"
+
+
+def test_ego_conditions_are_explicit_and_schema_valid() -> None:
+    config_path = Path(__file__).parents[1] / "configs" / "muggledsam_ego_conditions.json"
+
+    config = MuggledSAMEgoConditionConfig.model_validate_json(config_path.read_text())
+
+    assert [condition.display_label for condition in config.conditions] == [
+        "CONTRAST-NORMALIZED",
+        "MANUAL-SEED",
+    ]
+    assert config.conditions[0].concepts == ("hand",)
+    assert config.conditions[1].manual_box_seed is not None
+
+
+def test_new_manual_seed_target_config_is_bound_to_e4_and_has_four_distinct_targets() -> None:
+    root = Path(__file__).parents[1]
+    config = load_manual_seed_target_config(
+        target_config_path=(
+            root
+            / "configs/"
+            "muggledsam_e4_left_hand_right_hand_yellow_toy_top_black_toy_top_base_manual_seed.json"
+        ),
+        repository_root=root,
+        g2_config_path=root / "configs/clips/assembly101_nusar_9033_ego_viewpoint_screen_g2.json",
+        view_id="ego-hmc21179183",
+    )
+
+    assert config.targets == (
+        "left_hand",
+        "right_hand",
+        "yellow_toy_top",
+        "black_toy_top_base",
+    )
+
+
+def test_four_target_manual_seed_initializes_four_ordered_multiplex_slots(tmp_path: Path) -> None:
+    root = Path(__file__).parents[1]
+    g2_path = root / "configs/clips/assembly101_nusar_9033_ego_viewpoint_screen_g2.json"
+    g2 = G2PreprocessingManifest.model_validate_json(g2_path.read_text())
+    proxy = next(item for item in g2.proxies if item.view_id == "ego-hmc21179183")
+    targets_and_ids = (
+        ("left_hand", "t000000-b47"),
+        ("right_hand", "t000000-b48"),
+        ("yellow_toy_top", "t000000-b49"),
+        ("black_toy_top_base", "t000000-b50"),
+    )
+    candidates = []
+    for target, candidate_id in targets_and_ids:
+        mask_uri = f"results/masks/{candidate_id}_candidate-00.png"
+        mask_path = tmp_path / mask_uri
+        mask_path.parent.mkdir(parents=True, exist_ok=True)
+        mask_path.write_bytes(candidate_id.encode())
+        candidates.append(
+            MuggledSAMCalibrationCandidate.model_validate(
+                {
+                    "candidate_id": candidate_id,
+                    "intended_target": target,
+                    "frame": {
+                        "analysis_frame_index": 0,
+                        "proxy_seconds": 0.0,
+                        "analysis_seconds": 0.0,
+                        "source_seconds": 215.0,
+                    },
+                    "pixel_box": {"x1": 10, "y1": 20, "x2": 100, "y2": 120},
+                    "normalized_box": {
+                        "x": 10 / 954,
+                        "y": 20 / 720,
+                        "width": 90 / 954,
+                        "height": 100 / 720,
+                    },
+                    "decoder_result": {
+                        "api": "muggledsam_sam3_interactive",
+                        "candidate_count": 1,
+                        "deterministic_best_candidate_index": 0,
+                        "candidates": [
+                            {
+                                "candidate_index": 0,
+                                "iou_score": 0.5,
+                                "mask_uri": mask_uri,
+                                "is_deterministic_best": True,
+                            }
+                        ],
+                        "overlay_uri": f"results/{candidate_id}_overlay.png",
+                    },
+                    "human_selected_candidate_index": 0,
+                    "human_accepted": True,
+                    "selected_for_finalization": True,
+                }
+            )
+        )
+    manifest = build_manifest(
+        repository_root=root,
+        config_path=g2_path,
+        timestamps=(0.0,),
+        result_directory=tmp_path / "results",
+        calibration_id="muggledsam-sam3-e4-box-calibration-targets",
+    ).model_copy(update={"candidates": tuple(candidates)})
+    manifest_path = tmp_path / "calibration_manifest.json"
+    manifest_path.write_text(manifest.model_dump_json(indent=2) + "\n")
+    proposal = MuggledSAMProposedTrackingPromptConfig(
+        manifest_kind="muggledsam_sam3_proposed_tracking_prompt",
+        authority="proposed_non_authoritative",
+        calibration_manifest_uri=str(manifest_path),
+        calibration_manifest_sha256=sha256_file(manifest_path),
+        view_id="ego-hmc21179183",
+        seeds=tuple(
+            ProposedTrackingSeed(
+                candidate_id=candidate.candidate_id,
+                intended_target=candidate.intended_target,
+                reference_frame=candidate.frame,
+                pixel_box=candidate.pixel_box,
+                normalized_box=candidate.normalized_box,
+                decoder_best_candidate_index=0,
+                human_selected_candidate_index=0,
+            )
+            for candidate in reversed(candidates)
+        ),
+        tracker_initialization_limitations=("fixture",),
+    )
+    proposal_path = tmp_path / "proposal.json"
+    proposal_path.write_text(proposal.model_dump_json(indent=2) + "\n")
+
+    payload, metadata = _load_manual_seed_multiplex(
+        proposal_path=proposal_path,
+        repository_root=root,
+        config_path=g2_path,
+        proxy=proxy,
+        manual_seed_target_config_path=(
+            root
+            / "configs/"
+            "muggledsam_e4_left_hand_right_hand_yellow_toy_top_black_toy_top_base_manual_seed.json"
+        ),
+    )
+
+    assert [seed["candidate_id"] for seed in payload["seeds"]] == [
+        "t000000-b47",
+        "t000000-b48",
+        "t000000-b49",
+        "t000000-b50",
+    ]
+    assert [seed.intended_target for seed in metadata.seeds] == [
+        "left_hand",
+        "right_hand",
+        "yellow_toy_top",
+        "black_toy_top_base",
+    ]
+    assert [seed["initial_multiplex_slot"] for seed in payload["seeds"]] == [0, 1, 2, 3]
+
+    for candidate in candidates:
+        mask_path = tmp_path / candidate.decoder_result.candidates[0].mask_uri
+        mask_path.write_bytes(candidate.candidate_id.encode())
+    schedule_path = tmp_path / "multi_keyframe_correction_schedule.json"
+    schedule = finalize_correction_schedule(
+        manifest_path=manifest_path,
+        candidate_ids=tuple(candidate.candidate_id for candidate in candidates),
+        schedule_path=schedule_path,
+        correction_policy_path=(
+            root / "configs/muggledsam_e4_four_target_keyframe_correction_policy.json"
+        ),
+        manual_seed_target_config_path=(
+            root
+            / "configs/"
+            "muggledsam_e4_left_hand_right_hand_yellow_toy_top_black_toy_top_base_manual_seed.json"
+        ),
+        repository_root=root,
+    )
+    keyframe_payload, keyframe_metadata = _load_multi_keyframe_correction_schedule(
+        schedule_path=schedule_path,
+        repository_root=root,
+        config_path=g2_path,
+        proxy=proxy,
+    )
+
+    assert [slot.target_id for slot in schedule.slots] == [
+        targets_and_ids[index][0] for index in range(4)
+    ]
+    assert [seed["target"] for seed in keyframe_payload["seeds"]] == [
+        "left_hand",
+        "right_hand",
+        "yellow_toy_top",
+        "black_toy_top_base",
+    ]
+    assert keyframe_payload["corrections"] == []
+    assert keyframe_metadata.scheduled_correction_frame_indices == ()
+
+    tampered = json.loads(schedule_path.read_text())
+    tampered["corrections"][0]["calibration_mask_fingerprint"]["sha256"] = "0" * 64
+    schedule_path.write_text(json.dumps(tampered))
+    with pytest.raises(ValueError, match="mask is unavailable or has changed"):
+        _load_multi_keyframe_correction_schedule(
+            schedule_path=schedule_path,
+            repository_root=root,
+            config_path=g2_path,
+            proxy=proxy,
+        )
