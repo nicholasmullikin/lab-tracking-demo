@@ -17,6 +17,7 @@ from .schemas import ClockName, EncodedAssetInput, FrameObservations, RunManifes
 MASK_FPS = 5
 SEGMENTATION_OPACITY = 0.45
 FRAME_COUNTER_PATH = "frame_counter"
+DIAGNOSTICS_PATH = "tracker_diagnostics"
 BACKGROUND_ANNOTATION: tuple[int, str, tuple[int, int, int, int]] = (
     0,
     "background",
@@ -117,6 +118,51 @@ def _log_frame_counter(
     )
 
 
+def _diagnostics_view_pair(
+    view_root: str, *, label_prefix: str = ""
+) -> tuple[rrb.TimeSeriesView, rrb.TimeSeriesView]:
+    """Build the raw tracker traces that explain why a slot was kept or dropped."""
+    return (
+        rrb.TimeSeriesView(
+            origin=f"{view_root}/{DIAGNOSTICS_PATH}/object_score",
+            contents="$origin/**",
+            name=f"{label_prefix}Object score (lost at or below 0)",
+        ),
+        rrb.TimeSeriesView(
+            origin=f"{view_root}/{DIAGNOSTICS_PATH}/iou_prediction",
+            contents="$origin/**",
+            name=f"{label_prefix}Predicted mask IoU (self-estimate)",
+        ),
+    )
+
+
+def _log_tracker_diagnostics(
+    observation: FrameObservations,
+    *,
+    view_root: str,
+    annotations: dict[str, ObjectAnnotation],
+) -> None:
+    """Log each multiplex slot's raw score and IoU, including frames where it was dropped."""
+    if not observation.tracker_diagnostics:
+        return
+    root = f"{view_root}/{DIAGNOSTICS_PATH}"
+    rr.log(f"{root}/object_score/lost_threshold", rr.Scalars([0.0]))
+    for diagnostic in observation.tracker_diagnostics:
+        color = annotations.get(diagnostic.object_id, (0, "", (200, 200, 200)))[2]
+        series = f"{diagnostic.label} ({diagnostic.object_id})"
+        rr.log(
+            f"{root}/object_score/{diagnostic.object_id}",
+            rr.Scalars([diagnostic.object_score]),
+            rr.SeriesLines(colors=[color], names=[series]),
+        )
+        if diagnostic.iou_prediction is not None:
+            rr.log(
+                f"{root}/iou_prediction/{diagnostic.object_id}",
+                rr.Scalars([diagnostic.iou_prediction]),
+                rr.SeriesLines(colors=[color], names=[series]),
+            )
+
+
 def _frame_counter_view(root: str) -> rrb.TextDocumentView:
     """Build the compact readout that reports the active analysis frame."""
     return rrb.TextDocumentView(
@@ -145,11 +191,15 @@ def pinned_blueprint(
     )
     return rrb.Blueprint(
         rrb.Vertical(
-            rrb.Spatial2DView(
-                origin=view_root,
-                contents="$origin/**",
-                name=f"{view_id} video and detections",
-                visual_bounds=visual_bounds,
+            rrb.Horizontal(
+                rrb.Spatial2DView(
+                    origin=view_root,
+                    contents=["$origin/**", f"- $origin/{DIAGNOSTICS_PATH}/**"],
+                    name=f"{view_id} video and detections",
+                    visual_bounds=visual_bounds,
+                ),
+                rrb.Vertical(*_diagnostics_view_pair(view_root)),
+                column_shares=[2, 1],
             ),
             rrb.Horizontal(
                 rrb.TimeSeriesView(
@@ -191,7 +241,7 @@ def pinned_comparison_blueprint(
     ) -> rrb.Spatial2DView:
         return rrb.Spatial2DView(
             origin=f"{root}/views/{view_id}",
-            contents="$origin/**",
+            contents=["$origin/**", f"- $origin/{DIAGNOSTICS_PATH}/**"],
             name=f"{view_id}: {label}",
             visual_bounds=rrb.VisualBounds2D(
                 x_range=[0, dimensions[0]],
@@ -207,6 +257,10 @@ def pinned_comparison_blueprint(
                 column_shares=[1, 1],
             ),
             rrb.Horizontal(
+                *_diagnostics_view_pair(f"{root}/views/{ego_view_id}", label_prefix="ego "),
+                column_shares=[1, 1],
+            ),
+            rrb.Horizontal(
                 rrb.TimeSeriesView(
                     origin=f"{root}/quality",
                     contents="$origin/**",
@@ -215,7 +269,7 @@ def pinned_comparison_blueprint(
                 _frame_counter_view(root),
                 column_shares=[3, 1],
             ),
-            row_shares=[4, 1],
+            row_shares=[4, 2, 1],
         ),
         rrb.TimePanel(
             timeline="analysis_time",
@@ -464,6 +518,12 @@ def export_synchronized_comparison(
             analysis_seconds=analysis_seconds,
             mask_frame_period=mask_frame_period,
         )
+        _log_tracker_diagnostics(
+            ego_observation, view_root=ego_root, annotations=ego_annotations
+        )
+        _log_tracker_diagnostics(
+            static_observation, view_root=static_root, annotations=static_annotations
+        )
     rr.log(f"{root}/quality/ego_coverage", rr.Scalars([ego_manifest.coverage.ratio]), static=True)
     rr.log(
         f"{root}/quality/static_coverage", rr.Scalars([static_manifest.coverage.ratio]), static=True
@@ -637,6 +697,7 @@ def export_run(
                     colors=[[255, 170, 70]],
                 ),
             )
+        _log_tracker_diagnostics(observation, view_root=view_root, annotations=annotations)
         if not blueprint_sent:
             rr.send_blueprint(blueprint)
             blueprint_sent = True

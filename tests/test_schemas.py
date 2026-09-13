@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from battle.fixtures import synthetic_run_manifest, synthetic_timing
 from battle.metrics import calculate_success_measure
@@ -12,6 +13,7 @@ from battle.schemas import (
     MethodState,
     NormalizedBox,
     RunManifest,
+    TrackerSlotDiagnostic,
 )
 
 
@@ -74,3 +76,31 @@ def test_approved_assembly101_g2_manifest_has_consistent_proxy_clocks() -> None:
     ]
     assert not manifest.annotations_or_poses_downloaded_by_g2
     assert not manifest.annotations_or_poses_used_by_g2
+
+
+def test_object_score_is_not_clamped_to_a_probability_range() -> None:
+    """The presence logit is unbounded; clamping it would erase the lost-object signal."""
+    diagnostic = TrackerSlotDiagnostic(
+        object_id="sam3-02",
+        label="yellow_toy_top",
+        multiplex_slot=2,
+        object_score=-5.44,
+        iou_prediction=0.0,
+        active=False,
+    )
+
+    assert diagnostic.object_score == -5.44
+    assert diagnostic.active is False
+    assert diagnostic.corrected is False
+
+
+def test_iou_prediction_stays_within_its_sigmoid_bounds() -> None:
+    with pytest.raises(ValidationError):
+        TrackerSlotDiagnostic(
+            object_id="sam3-02",
+            label="yellow_toy_top",
+            multiplex_slot=2,
+            object_score=11.0,
+            iou_prediction=1.4,
+            active=True,
+        )

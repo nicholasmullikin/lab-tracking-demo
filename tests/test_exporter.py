@@ -15,6 +15,7 @@ from battle.exporter import (
     pinned_comparison_blueprint,
 )
 from battle.fixtures import synthetic_run_manifest
+from battle.schemas import TrackerSlotDiagnostic
 
 
 def test_annotation_context_serializes_a_transparent_unlabeled_background() -> None:
@@ -193,6 +194,46 @@ def test_comparison_export_embeds_synchronized_ego_and_static_views(tmp_path: Pa
     assert "analysis_time" in printed
     assert "/frame_counter" in printed
     assert "Frame count" in printed
+
+
+def test_tracker_diagnostics_are_logged_even_when_a_slot_is_dropped(tmp_path: Path) -> None:
+    """The trace must stay gapless across the frames where tracking actually fails."""
+    manifest = synthetic_run_manifest()
+    observations = []
+    for index, observation in enumerate(manifest.observations):
+        lost = index == 1
+        observations.append(
+            observation.model_copy(
+                update={
+                    "objects": () if lost else observation.objects,
+                    "tracker_diagnostics": (
+                        TrackerSlotDiagnostic(
+                            object_id="tool-1",
+                            label="synthetic screwdriver",
+                            multiplex_slot=0,
+                            object_score=-4.5 if lost else 11.25,
+                            iou_prediction=0.0 if lost else 0.93,
+                            active=not lost,
+                        ),
+                    ),
+                }
+            )
+        )
+    manifest = manifest.model_copy(update={"observations": tuple(observations)})
+
+    output = export_run(manifest, tmp_path / "diagnostics.rrd")
+    printed = subprocess.run(
+        [str(Path(sys.executable).with_name("rerun")), "rrd", "print", "-vvv", str(output)],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+
+    assert "tracker_diagnostics/object_score/tool-1" in printed
+    assert "tracker_diagnostics/iou_prediction/tool-1" in printed
+    assert "tracker_diagnostics/object_score/lost_threshold" in printed
+    assert "Object score (lost at or below 0)" in printed
+    assert "Predicted mask IoU (self-estimate)" in printed
 
 
 def test_frame_counter_reports_every_analysis_frame_index(tmp_path: Path) -> None:

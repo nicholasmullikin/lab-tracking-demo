@@ -356,6 +356,22 @@ class PerFrameObject(VersionedModel):
     confidence: float = Field(ge=0, le=1)
     box: NormalizedBox
     mask: MaskReference | None = None
+    object_score: float | None = Field(
+        default=None,
+        description=(
+            "Raw unbounded tracker presence logit. Upstream treats values at or below zero as "
+            "a lost object. It is a diagnostic trace, not a calibrated probability or accuracy."
+        ),
+    )
+    iou_prediction: float | None = Field(
+        default=None,
+        ge=0,
+        le=1,
+        description=(
+            "Tracker self-estimate of its own mask quality. It is a diagnostic trace and is "
+            "not measured against ground truth."
+        ),
+    )
 
 
 class PerFrameHand(VersionedModel):
@@ -365,12 +381,29 @@ class PerFrameHand(VersionedModel):
     landmarks: tuple[NormalizedPoint, ...] = Field(min_length=1)
 
 
+class TrackerSlotDiagnostic(VersionedModel):
+    """One multiplex slot's raw tracker state, recorded whether or not it produced an object.
+
+    Objects are filtered out once the tracker reports them lost, so these traces are kept
+    separately to stay gapless across exactly the frames where tracking fails.
+    """
+
+    object_id: str = Field(min_length=1)
+    label: str = Field(min_length=1)
+    multiplex_slot: int = Field(ge=0)
+    object_score: float
+    iou_prediction: float | None = Field(default=None, ge=0, le=1)
+    active: bool
+    corrected: bool = False
+
+
 class FrameObservations(VersionedModel):
     view_id: str = Field(min_length=1)
     analysis_frame_index: int = Field(ge=0)
     source_seconds: float = Field(ge=0)
     objects: tuple[PerFrameObject, ...] = ()
     hands: tuple[PerFrameHand, ...] = ()
+    tracker_diagnostics: tuple[TrackerSlotDiagnostic, ...] = ()
 
 
 class ArtifactFingerprint(VersionedModel):

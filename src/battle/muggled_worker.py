@@ -24,6 +24,10 @@ MAX_PROMPT_MEMORY = 1
 MAX_SIDE_LENGTH = 504
 DETECTION_THRESHOLD = 0.40
 
+# object index, concept, mask logits, reported confidence, raw presence logit, predicted IoU.
+# The last two are tracker diagnostics and are absent for prompt and detector initialization.
+TrackedMask = tuple[int, str, Any, float, float | None, float | None]
+
 
 def _prepare_frame(frame: Any, args: argparse.Namespace) -> Any:
     """Apply only the explicitly configured decoded-image representation."""
@@ -62,6 +66,13 @@ def _runtime_settings(args: argparse.Namespace, concepts: tuple[str, ...]) -> di
         "concepts": list(concepts),
         "prompt_mode": args.prompt_mode,
         "preprocessing": args.preprocessing,
+        "tracker_diagnostics_semantics": (
+            "object_score is the tracker's raw unbounded presence logit, recorded for every "
+            "multiplex slot on every tracked frame including frames where the slot was dropped "
+            "at or below zero; iou_prediction is the tracker's own mask-quality estimate. "
+            "Both are diagnostic traces and neither is measured against ground truth."
+        ),
+        "lost_object_score_threshold": 0.0,
     }
     if args.preprocessing == "gray_p01_p99_clahe":
         settings.update(
@@ -212,19 +223,35 @@ def _box_from_mask(mask_logits: Any, frame_shape: tuple[int, int]) -> dict[str, 
     return {"x": float(x1), "y": float(y1), "width": float(x2 - x1), "height": float(y2 - y1)}
 
 
+def _scalar(values: Any, position: int) -> float | None:
+    """Read one slot from a tracker diagnostic tensor without assuming its trailing shape."""
+    if values is None:
+        return None
+    try:
+        selected = values[position]
+    except (IndexError, KeyError, TypeError):
+        return None
+    reshaped = selected.reshape(-1) if hasattr(selected, "reshape") else selected
+    try:
+        return float(reshaped[0] if hasattr(reshaped, "__len__") and len(reshaped) else reshaped)
+    except (TypeError, ValueError):
+        return None
+
+
 def _observation(
     *,
     view_id: str,
     frame_index: int,
     source_offset_seconds: float,
-    masks: list[tuple[int, str, Any, float]],
+    masks: list[TrackedMask],
     frame_shape: tuple[int, int],
     masks_directory: Path,
     run_directory: Path,
+    diagnostics: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, Any], int]:
     objects = []
     mask_count = 0
-    for object_index, concept, mask_logits, confidence in masks:
+    for object_index, concept, mask_logits, confidence, object_score, iou_prediction in masks:
         box = _box_from_mask(mask_logits, frame_shape)
         if box is None:
             continue
@@ -246,6 +273,8 @@ def _observation(
                 "confidence": max(0.0, min(1.0, confidence)),
                 "box": box,
                 "mask": mask_reference,
+                "object_score": object_score,
+                "iou_prediction": iou_prediction,
             }
         )
     return (
@@ -256,6 +285,7 @@ def _observation(
             "source_seconds": source_offset_seconds + frame_index / 30.0,
             "objects": objects,
             "hands": [],
+            "tracker_diagnostics": diagnostics or [],
         },
         mask_count,
     )
@@ -453,7 +483,7 @@ def run(args: argparse.Namespace) -> int:
         if not hasattr(tracking, "step_video_masking_multiplex"):
             raise TypeError("configured checkpoint does not expose SAM3.1 multiplex video tracking")
 
-        initial_masks: list[tuple[int, str, Any, float]] = []
+        initial_masks: list[TrackedMask] = []
         initial_memory: Any = None
         correction_schedule: dict[int, list[dict[str, Any]]] = {}
         if manual_seeds is not None or multi_keyframe_schedule is not None:
@@ -476,7 +506,7 @@ def run(args: argparse.Namespace) -> int:
                     str(seed["mask_path"]), str(seed["mask_sha256"]), first_frame.shape[:2]
                 )
                 source_masks.append(binary_mask)
-                initial_masks.append((slot, concepts[slot], binary_mask, 1.0))
+                initial_masks.append((slot, concepts[slot], binary_mask, 1.0, None, None))
             tracking_encoded = tracking.encode_image(first_model_frame, MAX_SIDE_LENGTH, True)
             initial_memory = tracking.encode_prompt_memory_from_mask(
                 tracking_encoded, np.stack(source_masks, axis=0)
@@ -496,7 +526,7 @@ def run(args: argparse.Namespace) -> int:
             initial_mask, initial_memory = tracking.encode_prompt_memory(
                 tracking_encoded, box, [], []
             )
-            initial_masks.append((0, concepts[0], initial_mask, 1.0))
+            initial_masks.append((0, concepts[0], initial_mask, 1.0, None, None))
         else:
             detector = core.get_detector_context()
             detector_encoded = detector.encode_image(first_model_frame, MAX_SIDE_LENGTH, True)
@@ -509,10 +539,17 @@ def run(args: argparse.Namespace) -> int:
                     continue
                 best_index = int(scores[0].argmax())
                 initial_masks.append(
-                    (concept_index, concept, masks[:, [best_index]], float(scores[0, best_index]))
+                    (
+                        concept_index,
+                        concept,
+                        masks[:, [best_index]],
+                        float(scores[0, best_index]),
+                        None,
+                        None,
+                    )
                 )
             if initial_masks:
-                initial_tensor = torch.cat([mask for _, _, mask, _ in initial_masks], dim=1)
+                initial_tensor = torch.cat([mask for _, _, mask, *_ in initial_masks], dim=1)
                 tracking_encoded = tracking.encode_image(first_model_frame, MAX_SIDE_LENGTH, True)
                 initial_memory = tracking.encode_prompt_memory_from_mask(
                     tracking_encoded, initial_tensor
@@ -549,7 +586,7 @@ def run(args: argparse.Namespace) -> int:
                     if condition_writer is not None:
                         condition_writer.write(model_frame)
                     encoded = tracking.encode_image(model_frame, MAX_SIDE_LENGTH, True)
-                    masks, _, pointers, scores = tracking.step_video_masking_multiplex(
+                    masks, ious, pointers, scores = tracking.step_video_masking_multiplex(
                         encoded,
                         prompt_memories,
                         frame_memories,
@@ -587,9 +624,24 @@ def run(args: argparse.Namespace) -> int:
                                 else masks[position : position + 1]
                             ),
                             1.0 if position in correction_masks else float(scores[position]),
+                            float(scores[position]),
+                            _scalar(ious, position),
                         )
-                        for position, (index, concept, _, _) in enumerate(initial_masks)
+                        for position, (index, concept, *_) in enumerate(initial_masks)
                         if bool(active[position]) or position in correction_masks
+                    ]
+                    diagnostics = [
+                        {
+                            "schema_version": "1.0",
+                            "object_id": f"sam3-{index:02d}",
+                            "label": concept,
+                            "multiplex_slot": position,
+                            "object_score": float(scores[position]),
+                            "iou_prediction": _scalar(ious, position),
+                            "active": bool(active[position]),
+                            "corrected": position in correction_masks,
+                        }
+                        for position, (index, concept, *_) in enumerate(initial_masks)
                     ]
                     observation, written = _observation(
                         view_id=args.view_id,
@@ -599,6 +651,7 @@ def run(args: argparse.Namespace) -> int:
                         frame_shape=frame.shape[:2],
                         masks_directory=masks_directory,
                         run_directory=run_directory,
+                        diagnostics=diagnostics,
                     )
                     observations.write(json.dumps(observation, sort_keys=True) + "\n")
                     processed += 1
