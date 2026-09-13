@@ -727,7 +727,7 @@ def run(args: argparse.Namespace) -> int:
 
 
 def main() -> None:
-    global MAX_FRAMES
+    global MAX_FRAMES, MAX_SIDE_LENGTH, MAX_FRAME_MEMORY
 
     parser = argparse.ArgumentParser(
         description="Run one fixed 300-frame MuggledSAM/SAM3 smoke worker."
@@ -762,8 +762,22 @@ def main() -> None:
     parser.add_argument("--manual-seeds-json")
     parser.add_argument("--multi-keyframe-schedule-json")
     parser.add_argument("--condition-input-video")
+    parser.add_argument(
+        "--max-side-length",
+        type=int,
+        default=MAX_SIDE_LENGTH,
+        help="Longest encoded input side. Raising it costs VRAM and time per frame.",
+    )
+    parser.add_argument(
+        "--max-frame-memory",
+        type=int,
+        default=MAX_FRAME_MEMORY,
+        help="Frame-memory entries. Its span in seconds is this count divided by the frame rate.",
+    )
     args = parser.parse_args()
     MAX_FRAMES = args.max_frames
+    MAX_SIDE_LENGTH = args.max_side_length
+    MAX_FRAME_MEMORY = args.max_frame_memory
     raise SystemExit(run(args))
 
 

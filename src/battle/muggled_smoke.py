@@ -54,6 +54,9 @@ MANUAL_SEED_TARGETS = (
 E4_ZERO_SHOT_BASELINE = Path("runs/muggledsam-sam3-smoke-ego-hmc21179183-20260909t033125z")
 SMOKE_FRAMES = 300
 SMOKE_SECONDS = 10.0
+# Worker defaults, restated so a changed condition is visible in the run manifest.
+DEFAULT_MAX_SIDE_LENGTH = 504
+DEFAULT_MAX_FRAME_MEMORY = 4
 G3_STATIC_FRAMES = 5400
 G3_STATIC_SECONDS = 180.0
 E4_CANDIDATE_FRAMES = 1800
@@ -182,6 +185,8 @@ def _run_worker(
     source_offset_seconds: float,
     model_path: Path,
     max_frames: int,
+    max_side_length: int,
+    max_frame_memory: int,
     condition: MuggledSAMEgoCondition | None = None,
     manual_seeds: dict[str, Any] | None = None,
     multi_keyframe_schedule: dict[str, Any] | None = None,
@@ -207,6 +212,10 @@ def _run_worker(
         str(model_path),
         "--max-frames",
         str(max_frames),
+        "--max-side-length",
+        str(max_side_length),
+        "--max-frame-memory",
+        str(max_frame_memory),
     ]
     if condition is not None:
         command.extend(
@@ -1106,6 +1115,8 @@ def run_smoke(args: argparse.Namespace) -> Path:
             ),
             model_path=model_path,
             max_frames=requested_frames,
+            max_side_length=args.max_side_length,
+            max_frame_memory=args.max_frame_memory,
             condition=condition,
             manual_seeds=manual_seed_payload,
             multi_keyframe_schedule=multi_keyframe_schedule_payload,
@@ -1383,7 +1394,7 @@ def run_smoke(args: argparse.Namespace) -> Path:
         ),
         continuity=StreamContinuityPolicy(
             max_prompt_memory_entries=1,
-            max_frame_memory_entries=4,
+            max_frame_memory_entries=args.max_frame_memory,
             detected_object_limit=len(
                 condition.concepts
                 if condition
@@ -1493,6 +1504,24 @@ def main() -> None:
     parser.add_argument("--run-root", type=Path, default=Path("runs"))
     parser.add_argument("--start-frame", type=int, default=0)
     parser.add_argument("--max-frames", type=int, default=SMOKE_FRAMES)
+    parser.add_argument(
+        "--max-side-length",
+        type=int,
+        default=DEFAULT_MAX_SIDE_LENGTH,
+        help=(
+            "Longest encoded input side given to the model. The default downscales the "
+            "954x720 ego proxy, so raising it trades VRAM and time for small-target detail."
+        ),
+    )
+    parser.add_argument(
+        "--max-frame-memory",
+        type=int,
+        default=DEFAULT_MAX_FRAME_MEMORY,
+        help=(
+            "Frame-memory entries kept per stream. Its span in seconds is this count divided "
+            "by the analysis frame rate, so it must be raised alongside any frame-rate change."
+        ),
+    )
     parser.add_argument(
         "--g3-full-static",
         action="store_true",
