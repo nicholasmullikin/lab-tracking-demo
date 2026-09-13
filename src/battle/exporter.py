@@ -16,6 +16,7 @@ from .schemas import ClockName, EncodedAssetInput, FrameObservations, RunManifes
 
 MASK_FPS = 5
 SEGMENTATION_OPACITY = 0.45
+FRAME_COUNTER_PATH = "frame_counter"
 BACKGROUND_ANNOTATION: tuple[int, str, tuple[int, int, int, int]] = (
     0,
     "background",
@@ -95,6 +96,35 @@ def _segmentation_image(
     return segmentation
 
 
+def _log_frame_counter(
+    root: str,
+    *,
+    analysis_frame_index: int,
+    analysis_seconds: float,
+    total_frames: int,
+    analysis_fps: int,
+) -> None:
+    """Log the active analysis frame so the viewer shows a frame count without scrubbing."""
+    last_index = max(total_frames - 1, 0)
+    rr.log(
+        f"{root}/{FRAME_COUNTER_PATH}",
+        rr.TextDocument(
+            f"analysis frame **{analysis_frame_index}** / {last_index}"
+            f" ({total_frames} frames)\n\n"
+            f"{analysis_seconds:.3f} s at {analysis_fps} fps",
+            media_type="text/markdown",
+        ),
+    )
+
+
+def _frame_counter_view(root: str) -> rrb.TextDocumentView:
+    """Build the compact readout that reports the active analysis frame."""
+    return rrb.TextDocumentView(
+        origin=f"{root}/{FRAME_COUNTER_PATH}",
+        name="Frame count",
+    )
+
+
 def pinned_blueprint(
     clip_id: str,
     view_id: str = "ego-01",
@@ -121,11 +151,16 @@ def pinned_blueprint(
                 name=f"{view_id} video and detections",
                 visual_bounds=visual_bounds,
             ),
-            rrb.TimeSeriesView(
-                origin=f"{root}/quality",
-                contents="$origin/**",
-                name="Coverage",
+            rrb.Horizontal(
+                rrb.TimeSeriesView(
+                    origin=f"{root}/quality",
+                    contents="$origin/**",
+                    name="Coverage",
+                ),
+                _frame_counter_view(root),
+                column_shares=[3, 1],
             ),
+            row_shares=[4, 1],
         ),
         rrb.TimePanel(
             timeline="analysis_time",
@@ -171,10 +206,14 @@ def pinned_comparison_blueprint(
                 spatial_view(static_view_id, static_label, static_video_dimensions),
                 column_shares=[1, 1],
             ),
-            rrb.TimeSeriesView(
-                origin=f"{root}/quality",
-                contents="$origin/**",
-                name="Output coverage",
+            rrb.Horizontal(
+                rrb.TimeSeriesView(
+                    origin=f"{root}/quality",
+                    contents="$origin/**",
+                    name="Output coverage",
+                ),
+                _frame_counter_view(root),
+                column_shares=[3, 1],
             ),
             row_shares=[4, 1],
         ),
@@ -390,6 +429,7 @@ def export_synchronized_comparison(
     rr.log(static_root, _annotation_context(static_annotations), static=True)
 
     mask_frame_period = analysis_fps // MASK_FPS
+    total_frames = len(ego_manifest.observations)
     for ego_observation, static_observation in zip(
         ego_manifest.observations, static_manifest.observations
     ):
@@ -397,6 +437,13 @@ def export_synchronized_comparison(
         rr.set_time("analysis_frame", sequence=ego_observation.analysis_frame_index)
         rr.set_time("analysis_time", duration=analysis_seconds)
         rr.set_time("source_time", duration=ego_observation.source_seconds)
+        _log_frame_counter(
+            root,
+            analysis_frame_index=ego_observation.analysis_frame_index,
+            analysis_seconds=analysis_seconds,
+            total_frames=total_frames,
+            analysis_fps=analysis_fps,
+        )
         _log_observation(
             ego_observation,
             view_root=ego_root,
@@ -503,10 +550,18 @@ def export_run(
 
     mask_frame_period = analysis_fps // MASK_FPS
     blueprint_sent = False
+    total_frames = len(manifest.observations)
     for observation in manifest.observations:
         rr.set_time("analysis_frame", sequence=observation.analysis_frame_index)
         analysis_seconds = observation.analysis_frame_index / analysis_fps
         rr.set_time("analysis_time", duration=analysis_seconds)
+        _log_frame_counter(
+            root,
+            analysis_frame_index=observation.analysis_frame_index,
+            analysis_seconds=analysis_seconds,
+            total_frames=total_frames,
+            analysis_fps=analysis_fps,
+        )
         view_root = f"{root}/views/{observation.view_id}"
         annotations = annotations_by_view[observation.view_id]
 

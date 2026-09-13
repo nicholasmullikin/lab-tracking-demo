@@ -126,6 +126,9 @@ def test_video_export_embeds_time_aligned_frames_in_the_observation_view(tmp_pat
     assert "synthetic screwdriver" in printed
     assert "ego-e4 video and detections" in printed
     assert "make_active: true" in printed
+    assert "/frame_counter" in printed
+    assert "Frame count" in printed
+    assert "analysis frame" in printed
 
 
 def test_comparison_export_embeds_synchronized_ego_and_static_views(tmp_path: Path) -> None:
@@ -188,3 +191,24 @@ def test_comparison_export_embeds_synchronized_ego_and_static_views(tmp_path: Pa
     assert "ego-01: ego manual-seed SAM3 baseline" in printed
     assert "static-01: existing static model outputs" in printed
     assert "analysis_time" in printed
+    assert "/frame_counter" in printed
+    assert "Frame count" in printed
+
+
+def test_frame_counter_reports_every_analysis_frame_index(tmp_path: Path) -> None:
+    """The readout must name the active frame and the clip's frame total."""
+    manifest = synthetic_run_manifest()
+    output = export_run(manifest, tmp_path / "counter.rrd")
+
+    printed = subprocess.run(
+        [str(Path(sys.executable).with_name("rerun")), "rrd", "print", "-vvv", str(output)],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+
+    total = len(manifest.observations)
+    for observation in manifest.observations:
+        assert f"analysis frame **{observation.analysis_frame_index}** / {total - 1}" in printed
+    assert f"({total} frames)" in printed
+    assert "text/markdown" in printed
