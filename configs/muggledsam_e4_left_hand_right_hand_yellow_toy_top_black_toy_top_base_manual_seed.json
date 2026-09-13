@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0",
+  "manifest_kind": "muggledsam_sam3_manual_seed_targets",
+  "config_id": "e4-left-hand-right-hand-yellow-toy-top-black-toy-top-base",
+  "base_g2_config": "configs/clips/assembly101_nusar_9033_ego_viewpoint_screen_g2.json",
+  "view_id": "ego-hmc21179183",
+  "targets": [
+    "left_hand",
+    "right_hand",
+    "yellow_toy_top",
+    "black_toy_top_base"
+  ]
+}

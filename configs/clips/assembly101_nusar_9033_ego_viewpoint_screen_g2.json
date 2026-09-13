@@ -1,0 +1,150 @@
+{
+  "schema_version": "1.0",
+  "manifest_kind": "assembly101_g2_preprocessing",
+  "clip": {
+    "clip_id": "assembly101-nusar-9033-ego-viewpoint-screen-g2",
+    "source_name": "Assembly101",
+    "source_license": "CC BY-NC 4.0; dataset terms and permitted use recorded in the local provenance ledger",
+    "asset": {
+      "uri": "data/derived/assembly101/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532/HMC_21176875_mono10bit_215.000-395.000_954x720_30fps.mp4",
+      "media_type": "video/mp4",
+      "checksum_sha256": "d094859dd4072520d3200e34f4408b7e9148b316bac594762a87ccd182e78131"
+    },
+    "timing": {
+      "clocks": {
+        "clocks": [
+          {"name": "source", "fps": 60},
+          {"name": "analysis", "fps": 30},
+          {"name": "annotation", "fps": 30},
+          {"name": "pose", "fps": 60}
+        ]
+      },
+      "mappings": [
+        {"clock": "source", "source_offset_seconds": 215.0, "scale": 1.0},
+        {"clock": "analysis", "source_offset_seconds": 215.0, "scale": 1.0},
+        {"clock": "annotation", "source_offset_seconds": 215.0, "scale": 1.0},
+        {"clock": "pose", "source_offset_seconds": 215.0, "scale": 1.0}
+      ]
+    },
+    "source_duration_seconds": 180.0,
+    "views": ["ego-hmc21176875", "ego-hmc21176623", "ego-hmc21179183"],
+    "provenance_status": "approved"
+  },
+  "hf_dataset": "cvml-nus/assembly101",
+  "hf_revision": "bfc15ea5e3f0bc8f8c232af6c1b45aa137a9d967",
+  "provenance_ledger_uri": "data/raw/assembly101/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532/ego_viewpoint_screen_acquisition_report.md",
+  "g1": {
+    "state": "approved",
+    "approved_by": "user",
+    "scope": "three additional ego cameras for a bounded viewpoint screen; not the original static/e3 pair"
+  },
+  "g2": {
+    "state": "approved",
+    "approved_by": "user",
+    "scope": "three timestamp-exact 180-second, audio-free 30-fps proxies for a bounded 10-second ego viewpoint screen; not the original static/e3 pair"
+  },
+  "raw_timing": {
+    "clocks": {
+      "clocks": [
+        {"name": "source", "fps": 60},
+        {"name": "analysis", "fps": 30},
+        {"name": "annotation", "fps": 30},
+        {"name": "pose", "fps": 60}
+      ]
+    },
+    "mappings": [
+      {"clock": "source", "source_offset_seconds": 0.0, "scale": 1.0},
+      {"clock": "analysis", "source_offset_seconds": 0.0, "scale": 1.0},
+      {"clock": "annotation", "source_offset_seconds": 0.0, "scale": 1.0},
+      {"clock": "pose", "source_offset_seconds": 0.0, "scale": 1.0}
+    ]
+  },
+  "proxy_timing": {
+    "clocks": {
+      "clocks": [
+        {"name": "source", "fps": 60},
+        {"name": "analysis", "fps": 30},
+        {"name": "annotation", "fps": 30},
+        {"name": "pose", "fps": 60}
+      ]
+    },
+    "mappings": [
+      {"clock": "source", "source_offset_seconds": 215.0, "scale": 1.0},
+      {"clock": "analysis", "source_offset_seconds": 215.0, "scale": 1.0},
+      {"clock": "annotation", "source_offset_seconds": 215.0, "scale": 1.0},
+      {"clock": "pose", "source_offset_seconds": 215.0, "scale": 1.0}
+    ]
+  },
+  "source_interval": {"start_seconds": 215.0, "end_seconds": 395.0},
+  "raw_frame_range": {"start_frame": 12900, "end_frame_exclusive": 23700},
+  "analysis_frame_range": {"start_frame": 6450, "end_frame_exclusive": 11850},
+  "proxy_frame_range": {"start_frame": 0, "end_frame_exclusive": 5400},
+  "scaling_policy": "preserve_aspect_ratio_height_720",
+  "proxies": [
+    {
+      "view_id": "ego-hmc21176875",
+      "raw_source": {
+        "view_id": "ego-hmc21176875",
+        "raw_uri": "data/raw/assembly101/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532/recordings/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532/HMC_21176875_mono10bit.mp4",
+        "checksum_sha256": "a940b2bc09f9ebce31bf394620f181d86dc3a7d9d61e5820ab52e9411d06b39c",
+        "dimensions": {"width": 636, "height": 480},
+        "fps": 60,
+        "raw_frame_range": {"start_frame": 12900, "end_frame_exclusive": 23700}
+      },
+      "proxy_uri": "data/derived/assembly101/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532/HMC_21176875_mono10bit_215.000-395.000_954x720_30fps.mp4",
+      "checksum_sha256": "d094859dd4072520d3200e34f4408b7e9148b316bac594762a87ccd182e78131",
+      "dimensions": {"width": 954, "height": 720},
+      "fps": 30,
+      "frame_count": 5400,
+      "codec": "h264",
+      "crf": 18,
+      "preset": "medium",
+      "pixel_format": "yuv420p",
+      "has_audio": false
+    },
+    {
+      "view_id": "ego-hmc21176623",
+      "raw_source": {
+        "view_id": "ego-hmc21176623",
+        "raw_uri": "data/raw/assembly101/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532/recordings/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532/HMC_21176623_mono10bit.mp4",
+        "checksum_sha256": "78c175154c0db259dce1421455bdee7138772716f6b7ebc8960aa4849f861a85",
+        "dimensions": {"width": 636, "height": 480},
+        "fps": 60,
+        "raw_frame_range": {"start_frame": 12900, "end_frame_exclusive": 23700}
+      },
+      "proxy_uri": "data/derived/assembly101/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532/HMC_21176623_mono10bit_215.000-395.000_954x720_30fps.mp4",
+      "checksum_sha256": "029a103dfc2bde709ad07259ca223ebe9d0029a0eab9e839a416fdef7ef0d1d4",
+      "dimensions": {"width": 954, "height": 720},
+      "fps": 30,
+      "frame_count": 5400,
+      "codec": "h264",
+      "crf": 18,
+      "preset": "medium",
+      "pixel_format": "yuv420p",
+      "has_audio": false
+    },
+    {
+      "view_id": "ego-hmc21179183",
+      "raw_source": {
+        "view_id": "ego-hmc21179183",
+        "raw_uri": "data/raw/assembly101/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532/recordings/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532/HMC_21179183_mono10bit.mp4",
+        "checksum_sha256": "ac5520a907acb4b31588e613d61c09e56d08e625770d4914242f66062c8b98d2",
+        "dimensions": {"width": 636, "height": 480},
+        "fps": 60,
+        "raw_frame_range": {"start_frame": 12900, "end_frame_exclusive": 23700}
+      },
+      "proxy_uri": "data/derived/assembly101/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532/HMC_21179183_mono10bit_215.000-395.000_954x720_30fps.mp4",
+      "checksum_sha256": "ce9ae52af7184c44faabb0a0dd5157eb1d4d69af6401674d157a5f2a3dde4007",
+      "dimensions": {"width": 954, "height": 720},
+      "fps": 30,
+      "frame_count": 5400,
+      "codec": "h264",
+      "crf": 18,
+      "preset": "medium",
+      "pixel_format": "yuv420p",
+      "has_audio": false
+    }
+  ],
+  "annotations_or_poses_downloaded_by_g2": false,
+  "annotations_or_poses_used_by_g2": false
+}

@@ -1,0 +1,52 @@
+{
+  "schema_version": "1.0",
+  "manifest_kind": "muggledsam_sam3_ego_conditions",
+  "base_g2_config": "configs/clips/assembly101_nusar_9033_g2.json",
+  "view_id": "ego-hmc21110305",
+  "conditions": [
+    {
+      "schema_version": "1.0",
+      "condition_id": "contrast-normalized-hand-text",
+      "display_label": "CONTRAST-NORMALIZED",
+      "prompt_mode": "text_detection",
+      "concepts": ["hand"],
+      "preprocessing": {
+        "schema_version": "1.0",
+        "mode": "gray_p01_p99_clahe",
+        "lower_percentile": 1.0,
+        "upper_percentile": 99.0,
+        "clahe_clip_limit": 2.0,
+        "clahe_tile_grid_size": 8
+      },
+      "manual_box_seed": null
+    },
+    {
+      "schema_version": "1.0",
+      "condition_id": "manual-seed-hand-box",
+      "display_label": "MANUAL-SEED",
+      "prompt_mode": "manual_box",
+      "concepts": ["hand"],
+      "preprocessing": {
+        "schema_version": "1.0",
+        "mode": "original_bgr",
+        "lower_percentile": null,
+        "upper_percentile": null,
+        "clahe_clip_limit": null,
+        "clahe_tile_grid_size": null
+      },
+      "manual_box_seed": {
+        "schema_version": "1.0",
+        "analysis_frame_index": 0,
+        "pixel_box": {"schema_version": "1.0", "x1": 380, "y1": 300, "x2": 555, "y2": 435},
+        "normalized_box": {
+          "schema_version": "1.0",
+          "x": 0.3987408184679958,
+          "y": 0.4172461752433936,
+          "width": 0.18363064008394545,
+          "height": 0.18776077885952713
+        },
+        "target_description": "Central visible hand holding the small part in decoded proxy frame 0"
+      }
+    }
+  ]
+}

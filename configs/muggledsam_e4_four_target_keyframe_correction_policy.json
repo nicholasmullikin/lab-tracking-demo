@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "manifest_kind": "muggledsam_sam3_multi_keyframe_correction_policy",
+  "policy_id": "e4-four-target-keyframe-corrections",
+  "policy_version": "1",
+  "view_id": "ego-hmc21179183",
+  "manual_seed_target_config_fingerprint": {
+    "schema_version": "1.0",
+    "uri": "configs/muggledsam_e4_left_hand_right_hand_yellow_toy_top_black_toy_top_base_manual_seed.json",
+    "sha256": "628818528f202ac19ba63ae8969e421ba5ea53aa6e87091d5b100530a36758db",
+    "source": "measured"
+  },
+  "targets": [
+    "left_hand",
+    "right_hand",
+    "yellow_toy_top",
+    "black_toy_top_base"
+  ],
+  "maximum_later_correction_keyframes_per_target": 3,
+  "correction_memory_semantics": "replace_prompt_memory_and_reset_frame_memory"
+}
