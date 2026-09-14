@@ -5,20 +5,29 @@ execution record. It includes versioned schemas, synthetic normalized fixtures, 
 inference-free Rerun export, and a strictly bounded headless SAM3 smoke adapter—not
 model accuracy claims.
 
-## Current scope
+## Where things stand
 
-The initial session establishes the artifact contracts needed before any dataset or
-model work:
+Start with [`docs/method-ledger.md`](docs/method-ledger.md). Its first half is the
+short story: the original ask, a goals scorecard, a dated timeline from Sep 8 to the
+present, and a plan-versus-actual list of where and why the work diverged. Its second
+half holds the detailed per-run records with their claim boundaries. The plan the
+project was measured against is preserved unedited in
+[`docs/plan-2026-09-08-assembly-rerun-lab.md`](docs/plan-2026-09-08-assembly-rerun-lab.md),
+and the research brief that preceded it, with the verbatim first request, is
+[`battle_plan.agent.final.md`](battle_plan.agent.final.md).
 
-- typed Pydantic manifests for clips, runs, timing, coverage, and observations;
-- YAML templates for method settings and an Assembly101 comparison clip;
-- fixture-only validation and success-measure calculations;
-- a deterministic Rerun `.rrd` exporter for video, points, boxes, hands, timing, and
-  external mask references.
+In one paragraph: the repository has typed Pydantic manifests for clips, runs, timing,
+coverage, and observations; an inference-free Rerun exporter; and one method, SAM3 via
+MuggledSAM, running over a pinned 180-second Assembly101 segment on an RGB static view
+(zero-shot text prompts) and a monochrome ego view (human-seeded masks with reviewed
+keyframe corrections, labelled in a browser calibration workspace). Both views share one
+synchronized Rerun timeline. The second method in the plan's core spine, MediaPipe Hands
+on the static view, has not been started.
 
-No recordings, annotations, or model weights are included. The SAM3 adapter lives in
-the repository but executes only against the user-approved G2 proxies. `data/`, `runs/`,
-caches, and Rerun outputs are ignored by Git.
+The rest of this file is the how-to: each section below gives the exact commands that
+reproduce a stage. No recordings, annotations, or model weights are included. The SAM3
+adapter executes only against the user-approved G2 proxies. `data/`, `runs/`, caches, and
+Rerun outputs are ignored by Git.
 
 ## Hardware and claims policy
 
@@ -125,9 +134,16 @@ condition is sufficiently better than the known poor zero-shot track to recommen
 Each attempt writes a gitignored `runs/<run-id>/manifest.json`, normalized
 `observations.jsonl`, complete worker stdout/stderr logs, and runtime settings. On a
 successful model run it also writes `smoke.rrd`: the input proxy is logged once,
-detections are logged at every analysis frame, and masks are external PNG artifacts at
-at most 5 FPS. The RRD preserves those references and embeds a composed segmentation
-image at each mask frame, rendered as a translucent, per-object-colored overlay.
+detections are logged at every analysis frame, and masks are external PNG artifacts
+written every analysis frame by default. This cadence is an internal worker setting
+(`muggled_worker.py` defaults `--mask-period-frames` to 1), not a
+`battle-muggled-smoke` command-line option; runs before Sep 13 used
+`mask_period_frames=6`, or 5 FPS at the 30 FPS analysis clock. The RRD preserves those
+references, embeds each object's mask as a translucent RGBA cut-out on every frame under
+`views/<view>/masks/<object_id>`, and keeps a class-labelled `SegmentationImage` at 1 Hz
+that is off in the default view. Boxes are derived from the mask's dominant connected
+components (those at least 20% of the largest component's area), so stray mask speckle
+does not inflate them; each run records the rule in its `runtime_settings`.
 
 ## Bounded ego viewpoint screen
 
@@ -406,12 +422,17 @@ uv run python scripts/profile_view_route.py \
   --image runs/<calibration-run>/results/frames/frame-000000.jpg [--divisor 2]
 ```
 
-For a no-model static route check, use `--no-worker`; frame decoding and masks will
-intentionally report that the decoder is offline. The fixture tests exercise the persistent
-JSONL protocol, queue/persistence, and API/static contract without CUDA, OpenCV, or a
-checkpoint. Actual image decoding and browser interaction still require the local
-MuggledSAM checkpoint, CUDA runtime, and a desktop browser; they are not model-accuracy
-or human-GUI test results.
+For a no-model static route check, pass `--no-worker` to the calibration web command:
+
+```bash
+uv run battle-muggled-calibration-web --no-worker
+```
+
+Frame decoding and masks will intentionally report that the decoder is offline. The
+fixture tests exercise the persistent JSONL protocol, queue/persistence, and API/static
+contract without CUDA, OpenCV, or a checkpoint. Actual image decoding and browser
+interaction still require the local MuggledSAM checkpoint, CUDA runtime, and a desktop
+browser; they are not model-accuracy or human-GUI test results.
 
 ### Fourth e4 object-semantic target set
 
@@ -538,10 +559,50 @@ uv run battle-muggled-smoke \
 
 This is manual-seed multiplexed tracking, not out-of-box/text zero-shot. It has a
 hard 300-frame/10.0-second limit, uses no chunks or intentional ID resets, records
-fixed target-to-normalized-ID associations, and writes external masks at most 5 FPS.
-The worker refuses to begin while another GPU model process is active; close the local
-calibration workspace before executing it. A completed run remains review-only and
-makes no segmentation, association, or accuracy claim.
+fixed target-to-normalized-ID associations, and writes an external mask every analysis
+frame. The worker refuses to begin while another GPU model process is active (an open
+Rerun viewer is tolerated and recorded); close the local calibration workspace before
+executing it. A completed run remains review-only and makes no segmentation,
+association, or accuracy claim.
+
+## Analysis frame-rate comparison (30 vs 60 fps)
+
+The evidence for keeping the 30 fps analysis clock is three frame-0-seeded arms over the
+same ten seconds of e4 footage; the result and decision are in the ledger's
+[frame-rate comparison record](docs/method-ledger.md#sep-13-evening-muggledsam-sam3-e4-analysis-frame-rate-comparison)
+and the report is [`docs/frame-rate-comparison-2026-09-13.json`](docs/frame-rate-comparison-2026-09-13.json).
+The report measures output continuity and model self-estimated diagnostics; it is not a
+ground-truth accuracy evaluation.
+To reproduce:
+
+```bash
+bash scripts/create_assembly101_e4_60fps_proxy.sh   # 180 s, 954x720, 60 fps e4 proxy
+P=runs/muggledsam-sam3-e4-four-target-keyframes-20260913t213159z/proposed_tracking_prompt.json
+uv run battle-muggled-smoke --config configs/clips/assembly101_nusar_9033_ego_viewpoint_screen_g2.json \
+  --view ego-hmc21179183 --max-frames 300 --max-side-length 720 --manual-seed-proposal $P
+uv run battle-muggled-smoke --config configs/clips/assembly101_nusar_9033_e4_60fps.json \
+  --view ego-hmc21179183 --max-frames 600 --max-frame-memory 8 --max-side-length 720 --manual-seed-proposal $P
+uv run battle-muggled-smoke --config configs/clips/assembly101_nusar_9033_e4_60fps.json \
+  --view ego-hmc21179183 --max-frames 600 --max-frame-memory 4 --max-side-length 720 --manual-seed-proposal $P
+uv run python scripts/compare_frame_rate_arms.py runs/<arm-30fps> runs/<arm-60fps-mem8> runs/<arm-60fps-mem4>
+```
+
+The `analysis` clock in a clip config may be 30 or 60 while the source, annotation, and
+pose clocks stay fixed. Frame-zero-only seeds calibrated on the 30 fps proxy are accepted
+on another proxy only after checking the same raw-source checksum, source start instant,
+dimensions, and scaling policy. Proxy identity and fps may differ; source end time is not
+part of this check. The run manifest records the transfer as a
+`calibration_transfer_note`. Correction schedules are authored against the 30 fps clock
+and are refused at any other rate.
+
+To rebuild a run's `smoke.rrd` after an exporter change without re-running inference:
+
+```bash
+uv run python scripts/reexport_run_rrd.py runs/<run-id> [runs/<run-id> ...]
+```
+
+Recordings are keyed by clip (`battle-<clip_id>`) and run id, so runs of different clips
+or of the same clip open side by side without merging.
 
 ## Validate and export fixtures
 
@@ -563,10 +624,22 @@ The fixture exporter records the following stable hierarchy:
 
 ```text
 world/<clip_id>/
-  source/asset_reference
-  views/<view_id>/{objects, hands, segmentation, mask_references}
+  source/asset_reference                     # always: encoded-asset contract
+  source/asset_policy                        # always: embedded-versus-contract policy
+  views/<view_id>/video_asset                # conditional: video payload supplied
+  views/<view_id>/video                      # conditional: frame references to that payload
+  views/<view_id>/objects                    # conditional: object observations
+  views/<view_id>/hands                      # conditional: hand observations
+  views/<view_id>/mask_references            # conditional: external mask references
+  views/<view_id>/masks/<object_id>          # conditional: loaded per-object RGBA cut-outs
+  views/<view_id>/segmentation               # conditional: sparse class-labelled masks
+  views/<view_id>/tracker_diagnostics/
+    object_score/lost_threshold              # conditional: diagnostics present
+    object_score/<object_id>                 # conditional: diagnostics present
+    iou_prediction/<object_id>               # conditional: model estimate present
   timing/{source, analysis, annotation, pose}
   quality/coverage
+  frame_counter
 ```
 
 Open the output in Rerun with `rerun artifacts/synthetic_fixture.rrd`. The blueprint

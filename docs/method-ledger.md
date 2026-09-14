@@ -1,26 +1,272 @@
-# Method ledger
+# Method ledger and timeline
 
-Use one entry per method/configuration. Status values map to the versioned
-`MethodState` schema: `pending`, `ready`, `running`, `succeeded`, `blocked`, `failed`,
-or `not_run`.
+This is the record of what this repository set out to do, what actually happened, in
+what order, and why it diverged from the plan. Part 1 is the short version: the original
+ask, a goals scorecard, a dated timeline, and the plan-versus-actual list. Part 2 holds the
+detailed per-method records with their claim boundaries; the timeline points into them.
 
-## Required fields
+Conventions: dates are local (UTC-4). Run directory names carry UTC timestamps, so a run
+tagged `20260910t024052z` happened on the evening of Sep 9 local time. `runs/` is
+gitignored; run IDs are cited so the on-disk evidence can be found, not because it is
+tracked. States map to the versioned `MethodState` schema: `pending`, `ready`,
+`running`, `succeeded`, `blocked`, `failed`, or `not_run`.
 
-- Method name and stage
-- Schema/config version and Git revision
-- State and owner
-- Input clip/asset identifiers and provenance approval
-- Environment and dependency lock reference
-- Model/code version and license review status
-- Clock mapping and sampling policy
-- Chunk/continuity policy
-- Output artifact URIs and checksum
-- Success measure, data split, and uncertainty (when measured)
-- Failure modes, blocker, and next decision
+## Part 1: goals, timeline, and divergences
 
-## Session-one entries
+### The original ask (Sep 8, 2026)
 
-### fixture-rerun-export
+The verbatim request is preserved at the top of
+[`battle_plan.agent.final.md`](../battle_plan.agent.final.md). In short: get several
+perception repositories working out of the box on Assembly101, visualize all of their
+outputs in one Rerun recording, skip building a data pipeline, respect a 16 GB card and
+limited time, and do it in a way that demonstrates a properly run ML project. Candidate
+methods named at the outset: SAM3 via MuggledSAM (tested, "worked decently well"), WiLoR
+("wasn't terrible"), Kineo ("interesting, but I don't think it'll end up helping a ton"),
+FineBio access pending, audio "probably overkill for now".
+
+That request was refined the same evening into the operating plan preserved as
+[`docs/plan-2026-09-08-assembly-rerun-lab.md`](plan-2026-09-08-assembly-rerun-lab.md):
+one pinned three-minute Assembly101 segment as the comparison unit, a core spine of
+MuggledSAM/SAM3 plus a static-view MediaPipe hand baseline, a tiered exploratory queue
+(WiLoR, BoxMOT, CLIP + Drop-DTW, Grounded-SAM-2, SAMURAI/DAM4SAM, ATHENA, Kineo), five
+pre-accuracy success measures, five hard human gates (G1 data, G2 experiment contract,
+G3 semantic QA, G4 stop/re-scope, G5 claims), and an explicit no-training,
+no-annotation, no-accuracy-claims rule.
+
+### Goals scorecard
+
+| Goal (from the Sep 8 ask and plan) | Status | Evidence |
+| --- | --- | --- |
+| Typed manifests, fixture tests, inference-free Rerun exporter | Done | `src/battle/schemas.py`, `src/battle/exporter.py`, 125 passed, 1 skipped |
+| Pin one Assembly101 segment with source/analysis/annotation/pose clocks | Done | `configs/clips/*.json`; nusar-9033, 215.000–395.000 s |
+| MuggledSAM/SAM3 running over the full 180 s static view | Done (zero-shot text prompts) | [G3 static full run](#sep-9-early-morning-g3-approved-static-full-candidate) |
+| MuggledSAM/SAM3 running over the full 180 s ego view | Done, but only with human-seeded masks | [Four-target 180 s baseline](#sep-9-evening-four-target-180-second-ego-baseline) |
+| Both views on one synchronized Rerun timeline | Done | `battle-build-ego-static-comparison`; [Sep 9 evening](#sep-9-evening-manual-seed-tracking-static-comparison-and-the-target-pivot) |
+| Five pre-accuracy measures recorded per run | Done | Every `worker_result.json` and `manifest.json` |
+| MediaPipe Hands static-view baseline (core spine) | Not started | Displaced by the ego calibration work |
+| Second method in the viewer (WiLoR or any exploratory item) | Not started | [hand-pose adapter](#hand-pose-adapter) is `not_run` |
+| Fixed two-timestamp human QA per completed method | Partially | Contact sheets at 0/5/9.967 s exist for smokes; no formal pass/flag/fail record |
+| No training, no annotation project, no accuracy claims | Held | Reviewed masks are calibration seeds, not labels; no metric vs. ground truth anywhere |
+| Git history from the start | Missed, then repaired | First commit Sep 13 after five days of uncommitted work |
+| FineBio | Still pending | Not part of any run |
+| Audio | Deferred by plan | Not revisited |
+
+The honest summary: one method, one dataset, one clip. The comparison lab the plan
+described has a working spine for its first method and a well-instrumented viewer, and
+essentially all of the time went into making SAM3 usable on the monochrome ego view.
+
+### Timeline
+
+#### Sep 8, evening: plan, then foundation and first real runs
+
+- 21:34–21:56. Plan written and revised through two external reviews. Key revisions:
+  Assembly101 video is 60 fps, not 30, so a 30 fps analysis proxy with explicit clock
+  mappings is required; the RGB static view is primary and the monochrome ego view is a
+  stress test; tracker continuity is per adapter, no forced chunk resets; the "3-minute
+  video" is the input, not an output deliverable; Kineo stays a final two-hour trial.
+  The five success measures (coverage, time to first usable output, peak VRAM, runtime,
+  ID resets) and a Rerun fidelity policy (video once, boxes at full cadence, masks at
+  5 fps, native masks kept outside the `.rrd`) were added at the user's request.
+- 21:56. "Ok begin." Scaffold, schemas, fixture exporter, clip configs, and proxy
+  generation. G1/G2 approved the nusar-9033 recording, static `C10379` and ego
+  `HMC_21110305`, interval 215–395 s.
+- ~22:58. First SAM3 smokes (300 frames, text prompts `hand`, `yellow toy body`, `toy
+  wheel`) on static and ego. Static initialized two of three concepts, ego only `hand`
+  with a visibly poor track. Record: [core smoke (G2)](#sep-8-late-evening-muggledsam-sam3-core-method-smoke-g2).
+- ~23:07. G3 decision: static approved for the full 180 s, ego rejected as a
+  monochrome negative result. Full static run completed (5,400 frames, 207 s).
+  Record: [G3 static full candidate](#sep-9-early-morning-g3-approved-static-full-candidate).
+- ~23:24. Ego monochrome diagnostic: the proxy has no chroma; contrast normalization and
+  a single manual hand box were tried as bounded conditions; neither was compelling.
+  Record: [ego monochrome diagnostic](#sep-8-late-evening-muggledsam-sam3-ego-monochrome-diagnostic).
+- ~23:30–23:35. Three other ego cameras screened; `HMC_21179183` (e4) initialized all
+  three concepts and was promoted to a 60 s candidate. Records:
+  [viewpoint screen](#sep-9-early-morning-muggledsam-sam3-ego-viewpoint-screen) and
+  [G4 e4 60 s candidate](#sep-9-early-morning-muggledsam-sam3-g4-e4-only-60-second-candidate).
+- 23:39. "I don't see anything": the first Rerun blueprint opened blank. Repaired
+  without re-running inference, which is what the inference-free exporter was for.
+- 23:46. Direction change. The user diagnosed the ego failure as a prompting problem
+  ("SAM is likely getting confused" by black-and-white footage) and asked to draw
+  rectangles and inspect what the image decoder returns for them. This is the moment the
+  project pivoted from zero-shot text prompts to human-seeded tracking.
+
+#### Sep 9, after midnight: calibration tooling
+
+- 23:51–00:19. An OpenCV box-prompt CLI was built, hit interactive-terminal and ROI-mode
+  problems, and was replaced within the hour by a browser workspace ("we need to make a
+  better tool so I can rapidly do all the frames and all of the boxes"). Headless
+  validation passed at 00:19. Records:
+  [box-prompt calibration](#sep-9-after-midnight-muggledsam-sam3-e4-interactive-box-prompt-calibration)
+  and [rapid calibration workspace](#sep-9-after-midnight-muggledsam-sam3-e4-rapid-calibration-workspace).
+
+#### Sep 9, evening: manual-seed tracking, static comparison, and the target pivot
+
+- 18:01. Frame-0 masks accepted for `left_hand`, `yellow_toy_body`, `toy_wheel`. The
+  smoke was first refused because the calibration workspace held the GPU
+  (`…20260909t223016z`), then ran at 18:39 (`…223928z`, 300 frames, 15.5 s).
+  Record: [manual-seed multiplexed smoke](#sep-9-evening-muggledsam-sam3-e4-manual-seed-multiplexed-smoke).
+- 18:42–18:46. Segmentation overlays added to the exporter; "Ok not bad. Good to
+  continue." Full 180 s ego run with three seeded targets (`…224835z`, 5,400 frames,
+  205 s, 1.85 GiB).
+- 19:03. Red full-frame segmentation background removed from the viewer.
+- 19:07. Synchronized ego-versus-static comparison recording added (the two views the
+  plan called for, on one timeline).
+- 19:25. Watching the comparison, the user identified the tracked "toy wheel" as the
+  wrong part and pivoted the vocabulary to `yellow_toy_top` and `black_toy_top_base`.
+  Assembly101 was checked for anything to cross-check against: it ships 30 fps action
+  and mistake intervals and optional hand poses, but no object boxes or masks, so the
+  new targets cannot be validated spatially from the dataset.
+- 21:39–21:52. Proposal creation bugs fixed; the concept of a "proposal" (the frozen,
+  hashed set of frame-0 masks that seeds the tracker) explained. First look at the
+  oversized-box artifact: at 0.600 s the left-hand mask is a normal 6,077-pixel hand
+  plus one isolated pixel near the bottom of the frame, and the min/max box spans both.
+  Connected-component filtering was named as the fix; it was not implemented until Sep 13.
+- 22:12. Right hand added as a distinct fourth multiplexed target rather than splitting
+  a merged both-hands mask. Four-target 180 s baseline completed (`20260910t024052z`,
+  5,400 frames, 190 s, 1.90 GiB; coverage 100 / 98.2 / 99.7 / 99.6 %). Record:
+  [four-target baseline](#sep-9-evening-four-target-180-second-ego-baseline).
+- 22:53. "The first frame is not super representative of the object": multi-keyframe
+  human corrections designed. The user asked whether this was rebuilding something that
+  already existed; the answer was that upstream SAM 3.1's interactive session takes
+  points and boxes rather than reviewed masks, and CVAT would need heavy integration, so
+  a thin correction layer was justified. Memory semantics decided: at a correction
+  keyframe, replace that slot's prompt memory with the reviewed mask and clear frame
+  memory, keeping object IDs. Reviewed masks are retained as future training data but no
+  retraining is planned.
+- 23:17–23:19. Labeling UX: masks rendered in the primary viewport, keys `1`–`4` to pick
+  a decoder candidate.
+
+#### Sep 10, morning: workflow simplification
+
+- 10:05–10:13. Viewport tint fixed to positive mask pixels only. The two-button
+  "create frame-0 proposal / create correction schedule" flow collapsed into one
+  **Finalize tracking plan** action with plain labels; both artifacts are still written
+  for integrity checks.
+
+#### Sep 11–12: no work
+
+#### Sep 13, afternoon: labeling finished, repository committed
+
+- 16:02–16:11. Reject/remove for unwanted decoder candidates. Foreground/background
+  point prompts added to the box prompt, specifically for the right hand against its own
+  shadow. Backwards compatibility dropped; a fresh workspace started.
+- 16:18–16:42. Display-only image view aids (adaptive threshold, brightness, contrast,
+  Canny, Shen-Castan, zero crossings, boundary tensor, four corner operators) built on a
+  from-source VIGRA 1.12.4, which required building Boost.Python against the venv's
+  CPython 3.12 because Fedora ships it only for 3.14. Build notes:
+  [`docs/vigra-build.md`](vigra-build.md). Panel made collapsible and 4–15x faster
+  (per-operator caching, concurrent operators, browser-side brightness/contrast).
+  These affect only what the human sees, never the pixels sent to SAM3.
+- 17:04–17:29. Two workspace defects: a cosmetic "masks required at frame 0" control on
+  later-keyframe cards, and a finalized-plan lock that silently swallowed mask clicks.
+  A **Reopen for editing** path was added; the lock itself was kept because the plan's
+  embedded manifest hash is only meaningful if the manifest stops changing.
+- 17:43. Labeling finished: four targets at keyframes 0, 2.5, 5, 8 s. "How are we
+  currently tracking progress?" surfaced that the repository had zero commits after five
+  days. Eight layered commits were made on the spot; the ledger's "Git revision" field
+  finally had something to point at.
+
+#### Sep 13, evening: the tracker gets instrumented
+
+- 17:52. First corrected run (`…215412z`, 300 frames, 15.0 s, 1.93 GiB): all four
+  targets seeded, corrections applied at frames 75/150/240, three of four targets present
+  on every frame. Best ego result so far. Record:
+  [multi-keyframe corrections](#sep-13-evening-muggledsam-sam3-e4-multi-keyframe-human-corrections).
+- 17:57. Frame counter panel added to every recording (commit `127e761`).
+- 18:04–18:19. The user listed six failure timestamps (1.2, 5.04, 5.98, 6.9, 7.81,
+  9.5 s) and asked what else SAM3 exposes. Finding: the worker discarded the model's
+  predicted IoU and clamped its unbounded presence logit to `[0, 1]`, so all 1,193
+  observations read `confidence: 1.0`. Both signals were recorded and plotted in Rerun
+  (`…221457z`, commit `0d9b0bb`). The six timestamps split into two modes: 1.2 s is a
+  tracker loss the model knew about (score decays over four frames to −3.6, IoU to 0),
+  and later shown to be `yellow_toy_top` leaving the top of the frame under head motion,
+  so the negative score was correct; the other five sit at healthy scores of 10–12 and
+  are the model being confidently wrong, which no threshold will catch. Record:
+  [tracker diagnostics](#sep-13-evening-tracker-score-and-iou-diagnostics).
+- 18:19–18:32. Resolution and memory depth made run conditions (commit `93fdc22`).
+  Sweep at 504/720/1008 px: stray-pixel box inflation fixed at ≥720, weakest-target IoU
+  up 44 %, VRAM flat at ~2 GiB, runtime 16 → 25 → 37 s. Record:
+  [resolution sweep](#sep-13-evening-encoder-resolution-sweep).
+- 18:32–19:05. 30 vs 60 fps comparison: new 60 fps proxy and clip config, analysis fps
+  plumbed through worker and schemas, and frame-zero-only seeds transferred after checking
+  the same raw-source checksum, source start instant, dimensions, and scaling policy. Proxy
+  identity and fps may differ; source end time is not part of this transfer check. The
+  output-continuity and model self-estimate diagnostics showed no consistent/measurable
+  quality benefit supporting 1.85x compute, so the technical recommendation was to keep
+  30 fps. These are not ground-truth accuracy measurements. Along the way the raw e4
+  recording turned out to be 636x480, so the 954x720 proxies are upscales and 720 is the
+  sensible ceiling. Record:
+  [frame-rate comparison](#sep-13-evening-muggledsam-sam3-e4-analysis-frame-rate-comparison).
+- 19:05–19:30. Two exporter defects found while viewing the arms together (fixed
+  application id shared by every recording; identical recording ids from one process).
+  External mask PNG artifacts moved from `mask_period_frames=6` (5 fps at the 30 fps
+  analysis clock) to every analysis frame. The viewer now logs those worker PNGs as
+  per-object RGBA `EncodedImage` cut-outs every frame; the separate class-labelled
+  `SegmentationImage` was and remains a sparse 1 Hz record. Same record as above.
+- 19:56–20:11. "The bbox is less reliable than the actual segmented pixels": the box is
+  the min/max of every positive pixel, so mask speckle balloons it. Replaced with the
+  union of 8-connected components at ≥20 % of the largest component's area. Rerun
+  viewer whitelisted in the worker's GPU guard. Arms re-run. Record:
+  [box derivation](#sep-13-late-evening-box-derivation-and-gpu-guard).
+- ~20:28. The user explicitly approved the earlier technical recommendation: "30fps is
+  fine." This approval was separate from the 18:32–19:05 experimental work.
+- 20:28–20:33. Documentation pass: this file restructured as a timeline.
+
+### Plan versus actual
+
+What the plan said, what happened instead, and why, in one line each.
+
+- One dataset, one clip, one ten-second interval for most experiments, versus "as many
+  repos as we can". The ego footage was hard enough that making one method usable on it
+  consumed the budget; the 180 s runs exist, but the iteration loop lived at 10 s.
+- SAM3 with human-seeded masks, versus zero-shot text prompts. Text prompts worked on
+  the RGB static view and failed on the monochrome ego view (Sep 8, 23:46). Every ego
+  result after that is human-in-the-loop initialization, and is labelled that way; it is
+  not an out-of-the-box result and not a tuned model.
+- Two calibration tools built (CLI, then browser workspace with view aids), versus a
+  thin adapter wrapper. This is where most of the code is. It was the price of the seed
+  pivot, and the user asked at the time whether it was reinventing something; it was
+  not, for reviewed-mask provenance, but it is the largest scope expansion.
+- Multi-keyframe corrections, versus frame-0 initialization only. Frame 0 was not
+  representative (Sep 9, 22:53). Corrections reset a slot's memory at a human-verified
+  frame; the run manifest records every correction.
+- No MediaPipe, no WiLoR, no exploratory queue. Never reached. These are the cheapest
+  next steps precisely because the exporter, schemas, and viewer are done.
+- Masks on every frame in Rerun, versus the historical external-PNG cadence of 5 fps
+  (`mask_period_frames=6` at 30 fps). The worker now writes compressed PNGs every analysis
+  frame and Rerun logs each object's PNG as an RGBA `EncodedImage` cut-out. The distinct
+  class-labelled `SegmentationImage` was and remains a sparse 1 Hz record.
+- Evaluation harness, labeling, metrics with confidence intervals (the Sep 8 brief's
+  "never-cut" items). Deliberately not done; the plan's no-annotation rule held, and the
+  scorecard is five pre-accuracy measures plus human QA.
+- Git from day one. Missed until Sep 13. The working tree was intact throughout, but
+  nothing before that date is recoverable from history, and the ledger could not cite
+  revisions.
+- 24 GB assumptions in the brief. Retired on day one; peak VRAM never exceeded 2.2 GiB
+  in any run, so the 16 GB card was never the constraint.
+
+### Open items
+
+- Commit the Sep 13 evening work (frame-rate plumbing, exporter fixes, full-rate masks,
+  box derivation, guard, this document).
+- Decide whether to formalize the two-timestamp human QA record for the completed runs.
+- Next method: MediaPipe Hands on the static view is the plan's core-spine item and
+  needs no GPU; WiLoR is the named second wave. Either can reuse the SAM3 hand masks and
+  boxes now that they are trusted. Source and license review comes first
+  (`docs/SOURCES.md`, `docs/LICENSES.md`).
+- `yellow_toy_top` leaves the frame at ~216.2 s in every arm; its coverage numbers
+  describe the scene, not the tracker.
+
+## Part 2: detailed method records
+
+Each record keeps its original claim boundary. Required fields per record: method and
+stage; schema/config version and Git revision; state and owner; input clip/asset
+identifiers and provenance approval; environment and dependency lock reference;
+model/code version and license review status; clock mapping and sampling policy;
+chunk/continuity policy; output artifact URIs and checksums; success measure, data
+split, and uncertainty when measured; failure modes, blocker, and next decision.
+
+### Sep 8: fixture-rerun-export
 
 - Stage: `export`
 - State: `succeeded` on synthetic fixtures only
@@ -31,7 +277,7 @@ or `not_run`.
 - Claim boundary: validates artifact shape and export behavior only; it is not an
   accuracy, performance, or dataset result.
 
-### muggledsam-sam3-core-method-smoke (G2)
+### Sep 8, late evening: muggledsam-sam3 core-method smoke (G2)
 
 - Stage: `objects`
 - State: `succeeded`; fixed smoke only, not an accuracy or full-duration result.
@@ -98,7 +344,7 @@ or `not_run`.
 - G3 decision: completed. The user approved static-only continuation and rejected the
   full ego continuation; the resulting view-separated candidate record follows.
 
-### muggledsam-sam3 ego monochrome diagnostic
+### Sep 8, late evening: muggledsam-sam3 ego monochrome diagnostic
 
 - Stage: `objects`; state: `succeeded` as two explicitly bounded diagnostic conditions,
   not as a new zero-shot or accuracy result.
@@ -143,11 +389,12 @@ or `not_run`.
   provide labels or prove accuracy. Neither condition provides a visually compelling,
   factual-proxy improvement over the known poor zero-shot track, so neither is proposed
   for a 60-second candidate. No 60- or 180-second ego inference was run.
-- Next human decision: either approve a specifically defined, labelled evaluation
-  protocol before any longer ego test, or stop ego continuation and retain this
-  monochrome diagnostic as the view-scoped negative result.
+- Outcome: the user chose neither option offered here (labelled evaluation protocol, or
+  stop ego work). Instead, on Sep 8 at 23:46, the direction became human-drawn box
+  prompts inspected through the image decoder, which led to the calibration tooling and
+  every later ego result.
 
-### G3-approved static full candidate
+### Sep 9, early morning: G3-approved static full candidate
 
 - User decision: **approved** only `static-c10379` for the unchanged 180.0-second,
   5,400-frame run. **Rejected** `ego-hmc21110305` as a monochrome-domain stress-test
@@ -174,12 +421,12 @@ or `not_run`.
   `runs/muggledsam-sam3-g3-full-static-c10379-20260909t030710z/g3_review/static-c10379_full_run_qa.png`
   at 0.000, 90.000, and 179.967 seconds; the last frame is boxes-only because of the
   5-FPS mask cadence.
-- G4 decision required: choose exactly one: **accept** this static-only candidate as a
-  view-scoped baseline (with the documented misses/losses and no cross-view claim), or
-  **reject** it and specify whether the next approved work is manual initial-prompt
-  review, a detection/re-prompt policy, or a separate monochrome-domain experiment.
+- Status: this remains the only zero-shot full-duration result and the static half of
+  the synchronized ego-versus-static comparison built on Sep 9. The G4 accept/reject
+  decision it asked for was never taken explicitly; it has served as the static baseline
+  since.
 
-### muggledsam-sam3 ego viewpoint screen
+### Sep 9, early morning: muggledsam-sam3 ego viewpoint screen
 
 - Stage: `objects`; state: `succeeded` as three sequential, fixed 300-frame/10.0-second
   smoke screens. This is an additional e1/e2/e4 screen, not an alteration of the
@@ -218,11 +465,11 @@ or `not_run`.
   (preserved known poor track), and e2 last (no hand initialized). With no labels, this
   supports requesting—not approving—a 60-second e4-only candidate; it does not validate
   segmentation, association, or cross-view performance.
-- Next decision: approve or reject a single 60-second e4 candidate under the unchanged
-  condition, with a defined human review protocol; if rejected, choose a labelled
-  evaluation protocol or stop ego continuation. Do not infer an aggregate ego result.
+- Outcome: e4 (`HMC_21179183`) became the ego view for everything that followed. Note
+  the `[36,42)` gap on `yellow toy body`: the same object at the same frames was
+  identified on Sep 13 as leaving the top of the frame under head motion.
 
-### muggledsam-sam3 G4 e4-only 60-second candidate
+### Sep 9, early morning: muggledsam-sam3 G4 e4-only 60-second candidate
 
 - Stage: `objects`; state: `succeeded` for only e4 / `ego-hmc21179183`, proxy frames
   `[0,1800)` / 60.0 seconds. This preserves every static/e1/e2/e3 result and does not
@@ -252,11 +499,11 @@ or `not_run`.
   zero external masks respectively because masks are capped at 5 FPS; boxes are present
   at 30 FPS. This is review-only evidence with no ground truth and no accuracy,
   segmentation, association, or general ego-performance claim.
-- G4 decision required: choose exactly one: **accept** this e4-only 60-second candidate
-  as a view-scoped baseline; **reject** it and stop/define labelled evaluation; or
-  **run remaining 120 seconds** under this unchanged condition after explicit approval.
+- Outcome: this is the last zero-shot ego run. Viewing it in Rerun (Sep 8, 23:39–23:46)
+  is what prompted the switch to human-drawn box prompts; its "run remaining 120
+  seconds" option was superseded rather than taken.
 
-### muggledsam-sam3 e4 interactive box-prompt calibration
+### Sep 9, after midnight: muggledsam-sam3 e4 interactive box-prompt calibration
 
 - Stage: `objects`; state: `ready` as a user-operated calibration utility, not a run.
 - Scope: uses only the approved e4 `HMC_21179183_mono10bit` proxy from
@@ -287,8 +534,11 @@ or `not_run`.
   excluded from finalization eligibility. The resulting schema-validated, non-authoritative
   proposal is `runs/muggledsam-sam3-e4-web-calibration-e55b5d0abe02/
   proposed_tracking_prompt.json`; its contact-sheet review is in the same run's `results/`.
+- Superseded the same night by the browser workspace below; the CLI's interactive
+  terminal prompts and OpenCV ROI mode were too slow for labelling several targets on
+  several frames.
 
-### muggledsam-sam3 e4 rapid calibration workspace
+### Sep 9, after midnight: muggledsam-sam3 e4 rapid calibration workspace
 
 - Stage: `objects`; state: `ready` as a localhost-only, selected-frame manual calibration
   workspace. It is not a tracking run and starts no video tracking inference.
@@ -312,40 +562,237 @@ or `not_run`.
   browser GUI. Decoder IoU, mask area, and prompt-overlap values are diagnostics, not
   accuracy measures. MuggledSAM model compatibility and detailed user interaction must
   be verified in a local desktop session before any human decision.
+- Grew over Sep 9–13 into the labelling tool used for every later ego run: named target
+  sets (`configs/muggledsam_e4_*_manual_seed.json`), masks rendered in the viewport with
+  `1`–`4` candidate selection, a fourth target slot, later-keyframe corrections under a
+  correction policy (`configs/muggledsam_e4_four_target_keyframe_correction_policy.json`),
+  one **Finalize tracking plan** action writing hashed proposal and schedule artifacts,
+  a finalized-plan lock with **Reopen for editing** and revisioned artifacts,
+  reject/remove for candidates, foreground/background point prompts, and display-only
+  VIGRA view aids (`docs/vigra-build.md`). See the timeline for dates.
 
-### muggledsam-sam3 e4 manual-seed multiplexed smoke
+### Sep 9, evening: muggledsam-sam3 e4 manual-seed multiplexed smoke
 
-- Stage: `objects`; state: `blocked` before inference. The requested scope remains only
-  e4 / `ego-hmc21179183` proxy frames `[0,300)` / 10.0 seconds; no 60- or 180-second
-  run was started.
+- Stage: `objects`; state: `succeeded` after one `blocked` attempt. Scope was e4 /
+  `ego-hmc21179183` proxy frames `[0,300)` / 10.0 seconds.
 - Seed validation passed: proposal
   `runs/muggledsam-sam3-e4-web-calibration-e55b5d0abe02/proposed_tracking_prompt.json`
   matched calibration-manifest SHA-256
   `79cf1f6f29d3ea311f964f6c7d011ba3112848d8b4788c333d9a528716f34086`, and its exact
   mask-0 seeds are `left_hand`/`t000000-b01`, `yellow_toy_body`/`t000000-b03`, and
   `toy_wheel`/`t000000-b04`. Human-selected `right_hand`/`t000000-b18` is excluded.
-- Implementation: the new manual path loads the three saved, source-sized selected masks,
+- Implementation: the manual path loads the three saved, source-sized selected masks,
   verifies each SHA-256, batches them into one
   `tracking.encode_prompt_memory_from_mask(...)` call, and advances one
   `step_video_masking_multiplex(...)` stream. Target-to-normalized-ID mapping is fixed
   as left hand→`sam3-00`, body→`sam3-01`, wheel→`sam3-02`; it makes no detector/text
   call and uses no chunks or intentional ID resets. Memory remains bounded to one
   prompt-memory and four frame-memory entries, CUDA device 0, bfloat16, and 504 pixels.
-- Blocker: the local calibration workspace remains active and owns the same model on
-  CUDA 0 (PID 19647, about 1.6 GiB). The safety preflight therefore refused a competing
-  worker and recorded a schema-valid blocked attempt at
-  `runs/muggledsam-sam3-smoke-manual-seed-multiplexed-ego-hmc21179183-20260909t223016z/`.
-  It contains no inference observations, RRD, or QA comparison and its placeholder
-  zero-output metrics must not be treated as measurements.
-- G3 decision: **do not run any longer duration.** This is not promising or unpromising
-  evidence because inference did not start. Close the calibration workspace to free CUDA
-  0, then rerun exactly this 300-frame manual-seed multiplexed smoke and review its
-  measured 0/5/9.967-second comparison before requesting another duration.
+- Blocked attempt: the local calibration workspace still owned the same model on CUDA 0
+  (PID 19647, about 1.6 GiB). The safety preflight refused a competing worker and
+  recorded a schema-valid blocked attempt at
+  `runs/muggledsam-sam3-smoke-manual-seed-multiplexed-ego-hmc21179183-20260909t223016z/`,
+  with no inference observations; its placeholder zero-output metrics are not
+  measurements.
+- Completed run (18:39, after the workspace was closed):
+  `runs/muggledsam-sam3-smoke-manual-seed-multiplexed-ego-hmc21179183-20260909t223928z/`;
+  300/300 frames, 15.5 s, 1.85 GiB peak allocated VRAM. QA sheet
+  `qa/manual_seed_multiplexed_vs_e4_zero_shot.png` compares it with the retained e4
+  zero-shot smoke. The user's verdict was "not bad, good to continue", which approved
+  the 180-second run recorded below.
+- Full 180-second three-target run:
+  `runs/muggledsam-sam3-full-ego-manual-seed-multiplexed-ego-hmc21179183-20260909t224835z/`;
+  5,400/5,400 frames, 204.9 s, 1.85 GiB. Its recording
+  `full_ego_manual_seed_multiplexed_baseline.rrd` was the first with translucent mask
+  overlays, and `ego_manual_seed_vs_static_g3_synchronized_comparison.rrd` puts it
+  beside the static zero-shot run on one timeline (`battle-build-ego-static-comparison`).
+- Claim boundary: this is manual-seed multiplexed tracking, not out-of-box/text
+  zero-shot, and the 1.0 confidence on seeded observations is a sentinel. Watching the
+  synchronized comparison is what revealed that the `toy_wheel` seed was on the wrong
+  part, leading to the target pivot below.
+
+### Sep 9, evening: four-target 180-second ego baseline
+
+- Stage: `objects`; state: `succeeded`. Targets pivoted to `left_hand`, `right_hand`,
+  `yellow_toy_top`, `black_toy_top_base` (`configs/muggledsam_e4_left_hand_right_hand_
+  yellow_toy_top_black_toy_top_base_manual_seed.json`), each with a human-accepted
+  frame-0 mask from the web workspace
+  (`runs/muggledsam-sam3-e4-web-calibration-left-hand-right-hand-yellow-toy-top-black-toy-top-base-20260910t021538z/`).
+- Why four: the user asked about tracking both hands as one mask and splitting; that was
+  rejected because merged hands lose left/right identity and splitting would not fix the
+  oversized-box artifact, which was traced to a single stray pixel far from the hand.
+  Adding the right hand as its own slot reduced the two worst left-hand box areas by
+  71% and 64% at 0.600 / 0.767 s; the underlying stray-pixel cause was fixed on Sep 13.
+- Run: `runs/muggledsam-sam3-full-ego-manual-seed-multiplexed-ego-hmc21179183-20260910t024052z/`;
+  5,400/5,400 frames, 190.1 s, 1.90 GiB, max side 504, memory 4. Output coverage 100%
+  left hand, 98.2% right hand, 99.7% yellow top, 99.6% black base; no ID resets.
+- Dataset cross-check: Assembly101 ships no object boxes or masks for these parts, only
+  30 fps action/mistake intervals and optional hand poses, so the target identities rest
+  on human review alone.
+- Claim boundary: same as above; coverage is emission coverage, not correctness.
+
+### Sep 13, evening: muggledsam-sam3 e4 multi-keyframe human corrections
+
+- Stage: `objects`; state: `succeeded` on the 300-frame smoke budget only, which is the
+  only budget the schedule path permits.
+- Motivation (Sep 9, 22:53): frame 0 is not representative of the objects over the
+  clip. Human-reviewed masks at later keyframes are applied as scheduled corrections.
+- Memory semantics: the tracker runs to the correction frame; the corrected slot's
+  predicted mask is replaced with the reviewed mask; the multiplexed prompt memory is
+  rebuilt; automatic frame memory is cleared; IDs are unchanged. This trades a brief
+  loss of temporal context for a known-correct anchor and is recorded per correction in
+  the manifest (`multi_keyframe_corrections`).
+- Labelling: keyframes 0, 2.5, 5, 8 s, all four targets at all four keyframes, with
+  foreground/background point clicks on the right hand to exclude its shadow. Plan
+  `runs/muggledsam-sam3-e4-four-target-keyframes-20260913t213159z/` (proposal plus
+  `multi_keyframe_correction_schedule.json`, both fingerprinting the calibration
+  manifest). Schedules are authored against the 30 fps clock and are refused at any
+  other analysis rate.
+- Run: `runs/muggledsam-sam3-smoke-multi-keyframe-corrections-ego-hmc21179183-20260913t215412z/`;
+  300/300 frames, 15.0 s, 1.93 GiB, TTFU 4.8 s, corrections applied at frames 75, 150,
+  240 (12 later masks plus 4 seeds). Three of four targets present on every frame;
+  `yellow_toy_top` 293/300.
+- Claim boundary: human-in-the-loop initialization and correction; the reviewed masks
+  are seeds, not evaluation labels, and nothing here is measured against ground truth.
+
+### Sep 13, evening: tracker score and IoU diagnostics
+
+- Finding: `step_video_masking_multiplex` returns per-slot predicted IoU and an
+  unbounded presence logit. The worker discarded the IoU and clamped the logit to
+  `[0, 1]`, so every one of the 1,193 recorded observations carried `confidence: 1.0`.
+- Change (commit `0d9b0bb`): `object_score` (raw logit) and `iou_prediction` are
+  recorded per object, and a gapless `tracker_diagnostics` list records every slot on
+  every frame including frames where the slot was dropped at or below zero. Both are
+  plotted per target in the Rerun blueprint beside the video, with a zero reference
+  line on the score.
+- Run: `runs/muggledsam-sam3-smoke-multi-keyframe-corrections-ego-hmc21179183-20260913t221457z/`
+  (same plan as above; 300 frames, 15.9 s).
+- Reading of the user's six failure timestamps (1.2, 5.04, 5.98, 6.9, 7.81, 9.5 s):
+  at 1.2 s `yellow_toy_top` decays 9.6 → 8.7 → 7.3 → 2.8 → −3.6 over four frames with
+  IoU falling to 0.00, then sits near −5 for seven frames and recovers; its box marches
+  to the top edge and back, and the contact sheet shows head motion carrying the part
+  out of view. The tracker was right. At the other five timestamps every score is in the
+  healthy 10–12 band, so those are the model being confidently wrong and no threshold on
+  its own outputs will catch them. `black_toy_top_base` runs chronically lower (6–8)
+  than the other targets.
+- Claim boundary: the model's own estimates, not ground truth.
+
+### Sep 13, evening: encoder resolution sweep
+
+- Condition change (commit `93fdc22`): `max_side_length` and `max_frame_memory` became
+  explicit run conditions recorded in the manifest, replacing constants.
+- Arms at 30 fps, memory 4, same plan: 504 (`…221457z`), 720 (`…222850z`), 1008
+  (`…222916z`).
+
+| max side | runtime | peak VRAM | inflated `right_hand` frames | worst box area |
+| --- | --- | --- | --- | --- |
+| 504 | 15.9 s | 1.93 GiB | 5 | 0.407 |
+| 720 | 24.9 s | 1.99 GiB | 0 | 0.149 |
+| 1008 | 37.0 s | 2.16 GiB | 0 | 0.171 |
+
+- Mask quality rose monotonically on every target, most on the weakest:
+  `black_toy_top_base` worst-case IoU 0.527 → 0.684 → 0.758. The `yellow_toy_top`
+  dropout at 1.2 s was unchanged (7/6/7 frames), consistent with the object leaving
+  the frame.
+- Corrected the same evening: the raw e4 recording is 636x480 and the proxies are
+  954x720 upscales, so above ~636 px the encoder sees no new information. 504 → 720
+  crossed from below-native to native sampling and was real; 720 → 1008 resampled a
+  1.6x upscale. Prefer 720, not 1008.
+
+### Sep 13, evening: muggledsam-sam3 e4 analysis frame-rate comparison
+
+- Stage: `objects`; state: `succeeded`. Three arms over the same ten seconds of e4
+  source video, seeded from frame zero only so initialization is identical and
+  clock-independent: 30 fps / 300 frames / memory 4, 60 fps / 600 frames / memory 8
+  (matched 0.133 s memory span), and 60 fps / 600 frames / memory 4 (halved span).
+  All at 720 pixels. Report: `runs/frame_rate_comparison.json`, copied to
+  [`docs/frame-rate-comparison-2026-09-13.json`](frame-rate-comparison-2026-09-13.json).
+- Plumbing: a 60 fps proxy (`scripts/create_assembly101_e4_60fps_proxy.sh`) and clip
+  config (`configs/clips/assembly101_nusar_9033_e4_60fps.json`); analysis fps carried
+  from the clip config through the worker instead of a hardcoded 30; the `analysis`
+  clock may be 30 or 60 while the other clocks stay fixed; and the ten-second smoke
+  budget expressed in seconds. Transfer is limited to frame-zero seeds and checks the
+  same raw-source checksum, source-interval start instant, proxy dimensions, and scaling
+  policy. Proxy identity and fps may differ; source end time is not checked. The run
+  records this as a `calibration_transfer_note`.
+- Result: median model IoU predictions for the 30 fps / 60 fps memory-8 / 60 fps
+  memory-4 arms were `left_hand` 0.9414 / 0.9336 / 0.9336, `right_hand` 0.9023 /
+  0.9023 / 0.9023, `black_toy_top_base` 0.9062 / 0.9062 / 0.9062, and
+  `yellow_toy_top` 0.9102 / 0.9062 / 0.9258. `yellow_toy_top` first dropped out at
+  source 216.2 s in every arm; coverage for the other three targets was 100% throughout.
+  These are output-continuity and model self-estimate diagnostics, not ground-truth
+  accuracy. They show variation between arms but no consistent/measurable quality
+  benefit supporting the extra compute cost.
+- Cost in the published report comes specifically from `…20260913t223959z` (30 fps,
+  24.7069 s), `…20260913t224508z` (60 fps, memory 8, 45.8453 s), and
+  `…20260913t224556z` (60 fps, memory 4, 44.4363 s). The matched-span comparison is
+  therefore about 1.85x compute. Peak VRAM was about 1.96 GiB in all three report arms,
+  so frame rate was compute-bound rather than memory-bound on this 16 GiB card.
+- The matched-span 60 fps arm (memory 8) and halved-span arm (memory 4) did not establish
+  a consistent benefit for either memory setting on this clip; that does not imply
+  identical outputs.
+- Decision: **keep the 30 fps analysis clock.** The 60 fps proxy, config, and runs are
+  retained as the evidence for that choice, not as a new baseline.
+- Exporter defect found while reviewing these arms: every recording was written with the
+  fixed application id `battle-session-1`, but each ships a default blueprint whose views
+  are anchored under a clip-specific entity root. Rerun keys blueprints by application id,
+  so opening recordings of two clips together let one clip's blueprint activate for both
+  and point every view at entity paths the other recording never logged, rendering it
+  empty. The application id is now derived from the clip id, and a regression test asserts
+  that two clips cannot share one. Recordings written before this fix still carry the old
+  id; re-export them with `scripts/reexport_run_rrd.py` before viewing them together.
+- Second exporter defect found here: exporting several runs from one process gave them the
+  same random recording id, so the viewer merged them into one recording with duplicated
+  rows and a red segmentation background. The recording id is now the run id.
+- Masks now appear on every analysis frame. Each object's binary mask PNG is logged as an
+  RGBA `EncodedImage` cut-out at `views/<view>/masks/<object_id>`, so the store holds only
+  compressed bytes and PNG alpha gives a true overlay with no background veil. The
+  class-labelled `SegmentationImage` is kept at 1 Hz as a sparse record and is excluded
+  from the default view (toggle it on from the blueprint panel for class labels). The
+  worker writes mask PNGs every frame (its internal `--mask-period-frames` setting
+  defaults to 1). Arms with
+  full-rate masks: `…-20260913t233645z` (30 fps), `…-20260913t233715z` and
+  `…-20260913t233812z` (60 fps). Rendering was verified in the web viewer at frame 599,
+  which the sparse segmentation does not cover.
+- Timing provenance: those later full-rate-mask validation reruns measured 24.9664 /
+  47.2285 / 45.9781 s in their manifests. They are separate from, and were not inputs
+  to, `docs/frame-rate-comparison-2026-09-13.json`; the report's 24.7/45.8-second and
+  ~1.85x figures come from the earlier `223959z`/`224508z`/`224556z` arms above. Still
+  later connected-component reruns (`…20260914t000644z`, `…000716z`, `…000819z`) had
+  the viewer competing for the GPU and should not be used for uncontended timing.
+
+### Sep 13, late evening: box derivation and GPU guard
+
+- Defect: the reported box was the min/max extent of every positive mask pixel, so a
+  few stray speckles far from the object ballooned it while the mask itself read
+  correctly. First observed Sep 9 at 0.600 s (one isolated pixel), named as a
+  connected-component problem then, fixed now.
+- Change: `_box_from_mask` runs `cv2.connectedComponentsWithStats` (8-connected) on
+  the thresholded mask and boxes the union of components with area at least 20% of the
+  largest (`BOX_COMPONENT_KEEP_FRACTION`), so an object split by occlusion keeps a box
+  over both parts. The saved mask PNG is unchanged. Each run's `runtime_settings`
+  records `box_derivation` and `box_component_keep_fraction`, so old and new runs are
+  distinguishable.
+- Effect, re-running the three frame-rate arms against their predecessors frame by
+  frame: 8–10% of object-frames changed box; 28/58/80 boxes shrank by more than 25% in
+  area; worst case shrank 99%. `black_toy_top_base` lost ~50% of its box area on average
+  when it changed, `yellow_toy_top` 25–40%, hands 7–20%.
+- Guard: the worker's concurrent-GPU-process check matched the Rerun viewer because its
+  venv path contains `python3.12`; an executable named `rerun` or under
+  `/rerun_sdk/rerun_cli/` is now tolerated and still recorded in
+  `gpu_processes_before_initialization`. Per-process VRAM peaks are unaffected;
+  wall-clock timing may see contention.
+- Re-run arms with the new boxes:
+  `…-20260914t000644z` (30 fps), `…-20260914t000716z` (60 fps, memory 8),
+  `…-20260914t000819z` (60 fps, memory 4). Viewer was open; timings 26.9 / 52.7 /
+  50.9 s are contended.
 
 ### hand-pose adapter
 
 - Stage: `pose`
 - State: `not_run`
-- Blocker: deferred until a provenance-approved source and session-two adapter plan
+- Blocker: deferred until a provenance-approved source and adapter plan. The plan's
+  core-spine item is MediaPipe Hand Landmarker on the RGB static view (CPU-only); WiLoR
+  is the named second-wave upgrade.
 - Environment candidate: `~/.pyenv/versions/wilor`
 - Weights: not downloaded
