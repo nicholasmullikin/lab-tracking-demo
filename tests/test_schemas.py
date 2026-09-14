@@ -13,6 +13,7 @@ from battle.schemas import (
     MethodState,
     NormalizedBox,
     RunManifest,
+    SmokeRunMetadata,
     TrackerSlotDiagnostic,
 )
 
@@ -103,4 +104,66 @@ def test_iou_prediction_stays_within_its_sigmoid_bounds() -> None:
             object_score=11.0,
             iou_prediction=1.4,
             active=True,
+        )
+
+
+def _smoke_metadata_payload(*, analysis_fps: object, frame_count: int) -> dict[str, object]:
+    fingerprint = {
+        "uri": "artifact.bin",
+        "sha256": "0" * 64,
+        "source": "measured",
+    }
+    return {
+        "requested_analysis_frame_range": {
+            "start_frame": 0,
+            "end_frame_exclusive": frame_count,
+        },
+        "requested_seconds": 10.0,
+        "concepts": ["hand"],
+        "source_fingerprint": fingerprint,
+        "proxy_fingerprint": fingerprint,
+        "config_fingerprint": fingerprint,
+        "adapter": {
+            "name": "test-adapter",
+            "version": "1.0",
+            "implementation_basis": "schema test",
+            "external_source_uri": "https://example.com/adapter",
+        },
+        "continuity": {
+            "max_prompt_memory_entries": 1,
+            "max_frame_memory_entries": 4,
+            "detected_object_limit": 1,
+        },
+        "runtime_settings": {"analysis_fps": analysis_fps},
+        "measurements": {"elapsed_seconds": 0.0},
+        "mask_artifact_count": 0,
+    }
+
+
+@pytest.mark.parametrize(("analysis_fps", "frame_count"), [(30, 300), (60, 600)])
+def test_smoke_frame_count_matches_analysis_clock(
+    analysis_fps: int, frame_count: int
+) -> None:
+    smoke = SmokeRunMetadata.model_validate(
+        _smoke_metadata_payload(analysis_fps=analysis_fps, frame_count=frame_count)
+    )
+
+    assert smoke.requested_analysis_frame_range.frame_count == frame_count
+
+
+@pytest.mark.parametrize(("analysis_fps", "frame_count"), [(30, 600), (60, 300)])
+def test_smoke_frame_count_rejects_mismatch_in_either_direction(
+    analysis_fps: int, frame_count: int
+) -> None:
+    with pytest.raises(ValidationError, match="requested_seconds \\* analysis_fps"):
+        SmokeRunMetadata.model_validate(
+            _smoke_metadata_payload(analysis_fps=analysis_fps, frame_count=frame_count)
+        )
+
+
+@pytest.mark.parametrize("analysis_fps", [True, "30", None, 24])
+def test_smoke_analysis_clock_must_be_supported_numeric_value(analysis_fps: object) -> None:
+    with pytest.raises(ValidationError, match="analysis_fps must be numeric"):
+        SmokeRunMetadata.model_validate(
+            _smoke_metadata_payload(analysis_fps=analysis_fps, frame_count=300)
         )

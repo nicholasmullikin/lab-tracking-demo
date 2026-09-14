@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import io
 import json
 from pathlib import Path
 
@@ -14,8 +15,17 @@ from PIL import Image
 from .fixtures import synthetic_run_manifest
 from .schemas import ClockName, EncodedAssetInput, FrameObservations, RunManifest
 
-MASK_FPS = 5
+# Per-object masks are logged on every analysis frame as RGBA PNG `EncodedImage`s. The store
+# keeps only the compressed bytes, so full-rate masks cost tens of megabytes rather than the
+# hundreds a raster `SegmentationImage` would, and PNG alpha gives a true cut-out overlay.
+# The class-labelled `SegmentationImage` is retained as a sparse record at this rate. It is
+# not drawn in the default view, because masks sit above it and would swallow its hover
+# anyway; it stays in the recording for anyone who wants class labels at those frames.
+SEGMENTATION_FPS = 1
+MASK_OPACITY = 0.45
 SEGMENTATION_OPACITY = 0.45
+MASKS_PATH = "masks"
+SEGMENTATION_PATH = "segmentation"
 FRAME_COUNTER_PATH = "frame_counter"
 DIAGNOSTICS_PATH = "tracker_diagnostics"
 BACKGROUND_ANNOTATION: tuple[int, str, tuple[int, int, int, int]] = (
@@ -63,16 +73,16 @@ def _annotation_context(view_annotations: dict[str, ObjectAnnotation]) -> rr.Ann
     )
 
 
-def _segmentation_image(
+def _load_binary_masks(
     observation: FrameObservations,
     *,
     mask_artifact_root: Path,
-    annotations: dict[str, ObjectAnnotation],
     video_dimensions: tuple[int, int] | None,
-) -> np.ndarray | None:
-    """Compose this frame's external binary masks into one Rerun segmentation image."""
+) -> list[tuple[str, np.ndarray]]:
+    """Read this frame's external binary masks, checking each stays inside the artifact root."""
     mask_root = mask_artifact_root.resolve()
-    segmentation: np.ndarray | None = None
+    masks: list[tuple[str, np.ndarray]] = []
+    expected_shape: tuple[int, int] | None = None
     for object_ in observation.objects:
         if object_.mask is None:
             continue
@@ -83,18 +93,94 @@ def _segmentation_image(
             raise FileNotFoundError(f"referenced mask is unavailable: {mask_path}")
         with Image.open(mask_path) as mask_file:
             binary_mask = np.asarray(mask_file.convert("L"), dtype=np.uint8) > 0
-        if segmentation is None:
+        if expected_shape is None:
             height, width = binary_mask.shape
             if video_dimensions is not None and (width, height) != video_dimensions:
                 raise ValueError(
                     f"mask dimensions {(width, height)} do not match video dimensions "
                     f"{video_dimensions}: {mask_path}"
                 )
-            segmentation = np.zeros(binary_mask.shape, dtype=np.uint16)
-        elif binary_mask.shape != segmentation.shape:
+            expected_shape = binary_mask.shape
+        elif binary_mask.shape != expected_shape:
             raise ValueError(f"mask dimensions differ within one frame: {mask_path}")
-        segmentation[binary_mask] = annotations[object_.object_id][0]
+        masks.append((object_.object_id, binary_mask))
+    return masks
+
+
+def _segmentation_image(
+    masks: list[tuple[str, np.ndarray]],
+    *,
+    annotations: dict[str, ObjectAnnotation],
+) -> np.ndarray | None:
+    """Compose one frame's binary masks into a single class-id image."""
+    segmentation: np.ndarray | None = None
+    for object_id, binary_mask in masks:
+        if segmentation is None:
+            segmentation = np.zeros(binary_mask.shape, dtype=np.uint16)
+        segmentation[binary_mask] = annotations[object_id][0]
     return segmentation
+
+
+def _rgba_mask_png(binary_mask: np.ndarray, color: tuple[int, int, int]) -> bytes:
+    """Encode a binary mask as a PNG cut-out: object color where set, fully transparent elsewhere.
+
+    Masks are large flat regions, so even the fastest zlib level shrinks them to tens of
+    kilobytes. Speed matters more than the last few percent because this runs per object
+    per frame.
+    """
+    rgba = np.zeros((*binary_mask.shape, 4), dtype=np.uint8)
+    rgba[binary_mask] = (*color, 255)
+    buffer = io.BytesIO()
+    Image.fromarray(rgba, mode="RGBA").save(buffer, format="PNG", compress_level=1)
+    return buffer.getvalue()
+
+
+def _log_masks(
+    observation: FrameObservations,
+    *,
+    view_root: str,
+    annotations: dict[str, ObjectAnnotation],
+    mask_artifact_root: Path | None,
+    video_dimensions: tuple[int, int] | None,
+    segmentation_frame_period: int,
+) -> None:
+    """Log every object's mask this frame, plus the sparse class-labelled segmentation."""
+    mask_references = [
+        object_.mask.model_dump(mode="json") for object_ in observation.objects if object_.mask
+    ]
+    if not mask_references:
+        return
+    rr.log(
+        f"{view_root}/mask_references",
+        rr.TextDocument(json.dumps(mask_references), media_type="application/json"),
+    )
+    if mask_artifact_root is None:
+        return
+    masks = _load_binary_masks(
+        observation, mask_artifact_root=mask_artifact_root, video_dimensions=video_dimensions
+    )
+    for object_id, binary_mask in masks:
+        rr.log(
+            f"{view_root}/{MASKS_PATH}/{object_id}",
+            rr.EncodedImage(
+                contents=_rgba_mask_png(binary_mask, annotations[object_id][2]),
+                media_type="image/png",
+                opacity=MASK_OPACITY,
+                draw_order=1.0,
+            ),
+        )
+    if observation.analysis_frame_index % segmentation_frame_period != 0:
+        return
+    segmentation = _segmentation_image(masks, annotations=annotations)
+    if segmentation is not None:
+        rr.log(
+            f"{view_root}/{SEGMENTATION_PATH}",
+            rr.SegmentationImage(segmentation, opacity=SEGMENTATION_OPACITY, draw_order=0.5),
+        )
+
+
+def _segmentation_frame_period(analysis_fps: int) -> int:
+    return max(1, analysis_fps // SEGMENTATION_FPS)
 
 
 def _log_frame_counter(
@@ -163,6 +249,19 @@ def _log_tracker_diagnostics(
             )
 
 
+def _spatial_view_contents() -> list[str]:
+    """Show video, boxes, and per-object masks; leave traces and the sparse segmentation off.
+
+    The segmentation is excluded rather than removed so it can be toggled on from the
+    blueprint panel when class labels are wanted at its keyframes.
+    """
+    return [
+        "$origin/**",
+        f"- $origin/{DIAGNOSTICS_PATH}/**",
+        f"- $origin/{SEGMENTATION_PATH}",
+    ]
+
+
 def _frame_counter_view(root: str) -> rrb.TextDocumentView:
     """Build the compact readout that reports the active analysis frame."""
     return rrb.TextDocumentView(
@@ -194,7 +293,7 @@ def pinned_blueprint(
             rrb.Horizontal(
                 rrb.Spatial2DView(
                     origin=view_root,
-                    contents=["$origin/**", f"- $origin/{DIAGNOSTICS_PATH}/**"],
+                    contents=_spatial_view_contents(),
                     name=f"{view_id} video and detections",
                     visual_bounds=visual_bounds,
                 ),
@@ -241,7 +340,7 @@ def pinned_comparison_blueprint(
     ) -> rrb.Spatial2DView:
         return rrb.Spatial2DView(
             origin=f"{root}/views/{view_id}",
-            contents=["$origin/**", f"- $origin/{DIAGNOSTICS_PATH}/**"],
+            contents=_spatial_view_contents(),
             name=f"{view_id}: {label}",
             visual_bounds=rrb.VisualBounds2D(
                 x_range=[0, dimensions[0]],
@@ -318,7 +417,7 @@ def _log_observation(
     annotations: dict[str, ObjectAnnotation],
     mask_artifact_root: Path | None,
     analysis_seconds: float,
-    mask_frame_period: int,
+    segmentation_frame_period: int,
 ) -> None:
     """Log one view at an already-selected synchronized timestamp."""
     rr.log(
@@ -344,33 +443,14 @@ def _log_observation(
                 colors=[annotations[object_.object_id][2] for object_ in observation.objects],
             ),
         )
-    mask_references = [
-        object_.mask.model_dump(mode="json")
-        for object_ in observation.objects
-        if object_.mask and observation.analysis_frame_index % mask_frame_period == 0
-    ]
-    if mask_references:
-        rr.log(
-            f"{view_root}/mask_references",
-            rr.TextDocument(json.dumps(mask_references), media_type="application/json"),
-        )
-    if mask_artifact_root is None or observation.analysis_frame_index % mask_frame_period != 0:
-        return
-    segmentation = _segmentation_image(
+    _log_masks(
         observation,
-        mask_artifact_root=mask_artifact_root,
+        view_root=view_root,
         annotations=annotations,
+        mask_artifact_root=mask_artifact_root,
         video_dimensions=video_dimensions,
+        segmentation_frame_period=segmentation_frame_period,
     )
-    if segmentation is not None:
-        rr.log(
-            f"{view_root}/segmentation",
-            rr.SegmentationImage(
-                segmentation,
-                opacity=SEGMENTATION_OPACITY,
-                draw_order=1.0,
-            ),
-        )
 
 
 def _require_synchronized_observations(
@@ -437,7 +517,10 @@ def export_synchronized_comparison(
         static_video_dimensions=static_video_dimensions,
         static_label=static_label,
     )
-    rr.init("battle-synchronized-ego-static-comparison")
+    rr.init(
+        f"battle-synchronized-ego-static-comparison-{ego_manifest.clip.clip_id}",
+        recording_id=f"{ego_manifest.run_id}--{static_manifest.run_id}",
+    )
     rr.save(output_path)
     rr.log(
         f"{root}/comparison_metadata",
@@ -482,7 +565,7 @@ def export_synchronized_comparison(
     rr.log(ego_root, _annotation_context(ego_annotations), static=True)
     rr.log(static_root, _annotation_context(static_annotations), static=True)
 
-    mask_frame_period = analysis_fps // MASK_FPS
+    segmentation_frame_period = _segmentation_frame_period(analysis_fps)
     total_frames = len(ego_manifest.observations)
     for ego_observation, static_observation in zip(
         ego_manifest.observations, static_manifest.observations
@@ -506,7 +589,7 @@ def export_synchronized_comparison(
             annotations=ego_annotations,
             mask_artifact_root=ego_mask_artifact_root,
             analysis_seconds=analysis_seconds,
-            mask_frame_period=mask_frame_period,
+            segmentation_frame_period=segmentation_frame_period,
         )
         _log_observation(
             static_observation,
@@ -516,7 +599,7 @@ def export_synchronized_comparison(
             annotations=static_annotations,
             mask_artifact_root=static_mask_artifact_root,
             analysis_seconds=analysis_seconds,
-            mask_frame_period=mask_frame_period,
+            segmentation_frame_period=segmentation_frame_period,
         )
         _log_tracker_diagnostics(
             ego_observation, view_root=ego_root, annotations=ego_annotations
@@ -561,7 +644,16 @@ def export_run(
         analysis_fps=analysis_fps,
         video_dimensions=video_dimensions,
     )
-    rr.init("battle-session-1")
+    # Rerun keys a blueprint by application id, and every view in ours is anchored under a
+    # clip-specific entity root. Recordings of different clips must therefore not share an
+    # application id: loading them together would let one clip's blueprint win and point
+    # every view at entity paths the other recordings do not contain, showing empty views.
+    #
+    # The recording id is the run id rather than a random value. Random ids are only unique
+    # per process, so exporting several runs from one process gave them the same id and the
+    # viewer merged them into a single recording. The run id is unique by construction and
+    # also makes the recording identifiable in the viewer.
+    rr.init(f"battle-{clip.clip_id}", recording_id=manifest.run_id)
     rr.save(output_path)
 
     rr.log(
@@ -608,7 +700,7 @@ def export_run(
             static=True,
         )
 
-    mask_frame_period = analysis_fps // MASK_FPS
+    segmentation_frame_period = _segmentation_frame_period(analysis_fps)
     blueprint_sent = False
     total_frames = len(manifest.observations)
     for observation in manifest.observations:
@@ -652,38 +744,14 @@ def export_run(
                     colors=[annotations[object_.object_id][2] for object_ in observation.objects],
                 ),
             )
-        mask_references = [
-            object_.mask.model_dump(mode="json")
-            for object_ in observation.objects
-            if object_.mask and observation.analysis_frame_index % mask_frame_period == 0
-        ]
-        if mask_references:
-            rr.log(
-                f"{view_root}/mask_references",
-                rr.TextDocument(
-                    json.dumps(mask_references),
-                    media_type="application/json",
-                ),
-            )
-        if (
-            mask_artifact_root is not None
-            and observation.analysis_frame_index % mask_frame_period == 0
-        ):
-            segmentation = _segmentation_image(
-                observation,
-                mask_artifact_root=mask_artifact_root,
-                annotations=annotations,
-                video_dimensions=video_dimensions,
-            )
-            if segmentation is not None:
-                rr.log(
-                    f"{view_root}/segmentation",
-                    rr.SegmentationImage(
-                        segmentation,
-                        opacity=SEGMENTATION_OPACITY,
-                        draw_order=1.0,
-                    ),
-                )
+        _log_masks(
+            observation,
+            view_root=view_root,
+            annotations=annotations,
+            mask_artifact_root=mask_artifact_root,
+            video_dimensions=video_dimensions,
+            segmentation_frame_period=segmentation_frame_period,
+        )
 
         for hand in observation.hands:
             width, height = video_dimensions or (1, 1)

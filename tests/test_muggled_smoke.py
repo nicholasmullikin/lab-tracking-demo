@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import types
 from collections import deque
 from datetime import UTC, datetime
 from pathlib import Path
@@ -26,8 +27,12 @@ from battle.muggled_smoke import (
     sha256_file,
 )
 from battle.muggled_worker import (
+    BOX_COMPONENT_KEEP_FRACTION,
+    _box_from_component_stats,
+    _box_from_mask,
     _corrections_by_frame,
     _is_numpy_mask,
+    _looks_like_model_process,
     _replace_prompt_memory_for_correction,
     _validate_manual_seed_slots,
 )
@@ -47,6 +52,52 @@ def test_numpy_masks_use_the_opencv_adapter_despite_numpy_device_attribute() -> 
 
     assert mask.device == "cpu"
     assert _is_numpy_mask(mask)
+
+
+def test_box_ignores_speckle_components_but_keeps_a_split_object() -> None:
+    numpy = pytest.importorskip("numpy")
+    # Rows follow cv2.connectedComponentsWithStats: left, top, width, height, area.
+    hand = [100, 200, 40, 50, 1600]
+    occluded_fingers = [150, 210, 20, 20, 400]  # 25% of the hand: a legitimate split.
+    speck = [900, 700, 2, 2, 4]  # far-away speckle that used to balloon the box.
+    frame_shape = (720, 954)
+
+    box = _box_from_component_stats(numpy.array([hand, speck, occluded_fingers]), frame_shape)
+
+    assert box == pytest.approx(
+        {"x": 100 / 954, "y": 200 / 720, "width": 70 / 954, "height": 50 / 720}
+    )
+    assert 400 >= BOX_COMPONENT_KEEP_FRACTION * 1600
+    assert 4 < BOX_COMPONENT_KEEP_FRACTION * 1600
+
+
+def test_box_from_mask_covers_only_the_dominant_components() -> None:
+    numpy = pytest.importorskip("numpy")
+    pytest.importorskip("cv2")
+    mask = numpy.zeros((72, 96), dtype=bool)
+    mask[20:40, 10:30] = True  # 400 px object
+    mask[22:32, 32:42] = True  # 100 px fragment separated by a 2 px gap: kept (25%)
+    mask[60, 90] = True  # 1 px speck: dropped
+    mask[5, 70:74] = True  # 4 px sliver: dropped
+
+    box = _box_from_mask(mask)
+
+    assert box == pytest.approx(
+        {"x": 10 / 96, "y": 20 / 72, "width": 32 / 96, "height": 20 / 72}
+    )
+    assert _box_from_mask(numpy.zeros((72, 96), dtype=bool)) is None
+
+
+def test_gpu_guard_tolerates_an_open_rerun_viewer_but_not_other_python_processes() -> None:
+    def process(name: str) -> dict[str, str]:
+        return {"pid": "1", "process_name": name, "memory": "623 MiB"}
+
+    viewer = "/home/nick/src/battle/.venv/lib/python3.12/site-packages/rerun_sdk/rerun_cli/rerun"
+    assert not _looks_like_model_process(process(viewer))
+    assert not _looks_like_model_process(process("/usr/local/bin/rerun"))
+    assert _looks_like_model_process(process("/home/nick/.pyenv/versions/muggled_sam/bin/python"))
+    assert _looks_like_model_process(process("/usr/bin/ollama"))
+    assert _looks_like_model_process(process("/opt/rerun-experiments/.venv/bin/python3"))
 
 
 def test_worker_accepts_four_ordered_manual_multiplex_slots() -> None:
@@ -112,10 +163,20 @@ def test_smoke_range_is_exactly_the_approved_first_ten_seconds() -> None:
 
     assert frame_range.start_frame == 0
     assert frame_range.end_frame_exclusive == 300
-    with pytest.raises(ValueError, match="only proxy frames"):
+    with pytest.raises(ValueError, match="first 10 seconds"):
         require_smoke_range(start_frame=1, max_frames=SMOKE_FRAMES)
-    with pytest.raises(ValueError, match="only proxy frames"):
+    with pytest.raises(ValueError, match="first 10 seconds"):
         require_smoke_range(start_frame=0, max_frames=299)
+
+
+def test_smoke_range_tracks_seconds_rather_than_frames_across_analysis_rates() -> None:
+    """The approved bound is ten seconds, so its frame count follows the analysis clock."""
+    assert require_smoke_range(0, 600, analysis_fps=60.0).end_frame_exclusive == 600
+
+    with pytest.raises(ValueError, match="at 60 fps"):
+        require_smoke_range(0, 300, analysis_fps=60.0)
+    with pytest.raises(ValueError, match="at 30 fps"):
+        require_smoke_range(0, 600, analysis_fps=30.0)
 
 
 def test_g3_range_allows_only_the_approved_static_full_proxy() -> None:
@@ -378,6 +439,7 @@ def test_four_target_manual_seed_initializes_four_ordered_multiplex_slots(tmp_pa
         repository_root=root,
         config_path=g2_path,
         proxy=proxy,
+        analysis_fps=30.0,
     )
 
     assert [slot.target_id for slot in schedule.slots] == [
@@ -401,4 +463,20 @@ def test_four_target_manual_seed_initializes_four_ordered_multiplex_slots(tmp_pa
             repository_root=root,
             config_path=g2_path,
             proxy=proxy,
+            analysis_fps=30.0,
+        )
+
+
+def test_correction_schedule_is_refused_on_a_clock_it_was_not_authored_against(
+    tmp_path: Path,
+) -> None:
+    """Frame indices are clock-bound, so reinterpreting them would move every correction."""
+    root = Path(__file__).resolve().parents[1]
+    with pytest.raises(ValueError, match="authored against"):
+        _load_multi_keyframe_correction_schedule(
+            schedule_path=tmp_path / "absent_schedule.json",
+            repository_root=root,
+            config_path=root / "configs/clips/assembly101_nusar_9033_e4_60fps.json",
+            proxy=types.SimpleNamespace(view_id="ego-hmc21179183"),
+            analysis_fps=60.0,
         )

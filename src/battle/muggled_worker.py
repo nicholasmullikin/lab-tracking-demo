@@ -17,12 +17,18 @@ from time import perf_counter
 from typing import Any
 
 CONCEPTS = ("hand", "yellow toy body", "toy wheel")
-MASK_PERIOD_FRAMES = 6  # 30 fps / 5 fps
+# Every frame by default: the exporter logs masks as compressed PNGs, so full-rate masks are
+# affordable in the viewer, and a binary PNG per object per frame is small on disk.
+MASK_PERIOD_FRAMES = 1
 MAX_FRAMES = 300
 MAX_FRAME_MEMORY = 4
 MAX_PROMPT_MEMORY = 1
 MAX_SIDE_LENGTH = 504
+ANALYSIS_FPS = 30.0
 DETECTION_THRESHOLD = 0.40
+# Connected components smaller than this fraction of the largest one are treated as mask
+# speckle and excluded from the reported box; the saved mask PNG is left untouched.
+BOX_COMPONENT_KEEP_FRACTION = 0.20
 
 # object index, concept, mask logits, reported confidence, raw presence logit, predicted IoU.
 # The last two are tracker diagnostics and are absent for prompt and detector initialization.
@@ -59,6 +65,11 @@ def _runtime_settings(args: argparse.Namespace, concepts: tuple[str, ...]) -> di
         "max_side_length": MAX_SIDE_LENGTH,
         "detection_threshold": DETECTION_THRESHOLD,
         "mask_period_frames": MASK_PERIOD_FRAMES,
+        "box_derivation": (
+            "union of the mask's 8-connected components with area at least "
+            f"{BOX_COMPONENT_KEEP_FRACTION:g} of the largest; smaller components are ignored"
+        ),
+        "box_component_keep_fraction": BOX_COMPONENT_KEEP_FRACTION,
         "max_prompt_memory_entries": MAX_PROMPT_MEMORY,
         "max_frame_memory_entries": MAX_FRAME_MEMORY,
         "chunking": "none; one continuous tracker stream",
@@ -66,6 +77,9 @@ def _runtime_settings(args: argparse.Namespace, concepts: tuple[str, ...]) -> di
         "concepts": list(concepts),
         "prompt_mode": args.prompt_mode,
         "preprocessing": args.preprocessing,
+        "analysis_fps": ANALYSIS_FPS,
+        "max_frame_memory": MAX_FRAME_MEMORY,
+        "frame_memory_span_seconds": MAX_FRAME_MEMORY / ANALYSIS_FPS,
         "tracker_diagnostics_semantics": (
             "object_score is the tracker's raw unbounded presence logit, recorded for every "
             "multiplex slot on every tracked frame including frames where the slot was dropped "
@@ -149,8 +163,23 @@ def _gpu_processes() -> list[dict[str, str]]:
 
 
 def _looks_like_model_process(process: dict[str, str]) -> bool:
+    """Flag GPU processes that could be running a model, tolerating the Rerun viewer.
+
+    The viewer is a renderer, not a model, but it lives under a Python venv path
+    (``.../site-packages/rerun_sdk/rerun_cli/rerun``) and is launched by a ``python``
+    wrapper, so the name tokens alone would refuse to start beside an open recording.
+    It still appears in ``gpu_processes_before_initialization`` for the record; per-process
+    peak VRAM is unaffected, though wall-clock timing may see GPU contention.
+    """
     name = process["process_name"].lower()
+    if _is_rerun_viewer(name):
+        return False
     return any(token in name for token in ("python", "torch", "ollama", "llama", "vllm"))
+
+
+def _is_rerun_viewer(name: str) -> bool:
+    executable = name.rsplit("/", 1)[-1]
+    return executable == "rerun" or "/rerun_sdk/rerun_cli/" in name
 
 
 def _result(
@@ -180,7 +209,8 @@ def _result(
     }
 
 
-def _save_mask(mask_logits: Any, frame_shape: tuple[int, int], path: Path) -> bool:
+def _binary_mask(mask_logits: Any, frame_shape: tuple[int, int]) -> Any:
+    """Threshold one object's logits (or a NumPy mask) into a boolean mask at frame size."""
     import cv2
     import torch.nn.functional as functional
 
@@ -190,36 +220,50 @@ def _save_mask(mask_logits: Any, frame_shape: tuple[int, int], path: Path) -> bo
             mask = cv2.resize(
                 mask, (frame_shape[1], frame_shape[0]), interpolation=cv2.INTER_NEAREST
             )
-        return bool(cv2.imwrite(str(path), (mask > 0).astype("uint8") * 255))
+        return mask > 0
     resized = functional.interpolate(
         mask_logits, size=frame_shape, mode="bilinear", align_corners=False
     )
-    mask = ((resized > 0.0).byte() * 255).cpu().numpy().squeeze()
-    return bool(cv2.imwrite(str(path), mask))
+    return (resized > 0.0).squeeze().cpu().numpy()
 
 
-def _box_from_mask(mask_logits: Any, frame_shape: tuple[int, int]) -> dict[str, float] | None:
+def _save_mask(mask: Any, path: Path) -> bool:
     import cv2
-    import torch.nn.functional as functional
 
-    if _is_numpy_mask(mask_logits):
-        mask = mask_logits.squeeze()
-        if mask.shape != frame_shape:
-            mask = cv2.resize(
-                mask, (frame_shape[1], frame_shape[0]), interpolation=cv2.INTER_NEAREST
-            )
-        mask = mask > 0
-    else:
-        resized = functional.interpolate(
-            mask_logits, size=frame_shape, mode="bilinear", align_corners=False
-        )
-        mask = (resized > 0.0).squeeze().cpu().numpy()
-    ys, xs = mask.nonzero()
-    if len(xs) == 0 or len(ys) == 0:
+    return bool(cv2.imwrite(str(path), mask.astype("uint8") * 255))
+
+
+def _box_from_mask(mask: Any) -> dict[str, float] | None:
+    """Box the dominant connected component(s) rather than every positive pixel.
+
+    A min/max box over all positive pixels lets a few stray speckles far from the object
+    balloon the box while the mask itself still reads correctly.  Only components with at
+    least ``BOX_COMPONENT_KEEP_FRACTION`` of the largest component's area contribute, so
+    an object legitimately split by occlusion keeps a box over both parts.
+    """
+    import cv2
+
+    count, _labels, stats, _centroids = cv2.connectedComponentsWithStats(
+        mask.astype("uint8"), connectivity=8
+    )
+    if count < 2:
         return None
+    return _box_from_component_stats(stats[1:], mask.shape)
+
+
+# Column order of ``cv2.connectedComponentsWithStats`` statistics (``cv2.CC_STAT_*``).
+_STAT_LEFT, _STAT_TOP, _STAT_WIDTH, _STAT_HEIGHT, _STAT_AREA = range(5)
+
+
+def _box_from_component_stats(components: Any, frame_shape: tuple[int, int]) -> dict[str, float]:
+    """Union the pixel boxes of every foreground component large enough to keep."""
+    areas = components[:, _STAT_AREA]
+    kept = components[areas >= BOX_COMPONENT_KEEP_FRACTION * areas.max()]
     height, width = frame_shape
-    x1, x2 = xs.min() / width, (xs.max() + 1) / width
-    y1, y2 = ys.min() / height, (ys.max() + 1) / height
+    x1 = kept[:, _STAT_LEFT].min() / width
+    y1 = kept[:, _STAT_TOP].min() / height
+    x2 = (kept[:, _STAT_LEFT] + kept[:, _STAT_WIDTH]).max() / width
+    y2 = (kept[:, _STAT_TOP] + kept[:, _STAT_HEIGHT]).max() / height
     return {"x": float(x1), "y": float(y1), "width": float(x2 - x1), "height": float(y2 - y1)}
 
 
@@ -252,14 +296,15 @@ def _observation(
     objects = []
     mask_count = 0
     for object_index, concept, mask_logits, confidence, object_score, iou_prediction in masks:
-        box = _box_from_mask(mask_logits, frame_shape)
+        mask = _binary_mask(mask_logits, frame_shape)
+        box = _box_from_mask(mask)
         if box is None:
             continue
         mask_reference = None
         if frame_index % MASK_PERIOD_FRAMES == 0:
             filename = f"{frame_index:06d}_{object_index:02d}.png"
             mask_path = masks_directory / filename
-            if _save_mask(mask_logits, frame_shape, mask_path):
+            if _save_mask(mask, mask_path):
                 mask_count += 1
                 mask_reference = {
                     "uri": mask_path.relative_to(run_directory).as_posix(),
@@ -282,7 +327,7 @@ def _observation(
             "schema_version": "1.0",
             "view_id": view_id,
             "analysis_frame_index": frame_index,
-            "source_seconds": source_offset_seconds + frame_index / 30.0,
+            "source_seconds": source_offset_seconds + frame_index / ANALYSIS_FPS,
             "objects": objects,
             "hands": [],
             "tracker_diagnostics": diagnostics or [],
@@ -470,7 +515,7 @@ def run(args: argparse.Namespace) -> int:
             condition_writer = cv2.VideoWriter(
                 str(condition_input_path),
                 cv2.VideoWriter_fourcc(*"mp4v"),
-                30.0,
+                ANALYSIS_FPS,
                 (first_model_frame.shape[1], first_model_frame.shape[0]),
             )
             if not condition_writer.isOpened():
@@ -672,7 +717,9 @@ def run(args: argparse.Namespace) -> int:
                                 "schema_version": "1.0",
                                 "view_id": args.view_id,
                                 "analysis_frame_index": frame_index,
-                                "source_seconds": args.source_offset_seconds + frame_index / 30.0,
+                                "source_seconds": (
+                                    args.source_offset_seconds + frame_index / ANALYSIS_FPS
+                                ),
                                 "objects": [],
                                 "hands": [],
                             },
@@ -727,7 +774,7 @@ def run(args: argparse.Namespace) -> int:
 
 
 def main() -> None:
-    global MAX_FRAMES, MAX_SIDE_LENGTH, MAX_FRAME_MEMORY
+    global MAX_FRAMES, MAX_SIDE_LENGTH, MAX_FRAME_MEMORY, ANALYSIS_FPS, MASK_PERIOD_FRAMES
 
     parser = argparse.ArgumentParser(
         description="Run one fixed 300-frame MuggledSAM/SAM3 smoke worker."
@@ -737,7 +784,7 @@ def main() -> None:
     parser.add_argument("--view-id", required=True)
     parser.add_argument("--source-offset-seconds", type=float, required=True)
     parser.add_argument("--model", required=True)
-    parser.add_argument("--max-frames", type=int, choices=(300, 1800, 5400), default=300)
+    parser.add_argument("--max-frames", type=int, choices=(300, 600, 1800, 5400), default=300)
     parser.add_argument("--concepts-json", default=json.dumps(CONCEPTS))
     parser.add_argument(
         "--preprocessing",
@@ -774,10 +821,26 @@ def main() -> None:
         default=MAX_FRAME_MEMORY,
         help="Frame-memory entries. Its span in seconds is this count divided by the frame rate.",
     )
+    parser.add_argument(
+        "--analysis-fps",
+        type=float,
+        default=ANALYSIS_FPS,
+        help="Proxy frame rate, used to map analysis frame indices back onto source seconds.",
+    )
+    parser.add_argument(
+        "--mask-period-frames",
+        type=int,
+        default=MASK_PERIOD_FRAMES,
+        help="Write mask PNGs every N analysis frames; 1 writes one per object on every frame.",
+    )
     args = parser.parse_args()
+    if args.mask_period_frames < 1:
+        parser.error("--mask-period-frames must be at least 1")
     MAX_FRAMES = args.max_frames
     MAX_SIDE_LENGTH = args.max_side_length
     MAX_FRAME_MEMORY = args.max_frame_memory
+    ANALYSIS_FPS = args.analysis_fps
+    MASK_PERIOD_FRAMES = args.mask_period_frames
     raise SystemExit(run(args))
 
 

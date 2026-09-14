@@ -57,6 +57,8 @@ SMOKE_SECONDS = 10.0
 # Worker defaults, restated so a changed condition is visible in the run manifest.
 DEFAULT_MAX_SIDE_LENGTH = 504
 DEFAULT_MAX_FRAME_MEMORY = 4
+# Correction schedules store analysis frame indices, so they bind to one analysis rate.
+SCHEDULE_AUTHORING_FPS = 30.0
 G3_STATIC_FRAMES = 5400
 G3_STATIC_SECONDS = 180.0
 E4_CANDIDATE_FRAMES = 1800
@@ -91,14 +93,22 @@ def load_manual_seed_target_config(
     repository_root: Path,
     g2_config_path: Path,
     view_id: str,
+    also_permitted_g2_config_path: Path | None = None,
 ) -> MuggledSAMManualSeedTargetConfig:
-    """Load a named e4 target policy bound to the selected approved G2 configuration."""
+    """Load a named e4 target policy bound to the selected approved G2 configuration.
+
+    A second configuration is permitted only once a frame-zero calibration transfer has
+    been verified, so the policy may follow its seeds onto an equivalent proxy.
+    """
     target_config = MuggledSAMManualSeedTargetConfig.model_validate_json(
         target_config_path.read_text()
     )
     if target_config.view_id != view_id:
         raise ValueError("manual-seed target config view must match the selected approved proxy")
-    if (repository_root / target_config.base_g2_config).resolve() != g2_config_path.resolve():
+    permitted = {g2_config_path.resolve()}
+    if also_permitted_g2_config_path is not None:
+        permitted.add(also_permitted_g2_config_path.resolve())
+    if (repository_root / target_config.base_g2_config).resolve() not in permitted:
         raise ValueError("manual-seed target config must name the selected G2 configuration")
     return target_config
 
@@ -108,14 +118,23 @@ def make_run_id(view_id: str, now: datetime | None = None, *, profile: str = "sm
     return f"muggledsam-sam3-{profile}-{view_id.lower()}-{timestamp}"
 
 
-def require_smoke_range(start_frame: int, max_frames: int) -> FrameRange:
+def smoke_frame_count(analysis_fps: float) -> int:
+    """Express the approved bound in seconds, so it holds at either analysis rate."""
+    return round(SMOKE_SECONDS * analysis_fps)
+
+
+def require_smoke_range(
+    start_frame: int, max_frames: int, analysis_fps: float = 30.0
+) -> FrameRange:
     """Refuse ranges other than the user-approved first ten seconds."""
-    if start_frame != 0 or max_frames != SMOKE_FRAMES:
+    permitted = smoke_frame_count(analysis_fps)
+    if start_frame != 0 or max_frames != permitted:
         raise ValueError(
-            f"smoke policy permits only proxy frames [0, {SMOKE_FRAMES}); "
+            f"smoke policy permits only the first {SMOKE_SECONDS:.0f} seconds, which is "
+            f"proxy frames [0, {permitted}) at {analysis_fps:g} fps; "
             f"received [{start_frame}, {start_frame + max_frames})"
         )
-    return FrameRange(start_frame=start_frame, end_frame_exclusive=SMOKE_FRAMES)
+    return FrameRange(start_frame=start_frame, end_frame_exclusive=permitted)
 
 
 def require_g3_static_range(view_id: str, start_frame: int, max_frames: int) -> FrameRange:
@@ -187,6 +206,7 @@ def _run_worker(
     max_frames: int,
     max_side_length: int,
     max_frame_memory: int,
+    analysis_fps: float,
     condition: MuggledSAMEgoCondition | None = None,
     manual_seeds: dict[str, Any] | None = None,
     multi_keyframe_schedule: dict[str, Any] | None = None,
@@ -216,6 +236,8 @@ def _run_worker(
         str(max_side_length),
         "--max-frame-memory",
         str(max_frame_memory),
+        "--analysis-fps",
+        str(analysis_fps),
     ]
     if condition is not None:
         command.extend(
@@ -301,6 +323,68 @@ def _run_worker(
     return result
 
 
+def _require_transferable_frame_zero_calibration(
+    *,
+    proposal: MuggledSAMProposedTrackingPromptConfig,
+    calibration: MuggledSAMBoxCalibrationManifest,
+    repository_root: Path,
+    selected_config_path: Path,
+    proxy: Any,
+) -> str:
+    """Permit frame-zero seeds on another proxy of the same moment, and say so in the manifest.
+
+    A frame-zero mask is a set of pixels on one decoded frame. It stays valid on a different
+    proxy only if that proxy's frame zero is the same source instant at the same geometry,
+    which is exactly what distinguishes a re-encoded or re-sampled proxy of the approved
+    interval from genuinely different footage. Later-frame seeds are never transferable,
+    because their frame index means different instants on different clocks.
+    """
+    authored_config_path = (repository_root / calibration.base_g2_config).resolve()
+    if (
+        not authored_config_path.is_file()
+        or sha256_file(authored_config_path) != calibration.base_g2_config_sha256
+    ):
+        raise ValueError("manual-seed calibration must match the selected G2 configuration")
+    authored = G2PreprocessingManifest.model_validate_json(authored_config_path.read_text())
+    selected = G2PreprocessingManifest.model_validate_json(selected_config_path.read_text())
+    authored_proxy = next((p for p in authored.proxies if p.view_id == proxy.view_id), None)
+    if authored_proxy is None:
+        raise ValueError("manual-seed calibration was not authored against the selected view")
+
+    non_zero = [
+        seed.reference_frame.analysis_frame_index
+        for seed in proposal.seeds
+        if seed.reference_frame.analysis_frame_index != 0
+    ]
+    if non_zero:
+        raise ValueError(
+            "only frame-zero seeds transfer between proxies, because a later frame index names "
+            f"a different instant on a different clock; received frames {sorted(set(non_zero))}"
+        )
+    mismatches = []
+    if authored_proxy.raw_source.checksum_sha256 != proxy.raw_source.checksum_sha256:
+        mismatches.append("raw recording")
+    if authored.source_interval.start_seconds != selected.source_interval.start_seconds:
+        mismatches.append("source interval start")
+    if (authored_proxy.dimensions.width, authored_proxy.dimensions.height) != (
+        proxy.dimensions.width,
+        proxy.dimensions.height,
+    ):
+        mismatches.append("proxy dimensions")
+    if authored.scaling_policy != selected.scaling_policy:
+        mismatches.append("scaling policy")
+    if mismatches:
+        raise ValueError(
+            "manual-seed calibration must match the selected G2 configuration; frame-zero "
+            f"transfer is refused because these differ: {', '.join(mismatches)}"
+        )
+    return (
+        f"frame-zero seeds authored against {calibration.base_g2_config} at "
+        f"{authored_proxy.fps:g} fps, transferred to a {proxy.fps:g} fps proxy of the same "
+        "recording, interval start, dimensions, and scaling policy"
+    )
+
+
 def _load_manual_seed_multiplex(
     *,
     proposal_path: Path,
@@ -335,17 +419,28 @@ def _load_manual_seed_multiplex(
     calibration = MuggledSAMBoxCalibrationManifest.model_validate_json(calibration_path.read_text())
     if proposal.view_id != proxy.view_id or calibration.view_id != proxy.view_id:
         raise ValueError("manual-seed proposal and calibration must name the selected view")
+    calibration_transfer_note: str | None = None
     if calibration.base_g2_config != relative_uri(
         config_path, repository_root
     ) or calibration.base_g2_config_sha256 != sha256_file(config_path):
-        raise ValueError("manual-seed calibration must match the selected G2 configuration")
+        calibration_transfer_note = _require_transferable_frame_zero_calibration(
+            proposal=proposal,
+            calibration=calibration,
+            repository_root=repository_root,
+            selected_config_path=config_path,
+            proxy=proxy,
+        )
     if (
-        calibration.proxy.uri != proxy.proxy_uri
-        or calibration.proxy.sha256 != proxy.checksum_sha256
-        or calibration.source.uri != proxy.raw_source.raw_uri
+        calibration.source.uri != proxy.raw_source.raw_uri
         or calibration.source.sha256 != proxy.raw_source.checksum_sha256
     ):
-        raise ValueError("manual-seed calibration source/proxy fingerprints do not match G2")
+        raise ValueError("manual-seed calibration source fingerprint does not match G2")
+    proxy_changed = (
+        calibration.proxy.uri != proxy.proxy_uri
+        or calibration.proxy.sha256 != proxy.checksum_sha256
+    )
+    if proxy_changed and calibration_transfer_note is None:
+        raise ValueError("manual-seed calibration proxy fingerprint does not match G2")
 
     target_config = (
         load_manual_seed_target_config(
@@ -353,6 +448,11 @@ def _load_manual_seed_multiplex(
             repository_root=repository_root,
             g2_config_path=config_path,
             view_id=proxy.view_id,
+            also_permitted_g2_config_path=(
+                (repository_root / calibration.base_g2_config).resolve()
+                if calibration_transfer_note is not None
+                else None
+            ),
         )
         if target_config_path is not None
         else None
@@ -464,6 +564,7 @@ def _load_manual_seed_multiplex(
             seeds=tuple(provenance),
             initialization_api="encode_prompt_memory_from_mask",
             excluded_candidate_ids=("t000000-b18",) if target_config is None else (),
+            calibration_transfer_note=calibration_transfer_note,
         ),
     )
 
@@ -479,8 +580,16 @@ def _load_multi_keyframe_correction_schedule(
     repository_root: Path,
     config_path: Path,
     proxy: Any,
+    analysis_fps: float,
 ) -> tuple[dict[str, Any], MultiKeyframeCorrectionScheduleMetadata]:
     """Validate a proposed schedule and prepare its frame-zero and correction mask payload."""
+    if analysis_fps != SCHEDULE_AUTHORING_FPS:
+        raise ValueError(
+            "correction schedules store analysis frame indices, which are only meaningful on the "
+            f"{SCHEDULE_AUTHORING_FPS:g} fps clock they were authored against; reinterpreting them "
+            f"at {analysis_fps:g} fps would silently move every correction to a different "
+            "timestamp. Re-author the schedule against this clock instead."
+        )
     schedule = MuggledSAMMultiKeyframeCorrectionSchedule.model_validate_json(
         schedule_path.read_text()
     )
@@ -717,6 +826,7 @@ def _manual_seed_metrics(
     proxy_fingerprint: ArtifactFingerprint,
     frames_requested: int,
     requested_seconds: float,
+    analysis_fps: float,
 ) -> dict[str, Any]:
     """Summarize emissions and identity facts without inferring target accuracy."""
     targets = [seed.intended_target for seed in manual_seed_metadata.seeds]
@@ -767,7 +877,7 @@ def _manual_seed_metrics(
         "run_label": "manual-seed multiplexed; not out-of-box/text zero-shot",
         "frames_requested": frames_requested,
         "frames_processed": len(observations),
-        "analysis_fps": 30,
+        "analysis_fps": analysis_fps,
         "source_fingerprint": source_fingerprint.model_dump(mode="json"),
         "proxy_fingerprint": proxy_fingerprint.model_dump(mode="json"),
         "proposal_fingerprint": manual_seed_metadata.proposal_fingerprint.model_dump(mode="json"),
@@ -912,6 +1022,7 @@ def run_smoke(args: argparse.Namespace) -> Path:
             )
     elif args.condition_id is not None:
         raise ValueError("--condition-id requires --condition-config")
+    analysis_fps = float(preprocessing.proxy_timing.clocks.fps_for(ClockName.ANALYSIS))
     if args.manual_seed_proposal is not None:
         if condition is not None:
             raise ValueError(
@@ -943,6 +1054,7 @@ def run_smoke(args: argparse.Namespace) -> Path:
             repository_root=repository_root,
             config_path=config_path,
             proxy=proxy,
+            analysis_fps=analysis_fps,
         )
     is_g3_candidate = args.g3_full_static
     is_e4_candidate = args.g4_e4_candidate
@@ -972,7 +1084,7 @@ def run_smoke(args: argparse.Namespace) -> Path:
         if is_e4_candidate
         else FULL_EGO_MANUAL_SEED_FRAMES
         if is_full_ego_manual_seed
-        else SMOKE_FRAMES
+        else smoke_frame_count(analysis_fps)
     )
     requested_seconds = (
         G3_STATIC_SECONDS
@@ -990,7 +1102,7 @@ def run_smoke(args: argparse.Namespace) -> Path:
         if is_e4_candidate
         else require_full_ego_manual_seed_range(proxy.view_id, args.start_frame, args.max_frames)
         if is_full_ego_manual_seed
-        else require_smoke_range(args.start_frame, args.max_frames)
+        else require_smoke_range(args.start_frame, args.max_frames, analysis_fps)
     )
 
     profile = (
@@ -1117,6 +1229,7 @@ def run_smoke(args: argparse.Namespace) -> Path:
             max_frames=requested_frames,
             max_side_length=args.max_side_length,
             max_frame_memory=args.max_frame_memory,
+            analysis_fps=analysis_fps,
             condition=condition,
             manual_seeds=manual_seed_payload,
             multi_keyframe_schedule=multi_keyframe_schedule_payload,
@@ -1136,7 +1249,7 @@ def run_smoke(args: argparse.Namespace) -> Path:
     coverage = FullDurationCoverage(
         source_duration_seconds=preprocessing.clip.source_duration_seconds,
         covered_intervals=(
-            (TimeInterval(start_seconds=0.0, end_seconds=frames_processed / 30.0),)
+            (TimeInterval(start_seconds=0.0, end_seconds=frames_processed / analysis_fps),)
             if frames_processed
             else ()
         ),
@@ -1161,6 +1274,7 @@ def run_smoke(args: argparse.Namespace) -> Path:
             ),
             frames_requested=requested_frames,
             requested_seconds=requested_seconds,
+            analysis_fps=analysis_fps,
         )
         measurements_path.write_text(json.dumps(metrics, indent=2, sort_keys=True) + "\n")
         measurements_written = True

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import io
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -9,13 +11,14 @@ from PIL import Image
 
 from battle.exporter import (
     _annotation_context,
+    _rgba_mask_png,
     export_run,
     export_synchronized_comparison,
     pinned_blueprint,
     pinned_comparison_blueprint,
 )
 from battle.fixtures import synthetic_run_manifest
-from battle.schemas import TrackerSlotDiagnostic
+from battle.schemas import ClockName, TrackerSlotDiagnostic
 
 
 def test_annotation_context_serializes_a_transparent_unlabeled_background() -> None:
@@ -85,25 +88,14 @@ def test_video_export_embeds_time_aligned_frames_in_the_observation_view(tmp_pat
         for observation in manifest.observations
     )
     manifest = manifest.model_copy(update={"clip": clip, "observations": observations})
-    mask_reference = observations[0].objects[0].mask
-    assert mask_reference is not None
-    mask_path = tmp_path / mask_reference.uri
-    mask_path.parent.mkdir(parents=True)
-    Image.fromarray(
-        np.array(
-            [
-                [0, 0, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                [0, 0, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                [0, 0, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                [0, 0, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                [0, 0, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                [0, 0, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                [0, 0, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                [0, 0, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-            ],
-            dtype=np.uint8,
-        )
-    ).save(mask_path)
+    stripe = np.zeros((8, 16), dtype=np.uint8)
+    stripe[:, 2:4] = 255
+    for observation in observations:
+        for object_ in observation.objects:
+            assert object_.mask is not None
+            mask_path = tmp_path / object_.mask.uri
+            mask_path.parent.mkdir(parents=True, exist_ok=True)
+            Image.fromarray(stripe).save(mask_path)
     output = export_run(
         manifest,
         tmp_path / "video.rrd",
@@ -121,6 +113,8 @@ def test_video_export_embeds_time_aligned_frames_in_the_observation_view(tmp_pat
 
     assert "/views/ego-e4/video" in printed
     assert "VideoFrameReference:timestamp" in printed
+    assert "/views/ego-e4/masks/" in printed
+    assert "EncodedImage:blob" in printed
     assert "/views/ego-e4/segmentation" in printed
     assert "SegmentationImage:buffer" in printed
     assert "AnnotationContext:context" in printed
@@ -253,3 +247,120 @@ def test_frame_counter_reports_every_analysis_frame_index(tmp_path: Path) -> Non
         assert f"analysis frame **{observation.analysis_frame_index}** / {total - 1}" in printed
     assert f"({total} frames)" in printed
     assert "text/markdown" in printed
+
+
+def test_rgba_mask_png_is_a_transparent_cutout_in_the_object_color() -> None:
+    """Alpha is what lets the mask overlay the video without veiling the background."""
+    binary_mask = np.zeros((4, 6), dtype=bool)
+    binary_mask[1:3, 2:5] = True
+
+    with Image.open(io.BytesIO(_rgba_mask_png(binary_mask, (80, 180, 255)))) as decoded:
+        assert decoded.mode == "RGBA"
+        rgba = np.asarray(decoded)
+
+    assert rgba.shape == (4, 6, 4)
+    assert tuple(rgba[2, 3]) == (80, 180, 255, 255)
+    assert tuple(rgba[0, 0]) == (0, 0, 0, 0)
+    assert int((rgba[..., 3] > 0).sum()) == int(binary_mask.sum())
+
+
+_CHUNK_HEADER = re.compile(r"^Chunk\(\S+\) with (\d+) rows? \([^)]*\) - (/\S+) - ", re.MULTILINE)
+
+
+def _row_counts_by_entity(rrd_path: Path) -> dict[str, int]:
+    """Sum logged rows per entity from the chunk headers `rrd print` emits."""
+    printed = subprocess.run(
+        [str(Path(sys.executable).with_name("rerun")), "rrd", "print", str(rrd_path)],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    counts: dict[str, int] = {}
+    for rows, entity in _CHUNK_HEADER.findall(printed):
+        counts[entity] = counts.get(entity, 0) + int(rows)
+    return counts
+
+
+def test_masks_are_logged_every_frame_and_segmentation_once_per_second(
+    tmp_path: Path,
+) -> None:
+    """Per-object masks carry the overlay at full rate; the class image is a sparse record."""
+    manifest = synthetic_run_manifest()
+    frame_indices = [o.analysis_frame_index for o in manifest.observations]
+    assert len(frame_indices) > 1, "fixture must span several frames for a cadence test"
+    object_ids: set[str] = set()
+    for observation in manifest.observations:
+        for object_ in observation.objects:
+            assert object_.mask is not None
+            object_ids.add(object_.object_id)
+            mask_path = tmp_path / object_.mask.uri
+            mask_path.parent.mkdir(parents=True, exist_ok=True)
+            Image.fromarray(np.full((8, 16), 255, dtype=np.uint8)).save(mask_path)
+
+    output = export_run(manifest, tmp_path / "cadence.rrd", mask_artifact_root=tmp_path)
+    counts = _row_counts_by_entity(output)
+    view_root = f"/world/{manifest.clip.clip_id}/views/{manifest.observations[0].view_id}"
+
+    for object_id in object_ids:
+        assert counts[f"{view_root}/masks/{object_id}"] == len(frame_indices)
+    analysis_fps = manifest.clip.timing.clocks.fps_for(ClockName.ANALYSIS)
+    expected_segmentation_rows = sum(1 for i in frame_indices if i % analysis_fps == 0)
+    assert 0 < expected_segmentation_rows < len(frame_indices)
+    assert counts[f"{view_root}/segmentation"] == expected_segmentation_rows
+
+
+def _store_id(rrd_path: Path) -> tuple[str, str]:
+    """Return the recording's (application id, recording id)."""
+    printed = subprocess.run(
+        [str(Path(sys.executable).with_name("rerun")), "rrd", "print", str(rrd_path)],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    recording = printed.split("StoreId(", 1)[1]
+    quoted = recording.split('"')
+    return quoted[1], quoted[3]
+
+
+def _application_id(rrd_path: Path) -> str:
+    return _store_id(rrd_path)[0]
+
+
+def test_runs_of_the_same_clip_exported_in_one_process_stay_separate_recordings(
+    tmp_path: Path,
+) -> None:
+    """Random recording ids are only unique per process.
+
+    Re-exporting several runs from one script gave them one id, and the viewer merged them
+    into a single recording with duplicated rows. Deriving the id from the run id keeps
+    them apart regardless of how many are exported together.
+    """
+    first = synthetic_run_manifest()
+    second = first.model_copy(update={"run_id": f"{first.run_id}-again"})
+
+    first_app, first_recording = _store_id(export_run(first, tmp_path / "first.rrd"))
+    second_app, second_recording = _store_id(export_run(second, tmp_path / "second.rrd"))
+
+    assert first_app == second_app, "same clip must share a blueprint"
+    assert first_recording == first.run_id
+    assert second_recording == second.run_id
+    assert first_recording != second_recording
+
+
+def test_recordings_of_different_clips_do_not_share_an_application_id(tmp_path: Path) -> None:
+    """Blueprints are keyed by application id and anchored to a clip-specific entity root.
+
+    Sharing an id across clips lets one clip's blueprint activate for all of them, so views
+    resolve against entity paths the other recordings never logged and render empty. That
+    only shows up when several recordings are opened together, so it is asserted here.
+    """
+    first = synthetic_run_manifest()
+    renamed_clip = first.clip.model_copy(update={"clip_id": f"{first.clip.clip_id}-at-60fps"})
+    second = first.model_copy(update={"clip": renamed_clip})
+
+    first_id = _application_id(export_run(first, tmp_path / "first.rrd"))
+    second_id = _application_id(export_run(second, tmp_path / "second.rrd"))
+
+    assert first.clip.clip_id in first_id
+    assert second.clip.clip_id in second_id
+    assert first_id != second_id

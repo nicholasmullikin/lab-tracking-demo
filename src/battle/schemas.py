@@ -53,21 +53,33 @@ class ClockSpec(VersionedModel):
 
 
 class ClockSet(VersionedModel):
-    """The four independently named time bases used in the lab."""
+    """The four independently named time bases used in the lab.
+
+    Every rate is pinned to the dataset's own cadences so a clock cannot drift
+    unnoticed. Analysis is the one exception: it may sample either every source
+    frame or every second one, because the frame rate is a run condition we
+    compare. Sampling at 60 fps decouples analysis from the 30 fps annotation
+    cadence, so an annotation comparison has to resample rather than assume a
+    shared index.
+    """
 
     clocks: tuple[ClockSpec, ...]
 
     @model_validator(mode="after")
     def require_planned_clocks(self) -> ClockSet:
-        expected = {
+        fixed = {
             ClockName.SOURCE: 60,
-            ClockName.ANALYSIS: 30,
             ClockName.ANNOTATION: 30,
             ClockName.POSE: 60,
         }
+        permitted_analysis_fps = (30, 60)
         received = {clock.name: clock.fps for clock in self.clocks}
-        if received != expected:
-            raise ValueError(f"clock set must be exactly {expected}")
+        if {name: received.get(name) for name in fixed} != fixed:
+            raise ValueError(f"source, annotation, and pose clocks must be exactly {fixed}")
+        if received.get(ClockName.ANALYSIS) not in permitted_analysis_fps:
+            raise ValueError(f"analysis clock must be one of {permitted_analysis_fps} fps")
+        if set(received) != set(fixed) | {ClockName.ANALYSIS}:
+            raise ValueError("clock set must name exactly source, analysis, annotation, and pose")
         return self
 
     def fps_for(self, clock_name: ClockName) -> int:
@@ -1084,6 +1096,13 @@ class ManualSeedMultiplexMetadata(VersionedModel):
     initialization_api: Literal["encode_prompt_memory_from_mask"]
     excluded_candidate_ids: tuple[str, ...] = ()
     ground_truth_accuracy_claim: Literal[False] = False
+    calibration_transfer_note: str | None = Field(
+        default=None,
+        description=(
+            "Set when frame-zero seeds authored against one proxy were reused on another proxy "
+            "of the same source instant and geometry, naming what was verified to be equal."
+        ),
+    )
 
     @model_validator(mode="after")
     def require_unique_targets_and_slots(self) -> ManualSeedMultiplexMetadata:
@@ -1122,10 +1141,26 @@ class SmokeRunMetadata(VersionedModel):
     def require_exact_smoke_budget(self) -> SmokeRunMetadata:
         if self.requested_analysis_frame_range.start_frame != 0:
             raise ValueError("smoke range must start at proxy frame zero")
-        if self.requested_analysis_frame_range.frame_count != 300:
-            raise ValueError("smoke range must contain exactly 300 analysis frames")
         if self.requested_seconds != 10.0:
             raise ValueError("smoke duration must be exactly 10.0 seconds")
+        analysis_fps = self.runtime_settings.get("analysis_fps")
+        permitted_analysis_fps = (30, 60)
+        if (
+            isinstance(analysis_fps, bool)
+            or not isinstance(analysis_fps, (int, float))
+            or analysis_fps not in permitted_analysis_fps
+        ):
+            raise ValueError(
+                "runtime_settings.analysis_fps must be numeric and one of "
+                f"{permitted_analysis_fps} fps"
+            )
+        expected_frame_count = round(self.requested_seconds * analysis_fps)
+        if self.requested_analysis_frame_range.frame_count != expected_frame_count:
+            raise ValueError(
+                "smoke frame count must equal requested_seconds * analysis_fps; "
+                f"expected {expected_frame_count}, received "
+                f"{self.requested_analysis_frame_range.frame_count}"
+            )
         return self
 
 
