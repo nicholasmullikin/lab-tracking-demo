@@ -146,18 +146,31 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
 ## External source: SAMURAI
 
 - Checkout: `/home/nick/src/samurai` @ `76ba195984892b0d1e3db5d9c90bb62175680a`
-  (Apache-2.0).
-- Environment: pyenv `samurai`; SAM2.1 tiny checkpoint from Meta public URL.
-- Battle does not copy vendor source; headless `scripts/demo.py` smoke only.
+  (Apache-2.0). External checkout fingerprint: clean except untracked
+  `sam2.1_hiera_tiny.pt` symlink at repo root (not used; worker reads
+  `sam2/checkpoints/sam2.1_hiera_tiny.pt`).
+- Environment: pyenv `samurai` (torch 2.11+cu128); SAM2.1 tiny checkpoint SHA-256
+  `7402e0d864fa82708a20fbd15bc84245c2f26dff0eb43a4b5b93452deb34be69`.
+- Battle adapter: `battle-samurai-video` (`samurai_sam2_video_smoke`). Worker config
+  `configs/samurai/sam2.1_hiera_t.yaml` sets `samurai_mode: true`.
+- Preserved 10 s run:
+  `runs/samurai_sam2_video_smoke-10s-20260916t052328z/`.
 
 ## External source: DAM4SAM
 
 - Checkout: `/home/nick/src/DAM4SAM` @ `9c954504b39ebca4c412f207be0787c26bfac85a`.
-- Environment: executed from pyenv `samurai` (torch 2.11) after official torch 2.1 env
-  failed on sm_120 GPU; `vot-toolkit==0.7.1`.
-- Headless bbox-init smoke; interactive `run_bbox_example.py` not used.
-- The exact unversioned headless-wrapper command was not preserved. Native masks are useful
-  external evidence, not a standalone DAM4SAM integration.
+  External checkout fingerprint: clean except untracked symlink
+  `sam2.1_hiera_tiny.pt` → `checkpoints/sam2.1_hiera_tiny.pt` (pre-existing local aid).
+- Environment: pyenv `samurai` (torch 2.11+cu128) because official torch 2.1+cu121 env
+  is incompatible with sm_120 GPU; `vot-toolkit==0.7.1` installed for `vot.region` imports.
+- Battle adapter: `battle-dam4sam-video` (`dam4sam_video_smoke`). Uses
+  `DAM4SAMTracker('sam21pp-T')` headless bbox initialization, not interactive
+  `run_bbox_example.py` or the VOT wrapper.
+- Preserved 10 s run:
+  `runs/dam4sam_video_smoke-10s-20260916t052430z/`.
+- Legacy 602-frame external mask import remains under
+  `runs/dam4sam-static-20s-smoke-20260916t0520z/` (1-indexed filenames; superseded by
+  source-aligned 0-indexed integrated runs).
 
 ## External source: ATHENA (blocked)
 

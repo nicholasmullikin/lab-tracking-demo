@@ -1090,31 +1090,38 @@ by a worker, manifest, or native log appear below. Human gates G1–G5 remain de
 - Legacy one-frame external JSON (`score 0.953125`, un-pinned HF revision) remains importable via
   `battle-import-external-smoke grounded-sam2`; it is not relabelled as video propagation.
 
-#### SAMURAI
+#### SAMURAI (`samurai_sam2_video_smoke`)
 
-- Classification: `external partial`. `tracking.mp4` decodes as a real 1280×720 30-FPS
-  602-frame/20.0667-second output matching its input; three sampled decoded frame hashes differ.
-  The seed file records `(881,446,152,129)`.
-- Code-path correction: `scripts/demo.py` calls the shared `build_sam2_video_predictor`, but
-  chooses `configs/samurai/sam2.1_hiera_t.yaml`; that config sets `samurai_mode: true` and
-  SAMURAI-specific stability/memory-bank settings. The prior assertion that it was plain SAM2
-  was false.
-- There is nevertheless no native mask archive, Battle-normalized output, runtime log, or
-  durable exact command. It is a genuine but unintegrated SAMURAI external partial; the old
-  ~16 s timing remains unsupported and removed.
+- Classification: `integrated smoke`. Checkout `/home/nick/src/samurai` @ `76ba195…`; worker uses
+  `configs/samurai/sam2.1_hiera_t.yaml` with `samurai_mode: true` and SAM2.1 tiny checkpoint SHA-256
+  `7402e0…be69`.
+- Seed: deterministic frame-0 hand box `(881,446,152,129)` (xywh), shared with Grounded-SAM-2 and
+  DAM4SAM on the approved focused static proxy.
+- Frame contract: `round(seconds × 30)` analysis frames decoded from the proxy prefix — 300 for 10 s,
+  600 for 20 s. This resolves the earlier 602-vs-600 mismatch from unbounded external decodes.
+- Measured 10 s run (`runs/samurai_sam2_video_smoke-10s-20260916t052328z/`): 14.8 s wall, 7.0 s
+  TTFU, 0.82 GB peak VRAM, 300/300 nonempty masks with 300 distinct content hashes.
+- Measured 20 s run (`runs/samurai_sam2_video_smoke-20s-20260916t052348z/`): 26.7 s wall, 11.3 s
+  TTFU, 1.06 GB peak VRAM, 600/600 masks.
+- Command: `uv run battle-samurai-video --seconds 10`. Normalized observations, native masks,
+  manifest, and inference-free `samurai.rrd` are written under `runs/<run_id>/`.
 
-#### DAM4SAM
+#### DAM4SAM (`dam4sam_video_smoke`)
 
-- Classification: `external partial`. The 602 native masks are 1280×720, all nonempty and all
-  have distinct content hashes; their filenames run `00001.png`–`00602.png`. The only runtime
-  evidence says `done 602 frames in 53.6 s`.
-- The upstream path contains DAM4SAM code, but the headless wrapper used to bypass the
-  interactive `BoxSelector` and its exact command were not preserved. Native logs also prove
-  SAM2 post-processing was skipped after an ABI symbol error. Therefore it does not establish
-  distractor-aware DAM4SAM behavior.
-- Remediation: `battle-import-external-smoke dam4sam` writes 602 normalized frames, external
-  PNG references, a content-addressed native-mask index, manifest, and `dam4sam.rrd` without
-  rerunning inference.
+- Classification: `integrated smoke`. Checkout `/home/nick/src/DAM4SAM` @ `9c95450…`; worker uses
+  `DAM4SAMTracker('sam21pp-T')`, `sam21pp_hiera_t.yaml`, and `dam4sam_config.yaml`.
+- Initialization: headless bbox seed `(881,446,152,129)` on frame 0 via
+  `estimate_mask_from_box`→`add_new_mask`. Official VOT integration initializes from mask prompts
+  instead; no extra initialization frames are consumed here.
+- Compatibility: pyenv `samurai` (torch 2.11+cu128) because upstream torch 2.1+cu121 fails on
+  sm_120. DAM4SAM-specific code remains `dam4sam_tracker.py`, `return_all_masks`, and `add_to_drm`.
+- Frame contract: same source-aligned `round(seconds × 30)` decode as SAMURAI (300/600, not 602).
+- Measured 10 s run (`runs/dam4sam_video_smoke-10s-20260916t052430z/`): 12.0 s wall, 2.6 s TTFU,
+  0.81 GB peak VRAM, 22 DRM additions, 300/300 masks with distinct hashes.
+- Measured 20 s run (`runs/dam4sam_video_smoke-20s-20260916t052447z/`): 21.9 s wall, 3.2 s TTFU,
+  1.05 GB peak VRAM, 31 DRM additions, 600/600 masks.
+- Command: `uv run battle-dam4sam-video --seconds 10`. Does not prove distractor-scene semantics on
+  identical parts. Legacy 602-frame import remains via `battle-import-external-smoke dam4sam`.
 
 #### ATHENA multi-view hand triangulation
 

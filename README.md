@@ -26,8 +26,8 @@ separated-parts frame. Human review retained only their first 60 seconds for the
 synchronized two-view comparison; later outputs remain failure evidence. The second
 method in the original core spine, MediaPipe Hands, has a selected 60-second static run
 merged into the focused first-minute comparison. The Sep 16 exploratory queue has one
-Battle-integrated BoxMOT, CLIP+Drop-DTW, and Grounded-SAM-2 video smokes. WiLoR, SAMURAI, DAM4SAM,
-and Kineo remain external partials after an adversarial evidence audit; ATHENA is blocked.
+Battle-integrated BoxMOT, CLIP+Drop-DTW, Grounded-SAM-2, SAMURAI, and DAM4SAM video smokes.
+WiLoR and Kineo remain external partials after an adversarial evidence audit; ATHENA is blocked.
 
 The rest of this file is the how-to: each section below gives the exact commands that
 reproduce a stage. No recordings, annotations, or model weights are included. The SAM3
@@ -163,24 +163,39 @@ importable via `battle-import-external-smoke grounded-sam2` and is not upgraded 
 uv run battle-grounding-dino-sam2-video --seconds 10
 ```
 
-### SAMURAI — external partial
+### SAMURAI — bounded video smoke (`samurai_sam2_video_smoke`)
 
-`tracking.mp4` is a genuine 1280×720, 30-FPS, 602-frame output matching the 602-frame /
-20.0667-second input, seeded by the preserved `(881,446,152,129)` hand box. The script selects
-`configs/samurai/sam2.1_hiera_t.yaml`, which sets `samurai_mode: true`; it is genuine SAMURAI
-mode despite calling the shared predictor constructor. No native masks, normalized output, runtime
-log, or durable command manifest was preserved, so it remains an external partial.
+Battle runs a checked-in bounded video smoke on the approved focused static proxy with the same
+deterministic frame-0 hand box `(881,446,152,129)` (xywh) used by Grounded-SAM-2 and DAM4SAM.
+The worker selects `configs/samurai/sam2.1_hiera_t.yaml` (`samurai_mode: true`) and SAM2.1 tiny
+(checkpoint SHA-256 `7402e0…be69`). Frame count is source-aligned: `round(seconds × 30 FPS)` —
+300 frames for 10 s, 600 for 20 s — not the earlier unbounded 602-frame decode.
 
-### DAM4SAM — external partial
-
-The native output has 602 unique, nonempty 1280×720 PNG masks named `00001.png` through
-`00602.png`; its log measures 53.6 s. The source log is consistent with DAM4SAM/SAM2 code, but
-the headless wrapper and exact command were not preserved, and the SAM2 post-processing extension
-was skipped for an ABI error. The importer writes 602 normalized frame records, a
-content-addressed mask index, and `dam4sam.rrd`, but this is not proof of DAM4SAM distractor
-semantics.
+The preserved 10-second run measures 14.8 s wall time, 7.0 s TTFU, and 0.82 GB peak VRAM; all
+300 native masks are nonempty with distinct content hashes. Normalized observations carry per-frame
+boxes and `native/masks/*.png` references; `samurai.rrd` is inference-free.
 
 ```bash
+uv run battle-samurai-video --seconds 10
+```
+
+### DAM4SAM — bounded video smoke (`dam4sam_video_smoke`)
+
+Battle runs a checked-in headless `DAM4SAMTracker` smoke (`sam21pp-T`) on the same focused static
+proxy and frame-0 hand box seed. Initialization bypasses the interactive `BoxSelector` and the VOT
+mask prompt: frame 0 uses bbox→`estimate_mask_from_box`→`add_new_mask`; no extra initialization
+frames are consumed. Native `return_all_masks` / `add_to_drm` logic remains DAM4SAM-specific.
+
+Execution uses pyenv `samurai` (torch 2.11+cu128) because upstream torch 2.1+cu121 is incompatible
+with sm_120 on this GPU. The preserved 10-second run measures 12.0 s wall time, 2.6 s TTFU, 0.81 GB
+peak VRAM, and 22 DRM memory additions over 300 source-aligned frames. `dam4sam.rrd` is
+inference-free. This does not prove distractor-scene behavior on identical parts.
+
+The earlier 602-frame external mask import remains available but is not upgraded to the integrated
+runner:
+
+```bash
+uv run battle-dam4sam-video --seconds 10
 uv run battle-import-external-smoke dam4sam
 ```
 

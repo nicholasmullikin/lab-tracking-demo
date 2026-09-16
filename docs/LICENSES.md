@@ -51,10 +51,10 @@ inputs outside Git.
   and IDEA Grounding DINO Tiny (HF revision `a2bb814…`) used by
   `transformers_grounding_dino_plus_sam2_video_smoke`. Local Grounding DINO CUDA extension
   build failed; Battle uses the HF fallback detector, not the vendor CUDA extension.
-- **SAMURAI / DAM4SAM:** Apache-2.0 and project licenses respectively; SAM2.1 checkpoints
-  from Meta public URLs. SAMURAI's preserved script uses a plain SAM2 video-predictor call;
-  DAM4SAM's headless command is unpreserved and its SAM2 post-processing was skipped. They
-  are external partials, not accuracy or tracker-semantic claims.
+- **SAMURAI / DAM4SAM:** Apache-2.0 and project licenses respectively; SAM2.1 tiny checkpoints
+  from Meta public URLs (SHA-256 `7402e0…be69`). Battle adapters `samurai_sam2_video_smoke` and
+  `dam4sam_video_smoke` preserve native SAMURAI/DAM4SAM semantics on a shared deterministic hand
+  bbox seed; they do not establish accuracy or distractor-scene proof.
 - **ATHENA:** MIT source checkout; no Assembly101 triangulation run. Official sources place
   extrinsics/positions in `AssemblyPoses.zip` but do not establish that intrinsics are absent.
 - **Kineo:** research/evaluation terms per upstream README; its checkout was dirty during the

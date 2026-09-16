@@ -48,18 +48,20 @@ methods:
     smoke_scope: bounded HF Grounding-DINO-tiny frame-0 detect + SAM2.1 tiny video propagation
     install_caveat: local Grounding DINO CUDA extension failed (CUDA 13.2 vs torch 12.8); HF fallback only
   samurai:
-    state: external_partial
+    state: integrated_smoke
     environment: "~/.pyenv/versions/samurai"
+    adapter: battle.samurai_video
     external_source: /home/nick/src/samurai
     external_revision: 76ba195984892b0d1e3db5d9c90bb62175680a
-    smoke_scope: 602-frame bbox-init propagation; source script uses plain SAM2 video predictor
+    smoke_scope: bounded SAMURAI samurai_mode SAM2.1 tiny video propagation with frame-0 hand bbox seed
   dam4sam:
-    state: external_partial
+    state: integrated_smoke
     environment: "~/.pyenv/versions/samurai"
+    adapter: battle.dam4sam_video
     external_source: /home/nick/src/DAM4SAM
     external_revision: 9c954504b39ebca4c412f207be0787c26bfac85a
-    smoke_scope: 602-frame headless bbox-init mask propagation; unversioned wrapper command
-    install_caveat: official torch 2.1.0+cu121 env incompatible with sm_120 GPU
+    smoke_scope: bounded DAM4SAMTracker sam21pp-T headless bbox init with native DRM path
+    install_caveat: official torch 2.1.0+cu121 env incompatible with sm_120 GPU; pyenv samurai torch 2.11+cu128 used
   athena:
     state: blocked
     external_source: /home/nick/src/athena
