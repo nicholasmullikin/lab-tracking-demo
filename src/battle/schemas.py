@@ -1117,10 +1117,7 @@ class MuggledSAMMultiKeyframeCorrectionPolicy(VersionedModel):
     def require_distinct_policy_targets(self) -> MuggledSAMMultiKeyframeCorrectionPolicy:
         if len(set(self.targets)) != len(self.targets):
             raise ValueError("correction policy targets must be distinct")
-        if (
-            self.policy_version == "1"
-            and self.maximum_later_correction_keyframes_per_target > 3
-        ):
+        if self.policy_version == "1" and self.maximum_later_correction_keyframes_per_target > 3:
             raise ValueError("correction policy v1 permits at most three later keyframes")
         return self
 
@@ -1730,9 +1727,7 @@ class BoxMOTRunMetadata(VersionedModel):
         if self.requested_analysis_frame_range.frame_count != round(
             self.requested_seconds * analysis_fps
         ):
-            raise ValueError(
-                "BoxMOT frame count must equal requested_seconds * analysis_fps"
-            )
+            raise ValueError("BoxMOT frame count must equal requested_seconds * analysis_fps")
         return self
 
 
@@ -1772,9 +1767,7 @@ class WiLoRHandsRunMetadata(VersionedModel):
         if self.requested_analysis_frame_range.frame_count != round(
             self.requested_seconds * analysis_fps
         ):
-            raise ValueError(
-                "WiLoR frame count must equal requested_seconds * analysis_fps"
-            )
+            raise ValueError("WiLoR frame count must equal requested_seconds * analysis_fps")
         return self
 
 
@@ -1978,6 +1971,86 @@ class RunManifest(VersionedModel):
             if prior is not None and current <= prior:
                 raise ValueError("observations must increase monotonically per view")
             per_view[observation.view_id] = current
+        return self
+
+
+class ExploratoryTimelineAlignment(StrEnum):
+    """Whether an exploratory artifact may share the real source timeline."""
+
+    SOURCE_ALIGNED = "source_aligned"
+    METADATA_ONLY = "metadata_only"
+
+
+class ExploratoryComparisonMethod(VersionedModel):
+    """One independently interpreted layer in a bounded comparison recording."""
+
+    method_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]*$")
+    display_name: str = Field(min_length=1)
+    state: str = Field(min_length=1)
+    run_directory_uri: str | None = None
+    input_manifest: ArtifactFingerprint
+    input_artifacts: tuple[ArtifactFingerprint, ...] = Field(min_length=1)
+    inference_input_fingerprints: tuple[ArtifactFingerprint, ...] = ()
+    view_id: str | None = None
+    analysis_fps: int | None = Field(default=None, gt=0)
+    source_offset_seconds: float | None = Field(default=None, ge=0)
+    coverage: FullDurationCoverage | None = None
+    coordinate_semantics: tuple[str, ...] = Field(min_length=1)
+    comparability_limits: tuple[str, ...] = Field(min_length=1)
+    timeline_alignment: ExploratoryTimelineAlignment
+    default_visible: bool = False
+
+    @model_validator(mode="after")
+    def require_timeline_specific_fields(self) -> ExploratoryComparisonMethod:
+        if self.timeline_alignment is ExploratoryTimelineAlignment.SOURCE_ALIGNED:
+            if (
+                self.view_id is None
+                or self.analysis_fps is None
+                or self.source_offset_seconds is None
+                or self.coverage is None
+            ):
+                raise ValueError("source-aligned methods require view, clock, offset, and coverage")
+        elif any(
+            value is not None
+            for value in (
+                self.view_id,
+                self.analysis_fps,
+                self.source_offset_seconds,
+                self.coverage,
+            )
+        ):
+            raise ValueError("metadata-only methods cannot claim a source-timeline coordinate")
+        return self
+
+
+class ExploratoryComparisonIndexManifest(VersionedModel):
+    """Reproducible, inference-free index of inputs included in a unified exploration."""
+
+    manifest_kind: Literal["exploratory_first_20s_comparison"]
+    comparison_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]*$")
+    clip_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]*$")
+    source_video: ArtifactFingerprint
+    bounded_video: ArtifactFingerprint
+    bounded_video_frame_count: int = Field(gt=0)
+    bounded_video_fps: int = Field(gt=0)
+    source_interval: TimeInterval
+    methods: tuple[ExploratoryComparisonMethod, ...] = Field(min_length=1)
+    output_rrd: ArtifactFingerprint | None = None
+    build_notes: tuple[str, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def require_distinct_method_ids_and_athena_boundary(
+        self,
+    ) -> ExploratoryComparisonIndexManifest:
+        method_ids = [method.method_id for method in self.methods]
+        if len(set(method_ids)) != len(method_ids):
+            raise ValueError("exploratory comparison method IDs must be unique")
+        athena = next((method for method in self.methods if method.method_id == "athena"), None)
+        if (
+            athena is not None
+            and athena.timeline_alignment is not ExploratoryTimelineAlignment.METADATA_ONLY
+        ):
+            raise ValueError("ATHENA must remain metadata-only until real calibration is available")
         return self
 
 

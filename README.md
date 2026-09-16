@@ -960,6 +960,22 @@ inference:
 uv run python scripts/reexport_run_rrd.py runs/<run-id> [runs/<run-id> ...]
 ```
 
+### Build the unified exploratory comparison
+
+The final bounded review surface composes existing normalized outputs only; it does not import
+or invoke model code. It validates the declared source/proxy/config fingerprints, retained
+frame/source timestamps, native mask dimensions, and the shared 600-frame asset before writing
+one RRD and its generated index under the ignored run directory:
+
+```bash
+uv run battle-build-exploratory-comparison
+rerun rrd print runs/exploratory-first-20s-comparison/exploratory_first_20s_comparison.rrd
+```
+
+The default view shows the static RGB video with MediaPipe hands and BoxMOT boxes. Other method
+roots are independently toggleable; WiLoR camera-relative non-metric 3D is in a separate 3D view.
+ATHENA remains metadata-only and its synthetic fixture is never overlaid on Assembly101 frames.
+
 Recordings are keyed by clip (`battle-<clip_id>`) and run id, so runs of different clips
 or of the same clip open side by side without merging.
 

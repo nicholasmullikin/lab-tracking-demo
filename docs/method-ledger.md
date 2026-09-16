@@ -1158,3 +1158,30 @@ by a worker, manifest, or native log appear below. Human gates G1–G5 remain de
 
 - LM-EEC, ObjectRelator, Qwen video VLMs, supervised temporal-action models, and
   long-video VLMs remain out of scope per the Sep 8 plan line 59.
+
+### Sep 16: final unified exploratory review surface
+
+`uv run battle-build-exploratory-comparison` composes the approved focused static RGB prefix
+only. It performs no inference and writes
+`runs/exploratory-first-20s-comparison/exploratory_first_20s_comparison.rrd` plus an ignored,
+typed `exploratory_comparison_index.json`. The index fingerprints every consumed manifest,
+normalized observation/alignment artifact, native mask tree when used, shared raw/proxy/config
+input, bounded video, final RRD, and each source manifest's declared inference input fingerprint.
+
+| Method | Included range | Review layer | Queue status |
+| --- | --- | --- | --- |
+| MediaPipe Hands | frames 0–599 / 20 s | 2D landmarks, skeletons, boxes, confidence/count | selected 2D baseline |
+| WiLoR | frames 0–599; output in 582 frames | projected 2D hands; separate camera-relative non-metric 3D | external partial |
+| BoxMOT + YOLO | frames 0–599; 557 detector-conditioned box frames | boxes and local track IDs | integrated smoke |
+| Grounding-DINO + SAM2 | frames 0–299 / 10 s only | propagated masks and boxes | smoke-only, no extension |
+| SAMURAI | frames 0–599 / 20 s | seeded-hand masks and boxes | integrated smoke |
+| DAM4SAM | frames 0–599 / 20 s | seeded-hand masks and boxes | integrated smoke |
+| Kineo NLF-only | frames 0–599; 462 NLF-output frames | person boxes and 2D body joints | external partial |
+| CLIP + Drop-DTW | 20 s temporal samples | GT-transcript weak-supervision intervals/cost | contextual only |
+| ATHENA | no real-data overlay | fixture URI/status metadata only | blocked: no intrinsics |
+
+Every spatial method retains its own entity root, so IDs are not merged or equated. Missing
+observations clear their render subtree and coverage/output-presence traces expose gaps. The
+default blueprint shows MediaPipe and BoxMOT over the one shared embedded static video; other
+layers remain available from the entity tree. G3/G4/G5 human review gates remain deferred, and
+this comparison makes no accuracy or cross-method identity claim.

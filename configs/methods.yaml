@@ -69,6 +69,7 @@ methods:
     blocker: AssemblyPoses.zip exposes extrinsics/positions but no intrinsics member for ATHENA calibration
     evidence_log: docs/athena_hf_calibration_probe.json
     fixture_command: battle-athena-fixture-smoke
+    comparison_policy: metadata_only; synthetic fixture must not share the Assembly101 RGB timeline
   kineo:
     state: external_partial
     environment: pixi-managed /home/nick/src/kineo
@@ -76,6 +77,12 @@ methods:
     smoke_scope: kineo_nlf_only_partial; 602-frame NLF-only (462 bbox/body-joint PKLs; no SfM/BVH)
     install_caveat: full offline config requires multi-view SfM or interactive SAM2 UI
     license_caveat: calibration-free person-centric; not hand-part specialized
+  exploratory_comparison:
+    state: succeeded
+    adapter: battle.exploratory_comparison
+    artifact_uri: runs/exploratory-first-20s-comparison/exploratory_first_20s_comparison.rrd
+    index_uri: runs/exploratory-first-20s-comparison/exploratory_comparison_index.json
+    scope: source-aligned static RGB frames 0-599; inference-free composition only
   deferred:
     - LM-EEC
     - ObjectRelator
