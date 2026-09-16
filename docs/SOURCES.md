@@ -113,6 +113,44 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
   does not decide whether job-seeking, private demos, or public display satisfy CC
   BY-NC 4.0 or dataset-specific terms.
 
+## External source: Grounded-SAM-2
+
+- Checkout: `/home/nick/src/Grounded-SAM-2` @ `b7a9c29f196edff0eb54dbe14588d7ae5e3dde28`
+  (`IDEA-Research/Grounded-SAM-2`, Apache-2.0).
+- Environment: pyenv `grounded_sam2` (torch 2.11.0+cu128).
+- Weights (ignored): `sam2.1_hiera_tiny.pt` SHA-256
+  `7402e0d864fa82708a20fbd15bc84245c2f26dff0eb43a4b5b93452deb34be69`; HF
+  `IDEA-Research/grounding-dino-tiny` at runtime.
+- Install note: local Grounding DINO CUDA extension build failed (CUDA 13.2 vs torch 12.8);
+  smoke used HF detector path only.
+
+## External source: SAMURAI
+
+- Checkout: `/home/nick/src/samurai` @ `76ba195984892b0d1e3db5d9c90bb62175680a`
+  (Apache-2.0).
+- Environment: pyenv `samurai`; SAM2.1 tiny checkpoint from Meta public URL.
+- Battle does not copy vendor source; headless `scripts/demo.py` smoke only.
+
+## External source: DAM4SAM
+
+- Checkout: `/home/nick/src/DAM4SAM` @ `9c954504b39ebca4c412f207be0787c26bfac85a`.
+- Environment: executed from pyenv `samurai` (torch 2.11) after official torch 2.1 env
+  failed on sm_120 GPU; `vot-toolkit==0.7.1`.
+- Headless bbox-init smoke; interactive `run_bbox_example.py` not used.
+
+## External source: ATHENA (blocked)
+
+- Checkout: `/home/nick/src/athena` @ `e85bd49444253aed9532439ace8ede146d1b6470` (MIT).
+- Assembly101 HF probe: see `data/logs/athena_hf_calibration_probe.log`.
+- Unofficial extrinsics sample downloaded from `pablovela5620/assembly101-720p` for
+  inspection only; not approved upstream calibration.
+
+## External source: Kineo
+
+- Checkout: `/home/nick/src/kineo` (pixi env); headless NLF-only smoke config stored under
+  ignored `data/logs/kineo_nlf_headless_only.yaml`.
+- Outputs under ignored `runs/kineo/infer_nlf_headless_only/`.
+
 ## Candidate source: FineBio
 
 - Status: `pending access and license review`; no application or download is performed

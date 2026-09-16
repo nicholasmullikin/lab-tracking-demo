@@ -1077,40 +1077,111 @@ not accuracy claims.
 
 #### Grounded-SAM-2
 
-- Stage: `objects`; state: `blocked`.
-- Blocker: no local Grounded-SAM-2 checkout, SAM2 CUDA extension build, or first correct
-  GPU output within the 90-minute adapter timebox.
-- Prerequisite: clone/build Grounded-SAM-2 with working SAM2 CUDA extensions on the 16 GB
-  card, then rerun a 20-second open-vocabulary detection + propagation smoke.
+- Stage: `objects`; state: `succeeded` (bounded single-frame smoke; HF detector path).
+- Timebox: ~75 minutes setup + inference through Sep 16 continuation pass.
+- Source: `IDEA-Research/Grounded-SAM-2` @ `/home/nick/src/Grounded-SAM-2`
+  `b7a9c29f196edff0eb54dbe14588d7ae5e3dde28` (Apache-2.0).
+- Environment: pyenv `grounded_sam2` (CPython 3.10.19, torch 2.11.0+cu128).
+- Install notes:
+  - SAM2 editable install succeeded.
+  - Local Grounding DINO CUDA extension build failed:
+    `RuntimeError: detected CUDA 13.2 vs PyTorch 12.8` during
+    `pip install --no-build-isolation -e grounding_dino/` (log:
+    `data/logs/grounded_sam2_gdino_install.log`).
+  - Documented fallback: Hugging Face Grounding DINO Tiny via
+    `grounded_sam2_hf_model_demo.py` (no local deformable-attention extension).
+- Weights (ignored, outside Git):
+  - `sam2.1_hiera_tiny.pt` SHA-256
+    `7402e0d864fa82708a20fbd15bc84245c2f26dff0eb43a4b5b93452deb34be69`
+  - `groundingdino_swint_ogc.pth` downloaded but unused by HF path.
+  - HF model `IDEA-Research/grounding-dino-tiny` loaded at runtime.
+- Smoke (focused static proxy frame 0, text `hand.`):
+  - Input: `data/derived/assembly101/smoke_frames/focused_static_frame0.jpg`
+  - Run: `runs/grounded-sam2-static-frame0-smoke-20260916t0450z/`
+  - Output: one hand detection (score 0.953) + SAM2 mask JSON/overlay (~17 s wall).
+- Claim boundary: open-vocabulary detection + image segmentation only; no video
+  propagation smoke, no Battle adapter, no accuracy or part-identity claims.
 
-#### SAMURAI and DAM4SAM
+#### SAMURAI
 
-- Stage: `objects`; state: `blocked` (both).
-- Blocker: no compatible local SAM2 tracker checkout bootable from an existing SAM2
-  environment; SAMURAI and DAM4SAM repositories are not present under `/home/nick/src/`.
-- Prerequisite: install one SAM2-compatible tracker matching the clip failure mode, then
-  reuse the focused four-part initialization for a bounded ablation.
+- Stage: `objects`; state: `succeeded` (bounded 20 s bbox-init video propagation).
+- Timebox: ~45 minutes setup + inference (separate from DAM4SAM).
+- Source: `yangchris11/samurai` @ `/home/nick/src/samurai`
+  `76ba195984892b0d1e3db5d9c90bb62175680a` (Apache-2.0).
+- Environment: pyenv `samurai` (CPython 3.10.19, torch 2.11.0+cu128, decord 0.6.0).
+- SAM2 fork: editable install from `samurai/sam2`; checkpoint `sam2.1_hiera_tiny.pt`.
+- Seed: frame-0 bbox `(881,446,152,129)` xywh from Grounded-SAM-2 hand box on the same
+  focused static proxy (`data/derived/assembly101/smoke_seed/grounded_sam2_hand_frame0_bbox.txt`).
+- Smoke:
+  - Input: `data/derived/assembly101/smoke_frames/focused_static_20s.mp4` (602 frames)
+  - Command: `python scripts/demo.py --video_path ... --txt_path ... --model_path
+    sam2/checkpoints/sam2.1_hiera_tiny.pt --video_output_path
+    runs/samurai-static-20s-smoke-20260916t0510z/tracking.mp4 --save_to_video True`
+  - Runtime: ~16 s propagate; SAM2 `_C` post-processing skipped (non-fatal).
+- Claim boundary: single-object mask propagation from a seeded hand box; not comparable to
+  SAM3 part vocabulary; no Battle adapter.
+
+#### DAM4SAM
+
+- Stage: `objects`; state: `succeeded` (bounded 20 s headless bbox-init propagation).
+- Timebox: ~60 minutes setup + inference (separate status from SAMURAI).
+- Source: `jovanavidenovic/DAM4SAM` @ `/home/nick/src/DAM4SAM`
+  `9c954504b39ebca4c412f207be0787c26bfac85a`.
+- Environment attempt:
+  - Official torch 2.1.0+cu121 env (`dam4sam`) loads checkpoint but RTX 5070 Ti (sm_120)
+    is unsupported by that torch build.
+  - Successful workaround: run tracker from pyenv `samurai` (torch 2.11.0+cu128) with
+    `vot-toolkit==0.7.1`; SAM2 `_C` post-processing skipped (non-fatal).
+  - Local CUDA extension build failed CUDA 13.2 vs 12.1 mismatch (same class as GSAM2).
+- Headless init: programmatic bbox `(881,446,152,129)` — same seed as SAMURAI; bypasses
+  interactive `run_bbox_example.py` / `BoxSelector`.
+- Smoke:
+  - Frames: `data/derived/assembly101/smoke_frames/dam4sam_20s/` (602 JPG)
+  - Masks: `runs/dam4sam-static-20s-smoke-20260916t0520z/masks/` (602 PNG)
+  - Runtime: ~54 s wall (log: `data/logs/dam4sam_static_20s_smoke.log`).
+- Claim boundary: distractor-aware SAM2.1 tracker smoke only; no Battle adapter.
 
 #### ATHENA multi-view hand triangulation
 
-- Stage: `pose`; state: `blocked`.
-- Blocker: Assembly101 intrinsics, extrinsics, and camera positions are not present in
-  the approved local raw tree (`data/raw/assembly101/...` contains recordings and coarse
-  annotations only).
-- Prerequisite: obtain and approve shipped camera calibration assets under existing
-  dataset terms, then time-box coordinate conversion for the focused static+ego pair.
+- Stage: `pose`; state: `blocked` (official intrinsics absent upstream at approved revision).
+- Timebox: ~50 minutes HF/metadata probe + ATHENA source checkout/tests.
+- Package/source:
+  - PyPI `athena-tracking` 0.3 install incomplete (`pyav`/`pymovie` resolver conflict).
+  - Git checkout `/home/nick/src/athena` @ `e85bd49444253aed9532439ace8ede146d1b6470`
+    (MIT); `pytest tests/test_athena.py`: 29 passed (synthetic only).
+- Official HF probe (`cvml-nus/assembly101` @ `bfc15ea5e3f0bc8f8c232af6c1b45aa137a9d967`):
+  - Without `--repo-type dataset`: `hf download ...` → `Model not found`.
+  - With `--repo-type dataset`: pose JSON downloaded (~151 MB MediaPipe-style 60 fps
+    landmarks; no camera matrices).
+  - Siblings list contains `AssemblyPoses.zip` (~72 GB) but no per-file intrinsics or
+    extracted calibration paths.
+- Supplementary extrinsics probe (unofficial mirror `pablovela5620/assembly101-720p`,
+  not approved upstream): fixed static 4×4 per camera + ego per-frame extrinsics for
+  sequence `9033-c02a`; **intrinsics still absent**.
+- Evidence log: `data/logs/athena_hf_calibration_probe.log`.
+- Blocker (exact): cannot assemble JARVIS/ATHENA YAML intrinsics for `C10379` + ego pair
+  from approved `cvml-nus/assembly101` revision without downloading `AssemblyPoses.zip`
+  or a separate calibration release; no bounded real-data triangulation smoke run.
+- Claim boundary: no 3D triangulation artifacts; no coordinate-frame output claimed.
 
 #### Kineo offline pipeline
 
-- Stage: `pose`; state: `blocked` within the two-hour input-format timebox.
-- Environment: `/home/nick/src/kineo` pixi default env installs and imports successfully.
-- Attempt: `pixi run python -m kineo.demo.offline.demo --sequence-name assembly101_smoke
-  --target-fps 30 --shared-intrinsics runs/wilor-hands-static-10s-test/input.mp4`
-  reached `SAM2 Semi-Auto Bbox Detection` and stalled without headless progress for 120 s.
-- Blocker: offline demo requires interactive SAM2 person selection UI; incompatible with
-  the lab's headless-only protocol.
-- Claim boundary: Kineo remains calibration-free, person-centric, and low return for
-  hand-and-part Assembly101 clips even if later unblocked.
+- Stage: `pose`; state: `succeeded` (bounded headless NLF-only partial; no BVH/RRD).
+- Timebox: ~90 minutes across continuation pass (includes first-pass interactive stall).
+- Environment: pixi default @ `/home/nick/src/kineo` (torch 2.10.0+cu128).
+- First-pass blocker removed: use `configs/demo/offline/nlf_single_person.yaml` **not**
+  `nlf_single_person_sam2.yaml`; headless person init via `RtmlibBboxDetectionStage`
+  with `best_bbox_only: True`.
+- Full `nlf_single_person.yaml` on single-view input fails at `SfM Camera Extrinsics
+  Initialization` (`triplet_costs` empty — expected for one camera).
+- Successful trimmed smoke (ignored config `data/logs/kineo_nlf_headless_only.yaml`):
+  stages = rtmlib bbox → MoGe intrinsics → NLF SMPL keypoints → annotations export.
+  - Input: `data/derived/assembly101/smoke_frames/focused_static_20s.mp4` (602 frames)
+  - Outputs: `runs/kineo/infer_nlf_headless_only/offline_demo/annotations/
+    assembly101_focused_static_20s/{bboxes_2d,camera_intrinsics,keypoints_2d,stage_timings}.pkl`
+  - Runtime: ~29 s wall (log: `data/logs/kineo_nlf_headless_only_20s.log`).
+- Claim boundary: calibration-free, person-centric 2D/estimated-intrinsics smoke only;
+  no metric world scale, no hand-part specialization, no committed RRD/BVH.
 
 #### Explicitly deferred (not integrated)
 

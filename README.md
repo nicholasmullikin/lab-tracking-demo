@@ -26,8 +26,8 @@ separated-parts frame. Human review retained only their first 60 seconds for the
 synchronized two-view comparison; later outputs remain failure evidence. The second
 method in the original core spine, MediaPipe Hands, has a selected 60-second static run
 merged into the focused first-minute comparison. The Sep 16 exploratory pass added bounded
-WiLoR, BoxMOT, and CLIP+Drop-DTW smokes; Grounded-SAM-2, SAMURAI/DAM4SAM, ATHENA, and
-Kineo are documented as blocked with precise prerequisites.
+WiLoR, BoxMOT, CLIP+Drop-DTW, Grounded-SAM-2 (HF path), SAMURAI, DAM4SAM, and Kineo
+(NLF-only headless) smokes; ATHENA remains blocked pending official Assembly101 intrinsics.
 
 The rest of this file is the how-to: each section below gives the exact commands that
 reproduce a stage. No recordings, annotations, or model weights are included. The SAM3
@@ -141,15 +141,39 @@ uv run battle-drop-dtw-align --seconds 20
 Completed run: `runs/drop-dtw-static-20s-20260916t0450z/` (`alignment.json` cost 15.295,
 `alignment.rrd` with cost/interval scalars only).
 
-## Exploratory methods blocked in this pass
+## Grounded-SAM-2 smoke (exploratory)
 
-See `docs/method-ledger.md` (Sep 16 exploratory queue) for precise blockers:
+Bounded single-frame open-vocabulary detection + SAM2 mask on the focused static proxy
+(`hand.` prompt). Local Grounding DINO CUDA build failed (CUDA 13.2 vs torch 12.8); smoke
+used Hugging Face `IDEA-Research/grounding-dino-tiny` instead.
 
-- Grounded-SAM-2: no local checkout / SAM2 CUDA build within 90 minutes.
-- SAMURAI / DAM4SAM: no compatible local SAM2 tracker environment.
-- ATHENA: Assembly101 camera intrinsics/extrinsics not in approved local raw tree.
-- Kineo: offline pipeline requires interactive SAM2 person-selection UI (headless stall).
-- Deferred without integration: LM-EEC, ObjectRelator, Qwen VLMs, supervised TAS, long-video VLMs.
+```bash
+# external env ~/.pyenv/versions/grounded_sam2; see docs/method-ledger.md
+# run: grounded_sam2_hf_model_demo.py on focused_static_frame0.jpg
+```
+
+Run: `runs/grounded-sam2-static-frame0-smoke-20260916t0450z/`.
+
+## SAMURAI / DAM4SAM tracker smokes (exploratory)
+
+Both ran 20 s on `focused_static_20s.mp4` with the same frame-0 hand bbox seed derived
+from the Grounded-SAM-2 detection. Headless DAM4SAM bypasses the interactive bbox drawer.
+
+- SAMURAI: `runs/samurai-static-20s-smoke-20260916t0510z/tracking.mp4`
+- DAM4SAM: `runs/dam4sam-static-20s-smoke-20260916t0520z/masks/` (602 PNG)
+
+## Kineo headless NLF smoke (exploratory)
+
+Use `nlf_single_person.yaml` (rtmlib bbox), not `nlf_single_person_sam2.yaml`. Full
+offline config fails on single-view SfM; trimmed NLF-only config exported pkls:
+
+`runs/kineo/infer_nlf_headless_only/offline_demo/annotations/assembly101_focused_static_20s/`
+
+## Exploratory methods still blocked
+
+- **ATHENA:** official `cvml-nus/assembly101` @ `bfc15ea5…` exposes `AssemblyPoses.zip`
+  (~72 GB) but no per-file intrinsics; HF probe log `data/logs/athena_hf_calibration_probe.log`.
+- **Deferred without integration:** LM-EEC, ObjectRelator, Qwen VLMs, supervised TAS, long-video VLMs.
 
 ## Fixed SAM3 core-method smoke
 

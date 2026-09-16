@@ -43,8 +43,14 @@ inputs outside Git.
   independent per-frame detector; not comparable to SAM3 masks.
 - **OpenCLIP + Drop-DTW:** alignment uses Assembly101 coarse labels as declared weak
   supervision; intervals and cost are not accuracy claims.
-- **Kineo:** blocked pending interactive SAM2 UI; calibration-free person-centric outputs
-  would remain distinct from hand-part claims if later unblocked.
+- **Grounded-SAM-2 / SAM2 / Grounding DINO:** Apache-2.0 source; Meta SAM2.1 and IDEA
+  Grounding DINO weights downloaded to ignored paths; HF Grounding DINO Tiny used when
+  local CUDA extension build failed.
+- **SAMURAI / DAM4SAM:** Apache-2.0 and project licenses respectively; SAM2.1 checkpoints
+  from Meta public URLs; tracker smokes are seeded propagation only, not accuracy claims.
+- **ATHENA:** MIT source checkout; no Assembly101 triangulation run (intrinsics blocker).
+- **Kineo:** research/evaluation terms per upstream README; headless NLF-only partial smoke
+  exports person-centric pkls without metric world scale or hand-part claims.
 
 ## Dependency and future-model review
 
