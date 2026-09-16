@@ -5,6 +5,7 @@ description = "Inference-free schemas and Rerun export fixtures for a video-unde
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "huggingface_hub>=0.34.0",
     "mediapipe>=1.0.1",
     "numpy>=2.5.3",
     "pillow>=12.3.0",
@@ -26,6 +27,8 @@ battle-import-external-smoke = "battle.external_smoke_import:main"
 battle-grounding-dino-sam2-video = "battle.grounding_dino_sam2_video:main"
 battle-samurai-video = "battle.samurai_video:main"
 battle-dam4sam-video = "battle.dam4sam_video:main"
+battle-athena-calibration-probe = "battle.athena_calibration_probe:main"
+battle-athena-fixture-smoke = "battle.athena_triangulation:main"
 battle-prepare-human-qa = "battle.human_qa:main"
 battle-human-qa-candidates = "battle.human_qa:candidate_main"
 

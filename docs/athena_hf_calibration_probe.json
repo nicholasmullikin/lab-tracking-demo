@@ -1,0 +1,88 @@
+{
+  "probed_at_utc": "2026-09-16T05:30:03.112839+00:00",
+  "dataset_repo": "cvml-nus/assembly101",
+  "dataset_revision": "bfc15ea5e3f0bc8f8c232af6c1b45aa137a9d967",
+  "archive_member": "AssemblyPoses.zip",
+  "archive_size_bytes": 71972006749,
+  "archive_etag": "b3e65089b49589750e60d3b8896463811218f44460da58c408edcef077e8ae62",
+  "archive_url_host": "huggingface.co",
+  "range_requests_supported": true,
+  "member_count_total": 3381,
+  "member_count_for_recording": 10,
+  "member_count_calibration_like_total": 2028,
+  "member_count_calibration_like_for_recording": 6,
+  "recording_id": "nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532",
+  "recording_members": [
+    {
+      "filename": "assembly101_camera_and_hand_poses/camera_position_ego/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532.json",
+      "compressed_size": 5052934,
+      "uncompressed_size": 19077023,
+      "compression_method": 8
+    },
+    {
+      "filename": "assembly101_camera_and_hand_poses/timestamp/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532.json",
+      "compressed_size": 234228,
+      "uncompressed_size": 1144099,
+      "compression_method": 8
+    },
+    {
+      "filename": "assembly101_camera_and_hand_poses/hand_confidences/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532.json",
+      "compressed_size": 1095084,
+      "uncompressed_size": 3327281,
+      "compression_method": 8
+    },
+    {
+      "filename": "assembly101_camera_and_hand_poses/camera_extrinsics_ego/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532.json",
+      "compressed_size": 24314303,
+      "uncompressed_size": 66803119,
+      "compression_method": 8
+    },
+    {
+      "filename": "assembly101_camera_and_hand_poses/landmarks3D/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532.json",
+      "compressed_size": 51750983,
+      "uncompressed_size": 144759826,
+      "compression_method": 8
+    },
+    {
+      "filename": "assembly101_camera_and_hand_poses/xf_transf/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532.json",
+      "compressed_size": 12324364,
+      "uncompressed_size": 31363216,
+      "compression_method": 8
+    },
+    {
+      "filename": "assembly101_camera_and_hand_poses/landmarks2D/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532.json",
+      "compressed_size": 361391336,
+      "uncompressed_size": 1130676365,
+      "compression_method": 8
+    },
+    {
+      "filename": "assembly101_camera_and_hand_poses/camera_extrinsics_fixed/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532.json",
+      "compressed_size": 1058,
+      "uncompressed_size": 2347,
+      "compression_method": 8
+    },
+    {
+      "filename": "assembly101_camera_and_hand_poses/camera_position_fixed/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532.json",
+      "compressed_size": 297,
+      "uncompressed_size": 596,
+      "compression_method": 8
+    },
+    {
+      "filename": "assembly101_camera_and_hand_poses/hand_bboxes/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532.json",
+      "compressed_size": 6446535,
+      "uncompressed_size": 41911036,
+      "compression_method": 8
+    }
+  ],
+  "calibration_like_members_for_recording": [
+    "assembly101_camera_and_hand_poses/camera_position_ego/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532.json",
+    "assembly101_camera_and_hand_poses/timestamp/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532.json",
+    "assembly101_camera_and_hand_poses/camera_extrinsics_ego/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532.json",
+    "assembly101_camera_and_hand_poses/xf_transf/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532.json",
+    "assembly101_camera_and_hand_poses/camera_extrinsics_fixed/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532.json",
+    "assembly101_camera_and_hand_poses/camera_position_fixed/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532.json"
+  ],
+  "top_level_prefixes": [
+    "assembly101_camera_and_hand_poses"
+  ]
+}
