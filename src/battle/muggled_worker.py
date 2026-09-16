@@ -926,6 +926,13 @@ def run(args: argparse.Namespace) -> int:
         return 1
 
 
+def _positive_frame_count(value: str) -> int:
+    frame_count = int(value)
+    if frame_count <= 0:
+        raise argparse.ArgumentTypeError("frame count must be positive")
+    return frame_count
+
+
 def main() -> None:
     global MAX_FRAMES, MAX_SIDE_LENGTH, MAX_FRAME_MEMORY, ANALYSIS_FPS, MASK_PERIOD_FRAMES
 
@@ -937,7 +944,7 @@ def main() -> None:
     parser.add_argument("--view-id", required=True)
     parser.add_argument("--source-offset-seconds", type=float, required=True)
     parser.add_argument("--model", required=True)
-    parser.add_argument("--max-frames", type=int, choices=(300, 600, 1800, 5400, 5901), default=300)
+    parser.add_argument("--max-frames", type=_positive_frame_count, default=300)
     parser.add_argument("--concepts-json", default=json.dumps(CONCEPTS))
     parser.add_argument(
         "--text-targets-json",

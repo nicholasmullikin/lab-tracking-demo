@@ -85,10 +85,13 @@ def synthetic_run_manifest() -> RunManifest:
                     hand_id="hand-left-1",
                     side=HandSide.LEFT,
                     confidence=0.8,
-                    landmarks=(
-                        NormalizedPoint(x=0.2, y=0.2),
-                        NormalizedPoint(x=0.25, y=0.25),
+                    landmarks=tuple(
+                        NormalizedPoint(x=0.2 + index * 0.001, y=0.2 + index * 0.001)
+                        for index in range(21)
                     ),
+                    box=NormalizedBox(x=0.2, y=0.2, width=0.02, height=0.02),
+                    model_side=HandSide.LEFT,
+                    model_handedness_confidence=0.8,
                 ),
             ),
         )

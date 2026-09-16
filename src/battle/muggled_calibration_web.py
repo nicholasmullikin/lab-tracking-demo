@@ -489,6 +489,11 @@ class Workspace:
                 source_offset_seconds=self.manifest.source_offset_seconds,
                 frame_count=self.manifest.proxy_frame_count,
             )
+            if not self._is_requested_calibration_frame(frame.analysis_frame_index):
+                raise ValueError(
+                    "this frame is browse-only; prompts are limited to configured "
+                    "calibration frames"
+                )
             pixel_box = PixelBox.model_validate(body["pixel_box"])
             pending = list(self.manifest.workspace.pending_boxes)
             intended_target = str(body["intended_target"]).strip()
@@ -572,6 +577,54 @@ class Workspace:
             )
             return prompt.model_dump(mode="json")
 
+    def _is_requested_calibration_frame(self, frame_index: int) -> bool:
+        return any(
+            round(timestamp * self.manifest.proxy_fps) == frame_index
+            for timestamp in self.manifest.requested_proxy_timestamps_seconds
+        )
+
+    def add_calibration_frame(self, timestamp: float) -> dict[str, Any]:
+        """Promote one browse-only frame into the persisted calibration set."""
+        with self.lock:
+            self._require_draft_candidate_review()
+            frame = frame_reference(
+                timestamp,
+                fps=self.manifest.proxy_fps,
+                source_offset_seconds=self.manifest.source_offset_seconds,
+                frame_count=self.manifest.proxy_frame_count,
+            )
+            if self._is_requested_calibration_frame(frame.analysis_frame_index):
+                return {
+                    "frame_index": frame.analysis_frame_index,
+                    "proxy_seconds": frame.proxy_seconds,
+                }
+            timestamps = tuple(
+                sorted(
+                    {
+                        *self.manifest.requested_proxy_timestamps_seconds,
+                        frame.proxy_seconds,
+                    }
+                )
+            )
+            workspace = self.manifest.workspace.model_copy(
+                update={
+                    "active_proxy_timestamp_seconds": frame.proxy_seconds,
+                    "selected_box_id": None,
+                }
+            )
+            self._persist(
+                self.manifest.model_copy(
+                    update={
+                        "requested_proxy_timestamps_seconds": timestamps,
+                        "workspace": workspace,
+                    }
+                )
+            )
+            return {
+                "frame_index": frame.analysis_frame_index,
+                "proxy_seconds": frame.proxy_seconds,
+            }
+
     def delete_prompt(self, box_id: str) -> None:
         with self.lock:
             self._require_draft_candidate_review()
@@ -612,10 +665,7 @@ class Workspace:
                 source_offset_seconds=self.manifest.source_offset_seconds,
                 frame_count=self.manifest.proxy_frame_count,
             )
-            if not any(
-                abs(frame.proxy_seconds - allowed) <= 1e-9
-                for allowed in self.manifest.requested_proxy_timestamps_seconds
-            ):
+            if not self._is_requested_calibration_frame(frame.analysis_frame_index):
                 raise ValueError("workspace timestamp must be one of the requested timestamps")
             if self._plan_is_finalized():
                 return
@@ -1425,7 +1475,13 @@ def make_handler(workspace: Workspace) -> type[BaseHTTPRequestHandler]:
         def do_POST(self) -> None:  # noqa: N802
             try:
                 body = self._body()
-                if self.path == "/api/prompts":
+                if self.path == "/api/calibration-frames":
+                    _json(
+                        self,
+                        HTTPStatus.CREATED,
+                        workspace.add_calibration_frame(float(body["timestamp"])),
+                    )
+                elif self.path == "/api/prompts":
                     _json(self, HTTPStatus.CREATED, workspace.add_or_update_prompt(body))
                 elif self.path == "/api/workspace":
                     workspace.set_active_timestamp(float(body["timestamp"]))
@@ -1543,8 +1599,13 @@ def make_workspace(args: argparse.Namespace, repository_root: Path) -> Workspace
         manifest = MuggledSAMBoxCalibrationManifest.model_validate_json(manifest_path.read_text())
         if manifest.base_g2_config_sha256 != sha256_file(args.config):
             raise ValueError("cannot resume: selected G2 configuration fingerprint changed")
-        if manifest.requested_proxy_timestamps_seconds != timestamps:
-            raise ValueError("cannot resume with a different --timestamps set")
+        configured_frames = {round(timestamp * manifest.proxy_fps) for timestamp in timestamps}
+        persisted_frames = {
+            round(timestamp * manifest.proxy_fps)
+            for timestamp in manifest.requested_proxy_timestamps_seconds
+        }
+        if not configured_frames.issubset(persisted_frames):
+            raise ValueError("cannot resume with new --timestamps; add frames in the workspace")
         if manifest.view_id != view_id:
             raise ValueError("cannot resume with a different --view")
     else:
@@ -1648,7 +1709,7 @@ def main() -> None:
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument(
         "--view",
-        choices=("static-c10379", "ego-hmc21179183"),
+        choices=("static-c10379", "ego-hmc21110305", "ego-hmc21179183"),
         default="ego-hmc21179183",
     )
     parser.add_argument("--run-root", type=Path, default=Path("runs"))

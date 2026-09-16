@@ -51,6 +51,21 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
   modify, bundle, or redistribute that checkpoint. Acquisition authorization and
   sharing rights were not independently verified.
 
+## Model source: MediaPipe Hand Landmarker
+
+- MediaPipe package/source: `mediapipe` 1.0.1 /
+  `https://github.com/google-ai-edge/mediapipe`; source repository declares Apache-2.0.
+- Task model: official Hand Landmarker float16 bundle, version `1`, retrieved Sep 15,
+  2026 from
+  `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`.
+- Local ignored path: `models/mediapipe/hand_landmarker_float16_v1.task`; SHA-256
+  `fbc2a30080c3c557093b5ddfc334698132eb341044ccee322ccf8bcf3607cde1`.
+- The bundle packages palm detection and 21-point hand landmark models. Battle does not
+  copy vendor source or commit/redistribute the model.
+- The official model page documents behavior and training-data summary, but the model
+  bundle's license was not independently confirmed during this run. Treat redistribution
+  as unapproved until that review is complete.
+
 ## Approved local source: Assembly101 ego viewpoint screen
 
 - Status: `approved` only for the bounded e1/e2/e4 viewpoint-screen inputs in

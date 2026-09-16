@@ -12,17 +12,18 @@
   <div id="plan-lock" class="plan-lock" hidden></div>
   <main>
     <aside>
-      <details class="panel" data-panel="frames" title="Choose one of the configured calibration frames." open>
+      <details class="panel" data-panel="frames" title="Browse any frame; edit only configured calibration frames." open>
         <summary>Selected frames <span class="panel-count"></span></summary>
         <div id="filmstrip" class="filmstrip"></div>
         <label>Timestamp (proxy seconds)<input id="timestamp" type="number" min="0" step="0.001"></label>
-        <input id="time-slider" type="range" min="0" max="0" step="1">
+        <input id="time-slider" type="range" min="0" max="0" step="1" title="Browse every proxy frame. Only configured calibration frames are editable.">
         <button id="load-frame">Load frame</button>
+        <span id="frame-mode" class="frame-mode">Calibration frame</span>
+        <button id="enable-labeling" hidden>Enable labeling on this frame</button>
       </details>
       <details id="label-panel" class="panel" data-panel="label" title="Choose the target for the next prompt." open>
         <summary>Label <span class="panel-count"></span></summary>
         <div id="labels" class="labels"></div>
-        <span id="target-policy" hidden></span>
         <label id="custom-label-control">Custom label<input id="custom-label" placeholder="Custom label"></label>
         <button id="delete">Delete selected</button>
       </details>
@@ -34,7 +35,6 @@
           <button data-prompt-mode="background">Exclude background (N)</button>
         </div>
         <button id="clear-points">Clear selected points</button>
-        <span id="point-guidance" hidden></span>
         <label class="mask-control" title="Automatically preview the selected prompt after edits."><input id="live-decode" type="checkbox"> Live decode</label>
         <label class="mask-control" title="Wait time after the last edit before decoding.">Delay <input id="live-decode-delay" type="number" min="100" max="5000" step="50" value="450"> ms</label>
         <button id="decode">Decode all pending on this frame</button>
@@ -59,10 +59,9 @@
         <p id="view-aids-timing" class="hint"></p>
       </details>
       <div id="viewport"><canvas id="canvas" width="954" height="720"></canvas><div id="empty">Load a source frame to draw prompts.</div></div>
-      <details class="panel" data-panel="candidates" title="Review mask options. Keys 1–4 accept the corresponding option; rejection keeps artifacts but excludes the prompt from planning. Scores are diagnostics, not accuracy.">
+      <details class="panel" data-panel="candidates" title="Review each frame and target. Keys 1–4 accept the corresponding mask shown on the canvas; × clears a choice or preview, and ↶ restores a rejected candidate.">
         <summary>Decoder candidate review <span class="panel-count"></span></summary>
         <div id="candidate-status"></div>
-        <div id="candidates" class="candidates" hidden></div>
       </details>
     </section>
     <aside>

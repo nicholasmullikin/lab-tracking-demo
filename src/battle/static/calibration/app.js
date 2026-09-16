@@ -5,10 +5,9 @@ const state = {
   zoom: 1, pan: {x: 0, y: 0}, view: {width: 0, height: 0, pixelRatio: 1},
   label: defaultLabels[0], manualSeedTargets: [], activeCandidateId: null, plan: null,
   maskImages: new Map(), maskVersions: new Map(), pendingCandidateSelections: new Map(),
-  maskVisible: true, maskOpacity: 0.38, correctionPolicy: null,
-  showRejected: false, promptMode: "box",
+  maskVisible: true, maskOpacity: 0.38, correctionPolicy: null, promptMode: "box",
   liveDecode: false, liveDecodeDelayMs: 450, liveDecodeQueuedBoxId: null, decodeInFlight: false,
-  frameRequest: 0, refreshRequest: 0,
+  frameRequest: 0, refreshRequest: 0, browseOnly: false,
   viewFilters: null, viewAids: {}, viewAidsBypass: false, viewRender: null, viewRequest: null,
   viewResolutionDivisor: 1, viewTone: null, viewAbort: null,
 };
@@ -32,7 +31,9 @@ const LIVE_DECODE_STORAGE_KEY = "battle.calibration.live-decode.v1";
 const LIVE_DECODE_DELAY_STORAGE_KEY = "battle.calibration.live-decode-delay.v1";
 const LIVE_DECODE_DELAY_MIN_MS = 100;
 const LIVE_DECODE_DELAY_MAX_MS = 5000;
+const DECODE_JOB_TIMEOUT_MS = 300000;
 let liveDecodeTimer = null;
+let frameBrowseTimer = null;
 /* The markup carries each section's fresh-profile default; a stored choice always wins.
  * Shortcuts keep working while a section is collapsed, so the only automatic expansion
  * is a live error. */
@@ -50,7 +51,7 @@ function savePanelPreferences() {
 function registerPanels(root = document) {
   for (const node of root?.querySelectorAll?.("details[data-panel]") || []) {
     const name = node.dataset?.panel;
-    if (!name || panels.get(name) === node) continue;
+    if (!name || name.startsWith("view-aid-stage:") || panels.get(name) === node) continue;
     panels.set(name, node);
     const stored = panelPreferences[name];
     if (typeof stored === "boolean") node.open = stored;
@@ -170,18 +171,44 @@ function activePendingPrompt() {
   );
   return matching.length === 1 ? matching[0] : null;
 }
+function isCalibrationFrame(frameIndex = state.frame) {
+  if (!state.manifest || frameIndex === null || frameIndex === undefined) return false;
+  return state.manifest.requested_proxy_timestamps_seconds.some(
+    (timestamp) => Math.round(timestamp * state.manifest.proxy_fps) === frameIndex
+  );
+}
+const BROWSE_ONLY_REASON = "Browse-only frame. Return to a configured calibration frame to edit prompts or masks.";
 function syncDecodeControls() {
   const button = $("#decode");
   if (!button || !state.manifest) return;
   const hasPending = pending().some((item) => isOnActiveFrame(item));
-  button.disabled = state.liveDecode || state.decodeInFlight || !hasPending;
-  button.title = state.liveDecode
-    ? "Disable live decode to run a manual frame batch."
-    : state.decodeInFlight
-      ? "Wait for the current decode to finish."
-      : hasPending
-        ? "Decode every pending prompt on this frame."
-        : "No pending prompts on this frame.";
+  const locked = planLocked();
+  button.disabled = state.browseOnly || locked || state.liveDecode || state.decodeInFlight || !hasPending;
+  button.title = state.browseOnly
+    ? BROWSE_ONLY_REASON
+    : locked
+    ? planLockReason()
+    : state.liveDecode
+      ? "Disable live decode to run a manual frame batch."
+      : state.decodeInFlight
+        ? "Wait for the current decode to finish."
+        : hasPending
+          ? "Decode every pending prompt on this frame."
+          : "No pending prompts on this frame.";
+  for (const control of [$("#live-decode"), $("#live-decode-delay")]) {
+    if (!control) continue;
+    control.disabled = state.browseOnly || locked;
+    control.title = state.browseOnly ? BROWSE_ONLY_REASON : locked ? planLockReason() : "";
+  }
+  for (const control of [$("#delete"), $("#clear-points"), $("#custom-label")]) {
+    if (!control) continue;
+    control.disabled = state.browseOnly;
+    control.title = state.browseOnly ? BROWSE_ONLY_REASON : "";
+  }
+  $("#prompt-mode")?.querySelectorAll("button").forEach((control) => {
+    control.disabled = state.browseOnly;
+    control.title = state.browseOnly ? BROWSE_ONLY_REASON : "";
+  });
 }
 function targetColor(target) {
   const position = targetPosition(target);
@@ -190,14 +217,6 @@ function targetColor(target) {
 function targetPosition(target) {
   const position = labels().indexOf(target);
   return position === -1 ? Number.MAX_SAFE_INTEGER : position;
-}
-function reviewedCandidates() {
-  return state.manifest.candidates.filter((item) => state.showRejected || !item.rejected).sort((left, right) => (
-    targetPosition(left.intended_target) - targetPosition(right.intended_target)
-    || left.intended_target.localeCompare(right.intended_target)
-    || left.frame.proxy_seconds - right.frame.proxy_seconds
-    || left.candidate_id.localeCompare(right.candidate_id)
-  ));
 }
 function activeTimestamp() {
   return state.active ?? state.manifest?.workspace.active_proxy_timestamp_seconds;
@@ -782,6 +801,8 @@ function renderLabels() {
     button.dataset.label = label;
     button.textContent = `${index + 1} ${label.replaceAll("_", " ")}`;
     button.className = label === state.label ? "active" : "";
+    button.disabled = state.browseOnly;
+    button.title = state.browseOnly ? BROWSE_ONLY_REASON : "";
     return button;
   }));
   renderLabelSummary();
@@ -790,13 +811,13 @@ function renderTargetPolicy(policy) {
   const help = policy
     ? `Frame 0 requires ${policy.required_target_count} distinct masks: ${labels().join(", ")}.`
     : "Custom labels are allowed; no named proposal policy is active.";
-  const targetPolicy = $("#target-policy"), panel = $("#label-panel");
-  if (targetPolicy) targetPolicy.textContent = "";
+  const panel = $("#label-panel");
   if (panel) panel.title = help;
   const customLabel = $("#custom-label-control");
   if (customLabel) customLabel.hidden = Boolean(policy);
 }
 function setPromptMode(mode) {
+  if (state.browseOnly) return setStatus(BROWSE_ONLY_REASON);
   state.promptMode = mode;
   $("#prompt-mode")?.querySelectorAll("button").forEach((button) => {
     button.classList.toggle("active", button.dataset.promptMode === mode);
@@ -805,8 +826,8 @@ function setPromptMode(mode) {
   render();
 }
 function renderPointControls() {
-  const guidance = $("#point-guidance"), clear = $("#clear-points");
-  if (!guidance || !clear) return;
+  const clear = $("#clear-points");
+  if (!clear) return;
   const prompt = activePendingPrompt();
   const names = {
     box: "Drag a tight box around the target.",
@@ -814,14 +835,15 @@ function renderPointControls() {
     background: "Click pixels the mask must exclude.",
   };
   const help = prompt
-    ? `${names[state.promptMode]} ${prompt.pixel_fg_points.length} foreground and ${prompt.pixel_bg_points.length} background point(s) on ${prompt.intended_target.replaceAll("_", " ")}.`
+    ? `${names[state.promptMode]} ${promptPoints(prompt, "foreground").length} foreground and ${promptPoints(prompt, "background").length} background point(s) on ${prompt.intended_target.replaceAll("_", " ")}.`
     : `Select exactly one pending ${state.label.replaceAll("_", " ")} box on this frame before adding points.`;
-  guidance.textContent = "";
   const panel = $("#prompt-clicks-panel");
   if (panel) panel.title = help;
-  clear.disabled = !prompt || !(prompt.pixel_fg_points.length || prompt.pixel_bg_points.length);
+  clear.disabled = state.browseOnly || !prompt || !(
+    promptPoints(prompt, "foreground").length || promptPoints(prompt, "background").length
+  );
   setPanelSummary("prompt-clicks", prompt
-    ? `${state.promptMode} · +${prompt.pixel_fg_points.length}/−${prompt.pixel_bg_points.length}`
+    ? `${state.promptMode} · +${promptPoints(prompt, "foreground").length}/−${promptPoints(prompt, "background").length}`
     : `${state.promptMode} · no prompt selected`);
 }
 function renderActiveCandidate() {
@@ -883,6 +905,7 @@ async function refresh() {
   if (request !== state.refreshRequest) return;
   state.manifest = data.manifest; state.manualSeedTargets = data.manual_seed_targets; state.correctionPolicy = data.correction_policy;
   state.plan = data.plan || null;
+  if (state.frame !== null) state.browseOnly = !isCalibrationFrame(state.frame);
   const selectedPrompt = pending().find((item) => (
     item.box_id === state.selected && isOnActiveFrame(item)
   ));
@@ -900,16 +923,15 @@ async function refresh() {
       : "Writes the selected frame-0 tracking proposal.";
   }
   renderPlanLock();
-  $("#time-slider").max = Math.max(0, state.manifest.requested_proxy_timestamps_seconds.length - 1);
-  $("#time-slider").value = Math.max(0, state.manifest.requested_proxy_timestamps_seconds.indexOf(state.active));
+  $("#time-slider").max = Math.max(0, state.manifest.proxy_frame_count - 1);
+  $("#time-slider").value = state.frame ?? Math.round(
+    state.manifest.workspace.active_proxy_timestamp_seconds * state.manifest.proxy_fps
+  );
   $("#timestamp").value = state.active ?? state.manifest.workspace.active_proxy_timestamp_seconds;
   $("#filmstrip").replaceChildren(...state.manifest.requested_proxy_timestamps_seconds.map((time) => {
     const button = document.createElement("button"); button.textContent = `${time.toFixed(3)} s`;
     button.className = time === state.active ? "active" : ""; button.onclick = () => loadFrame(time); return button;
   }));
-  const onFrame = pending().filter((p) => p.frame.proxy_seconds === state.active);
-  const prompts = $("#prompts");
-  if (prompts) prompts.replaceChildren(...onFrame.map(promptNode));
   syncDecodeControls();
   const rows = [...pending(), ...state.manifest.candidates];
   $("#table").replaceChildren(...rows.map(tableNode));
@@ -918,24 +940,33 @@ async function refresh() {
   const activeTime = activeTimestamp();
   setPanelSummary("frames", `${timestamps.length} frame${timestamps.length === 1 ? "" : "s"}${
     activeTime === null || activeTime === undefined ? "" : ` · active ${activeTime.toFixed(3)} s`}`);
-  setPanelSummary("prompts", `${onFrame.length} on this frame · ${pending().length} total`);
   setPanelSummary("table", `${rows.length} row${rows.length === 1 ? "" : "s"}`);
   setPanelSummary("diff", `${data.last_diff.length} change${data.last_diff.length === 1 ? "" : "s"}`);
-  renderCandidates(); renderEligible(); renderActiveCandidate(); renderPointControls(); render();
-  const rejected = state.manifest.candidates.filter((item) => item.rejected).length;
-  const toggle = $("#toggle-rejected");
-  if (toggle) {
-    toggle.hidden = rejected === 0 && !state.showRejected;
-    toggle.textContent = state.showRejected
-      ? `Hide rejected (${rejected})`
-      : `Show rejected (${rejected})`;
+  const frameMode = $("#frame-mode");
+  if (frameMode) {
+    frameMode.textContent = state.browseOnly ? "Browse only" : "Calibration frame";
+    frameMode.className = state.browseOnly ? "frame-mode browse-only" : "frame-mode";
+    frameMode.title = state.browseOnly
+      ? BROWSE_ONLY_REASON
+      : "Prompt and mask editing are enabled on this configured frame.";
   }
-  setStatus(data.worker_online ? "Ready — edits autosave atomically." : "Static mode — decoder offline.", !data.worker_online);
-}
-function promptNode(item) {
-  const node = document.createElement("div"); node.className = `prompt ${item.box_id === state.selected ? "selected" : ""}`;
-  node.textContent = `${item.box_id} · ${item.intended_target} · ${item.stage} · ${item.pixel_box.x1},${item.pixel_box.y1}–${item.pixel_box.x2},${item.pixel_box.y2} · +${promptPoints(item, "foreground").length}/−${promptPoints(item, "background").length}`;
-  node.onclick = () => { state.selected = item.box_id; state.label = item.intended_target; refresh(); }; return node;
+  const enableLabeling = $("#enable-labeling");
+  if (enableLabeling) {
+    enableLabeling.hidden = !state.browseOnly;
+    enableLabeling.disabled = planLocked();
+    enableLabeling.title = planLocked()
+      ? planLockReason()
+      : "Add this exact frame to the calibration set and enable prompt editing.";
+  }
+  renderCandidates(); renderEligible(); renderActiveCandidate(); renderPointControls(); render();
+  setStatus(
+    state.browseOnly
+      ? BROWSE_ONLY_REASON
+      : data.worker_online
+        ? "Ready — edits autosave atomically."
+        : "Static mode — decoder offline.",
+    !data.worker_online && !state.browseOnly,
+  );
 }
 function tableNode(item) {
   const isPending = "box_id" in item, frame = item.frame;
@@ -947,12 +978,8 @@ function tableNode(item) {
   node.textContent = `${frame.proxy_seconds.toFixed(3)}s · ${item.intended_target} · ${isPending ? item.box_id : item.candidate_id} · ${choice} · ${b.x1},${b.y1}–${b.x2},${b.y2} · ${points}`;
   return node;
 }
-/* Everything the candidate cards display. Drawing a box or moving a point refreshes the
- * whole workspace, and rebuilding these cards reloads every review thumbnail, so the
- * list is only rebuilt when something it actually shows has changed. */
 function candidatesSignature() {
   return JSON.stringify([
-    state.showRejected,
     state.activeCandidateId,
     activeCandidate()?.candidate_id ?? null,
     activeTimestamp() ?? null,
@@ -1002,7 +1029,7 @@ function renderCandidateStatusTable(host, locked, lockReason) {
       const pendingPrompt = pending().find((item) => (
         item.intended_target === target && Math.abs(item.frame.proxy_seconds - time) <= 1e-9
       ));
-      const item = accepted || preview || (state.showRejected ? rejected : null);
+      const item = accepted || preview || rejected || null;
       const isInitial = frameIndex === 0;
       const scheduled = accepted && (
         isInitial ? accepted.selected_for_finalization : accepted.selected_for_correction
@@ -1014,7 +1041,7 @@ function renderCandidateStatusTable(host, locked, lockReason) {
           ? "◐ Preview"
           : pendingPrompt
             ? "○ Editing"
-            : rejected && state.showRejected
+            : rejected
               ? "× Rejected"
               : "○ Not done";
       const wrapper = document.createElement("span");
@@ -1043,7 +1070,7 @@ function renderCandidateStatusTable(host, locked, lockReason) {
         clear.disabled = locked;
         clear.onclick = (event) => {
           event.stopPropagation();
-          unacceptCandidate(accepted);
+          return unacceptCandidate(accepted);
         };
         wrapper.append(clear);
       } else if (preview) {
@@ -1054,11 +1081,11 @@ function renderCandidateStatusTable(host, locked, lockReason) {
         clear.disabled = locked;
         clear.onclick = (event) => {
           event.stopPropagation();
-          if (pendingPrompt) deletePrompt(pendingPrompt.box_id);
-          else rejectCandidate(preview);
+          if (pendingPrompt) return deletePrompt(pendingPrompt.box_id);
+          return rejectCandidate(preview);
         };
         wrapper.append(clear);
-      } else if (rejected && state.showRejected) {
+      } else if (rejected) {
         const restore = document.createElement("button");
         restore.className = "status-clear";
         restore.textContent = "↶";
@@ -1066,7 +1093,7 @@ function renderCandidateStatusTable(host, locked, lockReason) {
         restore.disabled = locked;
         restore.onclick = (event) => {
           event.stopPropagation();
-          restoreCandidate(rejected);
+          return restoreCandidate(rejected);
         };
         wrapper.append(restore);
       }
@@ -1081,9 +1108,7 @@ function renderCandidates() {
   const signature = candidatesSignature();
   if (signature === candidatesRendered) return;
   candidatesRendered = signature;
-  const parent = $("#candidates"); parent.replaceChildren();
   const locked = planLocked(), lockReason = planLockReason();
-  const items = reviewedCandidates();
   const active = state.manifest.candidates.filter((item) => !item.rejected);
   const completedCells = new Set(
     active
@@ -1096,151 +1121,13 @@ function renderCandidates() {
     `${completedCells}/${totalCells} done`,
   );
   const statusHost = $("#candidate-status");
-  if (statusHost) {
-    parent.replaceChildren();
-    renderCandidateStatusTable(statusHost, locked, lockReason);
-    return;
-  }
-  if (!items.length) {
-    const empty = document.createElement("p");
-    empty.className = "hint";
-    empty.textContent = state.showRejected
-      ? "No rejected candidates."
-      : "No active decoded prompts yet. Decode all pending prompts on a selected frame to review every target group.";
-    parent.append(empty);
-    return;
-  }
-  for (const item of items) {
-    const isActive = item.candidate_id === activeCandidate()?.candidate_id;
-    const isInitial = item.frame.analysis_frame_index === 0;
-    const card = document.createElement("article");
-    card.className = `candidate ${item.human_accepted ? "accepted" : ""}${item.rejected ? " rejected" : ""}${isActive ? " active-viewport" : ""} ${isInitial ? "initial-mask" : "later-correction"}`;
-    const heading = document.createElement("strong");
-    const policyPosition = targetPosition(item.intended_target);
-    const targetLabel = policyPosition === Number.MAX_SAFE_INTEGER
-      ? item.intended_target.replaceAll("_", " ")
-      : `Target ${policyPosition + 1}/${labels().length}: ${item.intended_target.replaceAll("_", " ")}`;
-    heading.textContent = `${targetLabel} · ${item.candidate_id}`;
-    const metadata = document.createElement("small");
-    metadata.className = "candidate-metadata";
-    metadata.textContent = `${item.live_preview ? "Live preview · updates in place · " : ""}Frame ${
-      item.frame.analysis_frame_index} (${item.frame.proxy_seconds.toFixed(3)} s) · ${
-      isInitial ? "initial mask · required" : "later correction · optional"} · ${
-      item.decoder_result.candidates.length} mask option(s)`;
-    card.title = item.rejected
-      ? "Rejected; retained for provenance."
-      : locked
-        ? lockReason
-        : isInitial
-          ? "Choose one initial mask."
-          : "Choose a correction only when needed.";
-    const options = document.createElement("div");
-    options.className = "candidate-options";
-    card.append(heading, metadata, options);
-    if (item.rejected) {
-      for (const candidate of item.decoder_result.candidates) {
-        if (!candidate.review_uri) continue;
-        const review = document.createElement("a");
-        review.className = "review-link";
-        review.href = `/artifacts/${candidate.review_uri}`;
-        review.target = "_blank";
-        review.rel = "noopener";
-        review.textContent = `Open retained mask ${candidate.candidate_index} review`;
-        options.append(review);
-      }
-      const restore = document.createElement("button");
-      restore.textContent = "Undo rejection";
-      restore.disabled = locked;
-      restore.title = locked
-        ? lockReason
-        : "Return this candidate to normal review without accepting it.";
-      restore.onclick = () => restoreCandidate(item);
-      card.append(restore);
-      parent.append(card);
-      continue;
-    }
-    for (const candidate of item.decoder_result.candidates) {
-      const option = document.createElement("section");
-      option.className = `mask-option ${candidate.is_deterministic_best ? "model-best" : ""}`;
-      const label = document.createElement("label"), radio = document.createElement("input");
-      radio.type = "radio"; radio.name = item.candidate_id; radio.value = candidate.candidate_index;
-      radio.checked = selectedCandidateIndex(item) === candidate.candidate_index;
-      radio.disabled = locked;
-      if (locked) radio.title = lockReason;
-      radio.onchange = () => accept(item, candidate.candidate_index);
-      const keyHint = isActive && candidate.candidate_index < 4
-        ? ` · key ${candidate.candidate_index + 1}`
-        : "";
-      label.append(radio, document.createTextNode(` mask ${candidate.candidate_index}${keyHint} · IoU ${candidate.iou_score.toFixed(4)}${candidate.is_deterministic_best ? " · model best" : ""}`));
-      option.append(label);
-      if (candidate.review_uri) {
-        const review = document.createElement("a");
-        review.className = "review-link";
-        review.href = `/artifacts/${candidate.review_uri}`;
-        review.target = "_blank";
-        review.rel = "noopener";
-        review.title = "Open full-size context and padded-crop review";
-        const image = new Image();
-        image.src = `/artifacts/${candidate.review_uri}`;
-        image.alt = `Mask ${candidate.candidate_index}: full-frame context and padded crop`;
-        image.loading = "lazy";
-        review.append(image);
-        option.append(review);
-      }
-      options.append(option);
-    }
-    /* One eligibility control per card, matching the only role this frame can play:
-     * frame 0 carries the required initial masks, every later keyframe carries optional
-     * corrections. The backend refuses the other combination, so offering it here only
-     * produced a dead control labelled with frame-0 language on later keyframes. */
-    const eligible = document.createElement("label"), check = document.createElement("input");
-    check.type = "checkbox";
-    check.checked = isInitial ? item.selected_for_finalization : item.selected_for_correction;
-    check.disabled = locked || !item.human_accepted;
-    check.title = locked
-      ? lockReason
-      : item.human_accepted
-        ? isInitial
-          ? "Required: every configured target needs one frame-0 initial mask."
-          : "Optional: add this keyframe to the correction schedule for this target."
-        : "Choose one mask above before including this candidate in the plan.";
-    check.onchange = () => (isInitial
-      ? accept(item, item.human_selected_candidate_index, check.checked)
-      : accept(item, item.human_selected_candidate_index, false, check.checked));
-    eligible.append(check, document.createTextNode(
-      isInitial ? " include in Initial masks (required at frame 0)" : " include in Later corrections (optional)"
-    ));
-    card.append(eligible);
-    const actions = document.createElement("div");
-    actions.className = "candidate-actions";
-    const reject = document.createElement("button");
-    reject.textContent = "Reject / Remove";
-    reject.title = locked
-      ? lockReason
-      : item.human_accepted
-        ? "Unaccept this current choice before rejecting it."
-        : "Remove from normal review and planning while retaining its mask artifacts.";
-    reject.disabled = locked || item.human_accepted;
-    reject.onclick = () => rejectCandidate(item);
-    actions.append(reject);
-    if (item.human_accepted) {
-      const unaccept = document.createElement("button");
-      unaccept.textContent = "Unaccept";
-      unaccept.disabled = locked;
-      unaccept.title = locked
-        ? lockReason
-        : "Clear this selection and planning eligibility; required before rejection.";
-      unaccept.onclick = () => unacceptCandidate(item);
-      actions.append(unaccept);
-    }
-    card.append(actions);
-    parent.append(card);
-  }
+  if (statusHost) renderCandidateStatusTable(statusHost, locked, lockReason);
 }
 async function accept(
   item, candidateIndex, eligible = item.selected_for_finalization,
   correction = item.selected_for_correction,
 ) {
+  if (state.browseOnly) return setStatus(BROWSE_ONLY_REASON, true);
   if (planLocked()) return setStatus(planLockReason(), true);
   if (candidateIndex === null || candidateIndex === undefined) return setStatus("Select a mask before marking eligibility.", true);
   state.label = item.intended_target;
@@ -1342,28 +1229,45 @@ function renderEligible() {
 }
 async function loadFrame(time = Number($("#timestamp").value)) {
   try {
+    if (frameBrowseTimer !== null) {
+      clearTimeout(frameBrowseTimer);
+      frameBrowseTimer = null;
+    }
     const request = ++state.frameRequest;
     const preserveView = state.image !== null;
     const selectedLabel = state.label;
-    setStatus("Decoding selected source frame…"); state.active = time;
+    setStatus("Decoding selected source frame…");
     const response = await api(`/api/frame?timestamp=${encodeURIComponent(time)}`);
     if (request !== state.frameRequest) return;
-    await api("/api/workspace", {method: "POST", body: JSON.stringify({timestamp: time})});
-    if (request !== state.frameRequest) return;
-    const image = new Image(); image.onload = () => {
+    state.frame = response.frame_index;
+    state.active = response.frame_index / state.manifest.proxy_fps;
+    state.browseOnly = !isCalibrationFrame(response.frame_index);
+    state.selected = state.browseOnly ? null : state.selected;
+    const loadedTimestamp = state.active;
+    const browseOnly = state.browseOnly;
+    const image = new Image(); image.onload = async () => {
       if (request !== state.frameRequest) return;
-      state.image = image; state.viewRender = null; state.viewRequest = null;
-      state.label = selectedLabel;
-      $("#empty").hidden = true;
-      requestAnimationFrame(() => {
-        resizeCanvas({preserveCenter: preserveView, reset: !preserveView});
-        render(); refresh(); requestViewRender();
-      });
+      try {
+        if (!browseOnly) {
+          await api("/api/workspace", {
+            method: "POST", body: JSON.stringify({timestamp: loadedTimestamp}),
+          });
+          if (request !== state.frameRequest) return;
+        }
+        state.image = image; state.viewRender = null; state.viewRequest = null;
+        state.label = selectedLabel;
+        $("#empty").hidden = true;
+        requestAnimationFrame(() => {
+          resizeCanvas({preserveCenter: preserveView, reset: !preserveView});
+          render(); refresh(); requestViewRender();
+        });
+      } catch (error) { setStatus(error.message, true); }
     };
-    image.src = `/artifacts/${response.image_uri}?v=${Date.now()}`; state.frame = response.frame_index;
+    image.src = `/artifacts/${response.image_uri}?v=${Date.now()}`;
   } catch (error) { setStatus(error.message, true); }
 }
 async function saveBox(box, id = null) {
+  if (state.browseOnly) throw new Error(BROWSE_ONLY_REASON);
   const existing = id
     ? pending().find((item) => item.box_id === id)
     : activePendingPrompt();
@@ -1380,6 +1284,7 @@ function clampPoint(point) {
   return {x: clamp(Math.round(point.x), 0, width), y: clamp(Math.round(point.y), 0, height)};
 }
 async function savePromptPoints(item, foreground, background) {
+  if (state.browseOnly) throw new Error(BROWSE_ONLY_REASON);
   await api(`/api/prompts/${item.box_id}`, {
     method: "PATCH",
     body: JSON.stringify({
@@ -1396,6 +1301,10 @@ async function savePromptPoints(item, foreground, background) {
 canvas.addEventListener("contextmenu", (event) => event.preventDefault());
 canvas.addEventListener("pointerdown", async (event) => {
   if (!state.image) return;
+  if (state.browseOnly) {
+    setStatus(BROWSE_ONLY_REASON);
+    return;
+  }
   const point = screenPoint(event);
   const marker = hitPoint(point);
   if (event.button === 2) {
@@ -1474,7 +1383,7 @@ canvas.addEventListener("pointerup", async () => {
     if (b.x2 - b.x1 > 3 && b.y2 - b.y1 > 3) await saveBox(b, d.box?.box_id); else await refresh();
   } catch (error) { setStatus(error.message, true); await refresh(); }
 });
-canvas.addEventListener("pointercancel", () => { state.drag = null; render(); refresh(); });
+canvas.addEventListener("pointercancel", () => { state.drag = null; render(); });
 canvas.addEventListener("wheel", (event) => {
   event.preventDefault();
   const p = screenPoint(event), before = world(p), factor = event.deltaY < 0 ? 1.15 : 1 / 1.15;
@@ -1494,6 +1403,10 @@ document.addEventListener("keydown", async (event) => {
   const focused = document.activeElement;
   if (["INPUT", "TEXTAREA", "SELECT"].includes(focused?.tagName) || focused?.isContentEditable) return;
   if (/^[1-4]$/.test(event.key)) {
+    if (state.browseOnly) {
+      setStatus(BROWSE_ONLY_REASON);
+      return;
+    }
     const item = activeCandidate();
     const candidateIndex = Number(event.key) - 1;
     if (item && item.decoder_result.candidates.some((candidate) => candidate.candidate_index === candidateIndex)) {
@@ -1539,10 +1452,44 @@ if (clearPoints) clearPoints.onclick = async () => {
   } catch (error) { setStatus(error.message, true); }
 };
 $("#load-frame").onclick = () => loadFrame();
-$("#time-slider").oninput = (event) => loadFrame(state.manifest.requested_proxy_timestamps_seconds[Number(event.target.value)]);
+const enableLabelingButton = $("#enable-labeling");
+if (enableLabelingButton) enableLabelingButton.onclick = async () => {
+  try {
+    const added = await api("/api/calibration-frames", {
+      method: "POST",
+      body: JSON.stringify({timestamp: activeTimestamp()}),
+    });
+    state.frame = added.frame_index;
+    state.active = added.proxy_seconds;
+    state.browseOnly = false;
+    await refresh();
+    setStatus(`Frame ${added.frame_index} added to the calibration set.`);
+  } catch (error) { setStatus(error.message, true); }
+};
+function loadSliderFrame(frameIndex) {
+  const timestamp = frameIndex / state.manifest.proxy_fps;
+  $("#timestamp").value = String(timestamp);
+  loadFrame(timestamp);
+}
+$("#time-slider").oninput = (event) => {
+  const frameIndex = Number(event.target.value);
+  $("#timestamp").value = String(frameIndex / state.manifest.proxy_fps);
+  if (frameBrowseTimer !== null) clearTimeout(frameBrowseTimer);
+  frameBrowseTimer = setTimeout(() => {
+    frameBrowseTimer = null;
+    loadSliderFrame(frameIndex);
+  }, 120);
+};
+$("#time-slider").onchange = (event) => {
+  if (frameBrowseTimer !== null) {
+    clearTimeout(frameBrowseTimer);
+    frameBrowseTimer = null;
+  }
+  loadSliderFrame(Number(event.target.value));
+};
 $("#delete").onclick = async () => { if (state.selected) await deletePrompt(state.selected); };
 function scheduleLiveDecode(boxId) {
-  if (!state.liveDecode || !boxId || state.plan?.finalized) return;
+  if (state.browseOnly || !state.liveDecode || !boxId || state.plan?.finalized) return;
   state.liveDecodeQueuedBoxId = boxId;
   if (liveDecodeTimer !== null) clearTimeout(liveDecodeTimer);
   liveDecodeTimer = setTimeout(() => {
@@ -1580,8 +1527,16 @@ async function decode(boxIds, livePreview = false) {
     });
     setStatus(`${livePreview ? "Live preview" : "Decoder"} job ${result.job_id} queued; workspace remains responsive.`);
     let polling = false;
+    const startedAt = Date.now();
     const timer = setInterval(async () => {
       if (polling) return;
+      if (Date.now() - startedAt > DECODE_JOB_TIMEOUT_MS) {
+        clearInterval(timer);
+        state.decodeInFlight = false;
+        syncDecodeControls();
+        setStatus(`Decoder job ${result.job_id} did not finish within five minutes.`, true);
+        return;
+      }
       polling = true;
       try {
         const job = await api(`/api/jobs/${result.job_id}`);
@@ -1590,6 +1545,10 @@ async function decode(boxIds, livePreview = false) {
           state.decodeInFlight = false;
           syncDecodeControls();
           if (job.status === "succeeded" && job.candidate_ids?.length) {
+            state.activeCandidateId = job.candidate_ids.at(-1);
+          }
+          await refresh();
+          if (job.status === "succeeded" && job.candidate_ids?.length) {
             for (const item of state.manifest.candidates) {
               if (!job.candidate_ids.includes(item.candidate_id)) continue;
               for (const candidate of item.decoder_result.candidates) {
@@ -1597,7 +1556,7 @@ async function decode(boxIds, livePreview = false) {
                 state.maskVersions.set(candidate.mask_uri, result.job_id);
               }
             }
-            state.activeCandidateId = job.candidate_ids.at(-1);
+            render();
           }
           setStatus(
             job.status === "succeeded"
@@ -1605,7 +1564,6 @@ async function decode(boxIds, livePreview = false) {
               : job.error,
             job.status === "failed",
           );
-          await refresh();
           if (state.liveDecodeQueuedBoxId) scheduleLiveDecode(state.liveDecodeQueuedBoxId);
         }
       } catch (error) {
@@ -1625,16 +1583,9 @@ async function decode(boxIds, livePreview = false) {
     setStatus(error.message, true);
   }
 }
-$("#decode").onclick = () => decode(pending().filter((item) => item.frame.proxy_seconds === state.active).map((item) => item.box_id));
-const toggleRejected = $("#toggle-rejected");
-if (toggleRejected) toggleRejected.onclick = () => {
-  state.showRejected = !state.showRejected;
-  renderCandidates();
-  const rejected = state.manifest.candidates.filter((item) => item.rejected).length;
-  toggleRejected.textContent = state.showRejected
-    ? `Hide rejected (${rejected})`
-    : `Show rejected (${rejected})`;
-};
+$("#decode").onclick = () => decode(
+  pending().filter((item) => isOnActiveFrame(item)).map((item) => item.box_id),
+);
 const maskVisible = $("#mask-visible"), maskOpacity = $("#mask-opacity");
 if (maskVisible) maskVisible.onchange = () => { state.maskVisible = maskVisible.checked; render(); };
 if (maskOpacity) maskOpacity.oninput = () => {

@@ -11,6 +11,7 @@ from battle.schemas import (
     ClockName,
     G2PreprocessingManifest,
     MethodState,
+    MuggledSAMMultiKeyframeCorrectionPolicy,
     NormalizedBox,
     RunManifest,
     SmokeRunMetadata,
@@ -77,6 +78,57 @@ def test_approved_assembly101_g2_manifest_has_consistent_proxy_clocks() -> None:
     ]
     assert not manifest.annotations_or_poses_downloaded_by_g2
     assert not manifest.annotations_or_poses_used_by_g2
+
+
+def test_focused_four_part_manifest_maps_old_frame_3120_to_new_frame_zero() -> None:
+    config_path = (
+        Path(__file__).parents[1]
+        / "configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_g2.json"
+    )
+    manifest = G2PreprocessingManifest.model_validate_json(config_path.read_text())
+
+    assert manifest.source_interval.start_seconds == 294.0
+    assert manifest.raw_frame_range.start_frame == 17_640
+    assert manifest.analysis_frame_range.start_frame == 8_820
+    assert manifest.proxy_frame_range.start_frame == 0
+    assert manifest.proxy_frame_range.frame_count == 2_781
+    assert manifest.proxies[0].frame_count == 2_781
+    assert manifest.proxies[0].view_id == "static-c10379"
+
+
+def test_focused_ego_manifest_matches_the_static_reassembly_interval() -> None:
+    config_path = (
+        Path(__file__).parents[1]
+        / "configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_ego_g2.json"
+    )
+    manifest = G2PreprocessingManifest.model_validate_json(config_path.read_text())
+
+    assert manifest.source_interval.start_seconds == 294.0
+    assert manifest.source_interval.end_seconds == 386.7
+    assert manifest.proxy_frame_range.frame_count == 2_781
+    assert manifest.proxies[0].dimensions.width == 954
+    assert manifest.proxies[0].view_id == "ego-hmc21110305"
+
+
+def test_second_correction_policy_version_allows_five_later_keyframes() -> None:
+    policy_path = (
+        Path(__file__).parents[1]
+        / "configs/muggledsam_static_four_part_reassembly_focused_correction_policy_v2.json"
+    )
+    policy = MuggledSAMMultiKeyframeCorrectionPolicy.model_validate_json(
+        policy_path.read_text()
+    )
+
+    assert policy.policy_version == "2"
+    assert policy.maximum_later_correction_keyframes_per_target == 5
+    invalid = policy.model_dump()
+    invalid["maximum_later_correction_keyframes_per_target"] = 6
+    with pytest.raises(ValidationError):
+        MuggledSAMMultiKeyframeCorrectionPolicy.model_validate(invalid)
+    invalid["policy_version"] = "1"
+    invalid["maximum_later_correction_keyframes_per_target"] = 5
+    with pytest.raises(ValidationError, match="v1 permits at most three"):
+        MuggledSAMMultiKeyframeCorrectionPolicy.model_validate(invalid)
 
 
 def test_object_score_is_not_clamped_to_a_probability_range() -> None:

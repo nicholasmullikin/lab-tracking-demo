@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "manifest_kind": "muggledsam_sam3_multi_keyframe_correction_policy",
+  "policy_id": "static-four-part-reassembly-focused-corrections",
+  "policy_version": "2",
+  "view_id": "static-c10379",
+  "manual_seed_target_config_fingerprint": {
+    "schema_version": "1.0",
+    "uri": "configs/muggledsam_static_four_part_reassembly_focused_manual_seed.json",
+    "sha256": "8a4b2c358786482a341ff4e39090606562669c3f7a8621db66216d6511b0e6bd",
+    "source": "measured"
+  },
+  "targets": [
+    "chassis",
+    "interior",
+    "rear_body",
+    "cabin"
+  ],
+  "maximum_later_correction_keyframes_per_target": 5,
+  "correction_memory_semantics": "replace_prompt_memory_and_reset_frame_memory"
+}

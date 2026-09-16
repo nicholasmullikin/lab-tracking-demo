@@ -466,9 +466,10 @@ class Element {
 
 const selectors = [
   "#canvas", "#status", "#labels", "#time-slider", "#timestamp", "#filmstrip",
-  "#prompts", "#table", "#diff", "#candidates", "#eligible", "#empty",
-  "#target-policy", "#custom-label", "#load-frame", "#delete", "#duplicate",
-  "#decode", "#decode-selected", "#finalize-plan",
+  "#table", "#diff", "#candidate-status", "#eligible", "#empty", "#plan-lock",
+  "#custom-label", "#custom-label-control", "#load-frame", "#delete", "#decode",
+  "#finalize-plan", "#active-candidate", "#label-panel", "#prompt-clicks-panel",
+      "#prompt-mode", "#clear-points", "#live-decode", "#live-decode-delay", "#frame-mode",
 ];
 const elements = Object.fromEntries(selectors.map((selector) => [selector, new Element()]));
 elements["#canvas"].width = 954;
@@ -521,7 +522,7 @@ def test_calibration_ui_exposes_one_tracking_plan_action() -> None:
     assert 'id="toggle-rejected"' not in markup
     assert 'data-panel="prompts"' not in markup
     assert 'id="candidate-status"' in markup
-    assert 'id="candidates" class="candidates" hidden' in markup
+    assert 'id="candidates"' not in markup
     assert 'id="live-decode"' in markup
     assert 'id="live-decode-delay"' in markup
     assert "Automatically preview" in markup
@@ -579,9 +580,11 @@ class Element {
 
 const selectors = [
   "#canvas", "#status", "#labels", "#time-slider", "#timestamp", "#filmstrip",
-  "#prompts", "#table", "#diff", "#candidates", "#eligible", "#empty",
-  "#target-policy", "#custom-label", "#load-frame", "#delete", "#duplicate",
-  "#decode", "#decode-selected", "#finalize-plan",
+  "#table", "#diff", "#candidate-status", "#eligible", "#empty", "#plan-lock",
+  "#custom-label", "#custom-label-control", "#load-frame", "#delete", "#decode",
+  "#finalize-plan", "#active-candidate", "#label-panel", "#prompt-clicks-panel",
+      "#prompt-mode", "#clear-points", "#live-decode", "#live-decode-delay", "#frame-mode",
+      "#enable-labeling",
 ];
 const elements = Object.fromEntries(selectors.map((selector) => [selector, new Element(selector)]));
 globalThis.document = {
@@ -600,6 +603,8 @@ globalThis.Image = class Image {
 };
 const manifest = {
   proxy_dimensions: {width: 1920, height: 1080},
+      proxy_fps: 30,
+      proxy_frame_count: 5400,
   requested_proxy_timestamps_seconds: [0, 1],
   workspace: {
     active_proxy_timestamp_seconds: 0,
@@ -611,15 +616,28 @@ const manifest = {
   candidates: [],
 };
 globalThis.fetch = async (path, options = {}) => {
-  if (path === "/api/state" || path === "/api/workspace") {
+      if (path === "/api/state" || path === "/api/workspace") {
+        if (path === "/api/workspace") calls.push(["workspace", JSON.parse(options.body)]);
     return {ok: true, status: 200, json: async () => ({
       manifest, manual_seed_targets: [], manual_seed_target_policy: null,
       last_diff: [], worker_online: true,
     })};
   }
   if (path.startsWith("/api/frame")) {
-    return {ok: true, status: 200, json: async () => ({frame_index: 0, image_uri: "frame.jpg"})};
+        const timestamp = Number(new URL(path, "http://localhost").searchParams.get("timestamp"));
+        return {ok: true, status: 200, json: async () => ({
+          frame_index: Math.round(timestamp * 30), image_uri: "frame.jpg",
+        })};
   }
+      if (path === "/api/calibration-frames") {
+        const timestamp = JSON.parse(options.body).timestamp;
+        const frameIndex = Math.round(timestamp * 30);
+        manifest.requested_proxy_timestamps_seconds.push(frameIndex / 30);
+        manifest.requested_proxy_timestamps_seconds.sort((left, right) => left - right);
+        return {ok: true, status: 201, json: async () => ({
+          frame_index: frameIndex, proxy_seconds: frameIndex / 30,
+        })};
+      }
   if (path.startsWith("/api/prompts")) {
     calls.push(["prompt", JSON.parse(options.body)]);
     return {ok: true, status: 201, json: async () => ({})};
@@ -677,6 +695,39 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
   if (switchedPrompt?.intended_target !== "right_hand") {
     throw new Error(`frame switch reset label: ${JSON.stringify(switchedPrompt)}`);
   }
+      const promptCount = calls.filter((entry) => entry[0] === "prompt").length;
+      const workspaceCount = calls.filter((entry) => entry[0] === "workspace").length;
+      elements["#time-slider"].value = "15";
+      elements["#time-slider"].onchange({target: elements["#time-slider"]});
+      await tick(); await tick();
+      if (Number(elements["#timestamp"].value) !== 0.5) {
+        throw new Error(`slider did not map frame 15 to 0.5 s: ${elements["#timestamp"].value}`);
+      }
+      if (elements["#frame-mode"].textContent !== "Browse only") {
+        throw new Error("arbitrary slider frame was not marked browse-only");
+      }
+      await down({pointerId: 4, button: 0, clientX: 100, clientY: 70});
+      move({clientX: 200, clientY: 170});
+      await up({});
+      if (calls.filter((entry) => entry[0] === "prompt").length !== promptCount) {
+        throw new Error("browse-only frame created a prompt");
+      }
+      if (calls.filter((entry) => entry[0] === "workspace").length !== workspaceCount) {
+        throw new Error("browse-only frame changed persisted workspace state");
+      }
+      if (elements["#enable-labeling"].hidden) {
+        throw new Error("browse-only frame did not offer promotion to calibration");
+      }
+      await elements["#enable-labeling"].onclick();
+      if (elements["#frame-mode"].textContent !== "Calibration frame") {
+        throw new Error("promoted frame remained browse-only");
+      }
+      await down({pointerId: 5, button: 0, clientX: 100, clientY: 70});
+      move({clientX: 200, clientY: 170});
+      await up({});
+      if (calls.filter((entry) => entry[0] === "prompt").length !== promptCount + 1) {
+        throw new Error("promoted calibration frame did not allow a prompt");
+      }
 })().catch((error) => {
   console.error(error.stack || error);
   process.exitCode = 1;
@@ -822,6 +873,8 @@ globalThis.Image = class Image extends Element {
 globalThis.requestAnimationFrame = (callback) => callback();
 const manifest = {
   proxy_dimensions: {width: 2, height: 1},
+  proxy_fps: 30,
+  proxy_frame_count: 300,
   requested_proxy_timestamps_seconds: [0],
   workspace: {active_proxy_timestamp_seconds: 0, pending_boxes: []},
   candidates: [],
@@ -932,7 +985,7 @@ const candidate = {
   },
 };
 const manifest = {
-  proxy_dimensions: {width: 954, height: 720},
+  proxy_dimensions: {width: 954, height: 720}, proxy_fps: 30,
   requested_proxy_timestamps_seconds: [0],
   workspace: {active_proxy_timestamp_seconds: 0, pending_boxes: []},
   candidates: [candidate],
@@ -1027,10 +1080,11 @@ class Element {
 }
 const selectors = [
   "#canvas", "#status", "#labels", "#time-slider", "#timestamp", "#filmstrip",
-  "#prompts", "#table", "#diff", "#candidates", "#eligible", "#empty",
-  "#target-policy", "#custom-label", "#load-frame", "#delete", "#duplicate",
-  "#decode", "#decode-selected", "#finalize-plan", "#active-candidate",
-  "#mask-visible", "#mask-opacity", "#mask-opacity-value", "#toggle-rejected",
+  "#table", "#diff", "#candidate-status", "#eligible", "#empty", "#plan-lock",
+  "#custom-label", "#custom-label-control", "#load-frame", "#delete", "#decode",
+  "#finalize-plan", "#active-candidate", "#label-panel", "#prompt-clicks-panel",
+  "#prompt-mode", "#clear-points", "#live-decode", "#live-decode-delay",
+  "#mask-visible", "#mask-opacity", "#mask-opacity-value",
 ];
 const elements = Object.fromEntries(selectors.map((selector) => [selector, new Element(selector)]));
 elements["#canvas"].width = 954; elements["#canvas"].height = 720;
@@ -1062,7 +1116,7 @@ const candidate = {
   },
 };
 const manifest = {
-  proxy_dimensions: {width: 954, height: 720},
+  proxy_dimensions: {width: 954, height: 720}, proxy_fps: 30,
   requested_proxy_timestamps_seconds: [0],
   workspace: {active_proxy_timestamp_seconds: 0, pending_boxes: []},
   candidates: [candidate],
@@ -1092,25 +1146,22 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 (async () => {
   eval(app);
   await tick(); await tick(); await tick();
-  const firstCard = elements["#candidates"].children[0];
-  const actions = firstCard.children.at(-1);
-  const reject = actions.children[0];
-  if (reject.textContent !== "Reject / Remove" || reject.disabled) {
-    throw new Error("active candidate lacks an enabled Reject / Remove control");
+  const statusCell = () => elements["#candidate-status"].children[0]
+    .children[1].children[1].children[0];
+  let wrapper = statusCell();
+  const reject = wrapper.children[1];
+  if (wrapper.children[0].textContent !== "◐ Preview"
+      || reject.textContent !== "×" || reject.disabled) {
+    throw new Error("preview cell lacks an enabled discard control");
   }
-  await reject.onclick();
-  if (elements["#candidates"].children.length !== 1 ||
-      !elements["#candidates"].children[0].textContent?.includes?.("No active")) {
-    throw new Error("rejected candidate remained in normal review");
+  await reject.onclick({stopPropagation() {}});
+  wrapper = statusCell();
+  if (wrapper.children[0].textContent !== "× Rejected") {
+    throw new Error("rejected candidate is not visible in the status table");
   }
-  if (elements["#toggle-rejected"].textContent !== "Show rejected (1)") {
-    throw new Error(`missing rejected toggle: ${elements["#toggle-rejected"].textContent}`);
-  }
-  elements["#toggle-rejected"].onclick();
-  const rejectedCard = elements["#candidates"].children[0];
-  const undo = rejectedCard.children.at(-1);
-  if (undo.textContent !== "Undo rejection") throw new Error("rejected card lacks Undo rejection");
-  await undo.onclick();
+  const restore = wrapper.children[1];
+  if (restore.textContent !== "↶") throw new Error("rejected cell lacks restore action");
+  await restore.onclick({stopPropagation() {}});
   if (candidate.rejected || requests.length !== 2) {
     throw new Error(`reject/restore did not persist: ${JSON.stringify({candidate, requests})}`);
   }
@@ -1167,9 +1218,10 @@ class Element {
 }
 const selectors = [
   "#canvas", "#status", "#labels", "#time-slider", "#timestamp", "#filmstrip",
-  "#prompts", "#table", "#diff", "#candidates", "#eligible", "#empty",
-  "#target-policy", "#custom-label", "#load-frame", "#delete", "#duplicate",
-  "#decode", "#decode-selected", "#finalize-plan",
+  "#table", "#diff", "#candidate-status", "#eligible", "#empty", "#plan-lock",
+  "#custom-label", "#custom-label-control", "#load-frame", "#delete", "#decode",
+  "#finalize-plan", "#active-candidate", "#label-panel", "#prompt-clicks-panel",
+  "#prompt-mode", "#clear-points", "#live-decode", "#live-decode-delay",
 ];
 const elements = Object.fromEntries(selectors.map((selector) => [selector, new Element(selector)]));
 elements["#canvas"].width = 954; elements["#canvas"].height = 720;
@@ -1186,7 +1238,7 @@ globalThis.Image = class Image extends Element {
 };
 globalThis.requestAnimationFrame = (callback) => callback();
 const manifest = {
-  proxy_dimensions: {width: 954, height: 720},
+  proxy_dimensions: {width: 954, height: 720}, proxy_fps: 30,
   requested_proxy_timestamps_seconds: [0, 10, 30, 50],
   workspace: {
     active_proxy_timestamp_seconds: 0,
@@ -1242,25 +1294,20 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 (async () => {
   eval(app);
   await tick(); await tick(); await tick();
-  const cards = elements["#candidates"].children;
-  if (cards.length !== 4) throw new Error(`rendered ${cards.length} target groups, expected 4`);
-  const headings = cards.map((card) => card.children[0].textContent);
+  const table = elements["#candidate-status"].children[0];
+  if (table.children.length !== 5) {
+    throw new Error(`rendered ${table.children.length - 1} frame rows, expected 4`);
+  }
+  const headings = table.children[0].children.slice(1).map((cell) => cell.textContent);
   for (const [index, target] of targets.entries()) {
-    if (!headings[index].includes(`Target ${index + 1}/4: ${target.replaceAll("_", " ")}`)) {
-      throw new Error(`target group ${index + 1} label missing: ${headings[index]}`);
-    }
-    if (cards[index].children[2].children.length !== 2) {
-      throw new Error(`target group ${target} did not render both mask options`);
+    if (headings[index] !== target.replaceAll("_", " ")) {
+      throw new Error(`target column ${index + 1} label missing: ${headings[index]}`);
     }
   }
-  const secondMask = cards[0].children[2].children[1].children[0].children[0];
-  await secondMask.onchange();
-  if (accepted.length !== 1 || accepted[0].body.candidate_index !== 1 ||
-      !accepted[0].path.endsWith("/t000000-b01/accept")) {
-    throw new Error(`mask acceptance request was not preserved: ${JSON.stringify(accepted)}`);
+  const firstStatus = table.children[1].children[1].children[0].children[0];
+  if (firstStatus.textContent !== "✓ Done") {
+    throw new Error(`accepted target status missing: ${firstStatus.textContent}`);
   }
-  elements["#prompts"].children[0].onclick();
-  await tick();
   await elements["#decode"].onclick();
   await tick();
   if (decodeRequests.length !== 1 || decodeRequests[0].length !== 4) {
@@ -1301,6 +1348,82 @@ def test_workspace_normalizes_uppercase_timestamp_output_directory(tmp_path: Pat
         assert workspace.manifest.calibration_id == output_directory.name.lower()
         persisted = json.loads(workspace.manifest_path.read_text())
         assert persisted["calibration_id"] == output_directory.name.lower()
+    finally:
+        workspace.close()
+
+
+def test_resume_preserves_promoted_frames_but_rejects_new_cli_frames(tmp_path: Path) -> None:
+    root = Path(__file__).parents[1]
+    output_directory = tmp_path / "promoted-frame-workspace"
+    args = argparse.Namespace(
+        timestamps="0,10",
+        output_dir=output_directory,
+        run_root=tmp_path,
+        resume=False,
+        config=root / "configs/clips/assembly101_nusar_9033_ego_viewpoint_screen_g2.json",
+        manual_seed_target_config=None,
+        correction_policy=None,
+        no_worker=True,
+    )
+    workspace = create_workspace(args, root)
+    workspace.add_calibration_frame(5.0)
+    workspace.close()
+
+    args.resume = True
+    resumed = create_workspace(args, root)
+    try:
+        assert resumed.manifest.requested_proxy_timestamps_seconds == (0.0, 5.0, 10.0)
+    finally:
+        resumed.close()
+
+    args.timestamps = "0,7,10"
+    with pytest.raises(ValueError, match="add frames in the workspace"):
+        create_workspace(args, root)
+
+
+def test_browse_only_frame_cannot_create_a_prompt(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    manifest_before = workspace.manifest
+    try:
+        with pytest.raises(ValueError, match="browse-only"):
+            workspace.add_or_update_prompt(
+                {
+                    "timestamp": 5.0,
+                    "intended_target": "left_hand",
+                    "pixel_box": {"x1": 10, "y1": 20, "x2": 100, "y2": 120},
+                }
+            )
+        with pytest.raises(ValueError, match="requested timestamps"):
+            workspace.set_active_timestamp(5.0)
+
+        assert workspace.manifest == manifest_before
+        assert not workspace.manifest_path.exists()
+        assert not workspace.manifest.workspace.pending_boxes
+    finally:
+        workspace.close()
+
+
+def test_browse_only_frame_can_be_promoted_to_calibration(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    try:
+        added = workspace.add_calibration_frame(3.23)
+
+        assert added == {"frame_index": 97, "proxy_seconds": pytest.approx(97 / 30)}
+        assert workspace.manifest.requested_proxy_timestamps_seconds == (
+            0.0,
+            pytest.approx(97 / 30),
+            10.0,
+        )
+        assert workspace.add_calibration_frame(3.23) == added
+        assert len(workspace.manifest.requested_proxy_timestamps_seconds) == 3
+        prompt = workspace.add_or_update_prompt(
+            {
+                "timestamp": 3.23,
+                "intended_target": "left_hand",
+                "pixel_box": {"x1": 10, "y1": 20, "x2": 100, "y2": 120},
+            }
+        )
+        assert prompt["frame"]["analysis_frame_index"] == 97
     finally:
         workspace.close()
 
@@ -2020,6 +2143,8 @@ const selectors = [
 ];
 const manifest = {
   proxy_dimensions: {width: 2, height: 1},
+  proxy_fps: 30,
+  proxy_frame_count: 300,
   requested_proxy_timestamps_seconds: [0],
   workspace: {active_proxy_timestamp_seconds: 0, pending_boxes: []},
   candidates: [],
@@ -2408,9 +2533,10 @@ class Element {
 }
 const selectors = [
   "#canvas", "#status", "#labels", "#time-slider", "#timestamp", "#filmstrip",
-  "#prompts", "#table", "#diff", "#candidates", "#eligible", "#empty",
-  "#target-policy", "#custom-label", "#load-frame", "#delete", "#duplicate",
-  "#decode", "#decode-selected", "#finalize-plan",
+  "#table", "#diff", "#candidate-status", "#eligible", "#empty", "#plan-lock",
+  "#custom-label", "#custom-label-control", "#load-frame", "#delete", "#decode",
+  "#finalize-plan", "#active-candidate", "#label-panel", "#prompt-clicks-panel",
+  "#prompt-mode", "#clear-points", "#live-decode", "#live-decode-delay",
 ];
 const elements = Object.fromEntries(selectors.map((s) => [s, new Element(s)]));
 elements["#canvas"].width = 954; elements["#canvas"].height = 720;
@@ -2447,7 +2573,7 @@ const makeCandidate = (target, slot, frameIndex, seconds, overrides) => ({
   ...overrides,
 });
 const manifest = {
-  proxy_dimensions: {width: 954, height: 720},
+  proxy_dimensions: {width: 954, height: 720}, proxy_fps: 30,
   requested_proxy_timestamps_seconds: [0, 10],
   workspace: {active_proxy_timestamp_seconds: 10, pending_boxes: []},
   candidates: [
@@ -2498,60 +2624,34 @@ const reload = async () => {
   eval(app);
   await tick(); await tick(); await tick();
   await reload();
-  const cards = elements["#candidates"].children;
-  if (cards.length !== 3) throw new Error(`rendered ${cards.length} cards, expected 3`);
-  const later = cards.find((card) => cardText(card).includes("Frame 300"));
-  const initial = cards.find((card) => cardText(card).includes("Frame 0"));
-  if (!later || !initial) throw new Error("missing an initial or later-keyframe card");
-
-  const laterText = cardText(later);
-  if (laterText.includes("Initial masks are required at frame 0")) {
-    throw new Error("later keyframe still shows the dead frame-0 eligibility control");
+  let table = elements["#candidate-status"].children[0];
+  if (table.children.length !== 3) {
+    throw new Error("status table must contain both configured frames");
   }
-  if (!laterText.includes("later correction") || !laterText.includes("optional")) {
-    throw new Error(`later keyframe card is not labelled as optional: ${laterText}`);
+  const initialStatus = table.children[1].children[1].children[0].children[0];
+  const laterStatus = table.children[2].children[1].children[0].children[0];
+  if (initialStatus.textContent !== "✓ Done" || !initialStatus.title.includes("initial mask")) {
+    throw new Error(
+      `frame-0 initial status is unclear: ${initialStatus.textContent} ${initialStatus.title}`
+    );
   }
-  if (!cardText(initial).includes("required at frame 0")) {
-    throw new Error("frame-0 card lost its required-initial-mask language");
-  }
-  const checkboxes = (card) => flatten(card).filter((node) => node.type === "checkbox");
-  if (checkboxes(later).length !== 1 || checkboxes(initial).length !== 1) {
-    throw new Error("each card must expose exactly one eligibility control");
-  }
-  const laterCheck = checkboxes(later)[0];
-  if (!laterCheck.disabled) {
-    throw new Error("correction eligibility must wait for an explicit mask acceptance");
+  if (laterStatus.textContent !== "◐ Preview") {
+    throw new Error(`later unscheduled preview status is unclear: ${laterStatus.textContent}`);
   }
 
-  // Choosing a mask at the later keyframe must reach the server as a plain acceptance.
-  const radios = flatten(later).filter((node) => node.type === "radio");
-  if (radios.length !== 2) throw new Error(`later keyframe rendered ${radios.length} masks`);
-  await radios[0].onchange();
-  const acceptance = posted.at(-1);
-  if (!acceptance.path.endsWith("/t000300-b01/accept")
-      || acceptance.body.candidate_index !== 0
-      || acceptance.body.eligible !== false || acceptance.body.correction !== false) {
-    throw new Error(`later-keyframe acceptance was wrong: ${JSON.stringify(acceptance)}`);
-  }
-
-  // With the mask accepted the correction control unlocks and marks the keyframe.
+  // Once accepted and scheduled, the later cell names its correction role.
   manifest.candidates[2].human_accepted = true;
   manifest.candidates[2].human_selected_candidate_index = 0;
-  await reload();
-  const unlocked = checkboxes(
-    elements["#candidates"].children.find((card) => cardText(card).includes("Frame 300"))
-  )[0];
-  if (unlocked.disabled) throw new Error("accepted later keyframe left its control disabled");
-  unlocked.checked = true;
-  await unlocked.onchange();
-  const marked = posted.at(-1);
-  if (marked.body.correction !== true || marked.body.eligible !== false) {
-    throw new Error(`later correction was not marked: ${JSON.stringify(marked)}`);
-  }
-
-  // The finalize panel names the targets already corrected at the active keyframe.
   manifest.candidates[2].selected_for_correction = true;
   await reload();
+  table = elements["#candidate-status"].children[0];
+  const scheduled = table.children[2].children[1].children[0].children[0];
+  if (scheduled.textContent !== "✓ Done"
+      || !scheduled.title.includes("scheduled as the correction")) {
+    throw new Error(
+      `later correction role is unclear: ${scheduled.textContent} ${scheduled.title}`
+    );
+  }
   const finalizeText = elements["#eligible"].children.map((n) => n.textContent).join(" ");
   if (!finalizeText.includes("10.000 s keyframe: left hand")) {
     throw new Error(`active-keyframe correction summary missing: ${finalizeText}`);
@@ -2607,9 +2707,10 @@ class Element {
 }
 const selectors = [
   "#canvas", "#status", "#labels", "#time-slider", "#timestamp", "#filmstrip",
-  "#prompts", "#table", "#diff", "#candidates", "#eligible", "#empty", "#plan-lock",
-  "#target-policy", "#custom-label", "#load-frame", "#delete", "#duplicate",
-  "#decode", "#decode-selected", "#finalize-plan",
+  "#table", "#diff", "#candidate-status", "#eligible", "#empty", "#plan-lock",
+  "#custom-label", "#custom-label-control", "#load-frame", "#delete", "#decode",
+  "#finalize-plan", "#active-candidate", "#label-panel", "#prompt-clicks-panel",
+  "#prompt-mode", "#clear-points", "#live-decode", "#live-decode-delay",
 ];
 const elements = Object.fromEntries(selectors.map((s) => [s, new Element(s)]));
 elements["#canvas"].width = 954; elements["#canvas"].height = 720;
@@ -2631,6 +2732,7 @@ globalThis.setInterval = () => 1;
 globalThis.clearInterval = () => {};
 const manifest = {
   proxy_dimensions: {width: 954, height: 720},
+      proxy_fps: 30,
   requested_proxy_timestamps_seconds: [0, 10],
   workspace: {active_proxy_timestamp_seconds: 0, pending_boxes: []},
   candidates: [{
@@ -2694,6 +2796,8 @@ const inputs = (type) => flatten(card()).filter((node) => node.type === type);
 const bannerText = () => flatten(elements["#plan-lock"]).flatMap(
   (node) => [node.textContent, ...node.children.filter((child) => typeof child === "string")]
 ).join(" ");
+const statusClear = () => elements["#candidate-status"].children[0]
+  .children[1].children[1].children[0].children[1];
 (async () => {
   eval(app);
   await tick(); await tick(); await tick(); await tick();
@@ -2709,22 +2813,11 @@ const bannerText = () => flatten(elements["#plan-lock"]).flatMap(
   if (!elements["#finalize-plan"].disabled) {
     throw new Error("a finalized plan left Finalize tracking plan enabled");
   }
-  const radios = inputs("radio"), checks = inputs("checkbox");
-  if (radios.length !== 2 || checks.length !== 1) {
-    throw new Error(`unexpected review controls: ${radios.length} masks, ${checks.length} checks`);
+  if (!statusClear().disabled || statusClear().title !== lockReason) {
+    throw new Error("locked status-table action is not disabled with the server reason");
   }
-  if (!radios.every((radio) => radio.disabled && radio.title === lockReason)) {
-    throw new Error("locked mask options are inert instead of disabled with a reason");
-  }
-  if (!checks[0].disabled || checks[0].title !== lockReason) {
-    throw new Error("locked eligibility control is inert instead of disabled with a reason");
-  }
-
-  // Choosing an alternate mask while locked explains itself and reaches no endpoint.
-  await radios[1].onchange();
-  if (posted.length) throw new Error(`locked selection still posted: ${JSON.stringify(posted)}`);
-  if (elements["#status"].textContent !== lockReason) {
-    throw new Error(`locked selection was silent: ${elements["#status"].textContent}`);
+  if (!elements["#live-decode"].disabled || !elements["#live-decode-delay"].disabled) {
+    throw new Error("finalized plan left live-decode controls enabled");
   }
 
   const reopen = flatten(elements["#plan-lock"]).find(
@@ -2745,16 +2838,11 @@ const bannerText = () => flatten(elements["#plan-lock"]).flatMap(
     throw new Error(`superseded revision is not reported: ${finalizeText}`);
   }
 
-  // Alternate-mask selection works again, and reaches the accept endpoint.
-  const unlocked = inputs("radio");
-  if (unlocked.some((radio) => radio.disabled)) {
-    throw new Error("reopened workspace left the mask options disabled");
+  if (statusClear().disabled) {
+    throw new Error("reopened workspace left the status-table action disabled");
   }
-  await unlocked[1].onchange();
-  const acceptance = posted.at(-1);
-  if (!acceptance.path.endsWith("/t000000-b01/accept")
-      || acceptance.body.candidate_index !== 1 || acceptance.body.eligible !== true) {
-    throw new Error(`alternate mask acceptance was wrong: ${JSON.stringify(acceptance)}`);
+  if (elements["#live-decode"].disabled || elements["#live-decode-delay"].disabled) {
+    throw new Error("reopened workspace left live-decode controls disabled");
   }
 })().catch((error) => {
   console.error(error.stack || error);

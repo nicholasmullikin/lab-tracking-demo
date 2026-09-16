@@ -5,6 +5,7 @@ description = "Inference-free schemas and Rerun export fixtures for a video-unde
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "mediapipe>=1.0.1",
     "numpy>=2.5.3",
     "pillow>=12.3.0",
     "pydantic==2.13.5",
@@ -17,6 +18,7 @@ battle-muggled-smoke = "battle.muggled_smoke:main"
 battle-muggled-calibrate = "battle.muggled_calibration:main"
 battle-muggled-calibration-web = "battle.muggled_calibration_web:main"
 battle-build-ego-static-comparison = "battle.rerun_comparison:main"
+battle-mediapipe-hands = "battle.mediapipe_hands:main"
 battle-prepare-human-qa = "battle.human_qa:main"
 battle-human-qa-candidates = "battle.human_qa:candidate_main"
 

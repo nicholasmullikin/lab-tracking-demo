@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import types
 from collections import deque
@@ -12,6 +13,7 @@ from battle.muggled_calibration import build_manifest, finalize_correction_sched
 from battle.muggled_smoke import (
     CONCEPTS,
     E4_CANDIDATE_FRAMES,
+    FOUR_PART_FOCUSED_FRAMES,
     FOUR_PART_FULL_FRAMES,
     FOUR_PART_PILOT_FRAMES,
     FULL_EGO_MANUAL_SEED_FRAMES,
@@ -21,16 +23,21 @@ from battle.muggled_smoke import (
     _load_hybrid_smoke_approval,
     _load_manual_seed_multiplex,
     _load_multi_keyframe_correction_schedule,
+    _qa_method_name,
+    _require_correction_frame_in_range,
     load_manual_seed_target_config,
     load_observations,
     load_text_target_config,
     make_run_id,
     require_e4_candidate_range,
+    require_four_part_ego_focused_range,
+    require_four_part_focused_range,
     require_four_part_full_range,
     require_four_part_pilot_range,
     require_full_ego_manual_seed_range,
     require_g3_static_range,
     require_smoke_range,
+    selected_frame_budget,
     sha256_file,
 )
 from battle.muggled_worker import (
@@ -41,6 +48,7 @@ from battle.muggled_worker import (
     _is_numpy_mask,
     _looks_like_model_process,
     _ordered_hybrid_initial_masks,
+    _positive_frame_count,
     _replace_prompt_memory_for_correction,
     _validate_hybrid_initialization,
     _validate_manual_seed_slots,
@@ -64,6 +72,13 @@ def test_numpy_masks_use_the_opencv_adapter_despite_numpy_device_attribute() -> 
 
     assert mask.device == "cpu"
     assert _is_numpy_mask(mask)
+
+
+def test_worker_frame_count_parser_accepts_new_positive_budgets() -> None:
+    assert _positive_frame_count("1800") == 1800
+    assert _positive_frame_count("2781") == 2781
+    with pytest.raises(argparse.ArgumentTypeError, match="must be positive"):
+        _positive_frame_count("0")
 
 
 def test_box_ignores_speckle_components_but_keeps_a_split_object() -> None:
@@ -203,6 +218,36 @@ def test_worker_rejects_ambiguous_correction_slot_assignments() -> None:
         )
 
 
+def test_long_run_correction_frames_are_validated_against_the_active_budget() -> None:
+    _require_correction_frame_in_range(360, max_frame_exclusive=600)
+
+    with pytest.raises(ValueError, match=r"\[0, 300\)"):
+        _require_correction_frame_in_range(360, max_frame_exclusive=300)
+
+
+@pytest.mark.parametrize(
+    ("static_focused", "ego_focused", "expected"),
+    (
+        (True, False, "four-part-static-focused-reassembly-qa"),
+        (False, True, "four-part-ego-focused-reassembly-qa"),
+    ),
+)
+def test_focused_qa_status_keeps_the_selected_view_name(
+    static_focused: bool, ego_focused: bool, expected: str
+) -> None:
+    assert (
+        _qa_method_name(
+            hybrid=False,
+            full_ego=False,
+            four_part_pilot=False,
+            four_part_full=False,
+            four_part_static_focused=static_focused,
+            four_part_ego_focused=ego_focused,
+        )
+        == expected
+    )
+
+
 def test_smoke_range_is_exactly_the_approved_first_ten_seconds() -> None:
     frame_range = require_smoke_range(start_frame=0, max_frames=SMOKE_FRAMES)
 
@@ -222,6 +267,25 @@ def test_smoke_range_tracks_seconds_rather_than_frames_across_analysis_rates() -
         require_smoke_range(0, 300, analysis_fps=60.0)
     with pytest.raises(ValueError, match="at 30 fps"):
         require_smoke_range(0, 600, analysis_fps=30.0)
+
+
+def test_focused_views_share_one_frame_budget_resolver() -> None:
+    common = {
+        "g3_full_static": False,
+        "g4_e4_candidate": False,
+        "full_ego_manual_seed": False,
+        "four_part_static_pilot": False,
+        "four_part_static_full": False,
+    }
+    static = types.SimpleNamespace(
+        **common, four_part_static_focused=True, four_part_ego_focused=False
+    )
+    ego = types.SimpleNamespace(
+        **common, four_part_static_focused=False, four_part_ego_focused=True
+    )
+
+    assert selected_frame_budget(static, 30.0) == FOUR_PART_FOCUSED_FRAMES
+    assert selected_frame_budget(ego, 30.0) == FOUR_PART_FOCUSED_FRAMES
 
 
 def test_g3_range_allows_only_the_approved_static_full_proxy() -> None:
@@ -270,6 +334,32 @@ def test_four_part_full_range_allows_only_the_complete_static_proxy() -> None:
         )
     with pytest.raises(ValueError, match=r"\[0, 5901\)"):
         require_four_part_full_range("static-c10379", start_frame=0, max_frames=5900)
+
+
+def test_four_part_focused_range_allows_only_the_separated_to_assembled_proxy() -> None:
+    frame_range = require_four_part_focused_range(
+        "static-c10379", start_frame=0, max_frames=FOUR_PART_FOCUSED_FRAMES
+    )
+
+    assert frame_range.frame_count == 2781
+    with pytest.raises(ValueError, match="only static-c10379"):
+        require_four_part_focused_range(
+            "ego-hmc21179183", start_frame=0, max_frames=FOUR_PART_FOCUSED_FRAMES
+        )
+    with pytest.raises(ValueError, match=r"\[0, 2781\)"):
+        require_four_part_focused_range("static-c10379", start_frame=0, max_frames=2780)
+
+
+def test_four_part_ego_focused_range_allows_only_the_aligned_monochrome_proxy() -> None:
+    frame_range = require_four_part_ego_focused_range(
+        "ego-hmc21110305", start_frame=0, max_frames=FOUR_PART_FOCUSED_FRAMES
+    )
+
+    assert frame_range.frame_count == 2781
+    with pytest.raises(ValueError, match="only ego-hmc21110305"):
+        require_four_part_ego_focused_range(
+            "static-c10379", start_frame=0, max_frames=FOUR_PART_FOCUSED_FRAMES
+        )
 
 
 def test_full_ego_manual_seed_range_allows_only_the_approved_proxy() -> None:

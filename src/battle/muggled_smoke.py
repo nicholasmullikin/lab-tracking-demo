@@ -19,6 +19,7 @@ from .schemas import (
     ClockName,
     E4CandidateRunMetadata,
     EncodedAssetInput,
+    FourPartFocusedRunMetadata,
     FourPartFullRunMetadata,
     FourPartPilotRunMetadata,
     FrameObservations,
@@ -76,6 +77,8 @@ FOUR_PART_PILOT_FRAMES = 600
 FOUR_PART_PILOT_SECONDS = 20.0
 FOUR_PART_FULL_FRAMES = 5901
 FOUR_PART_FULL_SECONDS = 196.7
+FOUR_PART_FOCUSED_FRAMES = 2781
+FOUR_PART_FOCUSED_SECONDS = 92.7
 MUGGLED_SAM_SOURCE = Path("/home/nick/src/muggled_sam")
 MUGGLED_SAM_PYTHON = Path("/home/nick/.pyenv/versions/muggled_sam/bin/python")
 DEFAULT_MODEL = MUGGLED_SAM_SOURCE / "model_weights" / "sam3.1_multiplex.pt"
@@ -150,6 +153,26 @@ def smoke_frame_count(analysis_fps: float) -> int:
     return round(SMOKE_SECONDS * analysis_fps)
 
 
+def selected_frame_budget(args: argparse.Namespace, analysis_fps: float) -> int:
+    """Resolve one CLI profile to its frame budget before loading prompt artifacts."""
+    if getattr(args, "g3_full_static", False):
+        return G3_STATIC_FRAMES
+    if getattr(args, "g4_e4_candidate", False):
+        return E4_CANDIDATE_FRAMES
+    if getattr(args, "full_ego_manual_seed", False):
+        return FULL_EGO_MANUAL_SEED_FRAMES
+    if getattr(args, "four_part_static_pilot", False):
+        return FOUR_PART_PILOT_FRAMES
+    if getattr(args, "four_part_static_full", False):
+        return FOUR_PART_FULL_FRAMES
+    if (
+        getattr(args, "four_part_static_focused", False)
+        or getattr(args, "four_part_ego_focused", False)
+    ):
+        return FOUR_PART_FOCUSED_FRAMES
+    return smoke_frame_count(analysis_fps)
+
+
 def require_smoke_range(
     start_frame: int, max_frames: int, analysis_fps: float = 30.0
 ) -> FrameRange:
@@ -205,6 +228,36 @@ def require_four_part_full_range(view_id: str, start_frame: int, max_frames: int
     if view_id != "static-c10379" or start_frame != 0 or max_frames != FOUR_PART_FULL_FRAMES:
         raise ValueError("four-part full run permits only static-c10379 proxy frames [0, 5901)")
     return FrameRange(start_frame=start_frame, end_frame_exclusive=FOUR_PART_FULL_FRAMES)
+
+
+def require_four_part_focused_range(
+    view_id: str, start_frame: int, max_frames: int
+) -> FrameRange:
+    """Permit only the separated-to-assembled focused four-part proxy."""
+    if (
+        view_id != "static-c10379"
+        or start_frame != 0
+        or max_frames != FOUR_PART_FOCUSED_FRAMES
+    ):
+        raise ValueError(
+            "focused four-part run permits only static-c10379 proxy frames [0, 2781)"
+        )
+    return FrameRange(start_frame=start_frame, end_frame_exclusive=FOUR_PART_FOCUSED_FRAMES)
+
+
+def require_four_part_ego_focused_range(
+    view_id: str, start_frame: int, max_frames: int
+) -> FrameRange:
+    """Permit only the focused monochrome ego four-part proxy."""
+    if (
+        view_id != "ego-hmc21110305"
+        or start_frame != 0
+        or max_frames != FOUR_PART_FOCUSED_FRAMES
+    ):
+        raise ValueError(
+            "focused ego four-part run permits only ego-hmc21110305 proxy frames [0, 2781)"
+        )
+    return FrameRange(start_frame=start_frame, end_frame_exclusive=FOUR_PART_FOCUSED_FRAMES)
 
 
 def load_observations(path: Path) -> tuple[FrameObservations, ...]:
@@ -871,6 +924,13 @@ def _resolve_artifact_uri(repository_root: Path, uri: str) -> Path:
     return path if path.is_absolute() else (repository_root / path).resolve()
 
 
+def _require_correction_frame_in_range(frame_index: int, max_frame_exclusive: int) -> None:
+    if not 0 <= frame_index < max_frame_exclusive:
+        raise ValueError(
+            f"correction schedule permits only frames [0, {max_frame_exclusive}): {frame_index}"
+        )
+
+
 def _load_multi_keyframe_correction_schedule(
     *,
     schedule_path: Path,
@@ -878,6 +938,7 @@ def _load_multi_keyframe_correction_schedule(
     config_path: Path,
     proxy: Any,
     analysis_fps: float,
+    max_frame_exclusive: int = SMOKE_FRAMES,
 ) -> tuple[dict[str, Any], MultiKeyframeCorrectionScheduleMetadata]:
     """Validate a proposed schedule and prepare its frame-zero and correction mask payload."""
     if analysis_fps != SCHEDULE_AUTHORING_FPS:
@@ -951,11 +1012,9 @@ def _load_multi_keyframe_correction_schedule(
     payload_corrections: list[dict[str, Any]] = []
     later_per_target: dict[str, int] = {}
     for correction in schedule.corrections:
-        if correction.frame.analysis_frame_index >= SMOKE_FRAMES:
-            raise ValueError(
-                f"bounded correction smoke permits only frames [0, {SMOKE_FRAMES}): "
-                f"{correction.frame.analysis_frame_index}"
-            )
+        _require_correction_frame_in_range(
+            correction.frame.analysis_frame_index, max_frame_exclusive
+        )
         candidate = candidates.get(correction.candidate_id)
         if candidate is None:
             raise ValueError(
@@ -1278,19 +1337,17 @@ def _render_full_ego_manual_seed_contact_sheet(
     return output_path
 
 
-def _render_four_part_pilot_contact_sheet(
+def _render_four_part_contact_sheet(
     *,
     repository_root: Path,
     run_directory: Path,
     external_python: Path,
-    full_run: bool = False,
+    view_id: str,
+    frame_count: int,
+    duration_seconds: float,
 ) -> Path:
     """Render fixed beginning/middle/end evidence for a four-part run."""
-    timestamps = (
-        ("0.0", str(FOUR_PART_FULL_SECONDS / 2), str((FOUR_PART_FULL_FRAMES - 1) / 30.0))
-        if full_run
-        else ("0.0", "10.0", str((FOUR_PART_PILOT_FRAMES - 1) / 30.0))
-    )
+    timestamps = ("0.0", str(duration_seconds / 2), str((frame_count - 1) / 30.0))
     command = [
         str(external_python),
         str(Path(__file__).with_name("g3_contact_sheet.py")),
@@ -1304,7 +1361,7 @@ def _render_four_part_pilot_contact_sheet(
     completed = subprocess.run(command, capture_output=True, text=True, check=False)
     (run_directory / "qa.stdout.log").write_text(completed.stdout)
     (run_directory / "qa.stderr.log").write_text(completed.stderr)
-    output_path = run_directory / "g3_review" / "static-c10379_contact_sheet.png"
+    output_path = run_directory / "g3_review" / f"{view_id}_contact_sheet.png"
     if completed.returncode != 0 or not output_path.is_file():
         raise RuntimeError(
             f"could not render four-part contact sheet (exit {completed.returncode})"
@@ -1353,6 +1410,30 @@ def _render_hybrid_contact_sheet(
             f"could not render hybrid QA contact sheet (exit {completed.returncode})"
         )
     return output_path
+
+
+def _qa_method_name(
+    *,
+    hybrid: bool,
+    full_ego: bool,
+    four_part_pilot: bool,
+    four_part_full: bool,
+    four_part_static_focused: bool,
+    four_part_ego_focused: bool,
+) -> str:
+    if hybrid:
+        return "static-hybrid-semantic-gate"
+    if full_ego:
+        return "full-ego-manual-seed-multiplexed-qa"
+    if four_part_pilot:
+        return "four-part-static-pilot-qa"
+    if four_part_full:
+        return "four-part-static-full-exploratory-qa"
+    if four_part_static_focused:
+        return "four-part-static-focused-reassembly-qa"
+    if four_part_ego_focused:
+        return "four-part-ego-focused-reassembly-qa"
+    return "manual-seed-multiplexed-e4-zero-shot-qa"
 
 
 def run_smoke(args: argparse.Namespace) -> Path:
@@ -1474,12 +1555,15 @@ def run_smoke(args: argparse.Namespace) -> Path:
             config_path=config_path,
             proxy=proxy,
             analysis_fps=analysis_fps,
+            max_frame_exclusive=selected_frame_budget(args, analysis_fps),
         )
     is_g3_candidate = args.g3_full_static
     is_e4_candidate = args.g4_e4_candidate
     is_full_ego_manual_seed = args.full_ego_manual_seed
     is_four_part_pilot = args.four_part_static_pilot
     is_four_part_full = args.four_part_static_full
+    is_four_part_focused = getattr(args, "four_part_static_focused", False)
+    is_four_part_ego_focused = getattr(args, "four_part_ego_focused", False)
     if (
         sum(
             (
@@ -1488,6 +1572,8 @@ def run_smoke(args: argparse.Namespace) -> Path:
                 is_full_ego_manual_seed,
                 is_four_part_pilot,
                 is_four_part_full,
+                is_four_part_focused,
+                is_four_part_ego_focused,
             )
         )
         > 1
@@ -1521,6 +1607,18 @@ def run_smoke(args: argparse.Namespace) -> Path:
     ):
         raise ValueError(
             "four-part full run requires only the ordered "
+            "chassis/interior/rear_body/cabin correction schedule"
+        )
+    if (is_four_part_focused or is_four_part_ego_focused) and (
+        condition is not None
+        or text_target_payload is not None
+        or hybrid_payload is not None
+        or manual_seed_payload is not None
+        or multi_keyframe_schedule_payload is None
+        or four_part_targets != ("chassis", "interior", "rear_body", "cabin")
+    ):
+        raise ValueError(
+            "focused four-part run requires only the ordered "
             "chassis/interior/rear_body/cabin correction schedule"
         )
     approval_values = (
@@ -1567,32 +1665,8 @@ def run_smoke(args: argparse.Namespace) -> Path:
         raise ValueError(
             "full ego baseline requires the approved manual-seed multiplex payload only"
         )
-    requested_frames = (
-        G3_STATIC_FRAMES
-        if is_g3_candidate
-        else E4_CANDIDATE_FRAMES
-        if is_e4_candidate
-        else FULL_EGO_MANUAL_SEED_FRAMES
-        if is_full_ego_manual_seed
-        else FOUR_PART_PILOT_FRAMES
-        if is_four_part_pilot
-        else FOUR_PART_FULL_FRAMES
-        if is_four_part_full
-        else smoke_frame_count(analysis_fps)
-    )
-    requested_seconds = (
-        G3_STATIC_SECONDS
-        if is_g3_candidate
-        else E4_CANDIDATE_SECONDS
-        if is_e4_candidate
-        else FULL_EGO_MANUAL_SEED_SECONDS
-        if is_full_ego_manual_seed
-        else FOUR_PART_PILOT_SECONDS
-        if is_four_part_pilot
-        else FOUR_PART_FULL_SECONDS
-        if is_four_part_full
-        else SMOKE_SECONDS
-    )
+    requested_frames = selected_frame_budget(args, analysis_fps)
+    requested_seconds = requested_frames / analysis_fps
     requested_range = (
         require_g3_static_range(proxy.view_id, args.start_frame, args.max_frames)
         if is_g3_candidate
@@ -1604,6 +1678,12 @@ def run_smoke(args: argparse.Namespace) -> Path:
         if is_four_part_pilot
         else require_four_part_full_range(proxy.view_id, args.start_frame, args.max_frames)
         if is_four_part_full
+        else require_four_part_focused_range(proxy.view_id, args.start_frame, args.max_frames)
+        if is_four_part_focused
+        else require_four_part_ego_focused_range(
+            proxy.view_id, args.start_frame, args.max_frames
+        )
+        if is_four_part_ego_focused
         else require_smoke_range(args.start_frame, args.max_frames, analysis_fps)
     )
 
@@ -1620,6 +1700,10 @@ def run_smoke(args: argparse.Namespace) -> Path:
         if is_four_part_pilot
         else "four-part-static-full-exploratory"
         if is_four_part_full
+        else "four-part-static-focused-reassembly"
+        if is_four_part_focused
+        else "four-part-ego-focused-reassembly"
+        if is_four_part_ego_focused
         else f"smoke-{condition.condition_id}"
         if condition
         else "smoke-manual-seed-multiplexed"
@@ -1671,6 +1755,10 @@ def run_smoke(args: argparse.Namespace) -> Path:
             if is_four_part_pilot
             else "four_part_static_full_exploratory"
             if is_four_part_full
+            else "four_part_static_focused_reassembly"
+            if is_four_part_focused
+            else "four_part_ego_focused_reassembly"
+            if is_four_part_ego_focused
             else "smoke_hybrid_static"
             if hybrid_payload is not None
             else "smoke"
@@ -1686,6 +1774,10 @@ def run_smoke(args: argparse.Namespace) -> Path:
     if is_four_part_full:
         runtime_invocation["known_pilot_failure"] = (
             "chassis/cabin identity merge after frame-65 correction"
+        )
+    if is_four_part_focused or is_four_part_ego_focused:
+        runtime_invocation["rescope_reason"] = (
+            "old proxy frame 3120 starts with four separated parts before reassembly"
         )
     if condition is not None:
         runtime_invocation.update(
@@ -1864,6 +1956,10 @@ def run_smoke(args: argparse.Namespace) -> Path:
                 if is_four_part_pilot
                 else "muggledsam-sam3-four-part-static-full-exploratory"
                 if is_four_part_full
+                else "muggledsam-sam3-four-part-static-focused-reassembly"
+                if is_four_part_focused
+                else "muggledsam-sam3-four-part-ego-focused-reassembly"
+                if is_four_part_ego_focused
                 else "muggledsam-sam3-manual-seed-multiplexed-smoke"
                 if manual_seed_payload is not None
                 else "muggledsam-sam3-multi-keyframe-correction-smoke"
@@ -1919,6 +2015,10 @@ def run_smoke(args: argparse.Namespace) -> Path:
         if is_four_part_pilot
         else "four_part_static_full_exploratory.rrd"
         if is_four_part_full
+        else "four_part_static_focused_reassembly.rrd"
+        if is_four_part_focused
+        else "four_part_ego_focused_reassembly.rrd"
+        if is_four_part_ego_focused
         else "smoke.rrd"
     )
     if method_state is MethodState.SUCCEEDED:
@@ -1966,6 +2066,10 @@ def run_smoke(args: argparse.Namespace) -> Path:
                     if is_full_ego_manual_seed
                     else "rerun-four-part-static-full-exploratory-export"
                     if is_four_part_full
+                    else "rerun-four-part-static-focused-reassembly-export"
+                    if is_four_part_focused
+                    else "rerun-four-part-ego-focused-reassembly-export"
+                    if is_four_part_ego_focused
                     else "rerun-smoke-export",
                     stage="export",
                     state=MethodState.SUCCEEDED,
@@ -1987,6 +2091,10 @@ def run_smoke(args: argparse.Namespace) -> Path:
                         if is_full_ego_manual_seed
                         else "rerun-four-part-static-full-exploratory-export"
                         if is_four_part_full
+                        else "rerun-four-part-static-focused-reassembly-export"
+                        if is_four_part_focused
+                        else "rerun-four-part-ego-focused-reassembly-export"
+                        if is_four_part_ego_focused
                         else "rerun-smoke-export"
                     ),
                     stage="export",
@@ -2006,6 +2114,10 @@ def run_smoke(args: argparse.Namespace) -> Path:
                     if is_full_ego_manual_seed
                     else "rerun-four-part-static-full-exploratory-export"
                     if is_four_part_full
+                    else "rerun-four-part-static-focused-reassembly-export"
+                    if is_four_part_focused
+                    else "rerun-four-part-ego-focused-reassembly-export"
+                    if is_four_part_ego_focused
                     else "rerun-smoke-export"
                 ),
                 stage="export",
@@ -2032,13 +2144,20 @@ def run_smoke(args: argparse.Namespace) -> Path:
                     full_run=is_g3_candidate,
                 )
                 if hybrid_metadata is not None
-                else _render_four_part_pilot_contact_sheet(
+                else _render_four_part_contact_sheet(
                     repository_root=repository_root,
                     run_directory=run_directory,
                     external_python=args.external_python,
-                    full_run=is_four_part_full,
+                    view_id=proxy.view_id,
+                    frame_count=requested_frames,
+                    duration_seconds=requested_seconds,
                 )
-                if is_four_part_pilot or is_four_part_full
+                if (
+                    is_four_part_pilot
+                    or is_four_part_full
+                    or is_four_part_focused
+                    or is_four_part_ego_focused
+                )
                 else _render_full_ego_manual_seed_contact_sheet(
                     repository_root=repository_root,
                     run_directory=run_directory,
@@ -2053,16 +2172,13 @@ def run_smoke(args: argparse.Namespace) -> Path:
             )
             method_statuses.append(
                 MethodStatus(
-                    method_name=(
-                        "static-hybrid-semantic-gate"
-                        if hybrid_metadata is not None
-                        else "full-ego-manual-seed-multiplexed-qa"
-                        if is_full_ego_manual_seed
-                        else "four-part-static-pilot-qa"
-                        if is_four_part_pilot
-                        else "four-part-static-full-exploratory-qa"
-                        if is_four_part_full
-                        else "manual-seed-multiplexed-e4-zero-shot-qa"
+                    method_name=_qa_method_name(
+                        hybrid=hybrid_metadata is not None,
+                        full_ego=is_full_ego_manual_seed,
+                        four_part_pilot=is_four_part_pilot,
+                        four_part_full=is_four_part_full,
+                        four_part_static_focused=is_four_part_focused,
+                        four_part_ego_focused=is_four_part_ego_focused,
                     ),
                     stage="review",
                     state=MethodState.SUCCEEDED,
@@ -2083,6 +2199,9 @@ def run_smoke(args: argparse.Namespace) -> Path:
                         else "recorded outputs at 0.000, 98.350, and 196.667 seconds; "
                         "review-only, not accuracy"
                         if is_four_part_full
+                        else "recorded outputs at 0.000, 46.350, and 92.667 seconds; "
+                        "review-only, not accuracy"
+                        if is_four_part_focused or is_four_part_ego_focused
                         else "recorded outputs at 0.000, 5.000, and 9.967 seconds; "
                         "review-only, not accuracy"
                     ),
@@ -2091,12 +2210,13 @@ def run_smoke(args: argparse.Namespace) -> Path:
         except Exception as error:
             method_statuses.append(
                 MethodStatus(
-                    method_name=(
-                        "static-hybrid-semantic-gate"
-                        if hybrid_metadata is not None
-                        else "full-ego-manual-seed-multiplexed-qa"
-                        if is_full_ego_manual_seed
-                        else "manual-seed-multiplexed-e4-zero-shot-qa"
+                    method_name=_qa_method_name(
+                        hybrid=hybrid_metadata is not None,
+                        full_ego=is_full_ego_manual_seed,
+                        four_part_pilot=is_four_part_pilot,
+                        four_part_full=is_four_part_full,
+                        four_part_static_focused=is_four_part_focused,
+                        four_part_ego_focused=is_four_part_ego_focused,
                     ),
                     stage="review",
                     state=MethodState.FAILED,
@@ -2173,6 +2293,7 @@ def run_smoke(args: argparse.Namespace) -> Path:
     full_ego_manual_seed = None
     four_part_pilot = None
     four_part_full = None
+    four_part_focused = None
     if is_g3_candidate:
         g3_candidate = G3CandidateRunMetadata(
             requested_analysis_frame_range=requested_range,
@@ -2228,6 +2349,18 @@ def run_smoke(args: argparse.Namespace) -> Path:
             known_pilot_failure="chassis/cabin identity merge after frame-65 correction",
             **metadata_common,
         )
+    elif is_four_part_focused or is_four_part_ego_focused:
+        four_part_focused = FourPartFocusedRunMetadata(
+            requested_analysis_frame_range=requested_range,
+            requested_seconds=FOUR_PART_FOCUSED_SECONDS,
+            view_id=proxy.view_id,
+            qa_artifact_uri=relative_uri(qa_path, repository_root) if qa_path is not None else None,
+            multi_keyframe_corrections=multi_keyframe_correction_metadata,
+            rescope_reason=(
+                "old proxy frame 3120 starts with four separated parts before reassembly"
+            ),
+            **metadata_common,
+        )
     else:
         smoke = SmokeRunMetadata(
             requested_analysis_frame_range=requested_range,
@@ -2258,6 +2391,7 @@ def run_smoke(args: argparse.Namespace) -> Path:
         full_ego_manual_seed=full_ego_manual_seed,
         four_part_pilot=four_part_pilot,
         four_part_full=four_part_full,
+        four_part_focused=four_part_focused,
     )
     (run_directory / "manifest.json").write_text(manifest.model_dump_json(indent=2) + "\n")
     return run_directory
@@ -2329,6 +2463,16 @@ def main() -> None:
         action="store_true",
         help="Run the known-imperfect full 5,901-frame static four-part exploration.",
     )
+    parser.add_argument(
+        "--four-part-static-focused",
+        action="store_true",
+        help="Run the 2,781-frame separated-to-assembled focused four-part proxy.",
+    )
+    parser.add_argument(
+        "--four-part-ego-focused",
+        action="store_true",
+        help="Run the aligned 2,781-frame monochrome ego four-part proxy.",
+    )
     parser.add_argument("--external-python", type=Path, default=MUGGLED_SAM_PYTHON)
     parser.add_argument("--model", type=Path, default=DEFAULT_MODEL)
     parser.add_argument("--condition-config", type=Path)
@@ -2387,6 +2531,10 @@ def main() -> None:
         args.max_frames = FOUR_PART_PILOT_FRAMES
     if args.four_part_static_full and args.max_frames == SMOKE_FRAMES:
         args.max_frames = FOUR_PART_FULL_FRAMES
+    if args.four_part_static_focused and args.max_frames == SMOKE_FRAMES:
+        args.max_frames = FOUR_PART_FOCUSED_FRAMES
+    if args.four_part_ego_focused and args.max_frames == SMOKE_FRAMES:
+        args.max_frames = FOUR_PART_FOCUSED_FRAMES
     try:
         run_directory = run_smoke(args)
     except (OSError, ValueError, json.JSONDecodeError) as error:

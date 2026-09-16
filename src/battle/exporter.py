@@ -28,6 +28,53 @@ MASKS_PATH = "masks"
 SEGMENTATION_PATH = "segmentation"
 FRAME_COUNTER_PATH = "frame_counter"
 DIAGNOSTICS_PATH = "tracker_diagnostics"
+HAND_METRICS_PATH = "hand_metrics"
+HAND_LANDMARK_NAMES = (
+    "wrist",
+    "thumb_cmc",
+    "thumb_mcp",
+    "thumb_ip",
+    "thumb_tip",
+    "index_mcp",
+    "index_pip",
+    "index_dip",
+    "index_tip",
+    "middle_mcp",
+    "middle_pip",
+    "middle_dip",
+    "middle_tip",
+    "ring_mcp",
+    "ring_pip",
+    "ring_dip",
+    "ring_tip",
+    "pinky_mcp",
+    "pinky_pip",
+    "pinky_dip",
+    "pinky_tip",
+)
+HAND_CONNECTIONS = (
+    (0, 1),
+    (1, 2),
+    (2, 3),
+    (3, 4),
+    (0, 5),
+    (5, 6),
+    (6, 7),
+    (7, 8),
+    (5, 9),
+    (9, 10),
+    (10, 11),
+    (11, 12),
+    (9, 13),
+    (13, 14),
+    (14, 15),
+    (15, 16),
+    (13, 17),
+    (17, 18),
+    (18, 19),
+    (19, 20),
+    (0, 17),
+)
 BACKGROUND_ANNOTATION: tuple[int, str, tuple[int, int, int, int]] = (
     0,
     "background",
@@ -249,6 +296,81 @@ def _log_tracker_diagnostics(
             )
 
 
+def _log_hands(
+    observation: FrameObservations,
+    *,
+    view_root: str,
+    video_dimensions: tuple[int, int] | None,
+) -> None:
+    """Log all hands as one replaceable overlay plus per-track confidence traces."""
+    width, height = video_dimensions or (1, 1)
+    hands_root = f"{view_root}/hands"
+    metrics_root = f"{view_root}/{HAND_METRICS_PATH}"
+    rr.log(f"{metrics_root}/count", rr.Scalars([len(observation.hands)]))
+    if not observation.hands:
+        rr.log(hands_root, rr.Clear(recursive=True))
+        return
+    rr.log(
+        f"{metrics_root}/mean_handedness_confidence",
+        rr.Scalars(
+            [sum(hand.confidence for hand in observation.hands) / len(observation.hands)]
+        ),
+    )
+
+    colors = {
+        "left": (80, 180, 255),
+        "right": (255, 170, 70),
+        "unknown": (210, 210, 210),
+    }
+    landmark_positions = []
+    landmark_labels = []
+    landmark_colors = []
+    strips = []
+    strip_colors = []
+    for hand in observation.hands:
+        color = colors[str(hand.side)]
+        positions = [
+            [landmark.x * width, landmark.y * height] for landmark in hand.landmarks
+        ]
+        landmark_positions.extend(positions)
+        landmark_labels.extend(
+            f"{hand.hand_id}: {name}" for name in HAND_LANDMARK_NAMES
+        )
+        landmark_colors.extend([color] * len(positions))
+        strips.extend([[positions[start], positions[end]] for start, end in HAND_CONNECTIONS])
+        strip_colors.extend([color] * len(HAND_CONNECTIONS))
+    rr.log(
+        f"{hands_root}/landmarks",
+        rr.Points2D(
+            landmark_positions,
+            labels=landmark_labels,
+            colors=landmark_colors,
+            radii=3.0,
+            draw_order=3.0,
+        ),
+    )
+    rr.log(
+        f"{hands_root}/skeletons",
+        rr.LineStrips2D(strips, colors=strip_colors, radii=2.0, draw_order=2.5),
+    )
+    rr.log(
+        f"{hands_root}/boxes",
+        rr.Boxes2D(
+            mins=[[hand.box.x * width, hand.box.y * height] for hand in observation.hands],
+            sizes=[
+                [hand.box.width * width, hand.box.height * height]
+                for hand in observation.hands
+            ],
+            labels=[
+                f"{hand.hand_id}: {hand.side} ({hand.confidence:.2f})"
+                for hand in observation.hands
+            ],
+            colors=[colors[str(hand.side)] for hand in observation.hands],
+            draw_order=2.0,
+        ),
+    )
+
+
 def _spatial_view_contents() -> list[str]:
     """Show video, boxes, and per-object masks; leave traces and the sparse segmentation off.
 
@@ -276,6 +398,7 @@ def pinned_blueprint(
     *,
     analysis_fps: int = 30,
     video_dimensions: tuple[int, int] | None = None,
+    has_hands: bool = False,
 ) -> rrb.Blueprint:
     """Build a deterministic layout for the exported observation view."""
     root = f"world/{clip_id}"
@@ -297,7 +420,20 @@ def pinned_blueprint(
                     name=f"{view_id} video and detections",
                     visual_bounds=visual_bounds,
                 ),
-                rrb.Vertical(*_diagnostics_view_pair(view_root)),
+                rrb.Vertical(
+                    *_diagnostics_view_pair(view_root),
+                    *(
+                        (
+                            rrb.TimeSeriesView(
+                                origin=f"{view_root}/{HAND_METRICS_PATH}",
+                                contents="$origin/**",
+                                name="Hand detections",
+                            ),
+                        )
+                        if has_hands
+                        else ()
+                    ),
+                ),
                 column_shares=[2, 1],
             ),
             rrb.Horizontal(
@@ -331,6 +467,7 @@ def pinned_comparison_blueprint(
     static_video_dimensions: tuple[int, int],
     ego_label: str = "ego manual-seed SAM3 baseline",
     static_label: str = "static existing SAM3 output",
+    has_static_hands: bool = False,
 ) -> rrb.Blueprint:
     """Build a pinned side-by-side layout sharing the analysis-time timeline."""
     root = f"world/{clip_id}/synchronized_ego_static_comparison"
@@ -357,7 +494,18 @@ def pinned_comparison_blueprint(
             ),
             rrb.Horizontal(
                 *_diagnostics_view_pair(f"{root}/views/{ego_view_id}", label_prefix="ego "),
-                column_shares=[1, 1],
+                *(
+                    (
+                        rrb.TimeSeriesView(
+                            origin=f"{root}/views/{static_view_id}/{HAND_METRICS_PATH}",
+                            contents="$origin/**",
+                            name="static MediaPipe hand detections",
+                        ),
+                    )
+                    if has_static_hands
+                    else ()
+                ),
+                column_shares=[1, 1, 1] if has_static_hands else [1, 1],
             ),
             rrb.Horizontal(
                 rrb.TimeSeriesView(
@@ -451,6 +599,11 @@ def _log_observation(
         video_dimensions=video_dimensions,
         segmentation_frame_period=segmentation_frame_period,
     )
+    _log_hands(
+        observation,
+        view_root=view_root,
+        video_dimensions=video_dimensions,
+    )
 
 
 def _require_synchronized_observations(
@@ -489,6 +642,11 @@ def export_synchronized_comparison(
     static_asset_reference: EncodedAssetInput,
     static_mask_artifact_root: Path | None,
     static_label: str,
+    ego_label: str = "manual-seed multiplexed SAM3 baseline",
+    ego_description: str = "Existing bounded ego manual-seed baseline video.",
+    static_description: str = (
+        "Existing bounded static-camera video paired to the same analysis timeline."
+    ),
 ) -> Path:
     """Export two existing views to one analysis-time-synchronized RRD without inference."""
     analysis_fps = ego_manifest.clip.timing.clocks.fps_for(ClockName.ANALYSIS)
@@ -515,7 +673,11 @@ def export_synchronized_comparison(
         analysis_fps=analysis_fps,
         ego_video_dimensions=ego_video_dimensions,
         static_video_dimensions=static_video_dimensions,
+        ego_label=ego_label,
         static_label=static_label,
+        has_static_hands=any(
+            observation.hands for observation in static_manifest.observations
+        ),
     )
     rr.init(
         f"battle-synchronized-ego-static-comparison-{ego_manifest.clip.clip_id}",
@@ -536,7 +698,7 @@ def export_synchronized_comparison(
                     ),
                     "ego": {
                         "view_id": ego_view_id,
-                        "label": "manual-seed multiplexed SAM3 baseline",
+                        "label": ego_label,
                     },
                     "static": {"view_id": static_view_id, "label": static_label},
                 },
@@ -552,13 +714,13 @@ def export_synchronized_comparison(
         view_root=ego_root,
         asset_reference=ego_asset_reference,
         video_path=ego_video_path,
-        description="Existing bounded ego manual-seed baseline video.",
+        description=ego_description,
     )
     static_asset = _log_source_asset(
         view_root=static_root,
         asset_reference=static_asset_reference,
         video_path=static_video_path,
-        description="Existing bounded static-camera video paired to the same analysis timeline.",
+        description=static_description,
     )
     ego_annotations = _object_annotations(ego_manifest)[ego_view_id]
     static_annotations = _object_annotations(static_manifest)[static_view_id]
@@ -643,6 +805,7 @@ def export_run(
         active_view_id,
         analysis_fps=analysis_fps,
         video_dimensions=video_dimensions,
+        has_hands=any(observation.hands for observation in manifest.observations),
     )
     # Rerun keys a blueprint by application id, and every view in ours is anchored under a
     # clip-specific entity root. Recordings of different clips must therefore not share an
@@ -753,18 +916,11 @@ def export_run(
             segmentation_frame_period=segmentation_frame_period,
         )
 
-        for hand in observation.hands:
-            width, height = video_dimensions or (1, 1)
-            rr.log(
-                f"{view_root}/hands",
-                rr.Points2D(
-                    positions=[
-                        [landmark.x * width, landmark.y * height] for landmark in hand.landmarks
-                    ],
-                    labels=[hand.hand_id] * len(hand.landmarks),
-                    colors=[[255, 170, 70]],
-                ),
-            )
+        _log_hands(
+            observation,
+            view_root=view_root,
+            video_dimensions=video_dimensions,
+        )
         _log_tracker_diagnostics(observation, view_root=view_root, annotations=annotations)
         if not blueprint_sent:
             rr.send_blueprint(blueprint)

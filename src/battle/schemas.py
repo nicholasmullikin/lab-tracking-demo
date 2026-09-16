@@ -405,7 +405,10 @@ class PerFrameHand(VersionedModel):
     hand_id: str = Field(min_length=1)
     side: HandSide
     confidence: float = Field(ge=0, le=1)
-    landmarks: tuple[NormalizedPoint, ...] = Field(min_length=1)
+    landmarks: tuple[NormalizedPoint, ...] = Field(min_length=21, max_length=21)
+    box: NormalizedBox
+    model_side: HandSide
+    model_handedness_confidence: float = Field(ge=0, le=1)
 
 
 class TrackerSlotDiagnostic(VersionedModel):
@@ -778,7 +781,7 @@ class MuggledSAMBoxCalibrationManifest(VersionedModel):
     calibration_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]*$")
     base_g2_config: str = Field(min_length=1)
     base_g2_config_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    view_id: Literal["static-c10379", "ego-hmc21179183"]
+    view_id: Literal["static-c10379", "ego-hmc21110305", "ego-hmc21179183"]
     proxy: ArtifactFingerprint
     source: ArtifactFingerprint
     proxy_dimensions: VideoDimensions
@@ -969,7 +972,7 @@ class MuggledSAMManualSeedTargetConfig(VersionedModel):
     manifest_kind: Literal["muggledsam_sam3_manual_seed_targets"]
     config_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]*$")
     base_g2_config: str = Field(min_length=1)
-    view_id: Literal["static-c10379", "ego-hmc21179183"]
+    view_id: Literal["static-c10379", "ego-hmc21110305", "ego-hmc21179183"]
     targets: tuple[str, ...] = Field(min_length=1)
     target_descriptors: tuple[MuggledSAMManualSeedTargetDescriptor, ...] = ()
 
@@ -1064,17 +1067,22 @@ class MuggledSAMMultiKeyframeCorrectionPolicy(VersionedModel):
 
     manifest_kind: Literal["muggledsam_sam3_multi_keyframe_correction_policy"]
     policy_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]*$")
-    policy_version: Literal["1"]
-    view_id: Literal["static-c10379", "ego-hmc21179183"]
+    policy_version: Literal["1", "2"]
+    view_id: Literal["static-c10379", "ego-hmc21110305", "ego-hmc21179183"]
     manual_seed_target_config_fingerprint: ArtifactFingerprint
     targets: tuple[str, ...] = Field(min_length=1)
-    maximum_later_correction_keyframes_per_target: int = Field(ge=0, le=3)
+    maximum_later_correction_keyframes_per_target: int = Field(ge=0, le=5)
     correction_memory_semantics: Literal["replace_prompt_memory_and_reset_frame_memory"]
 
     @model_validator(mode="after")
     def require_distinct_policy_targets(self) -> MuggledSAMMultiKeyframeCorrectionPolicy:
         if len(set(self.targets)) != len(self.targets):
             raise ValueError("correction policy targets must be distinct")
+        if (
+            self.policy_version == "1"
+            and self.maximum_later_correction_keyframes_per_target > 3
+        ):
+            raise ValueError("correction policy v1 permits at most three later keyframes")
         return self
 
 
@@ -1104,7 +1112,7 @@ class MuggledSAMMultiKeyframeCorrectionSchedule(VersionedModel):
     manifest_kind: Literal["muggledsam_sam3_multi_keyframe_correction_schedule"]
     authority: Literal["proposed_non_authoritative"]
     schedule_version: Literal["1"]
-    view_id: Literal["static-c10379", "ego-hmc21179183"]
+    view_id: Literal["static-c10379", "ego-hmc21110305", "ego-hmc21179183"]
     calibration_manifest_fingerprint: ArtifactFingerprint
     correction_policy_fingerprint: ArtifactFingerprint
     manual_seed_target_config_fingerprint: ArtifactFingerprint
@@ -1177,7 +1185,7 @@ class MuggledSAMProposedTrackingPromptConfig(VersionedModel):
     authority: Literal["proposed_non_authoritative"]
     calibration_manifest_uri: str = Field(min_length=1)
     calibration_manifest_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    view_id: Literal["static-c10379", "ego-hmc21179183"]
+    view_id: Literal["static-c10379", "ego-hmc21110305", "ego-hmc21179183"]
     seeds: tuple[ProposedTrackingSeed, ...] = Field(min_length=1)
     tracker_initialization_limitations: tuple[str, ...] = Field(min_length=1)
     manual_seed_target_config_fingerprint: ArtifactFingerprint | None = None
@@ -1582,6 +1590,78 @@ class FourPartFullRunMetadata(VersionedModel):
         return self
 
 
+class FourPartFocusedRunMetadata(VersionedModel):
+    """Audit data for a separated-to-assembled focused four-part view."""
+
+    requested_analysis_frame_range: FrameRange
+    requested_seconds: Literal[92.7]
+    view_id: Literal["static-c10379", "ego-hmc21110305"]
+    concepts: tuple[str, ...] = Field(min_length=1)
+    source_fingerprint: ArtifactFingerprint
+    proxy_fingerprint: ArtifactFingerprint
+    config_fingerprint: ArtifactFingerprint
+    adapter: AdapterMetadata
+    continuity: StreamContinuityPolicy
+    runtime_settings: dict[str, str | int | float | bool | None]
+    measurements: RuntimeMeasurements
+    observations_uri: str | None = None
+    mask_artifact_uri: str | None = None
+    mask_artifact_count: int = Field(ge=0)
+    rerun_artifact_uri: str | None = None
+    qa_artifact_uri: str | None = None
+    multi_keyframe_corrections: MultiKeyframeCorrectionScheduleMetadata
+    rescope_reason: Literal[
+        "old proxy frame 3120 starts with four separated parts before reassembly"
+    ]
+
+    @model_validator(mode="after")
+    def require_exact_four_part_focused_budget(self) -> FourPartFocusedRunMetadata:
+        if (
+            self.requested_analysis_frame_range.start_frame != 0
+            or self.requested_analysis_frame_range.frame_count != 2781
+        ):
+            raise ValueError(
+                "focused four-part run must cover exactly focused proxy frames [0, 2781)"
+            )
+        if self.concepts != ("chassis", "interior", "rear_body", "cabin"):
+            raise ValueError(
+                "focused four-part run requires chassis/interior/rear_body/cabin ordering"
+            )
+        return self
+
+
+class MediaPipeHandsRunMetadata(VersionedModel):
+    """Audit data for one bounded MediaPipe Hand Landmarker video run."""
+
+    requested_analysis_frame_range: FrameRange
+    requested_seconds: float = Field(gt=0, le=60.0)
+    source_fingerprint: ArtifactFingerprint
+    proxy_fingerprint: ArtifactFingerprint
+    config_fingerprint: ArtifactFingerprint
+    model_fingerprint: ArtifactFingerprint
+    adapter: AdapterMetadata
+    runtime_settings: dict[str, str | int | float | bool | None]
+    measurements: RuntimeMeasurements
+    observations_uri: str
+    rerun_artifact_uri: str | None = None
+    qa_artifact_uri: str | None = None
+
+    @model_validator(mode="after")
+    def require_consistent_budget(self) -> MediaPipeHandsRunMetadata:
+        if self.requested_analysis_frame_range.start_frame != 0:
+            raise ValueError("MediaPipe Hands range must start at proxy frame zero")
+        analysis_fps = self.runtime_settings.get("analysis_fps")
+        if isinstance(analysis_fps, bool) or not isinstance(analysis_fps, (int, float)):
+            raise ValueError("runtime_settings.analysis_fps must be numeric")
+        if self.requested_analysis_frame_range.frame_count != round(
+            self.requested_seconds * analysis_fps
+        ):
+            raise ValueError(
+                "MediaPipe Hands frame count must equal requested_seconds * analysis_fps"
+            )
+        return self
+
+
 class RunManifest(VersionedModel):
     run_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]*$")
     clip: ClipManifest
@@ -1595,6 +1675,8 @@ class RunManifest(VersionedModel):
     full_ego_manual_seed: FullEgoManualSeedRunMetadata | None = None
     four_part_pilot: FourPartPilotRunMetadata | None = None
     four_part_full: FourPartFullRunMetadata | None = None
+    four_part_focused: FourPartFocusedRunMetadata | None = None
+    mediapipe_hands: MediaPipeHandsRunMetadata | None = None
 
     @model_validator(mode="after")
     def require_monotonic_observations(self) -> RunManifest:

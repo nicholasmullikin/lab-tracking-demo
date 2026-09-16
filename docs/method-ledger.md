@@ -37,17 +37,17 @@ no-annotation, no-accuracy-claims rule.
 
 | Goal (from the Sep 8 ask and plan) | Status | Evidence |
 | --- | --- | --- |
-| Typed manifests, fixture tests, inference-free Rerun exporter | Done | `src/battle/schemas.py`, `src/battle/exporter.py`, 125 passed, 1 skipped |
+| Typed manifests, fixture tests, inference-free Rerun exporter | Done | `src/battle/schemas.py`, `src/battle/exporter.py`, 182 passed |
 | Pin one Assembly101 segment with source/analysis/annotation/pose clocks | Done | `configs/clips/*.json`; nusar-9033, 215.000–395.000 s |
 | MuggledSAM/SAM3 running over the full 180 s static view | Done (aligned hybrid: three text, one reviewed mask) | [Sep 14 aligned hybrid](#sep-14-aligned-static-hybrid-candidate) |
 | MuggledSAM/SAM3 running over the full 180 s ego view | Done, but only with human-seeded masks | [Four-target 180 s baseline](#sep-9-evening-four-target-180-second-ego-baseline) |
-| Both views on one synchronized Rerun timeline | Done, rebuilt with aligned hybrid static | `battle-build-ego-static-comparison`; [Sep 14 aligned hybrid](#sep-14-aligned-static-hybrid-candidate) |
+| Both views on one synchronized Rerun timeline | Done; canonical 180 s comparison plus focused 60 s four-part comparison | `battle-build-ego-static-comparison`; [Sep 15 four-part experiment](#sep-15-four-part-static-reassembly-experiment) |
 | Five pre-accuracy measures recorded per run | Done | Every `worker_result.json` and `manifest.json` |
-| MediaPipe Hands static-view baseline (core spine) | Not started | Displaced by the ego calibration work |
-| Second method in the viewer (WiLoR or any exploratory item) | Not started | [hand-pose adapter](#hand-pose-adapter) is `not_run` |
+| MediaPipe Hands static-view baseline (core spine) | Selected 60 s run complete | [hand-pose adapter](#hand-pose-adapter) |
+| Second method in the viewer (MediaPipe) | Done; merged into focused first-minute comparison | [hand-pose adapter](#hand-pose-adapter) |
 | Fixed two-timestamp human QA per completed method | Records prepared; human dispositions pending | Human-selected source frames 14,868/21,732; aligned static, ego, and preserved historical records under `docs/qa/` |
 | No training, no annotation project, no accuracy claims | Held | Reviewed masks are calibration seeds, not labels; no metric vs. ground truth anywhere |
-| Four physical components through reassembly | Full exploratory run completed; segmentation not accepted | [Sep 15 four-part experiment](#sep-15-four-part-static-reassembly-experiment) |
+| Four physical components through reassembly | Focused run completed; visual disposition pending | [Sep 15 four-part experiment](#sep-15-four-part-static-reassembly-experiment) |
 | Git history from the start | Missed, then repaired | First commit Sep 13 after five days of uncommitted work |
 | FineBio | Still pending | Not part of any run |
 | Audio | Deferred by plan | Not revisited |
@@ -237,8 +237,13 @@ essentially all of the time went into making SAM3 usable on the monochrome ego v
 - Sep 15 evening. Visual review identified a better experimental boundary: proxy frame
   3120, where all four components begin separated and are subsequently merged during
   reassembly. This maps to proxy time 104.0 seconds and source time 294.0 seconds. The
-  next contract is `[3120,5901)`, or 2,781 frames / 92.7 seconds, with a new
-  frame-3120 calibration rather than transferred frame-0 seeds.
+  focused contract re-trims that source interval to a new proxy `[0,2781)`, or 92.7
+  seconds, so old frame 3120 becomes its frame 0. It requires new calibration rather
+  than transferred exploratory masks.
+- The focused calibration used frame 0 plus corrections at frames 900/1800/2700. The
+  2,781-frame run completed in 194.855 seconds. Only one object-pair frame exceeded 0.5
+  mask IoU, versus 111 such pair-frames in the exploratory run; visual identity review
+  remains pending.
 
 ### Plan versus actual
 
@@ -258,8 +263,8 @@ What the plan said, what happened instead, and why, in one line each.
 - Multi-keyframe corrections, versus frame-0 initialization only. Frame 0 was not
   representative (Sep 9, 22:53). Corrections reset a slot's memory at a human-verified
   frame; the run manifest records every correction.
-- No MediaPipe, no WiLoR, no exploratory queue. Never reached. These are the cheapest
-  next steps precisely because the exporter, schemas, and viewer are done.
+- MediaPipe was delayed until Sep 16 by the calibration work, then completed over the
+  retained first minute. WiLoR and the remaining exploratory queue were not reached.
 - Masks on every frame in Rerun, versus the historical external-PNG cadence of 5 fps
   (`mask_period_frames=6` at 30 fps). The worker now writes compressed PNGs every analysis
   frame and Rerun logs each object's PNG as an RGBA `EncodedImage` cut-out. The distinct
@@ -275,17 +280,15 @@ What the plan said, what happened instead, and why, in one line each.
 
 ### Open items
 
-- Create a new four-part calibration and bounded run for proxy frames `[3120,5901)`.
-  The components begin separated at frame 3120 and are assembled afterward; this is a
-  cleaner test of identity preservation than carrying tracks through the earlier
-  disassembly/warm-up interval.
+- Visually review the focused four-part run in Rerun, especially frames 707, 1946,
+  2381, 2578, and 2684. Those are the first target-loss frames or the sole frame with
+  pairwise mask IoU above 0.5.
 - Inspect the aligned hybrid static and canonical ego model-overlay sheets and complete
   their pending records under `docs/qa/`. The old static zero-shot record remains historical;
   no new hybrid pass/flag/fail has been assigned.
-- Next method: MediaPipe Hands on the static view is the plan's core-spine item and
-  needs no GPU; WiLoR is the named second wave. Either can reuse the SAM3 hand masks and
-  boxes now that they are trusted. Source and license review comes first
-  (`docs/SOURCES.md`, `docs/LICENSES.md`).
+- Review the combined first-minute SAM3 + MediaPipe recording. MediaPipe's final
+  20-second occlusion gaps and unstable handedness remain explicit limitations. WiLoR
+  remains the named second wave.
 - `yellow_toy_top` leaves the frame at ~216.2 s in every arm; its coverage numbers
   describe the scene, not the tracker.
 
@@ -382,11 +385,52 @@ What the plan said, what happened instead, and why, in one line each.
   This is a geometric conflict screen, not ground-truth accuracy, and projected
   occlusion can create some overlap; combined with the pilot's visual drift, it is enough
   to reject the run as evidence of four reliable identities.
-- Next decision: start at proxy frame 3120 (104.0 proxy seconds / 294.0 source seconds),
-  where the four components are separated before being merged. The bounded range is
-  `[3120,5901)`, 2,781 frames / 92.7 seconds. Create new masks at frame 3120 and treat it
-  as the run's local initialization frame; do not reuse the exploratory run's frame-0
-  masks.
+- Next decision: old proxy frame 3120 (104.0 proxy seconds / 294.0 source seconds) is
+  where the four components are separated before being merged. The focused G2 contract
+  re-trims source `[294.0,386.7)` to a new proxy `[0,2781)`, 2,781 frames / 92.7
+  seconds. Create new masks at focused frame 0; do not reuse the exploratory run's
+  frame-0 masks.
+- Focused implementation:
+  `configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_g2.json`,
+  `configs/muggledsam_static_four_part_reassembly_focused_manual_seed.json`, and its
+  correction policy. The existing proxy script now builds the static
+  `C10379_rgb_294.000-386.700_1280x720_30fps.mp4` asset. The focused run profile is
+  `--four-part-static-focused`; long-run correction validation now follows the active
+  profile budget rather than the historical 300-frame smoke limit.
+- Focused run:
+  `muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260916t020716z`;
+  2,781/2,781 frames, 194.8546 seconds elapsed, 4.3494 seconds to first usable output,
+  2,209,960,448 bytes peak allocated VRAM, and 11,042 masks. Output coverage was
+  2,775/2,781 chassis, 2,774/2,781 interior, 2,751/2,781 rear body, and 2,742/2,781
+  cabin frames. Corrections were applied at frames 900, 1800, and 2700.
+- Focused overlap audit: only chassis/interior exceeded 0.5 IoU, on one frame (0.6891
+  at frame 2381). All other pairs had zero frames above 0.5; their maxima were 0.2745
+  or lower. This removes the exploratory run's dominant chassis/cabin geometric conflict,
+  but it does not establish physical identity correctness without visual review.
+- Visual follow-up identified chassis/interior confusion around frames 324–330 and
+  screwdriver/rear-body confusion beginning around frame 1235. Correction policy v2
+  raises the audited per-target ceiling from three to five later keyframes while leaving
+  the v1 policy file unchanged so the completed focused run remains reproducible.
+- The v2 rerun `muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-
+  20260916t023700z` applied 14 later masks at frames 327/900/1235/1800/2700 and
+  completed 2,781 frames in 197.5891 seconds with 11,044 masks. Chassis and rear-body
+  output gaps fell, but cabin gaps rose to 64 frames. The requested frame-327 and
+  frame-1235 samples look locally separated; a new rear-body/cabin identity merge appears
+  around frame 2101, where their mask IoU reaches 0.9376. The rerun therefore remains
+  review evidence, not an accepted result.
+- Monochrome ego counterpart:
+  `muggledsam-sam3-four-part-ego-focused-reassembly-ego-hmc21110305-20260916t031515z`
+  uses the same source interval with fresh ego masks at frame 0 and corrections at
+  97/1235/1800/2700. It completed 2,781 frames in 193.7752 seconds with 10,509 masks
+  and 2.0 GiB peak allocated VRAM. No pair exceeded 0.5 mask IoU, while output gaps
+  reached 2 chassis, 69 interior, 136 rear-body, and 408 cabin frames. Those gaps and
+  the assembled-object contact sheet keep the result in visual review rather than
+  establishing cross-view identity accuracy.
+- Human scope decision: retain only focused frames `[0,1800)` / 60.0 seconds from each
+  view and stop correcting the later decline. The focused-first-minute comparison command
+  creates exact 1,800-frame CFR inputs and the inference-free
+  synchronized recording under `runs/four-part-focused-first-minute-comparison/`.
+  The selected static v2 run's frame-2101 merge lies outside this bounded comparison.
 - Claim boundary: reviewed masks are calibration inputs, not evaluation labels. Runtime,
   mask counts, ID continuity, tracker diagnostics, and overlap counts are factual output
   properties, not segmentation or association accuracy.
@@ -928,9 +972,48 @@ split, and uncertainty when measured; failure modes, blocker, and next decision.
 ### hand-pose adapter
 
 - Stage: `pose`
-- State: `not_run`
-- Blocker: deferred until a provenance-approved source and adapter plan. The plan's
-  core-spine item is MediaPipe Hand Landmarker on the RGB static view (CPU-only); WiLoR
-  is the named second-wave upgrade.
-- Environment candidate: `~/.pyenv/versions/wilor`
-- Weights: not downloaded
+- State: `succeeded` for the bounded 20-second smoke and selected 60-second run.
+- Adapter: MediaPipe 1.0.1 Hand Landmarker, official float16 v1 task bundle, VIDEO mode,
+  CPU/XNNPACK, two-hand limit, default 0.5 detection/presence/tracking thresholds.
+- Input: approved focused RGB static proxy, analysis frames `[0, 600)` / 20.0 seconds
+  at 30 FPS. The model asset and input/config checksums are verified before inference.
+- Output contract: one observation per decoded frame; each detection carries exactly 21
+  normalized 2D landmarks, a landmark-derived box, raw model handedness/confidence, and
+  handedness corrected for the unmirrored camera then temporally voted. Detection IDs are
+  explicitly frame-local; no persistent hand-identity claim is made.
+- Run: `runs/mediapipe-hands-static-20s-20260916t035031z/`. Inference processed 600
+  frames in 5.374 seconds on CPU; first normalized output appeared after 0.059 seconds.
+  At least one hand was detected in 543/600 frames: 57 zero-hand, 393 one-hand, and 150
+  two-hand frames. These are output-presence counts, not recall or pose accuracy.
+- Improvement ablation: a crop-only pass over normalized ROI
+  `(x=0.45, y=0.35, width=0.55, height=0.65)` recovered some misses but regressed total
+  detections (628 versus 693), so it did not replace the baseline. Fusing full-frame
+  and 2× crop inference was complementary. The selected smoke candidate
+  `runs/mediapipe-hands-static-20s-fused-dedup-th035-20260916t0428z/` uses 0.35
+  detection/presence/tracking thresholds and strict spatial duplicate removal. It
+  produced one hand on 292 frames and two on 308 (908 detections total), with no
+  near-coincident wrist pairs under the 0.06 normalized-distance audit. Runtime was
+  11.103 seconds on CPU. A 12-frame stratified review of gains showed plausible hand
+  geometry, including recovery at frame 300; this remains visual review, not recall.
+- Artifacts: normalized JSONL, manifest, bounded input, three-frame contact sheet, and
+  a 9.62 MB inference-free Rerun recording with landmarks, skeletons, boxes, hand count,
+  and mean handedness confidence. The contact sheet shows plausible geometry at frames
+  0 and 599 and no detection at frame 300; human semantic disposition remains pending.
+- Provenance: package source declares Apache-2.0; model bundle redistribution remains
+  unapproved because its model-specific license was not independently confirmed.
+- Selected minute run:
+  `runs/mediapipe-hands-static-60s-fused-dedup-th035-20260916t0430z/`. It processed
+  1,800 frames in 30.668 seconds on CPU and emitted 2,600 detections: 152 zero-hand,
+  696 one-hand, and 952 two-hand frames. Coverage weakened in the final 20 seconds
+  (120/600 empty frames) while hands grasped the black assembly; a stratified raw-frame
+  sheet confirms visible hands in many misses, so this is model failure rather than
+  absence. The tighter-crop ablation reduced final-section misses to 88 but regressed
+  overall detections and was rejected.
+- Combined viewer: the selected minute hand observations are frame/source-time checked
+  against the static SAM3 run and merged into
+  `runs/four-part-focused-first-minute-comparison/four_part_focused_first_minute_ego_static_comparison.rrd`.
+  The 81.0 MB inference-free RRD contains synchronized ego/static SAM3 masks plus static
+  MediaPipe landmarks, skeletons, boxes, hand count, and mean handedness confidence.
+  Structure was verified without opening a viewer.
+- Next: human visual review of the combined recording. WiLoR remains a separately
+  licensed upgrade if MediaPipe's occlusion failures are unacceptable.

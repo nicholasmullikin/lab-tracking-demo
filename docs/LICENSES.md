@@ -33,6 +33,10 @@ inputs outside Git.
   agreement before downloading. The smoke run used an already-local checkpoint; Battle
   did not download, bundle, or redistribute it. Its checkpoint license/access status
   must be reviewed separately before a successful model run can be shared.
+- **MediaPipe:** the MediaPipe source repository declares Apache-2.0. The separately
+  downloaded official Hand Landmarker float16 v1 task bundle remains ignored and is not
+  redistributed; its model-specific license was not independently confirmed, so no
+  redistribution permission is claimed.
 
 ## Dependency and future-model review
 

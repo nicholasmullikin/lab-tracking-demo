@@ -13,20 +13,36 @@ output_dir="data/derived/assembly101/${sequence}"
 # of all four target surfaces; independent mask separability remains a G2 gate.
 create_proxy() {
   local input_path=$1
-  local video_filter=$2
-  local output_path=$3
+  local start_seconds=$2
+  local duration_seconds=$3
+  local scale=$4
+  local output_path=$5
 
-  ffmpeg -hide_banner -n -ss 190.000 -i "${input_path}" -map 0:v:0 -an \
-    -vf "${video_filter}" -c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p \
+  if [[ -f "${output_path}" ]]; then
+    return
+  fi
+  ffmpeg -hide_banner -n -ss "${start_seconds}" -i "${input_path}" -map 0:v:0 -an \
+    -vf "trim=duration=${duration_seconds},setpts=PTS-STARTPTS,fps=30:round=near,scale=${scale}:flags=lanczos,setsar=1" \
+    -c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p \
     -movflags +faststart -fps_mode cfr "${output_path}"
 }
 
 mkdir -p "${output_dir}"
 
 create_proxy "${raw_dir}/C10379_rgb.mp4" \
-  "trim=duration=196.700,setpts=PTS-STARTPTS,fps=30:round=near,scale=1280:720:flags=lanczos,setsar=1" \
+  190.000 196.700 1280:720 \
   "${output_dir}/C10379_rgb_190.000-386.700_1280x720_30fps.mp4"
 
 create_proxy "${raw_dir}/HMC_21110305_mono10bit.mp4" \
-  "trim=duration=196.700,setpts=PTS-STARTPTS,fps=30:round=near,scale=954:720:flags=lanczos,setsar=1" \
+  190.000 196.700 954:720 \
   "${output_dir}/HMC_21110305_mono10bit_190.000-386.700_954x720_30fps.mp4"
+
+# Old proxy frame 3120 is source time 294.000 s. These focused proxies make that
+# separated-parts frame the new frame 0 and follow assembly through 386.700 s.
+create_proxy "${raw_dir}/C10379_rgb.mp4" \
+  294.000 92.700 1280:720 \
+  "${output_dir}/C10379_rgb_294.000-386.700_1280x720_30fps.mp4"
+
+create_proxy "${raw_dir}/HMC_21110305_mono10bit.mp4" \
+  294.000 92.700 954:720 \
+  "${output_dir}/HMC_21110305_mono10bit_294.000-386.700_954x720_30fps.mp4"

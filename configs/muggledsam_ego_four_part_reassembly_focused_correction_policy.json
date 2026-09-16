@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "manifest_kind": "muggledsam_sam3_multi_keyframe_correction_policy",
+  "policy_id": "ego-four-part-reassembly-focused-corrections",
+  "policy_version": "2",
+  "view_id": "ego-hmc21110305",
+  "manual_seed_target_config_fingerprint": {
+    "schema_version": "1.0",
+    "uri": "configs/muggledsam_ego_four_part_reassembly_focused_manual_seed.json",
+    "sha256": "6d024cf9e0a1328b80daa3ecca2aa5c944fd5893d477511c06a2400849a62d32",
+    "source": "measured"
+  },
+  "targets": [
+    "chassis",
+    "interior",
+    "rear_body",
+    "cabin"
+  ],
+  "maximum_later_correction_keyframes_per_target": 5,
+  "correction_memory_semantics": "replace_prompt_memory_and_reset_frame_memory"
+}

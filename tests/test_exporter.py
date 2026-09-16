@@ -119,6 +119,10 @@ def test_video_export_embeds_time_aligned_frames_in_the_observation_view(tmp_pat
     assert "SegmentationImage:buffer" in printed
     assert "AnnotationContext:context" in printed
     assert "synthetic screwdriver" in printed
+    assert "/hands/landmarks" in printed
+    assert "/hands/skeletons" in printed
+    assert "/hands/boxes" in printed
+    assert "/hand_metrics/count" in printed
     assert "ego-e4 video and detections" in printed
     assert "make_active: true" in printed
     assert "/frame_counter" in printed
@@ -172,6 +176,7 @@ def test_comparison_export_embeds_synchronized_ego_and_static_views(tmp_path: Pa
         static_asset_reference=ego_manifest.clip.asset,
         static_mask_artifact_root=None,
         static_label="existing static model outputs",
+        ego_label="selected ego model outputs",
     )
 
     printed = subprocess.run(
@@ -183,9 +188,14 @@ def test_comparison_export_embeds_synchronized_ego_and_static_views(tmp_path: Pa
 
     assert "/views/ego-01/video" in printed
     assert "/views/static-01/video" in printed
-    assert "ego-01: ego manual-seed SAM3 baseline" in printed
+    assert "ego-01: selected ego model outputs" in printed
     assert "static-01: existing static model outputs" in printed
     assert "analysis_time" in printed
+    assert "/views/static-01/hands/landmarks" in printed
+    assert "/views/static-01/hands/skeletons" in printed
+    assert "/views/static-01/hands/boxes" in printed
+    assert "/views/static-01/hand_metrics/count" in printed
+    assert "static MediaPipe hand detections" in printed
     assert "/frame_counter" in printed
     assert "Frame count" in printed
 

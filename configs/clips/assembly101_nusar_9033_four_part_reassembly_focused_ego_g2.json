@@ -1,0 +1,108 @@
+{
+  "schema_version": "1.0",
+  "manifest_kind": "assembly101_g2_preprocessing",
+  "clip": {
+    "clip_id": "assembly101-nusar-9033-four-part-reassembly-focused-ego-g2",
+    "source_name": "Assembly101",
+    "source_license": "CC BY-NC 4.0; dataset terms and permitted use recorded in the local provenance ledger",
+    "asset": {
+      "uri": "data/derived/assembly101/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532/HMC_21110305_mono10bit_294.000-386.700_954x720_30fps.mp4",
+      "media_type": "video/mp4",
+      "checksum_sha256": "9cc9148922f809532a86c7cba191083fe65c1103912cc286927cf641973ae806"
+    },
+    "timing": {
+      "clocks": {
+        "clocks": [
+          {"name": "source", "fps": 60},
+          {"name": "analysis", "fps": 30},
+          {"name": "annotation", "fps": 30},
+          {"name": "pose", "fps": 60}
+        ]
+      },
+      "mappings": [
+        {"clock": "source", "source_offset_seconds": 294.0, "scale": 1.0},
+        {"clock": "analysis", "source_offset_seconds": 294.0, "scale": 1.0},
+        {"clock": "annotation", "source_offset_seconds": 294.0, "scale": 1.0},
+        {"clock": "pose", "source_offset_seconds": 294.0, "scale": 1.0}
+      ]
+    },
+    "source_duration_seconds": 92.7,
+    "views": ["ego-hmc21110305"],
+    "provenance_status": "approved"
+  },
+  "hf_dataset": "cvml-nus/assembly101",
+  "hf_revision": "bfc15ea5e3f0bc8f8c232af6c1b45aa137a9d967",
+  "provenance_ledger_uri": "data/raw/assembly101/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532/acquisition_report.md",
+  "g1": {
+    "state": "approved",
+    "approved_by": "user",
+    "scope": "four physical excavator body parts on the existing approved Assembly101 monochrome ego view"
+  },
+  "g2": {
+    "state": "approved",
+    "approved_by": "user",
+    "scope": "source-aligned 92.7-second monochrome ego interval matching the focused static reassembly run"
+  },
+  "raw_timing": {
+    "clocks": {
+      "clocks": [
+        {"name": "source", "fps": 60},
+        {"name": "analysis", "fps": 30},
+        {"name": "annotation", "fps": 30},
+        {"name": "pose", "fps": 60}
+      ]
+    },
+    "mappings": [
+      {"clock": "source", "source_offset_seconds": 0.0, "scale": 1.0},
+      {"clock": "analysis", "source_offset_seconds": 0.0, "scale": 1.0},
+      {"clock": "annotation", "source_offset_seconds": 0.0, "scale": 1.0},
+      {"clock": "pose", "source_offset_seconds": 0.0, "scale": 1.0}
+    ]
+  },
+  "proxy_timing": {
+    "clocks": {
+      "clocks": [
+        {"name": "source", "fps": 60},
+        {"name": "analysis", "fps": 30},
+        {"name": "annotation", "fps": 30},
+        {"name": "pose", "fps": 60}
+      ]
+    },
+    "mappings": [
+      {"clock": "source", "source_offset_seconds": 294.0, "scale": 1.0},
+      {"clock": "analysis", "source_offset_seconds": 294.0, "scale": 1.0},
+      {"clock": "annotation", "source_offset_seconds": 294.0, "scale": 1.0},
+      {"clock": "pose", "source_offset_seconds": 294.0, "scale": 1.0}
+    ]
+  },
+  "source_interval": {"start_seconds": 294.0, "end_seconds": 386.7},
+  "raw_frame_range": {"start_frame": 17640, "end_frame_exclusive": 23202},
+  "analysis_frame_range": {"start_frame": 8820, "end_frame_exclusive": 11601},
+  "proxy_frame_range": {"start_frame": 0, "end_frame_exclusive": 2781},
+  "scaling_policy": "preserve_aspect_ratio_height_720",
+  "proxies": [
+    {
+      "view_id": "ego-hmc21110305",
+      "raw_source": {
+        "view_id": "ego-hmc21110305",
+        "raw_uri": "data/raw/assembly101/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532/recordings/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532/HMC_21110305_mono10bit.mp4",
+        "checksum_sha256": "8a67e3263a67beb425507f0e77d7e1b0624ef182271b52db687bd53c59f60cfe",
+        "dimensions": {"width": 636, "height": 480},
+        "fps": 60,
+        "raw_frame_range": {"start_frame": 17640, "end_frame_exclusive": 23202}
+      },
+      "proxy_uri": "data/derived/assembly101/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532/HMC_21110305_mono10bit_294.000-386.700_954x720_30fps.mp4",
+      "checksum_sha256": "9cc9148922f809532a86c7cba191083fe65c1103912cc286927cf641973ae806",
+      "dimensions": {"width": 954, "height": 720},
+      "fps": 30,
+      "frame_count": 2781,
+      "codec": "h264",
+      "crf": 18,
+      "preset": "medium",
+      "pixel_format": "yuv420p",
+      "has_audio": false
+    }
+  ],
+  "annotations_or_poses_downloaded_by_g2": false,
+  "annotations_or_poses_used_by_g2": false
+}

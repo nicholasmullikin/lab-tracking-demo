@@ -15,6 +15,28 @@ from battle.exporter import export_run
 from battle.schemas import RunManifest
 
 
+def _rerun_output_path(manifest: RunManifest, run_directory: Path) -> Path:
+    """Use the profile's recorded RRD name, retaining smoke.rrd for older manifests."""
+    metadata_profiles = (
+        manifest.smoke,
+        manifest.g3_candidate,
+        manifest.e4_candidate,
+        manifest.full_ego_manual_seed,
+        manifest.four_part_pilot,
+        manifest.four_part_full,
+        manifest.four_part_focused,
+        manifest.mediapipe_hands,
+    )
+    artifact_uris = [
+        metadata.rerun_artifact_uri
+        for metadata in metadata_profiles
+        if metadata is not None and metadata.rerun_artifact_uri is not None
+    ]
+    if len(artifact_uris) > 1:
+        raise ValueError(f"manifest declares multiple Rerun artifacts: {artifact_uris}")
+    return run_directory / (Path(artifact_uris[0]).name if artifact_uris else "smoke.rrd")
+
+
 def _video_dimensions(video_path: Path) -> tuple[int, int]:
     """Read the dimensions from the recording's own video rather than trusting a config."""
     probed = subprocess.run(
@@ -40,12 +62,12 @@ def _video_dimensions(video_path: Path) -> tuple[int, int]:
 
 def reexport(run_directory: Path) -> Path:
     manifest = RunManifest.model_validate_json((run_directory / "manifest.json").read_text())
-    videos = sorted(run_directory.glob("input_*f.mp4"))
+    videos = sorted({*run_directory.glob("input_*f.mp4"), *run_directory.glob("input.mp4")})
     if len(videos) != 1:
         raise ValueError(f"expected exactly one input video in {run_directory}, found {videos}")
     return export_run(
         manifest,
-        run_directory / "smoke.rrd",
+        _rerun_output_path(manifest, run_directory),
         video_path=videos[0],
         video_dimensions=_video_dimensions(videos[0]),
         mask_artifact_root=run_directory,

@@ -1,0 +1,108 @@
+{
+  "schema_version": "1.0",
+  "manifest_kind": "assembly101_g2_preprocessing",
+  "clip": {
+    "clip_id": "assembly101-nusar-9033-four-part-reassembly-focused-g2",
+    "source_name": "Assembly101",
+    "source_license": "CC BY-NC 4.0; dataset terms and permitted use recorded in the local provenance ledger",
+    "asset": {
+      "uri": "data/derived/assembly101/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532/C10379_rgb_294.000-386.700_1280x720_30fps.mp4",
+      "media_type": "video/mp4",
+      "checksum_sha256": "bd57acd0482fee3f5bf0ee9f31a59687f2bc8eb403fc55a51345e8e64b76b62e"
+    },
+    "timing": {
+      "clocks": {
+        "clocks": [
+          {"name": "source", "fps": 60},
+          {"name": "analysis", "fps": 30},
+          {"name": "annotation", "fps": 30},
+          {"name": "pose", "fps": 60}
+        ]
+      },
+      "mappings": [
+        {"clock": "source", "source_offset_seconds": 294.0, "scale": 1.0},
+        {"clock": "analysis", "source_offset_seconds": 294.0, "scale": 1.0},
+        {"clock": "annotation", "source_offset_seconds": 294.0, "scale": 1.0},
+        {"clock": "pose", "source_offset_seconds": 294.0, "scale": 1.0}
+      ]
+    },
+    "source_duration_seconds": 92.7,
+    "views": ["static-c10379"],
+    "provenance_status": "approved"
+  },
+  "hf_dataset": "cvml-nus/assembly101",
+  "hf_revision": "bfc15ea5e3f0bc8f8c232af6c1b45aa137a9d967",
+  "provenance_ledger_uri": "data/raw/assembly101/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532/acquisition_report.md",
+  "g1": {
+    "state": "approved",
+    "approved_by": "user",
+    "scope": "four physical excavator body parts on the existing approved Assembly101 static view"
+  },
+  "g2": {
+    "state": "approved",
+    "approved_by": "user",
+    "scope": "source-aligned 92.7-second separated-to-assembled interval beginning at old proxy frame 3120"
+  },
+  "raw_timing": {
+    "clocks": {
+      "clocks": [
+        {"name": "source", "fps": 60},
+        {"name": "analysis", "fps": 30},
+        {"name": "annotation", "fps": 30},
+        {"name": "pose", "fps": 60}
+      ]
+    },
+    "mappings": [
+      {"clock": "source", "source_offset_seconds": 0.0, "scale": 1.0},
+      {"clock": "analysis", "source_offset_seconds": 0.0, "scale": 1.0},
+      {"clock": "annotation", "source_offset_seconds": 0.0, "scale": 1.0},
+      {"clock": "pose", "source_offset_seconds": 0.0, "scale": 1.0}
+    ]
+  },
+  "proxy_timing": {
+    "clocks": {
+      "clocks": [
+        {"name": "source", "fps": 60},
+        {"name": "analysis", "fps": 30},
+        {"name": "annotation", "fps": 30},
+        {"name": "pose", "fps": 60}
+      ]
+    },
+    "mappings": [
+      {"clock": "source", "source_offset_seconds": 294.0, "scale": 1.0},
+      {"clock": "analysis", "source_offset_seconds": 294.0, "scale": 1.0},
+      {"clock": "annotation", "source_offset_seconds": 294.0, "scale": 1.0},
+      {"clock": "pose", "source_offset_seconds": 294.0, "scale": 1.0}
+    ]
+  },
+  "source_interval": {"start_seconds": 294.0, "end_seconds": 386.7},
+  "raw_frame_range": {"start_frame": 17640, "end_frame_exclusive": 23202},
+  "analysis_frame_range": {"start_frame": 8820, "end_frame_exclusive": 11601},
+  "proxy_frame_range": {"start_frame": 0, "end_frame_exclusive": 2781},
+  "scaling_policy": "preserve_aspect_ratio_height_720",
+  "proxies": [
+    {
+      "view_id": "static-c10379",
+      "raw_source": {
+        "view_id": "static-c10379",
+        "raw_uri": "data/raw/assembly101/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532/recordings/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532/C10379_rgb.mp4",
+        "checksum_sha256": "450731ebbb50f46cf8279383e4737db6d76e967f23580d3555de1888b78a9db9",
+        "dimensions": {"width": 1920, "height": 1080},
+        "fps": 60,
+        "raw_frame_range": {"start_frame": 17640, "end_frame_exclusive": 23202}
+      },
+      "proxy_uri": "data/derived/assembly101/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532/C10379_rgb_294.000-386.700_1280x720_30fps.mp4",
+      "checksum_sha256": "bd57acd0482fee3f5bf0ee9f31a59687f2bc8eb403fc55a51345e8e64b76b62e",
+      "dimensions": {"width": 1280, "height": 720},
+      "fps": 30,
+      "frame_count": 2781,
+      "codec": "h264",
+      "crf": 18,
+      "preset": "medium",
+      "pixel_format": "yuv420p",
+      "has_audio": false
+    }
+  ],
+  "annotations_or_poses_downloaded_by_g2": false,
+  "annotations_or_poses_used_by_g2": false
+}

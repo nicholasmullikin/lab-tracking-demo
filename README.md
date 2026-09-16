@@ -20,12 +20,12 @@ In one paragraph: the repository has typed Pydantic manifests for clips, runs, t
 coverage, and observations; an inference-free Rerun exporter; and one method, SAM3 via
 MuggledSAM, exercised on Assembly101 RGB static and monochrome ego views. Text prompting,
 human-seeded masks, reviewed keyframe corrections, and a browser calibration workspace
-were all tested. The latest experiment tracks four physical excavator components through
-a 196.7-second static-view interval; that full run completed, but its masks overlap and
-drift enough that it is exploratory evidence rather than a usable segmentation result.
-The next bounded attempt starts at proxy frame 3120, where the four components are
-separated before reassembly. The second method in the original core spine, MediaPipe
-Hands, has not been started.
+were all tested. A 196.7-second static exploration failed through identity drift, then
+aligned 92.7-second static and monochrome ego runs were completed from a cleaner
+separated-parts frame. Human review retained only their first 60 seconds for the
+synchronized two-view comparison; later outputs remain failure evidence. The second
+method in the original core spine, MediaPipe Hands, now has a CPU-only 20-second
+static-view smoke result; the selected 60-second run and combined comparison remain next.
 
 The rest of this file is the how-to: each section below gives the exact commands that
 reproduce a stage. No recordings, annotations, or model weights are included. The SAM3
@@ -48,6 +48,54 @@ the system Python 3.14.
 uv sync --python 3.12
 uv run python --version
 ```
+
+## MediaPipe Hands static-view baseline
+
+`battle-mediapipe-hands` runs the official MediaPipe Tasks Hand Landmarker in VIDEO
+mode against the approved focused RGB static proxy. The smoke contract is frames
+`[0, 600)` / 20.0 seconds at 30 FPS. It emits one normalized observation per decoded
+frame with 21 image-space landmarks, a landmark-derived box, handedness and its model
+confidence. Public hand IDs are frame-local detector order, not identity tracks.
+MediaPipe's selfie-oriented handedness is swapped for this unmirrored static camera,
+then temporally voted over short internal tracks.
+
+Download the pinned float16 v1 model bundle into ignored local storage and verify its
+checksum:
+
+```bash
+mkdir -p models/mediapipe
+curl -fL \
+  https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task \
+  -o models/mediapipe/hand_landmarker_float16_v1.task
+echo "fbc2a30080c3c557093b5ddfc334698132eb341044ccee322ccf8bcf3607cde1  models/mediapipe/hand_landmarker_float16_v1.task" \
+  | sha256sum --check
+uv run battle-mediapipe-hands --seconds 20
+```
+
+The selected higher-recall smoke condition fuses the full frame with a fixed enlarged
+workspace crop, maps crop landmarks back to full-frame coordinates, preserves primary
+detections, removes near-identical duplicate skeletons, and fills missing hand slots
+from the crop:
+
+```bash
+uv run battle-mediapipe-hands --seconds 20 \
+  --roi 0.45,0.35,0.55,0.65 --roi-upscale 2 --include-full-frame \
+  --min-detection-confidence 0.35 \
+  --min-presence-confidence 0.35 \
+  --min-tracking-confidence 0.35
+```
+
+Use `--seconds 60` with the same flags for the selected comparison run. That run
+processed 1,800 frames in 30.668 seconds on CPU and produced at least one detection on
+1,648 frames. Its 152 empty frames cluster under heavy hand/object occlusion, especially
+in the final 20 seconds; they are retained as failure evidence rather than filled by
+interpolation.
+
+The run is headless. It writes `manifest.json`, `observations.jsonl`, a bounded input
+video, `contact_sheet.png`, and `hands.rrd` under `runs/<run-id>/`. The Rerun recording
+shows landmarks, hand skeletons, boxes, detection count, and mean handedness confidence.
+Detection presence and handedness are model outputs without hand-pose ground truth, not
+accuracy measurements.
 
 ## Fixed SAM3 core-method smoke
 
@@ -138,11 +186,108 @@ uv run rerun \
   runs/muggledsam-sam3-four-part-static-full-exploratory-static-c10379-20260916t012945z/four_part_static_full_exploratory.rrd
 ```
 
-The next experiment begins at proxy frame 3120 (proxy time 104.0 seconds; source time
-294.0 seconds) and runs at most through frame 5900. This gives 2,781 frames / 92.7
-seconds in which the components begin separated and are then assembled. It needs a new
-frame-3120 calibration and correction schedule; the frame-0 masks from the exploratory
-run are not transferable initialization evidence.
+The next experiment begins at old proxy frame 3120 (old proxy time 104.0 seconds;
+source time 294.0 seconds). A new 2,781-frame / 92.7-second proxy maps that boundary to
+frame 0, preserving the worker and calibration system's frame-0 initialization contract.
+The exploratory run's masks are not transferable initialization evidence.
+
+Build or verify the focused proxy:
+
+```bash
+bash scripts/create_assembly101_four_part_reassembly_proxies.sh
+```
+
+Create a fresh calibration at focused frame 0, with three provisional review points
+across reassembly:
+
+```bash
+uv run battle-muggled-calibration-web \
+  --config configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_g2.json \
+  --view static-c10379 \
+  --manual-seed-target-config \
+    configs/muggledsam_static_four_part_reassembly_focused_manual_seed.json \
+  --correction-policy \
+    configs/muggledsam_static_four_part_reassembly_focused_correction_policy.json \
+  --timestamps 0,30,60,90 \
+  --output-dir "runs/muggledsam-sam3-four-part-focused-calibration-$(date -u +%Y%m%dt%H%M%Sz)"
+```
+
+After reviewing and finalizing that workspace, run the focused profile:
+
+```bash
+uv run battle-muggled-smoke \
+  --config configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_g2.json \
+  --view static-c10379 --four-part-static-focused --max-side-length 720 \
+  --multi-keyframe-correction-schedule \
+    runs/<focused-calibration>/multi_keyframe_correction_schedule.json
+```
+
+Completed focused run:
+`muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260916t020716z`.
+It processed 2,781/2,781 frames in 194.855 seconds, reached 2,209,960,448 bytes peak
+allocated VRAM, and wrote 11,042 masks. Output coverage was 2,775 chassis, 2,774
+interior, 2,751 rear-body, and 2,742 cabin frames. The all-frame geometric screen found
+only one pair/frame above 0.5 mask IoU: chassis/interior at frame 2381 (0.6891).
+Every other pair had zero frames above 0.5, including chassis/cabin. This is substantially
+cleaner than the exploratory run, but still requires visual identity review.
+For the follow-up at frames 327 and 1235, use
+`configs/muggledsam_static_four_part_reassembly_focused_correction_policy_v2.json`;
+it permits up to five later keyframes per target without changing the v1 policy
+fingerprinted by the completed run.
+
+The v2 rerun
+`muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260916t023700z`
+completed all 2,781 frames with the requested corrections. They improve their local
+failure samples, but rear-body and cabin masks later merge around frame 2101 (maximum
+pairwise IoU 0.9376), so this rerun is not yet an accepted tracking result.
+
+```bash
+uv run rerun \
+  runs/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260916t023700z/four_part_static_focused_reassembly.rrd
+```
+
+Inspect the initial focused run separately:
+
+```bash
+uv run rerun \
+  runs/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260916t020716z/four_part_static_focused_reassembly.rrd
+```
+
+### Focused monochrome ego counterpart
+
+The aligned `HMC_21110305` run uses a separate focused G2 contract and entirely fresh
+human masks; no static-view mask is transferred. Completed run
+`muggledsam-sam3-four-part-ego-focused-reassembly-ego-hmc21110305-20260916t031515z`
+processed 2,781 frames in 193.775 seconds with 2,139,766,784 bytes peak allocated VRAM
+and 10,509 masks. Output coverage was 2,779 chassis, 2,712 interior, 2,645 rear-body,
+and 2,373 cabin frames. No pair exceeded 0.5 mask IoU, but the large cabin/rear-body
+output gaps and later assembled-object appearance still require visual identity review.
+
+```bash
+uv run rerun \
+  runs/muggledsam-sam3-four-part-ego-focused-reassembly-ego-hmc21110305-20260916t031515z/four_part_ego_focused_reassembly.rrd
+```
+
+### Selected first-minute two-view comparison
+
+Human review bounded the usable comparison to focused frames `[0,1800)` / 60.0 seconds.
+The selected static input is the v2 correction run (`…20260916t023700z`); its known
+rear-body/cabin merge begins after this window. The ego input is `…20260916t031515z`.
+The builder truncates both run-local videos to exactly 1,800 CFR frames, fingerprints
+those derived assets, merges the selected 60-second MediaPipe run into the static
+observations, and packages existing masks, landmarks, skeletons, boxes, and confidence
+traces without inference:
+
+```bash
+uv run battle-build-ego-static-comparison --focused-first-minute
+uv run rerun \
+  runs/four-part-focused-first-minute-comparison/four_part_focused_first_minute_ego_static_comparison.rrd
+```
+
+The default MediaPipe input is
+`mediapipe-hands-static-60s-fused-dedup-th035-20260916t0430z`; override it with
+`--hands-run runs/<run-id>`. The resulting 81.0 MB recording keeps the static RGB view
+as the hand-pose claim and the monochrome ego view as the object-tracking stress test.
 
 ## Fixed human QA hard gate
 
@@ -391,8 +536,12 @@ per-candidate review panels, and contact sheets remain in that ignored run direc
 
 Usage:
 
-1. Select a filmstrip timestamp or enter an approved timestamp, then load its source
-   frame. The canvas preserves the complete 954×720 aspect ratio. Use scroll to zoom,
+1. Select a filmstrip timestamp or enter any proxy timestamp, then load its source
+   frame. The slider spans every proxy frame and loads by exact frame index after a
+   short debounce. Frames outside the configured calibration set open in **Browse only**
+   mode: prompt, decode, and mask-review edits are disabled in both the browser and
+   backend. Use **Enable labeling on this frame** to persist the exact browsed frame as
+   a new calibration option. The canvas preserves the complete 954×720 aspect ratio. Use scroll to zoom,
    Shift/Alt/middle-button drag to pan, `B` to draw/edit a box, `F` to add a green
    foreground point, and `N` to add a pink background-exclusion point. Drag a marker to
    move it, right-click it to remove it, or use **Clear selected points**. Prompt edits
@@ -401,14 +550,13 @@ Usage:
    stored source-pixel clicks and normalized MuggledSAM `boxes`, `fg_points`, and
    `bg_points` payload are retained with the pending prompt and decoded candidate.
    The right panel shows the resulting compact manifest difference.
-3. Use **Decode all pending on this frame** to process every target drawn at the active
-   timestamp, even when the most recently drawn box is selected. **Decode selected prompt**
-   remains available for an intentional one-prompt retry. The UI remains available while
-   the dedicated decode queue runs. Every decoded target group remains visible in configured
-   target order; each compact card exposes every returned mask with a thumbnail of its
-   full-context/padded-ROI review and a link to the full-size review. Explicitly select a
-   mask. Model IoU, mask area, and prompt overlap are diagnostics, not segmentation-accuracy
-   measures.
+3. Enable **Live decode** to preview the selected prompt after a configurable debounce,
+   or disable it and use **Decode all pending on this frame** for a manual frame batch.
+   The status table keeps every configured frame/target slot visible. Select a slot to
+   show its mask on the canvas, then use keys `1`–`4` to accept a decoder option. `×`
+   clears an accepted mask or preview; rejected candidates remain visible with `↶` so
+   they can be restored. Model IoU and prompt-overlap values are diagnostics, not
+   segmentation-accuracy measures.
 4. Only an explicitly human-selected and accepted **frame-0** mask can be marked eligible
    and appear in the proposal list. Later timestamps are decoder checks only. Creating a
    proposal writes a non-authoritative JSON file and does not start tracking.
@@ -678,7 +826,8 @@ part of this check. The run manifest records the transfer as a
 `calibration_transfer_note`. Correction schedules are authored against the 30 fps clock
 and are refused at any other rate.
 
-To rebuild a run's `smoke.rrd` after an exporter change without re-running inference:
+To rebuild a run's profile-specific RRD after an exporter change without re-running
+inference:
 
 ```bash
 uv run python scripts/reexport_run_rrd.py runs/<run-id> [runs/<run-id> ...]
@@ -712,7 +861,8 @@ world/<clip_id>/
   views/<view_id>/video_asset                # conditional: video payload supplied
   views/<view_id>/video                      # conditional: frame references to that payload
   views/<view_id>/objects                    # conditional: object observations
-  views/<view_id>/hands                      # conditional: hand observations
+  views/<view_id>/hands/{landmarks,skeletons,boxes} # conditional: hand observations
+  views/<view_id>/hand_metrics/{count,mean_handedness_confidence}
   views/<view_id>/mask_references            # conditional: external mask references
   views/<view_id>/masks/<object_id>          # conditional: loaded per-object RGBA cut-outs
   views/<view_id>/segmentation               # conditional: sparse class-labelled masks
