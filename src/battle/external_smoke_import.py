@@ -2,6 +2,11 @@
 
 These importers perform no model inference.  They preserve upstream output semantics and
 write a separate run rather than relabelling an external smoke as an integrated method.
+
+JSON and PKL inputs are read only from caller-controlled local artifact paths under the
+repository root. Parsing is structural (schema/shape checks, not a hardened untrusted-data
+sandbox) and is intended for trusted local evidence produced by the documented upstream
+commands, not for arbitrary third-party uploads.
 """
 
 from __future__ import annotations

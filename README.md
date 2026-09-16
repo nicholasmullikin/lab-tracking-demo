@@ -211,8 +211,10 @@ in image-normalized coordinates. It is not SfM, metric 3D, BVH, or full Kineo.
 uv run battle-kineo-nlf --seconds 20
 ```
 
-Latest bounded rerun: `runs/kineo-nlf-headless-20s-20260916t0540z/` with inference-free
-`kineo_nlf_partial.rrd`.
+Latest bounded rerun: `runs/kineo-nlf-headless-20s-20260916t0540z/` (456/600 frames with
+NLF body joints) with inference-free `kineo_nlf_partial.rrd`. `battle-import-external-smoke`
+and `battle-kineo-nlf` unpickle only caller-controlled local native artifacts; parsing is
+structural and intended for trusted local evidence, not arbitrary uploads.
 
 ## Exploratory methods still blocked
 

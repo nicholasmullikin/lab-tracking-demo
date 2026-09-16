@@ -37,7 +37,7 @@ no-annotation, no-accuracy-claims rule.
 
 | Goal (from the Sep 8 ask and plan) | Status | Evidence |
 | --- | --- | --- |
-| Typed manifests, fixture tests, inference-free Rerun exporter | Done | `src/battle/schemas.py`, `src/battle/exporter.py`, 182 passed |
+| Typed manifests, fixture tests, inference-free Rerun exporter | Done | `src/battle/schemas.py`, `src/battle/exporter.py`, 209 passed |
 | Pin one Assembly101 segment with source/analysis/annotation/pose clocks | Done | `configs/clips/*.json`; nusar-9033, 215.000–395.000 s |
 | MuggledSAM/SAM3 running over the full 180 s static view | Done (aligned hybrid: three text, one reviewed mask) | [Sep 14 aligned hybrid](#sep-14-aligned-static-hybrid-candidate) |
 | MuggledSAM/SAM3 running over the full 180 s ego view | Done, but only with human-seeded masks | [Four-target 180 s baseline](#sep-9-evening-four-target-180-second-ego-baseline) |
@@ -1150,8 +1150,8 @@ by a worker, manifest, or native log appear below. Human gates G1–G5 remain de
 - Person selection: `best_bbox_only=True` on RTMLib detections (highest score per frame; not largest
   area), `frame_step=5`, `bbox_thr=0.3`, `nms_iou_thr=0.65`.
 - Latest bounded rerun `runs/kineo-nlf-headless-20s-20260916t0540z/`: wall inference 30.4 s;
-  PKLs hold 462/602 frames with bbox + 55-body-joint NLF outputs; MoGe intrinsics remain native
-  only. Normalized export includes boxes plus image-normalized NLF body joints; RRD
+  PKLs hold 456/600 frames with bbox + 55-body-joint NLF outputs; MoGe intrinsics remain native
+  only. Normalized export retains all 600 rows, with 456 containing body joints; RRD
   `kineo_nlf_partial.rrd`. Not SfM, metric world pose, BVH, or multi-view Kineo.
 
 #### Explicitly deferred (not integrated)
@@ -1176,7 +1176,7 @@ input, bounded video, final RRD, and each source manifest's declared inference i
 | Grounding-DINO + SAM2 | frames 0–299 / 10 s only | propagated masks and boxes | smoke-only, no extension |
 | SAMURAI | frames 0–599 / 20 s | seeded-hand masks and boxes | integrated smoke |
 | DAM4SAM | frames 0–599 / 20 s | seeded-hand masks and boxes | integrated smoke |
-| Kineo NLF-only | frames 0–599; 462 NLF-output frames | person boxes and 2D body joints | external partial |
+| Kineo NLF-only | frames 0–599; 456 NLF-output frames | person boxes and 2D body joints | external partial |
 | CLIP + Drop-DTW | 20 s temporal samples | GT-transcript weak-supervision intervals/cost | contextual only |
 | ATHENA | no real-data overlay | fixture URI/status metadata only | blocked: no intrinsics |
 

@@ -74,7 +74,7 @@ methods:
     state: external_partial
     environment: pixi-managed /home/nick/src/kineo
     adapter: battle.kineo_nlf
-    smoke_scope: kineo_nlf_only_partial; 602-frame NLF-only (462 bbox/body-joint PKLs; no SfM/BVH)
+    smoke_scope: kineo_nlf_only_partial; 600-frame bounded export (456 PKL bbox/body-joint rows on latest rerun; no SfM/BVH)
     install_caveat: full offline config requires multi-view SfM or interactive SAM2 UI
     license_caveat: calibration-free person-centric; not hand-part specialized
   exploratory_comparison:

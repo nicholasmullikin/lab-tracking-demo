@@ -1,4 +1,9 @@
-"""Run bounded Kineo NLF-only headless inference and normalize its PKL outputs."""
+"""Run bounded Kineo NLF-only headless inference and normalize its PKL outputs.
+
+Native PKLs are unpickled from locally produced Kineo run directories only. This is a
+trusted-local-evidence path with structural validation, not a hardened untrusted pickle
+sandbox.
+"""
 
 from __future__ import annotations
 
