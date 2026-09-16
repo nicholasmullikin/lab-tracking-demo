@@ -1,0 +1,132 @@
+{
+  "schema_version": "1.0",
+  "manifest_kind": "fixed_timestamp_human_qa",
+  "qa_protocol": "assembly101_easy_hard_source_timestamps_v1",
+  "selection_rule": "one_easy_manipulation_and_one_hard_or_occluded_manipulation",
+  "run_id": "muggledsam-sam3-full-ego-manual-seed-multiplexed-ego-hmc21179183-20260910t024052z",
+  "run_profile": "full_ego_manual_seed_multiplexed_baseline",
+  "method_id": "muggledsam-sam3-full-ego-manual-seed-multiplexed-baseline",
+  "clip_id": "assembly101-nusar-9033-ego-viewpoint-screen-g2",
+  "view_id": "ego-hmc21179183",
+  "run_manifest_fingerprint": {
+    "schema_version": "1.0",
+    "uri": "runs/muggledsam-sam3-full-ego-manual-seed-multiplexed-ego-hmc21179183-20260910t024052z/manifest.json",
+    "sha256": "ff0583850f14e1580e6bada81cfb79db314bafcb97b89acd6382c33e0b8e7204",
+    "source": "measured"
+  },
+  "config_fingerprint": {
+    "schema_version": "1.0",
+    "uri": "configs/clips/assembly101_nusar_9033_ego_viewpoint_screen_g2.json",
+    "sha256": "df59392d786d2dffa3842a198098de6277ee09b11382a0577845f9ce8bbb63b4",
+    "source": "measured"
+  },
+  "source_video_fingerprint": {
+    "schema_version": "1.0",
+    "uri": "data/raw/assembly101/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532/recordings/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532/HMC_21179183_mono10bit.mp4",
+    "sha256": "ac5520a907acb4b31588e613d61c09e56d08e625770d4914242f66062c8b98d2",
+    "source": "approved_config"
+  },
+  "timing": {
+    "schema_version": "1.0",
+    "clocks": {
+      "schema_version": "1.0",
+      "clocks": [
+        {
+          "schema_version": "1.0",
+          "name": "source",
+          "fps": 60
+        },
+        {
+          "schema_version": "1.0",
+          "name": "analysis",
+          "fps": 30
+        },
+        {
+          "schema_version": "1.0",
+          "name": "annotation",
+          "fps": 30
+        },
+        {
+          "schema_version": "1.0",
+          "name": "pose",
+          "fps": 60
+        }
+      ]
+    },
+    "mappings": [
+      {
+        "schema_version": "1.0",
+        "clock": "source",
+        "source_offset_seconds": 215.0,
+        "scale": 1.0
+      },
+      {
+        "schema_version": "1.0",
+        "clock": "analysis",
+        "source_offset_seconds": 215.0,
+        "scale": 1.0
+      },
+      {
+        "schema_version": "1.0",
+        "clock": "annotation",
+        "source_offset_seconds": 215.0,
+        "scale": 1.0
+      },
+      {
+        "schema_version": "1.0",
+        "clock": "pose",
+        "source_offset_seconds": 215.0,
+        "scale": 1.0
+      }
+    ]
+  },
+  "run_analysis_frame_range": {
+    "schema_version": "1.0",
+    "start_frame": 0,
+    "end_frame_exclusive": 5400
+  },
+  "checkpoints": [
+    {
+      "schema_version": "1.0",
+      "role": "easy_manipulation",
+      "clock": "source",
+      "source_seconds": 247.8,
+      "source_frame_index": 14868,
+      "analysis_frame_index": 984,
+      "evidence": [
+        {
+          "schema_version": "1.0",
+          "uri": "runs/muggledsam-sam3-full-ego-manual-seed-multiplexed-ego-hmc21179183-20260910t024052z/human_qa/source-frames-14868-21732.png",
+          "sha256": "13fce5e180ab67c8d8e5110e8fe1390d87f91d466ab2cd4728152b1c8fc01dfa",
+          "artifact_kind": "two_checkpoint_contact_sheet"
+        }
+      ],
+      "disposition": "pending",
+      "notes": null,
+      "reviewed_by": null,
+      "reviewed_at": null
+    },
+    {
+      "schema_version": "1.0",
+      "role": "hard_or_occluded_manipulation",
+      "clock": "source",
+      "source_seconds": 362.2,
+      "source_frame_index": 21732,
+      "analysis_frame_index": 4416,
+      "evidence": [
+        {
+          "schema_version": "1.0",
+          "uri": "runs/muggledsam-sam3-full-ego-manual-seed-multiplexed-ego-hmc21179183-20260910t024052z/human_qa/source-frames-14868-21732.png",
+          "sha256": "13fce5e180ab67c8d8e5110e8fe1390d87f91d466ab2cd4728152b1c8fc01dfa",
+          "artifact_kind": "two_checkpoint_contact_sheet"
+        }
+      ],
+      "disposition": "pending",
+      "notes": null,
+      "reviewed_by": null,
+      "reviewed_at": null
+    }
+  ],
+  "overall_status": "pending",
+  "ground_truth_accuracy_claim": false
+}

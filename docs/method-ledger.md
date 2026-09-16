@@ -39,14 +39,15 @@ no-annotation, no-accuracy-claims rule.
 | --- | --- | --- |
 | Typed manifests, fixture tests, inference-free Rerun exporter | Done | `src/battle/schemas.py`, `src/battle/exporter.py`, 125 passed, 1 skipped |
 | Pin one Assembly101 segment with source/analysis/annotation/pose clocks | Done | `configs/clips/*.json`; nusar-9033, 215.000–395.000 s |
-| MuggledSAM/SAM3 running over the full 180 s static view | Done (zero-shot text prompts) | [G3 static full run](#sep-9-early-morning-g3-approved-static-full-candidate) |
+| MuggledSAM/SAM3 running over the full 180 s static view | Done (aligned hybrid: three text, one reviewed mask) | [Sep 14 aligned hybrid](#sep-14-aligned-static-hybrid-candidate) |
 | MuggledSAM/SAM3 running over the full 180 s ego view | Done, but only with human-seeded masks | [Four-target 180 s baseline](#sep-9-evening-four-target-180-second-ego-baseline) |
-| Both views on one synchronized Rerun timeline | Done | `battle-build-ego-static-comparison`; [Sep 9 evening](#sep-9-evening-manual-seed-tracking-static-comparison-and-the-target-pivot) |
+| Both views on one synchronized Rerun timeline | Done, rebuilt with aligned hybrid static | `battle-build-ego-static-comparison`; [Sep 14 aligned hybrid](#sep-14-aligned-static-hybrid-candidate) |
 | Five pre-accuracy measures recorded per run | Done | Every `worker_result.json` and `manifest.json` |
 | MediaPipe Hands static-view baseline (core spine) | Not started | Displaced by the ego calibration work |
 | Second method in the viewer (WiLoR or any exploratory item) | Not started | [hand-pose adapter](#hand-pose-adapter) is `not_run` |
-| Fixed two-timestamp human QA per completed method | Partially | Contact sheets at 0/5/9.967 s exist for smokes; no formal pass/flag/fail record |
+| Fixed two-timestamp human QA per completed method | Records prepared; human dispositions pending | Human-selected source frames 14,868/21,732; aligned static, ego, and preserved historical records under `docs/qa/` |
 | No training, no annotation project, no accuracy claims | Held | Reviewed masks are calibration seeds, not labels; no metric vs. ground truth anywhere |
+| Four physical components through reassembly | Full exploratory run completed; segmentation not accepted | [Sep 15 four-part experiment](#sep-15-four-part-static-reassembly-experiment) |
 | Git history from the start | Missed, then repaired | First commit Sep 13 after five days of uncommitted work |
 | FineBio | Still pending | Not part of any run |
 | Audio | Deferred by plan | Not revisited |
@@ -212,6 +213,33 @@ essentially all of the time went into making SAM3 usable on the monochrome ego v
   fine." This approval was separate from the 18:32–19:05 experimental work.
 - 20:28–20:33. Documentation pass: this file restructured as a timeline.
 
+#### Sep 14–15: static alignment, taxonomy correction, and four-part reassembly
+
+- Sep 14 evening. A static-view hybrid aligned the existing four semantic outputs:
+  text prompts for both hands and the yellow top, plus one reviewed mask for the black
+  base. The user approved the smoke and the full 5,400-frame candidate completed. Record:
+  [aligned static hybrid](#sep-14-aligned-static-hybrid-candidate).
+- Reviewing the toy at part level invalidated the composite `yellow_toy_top` /
+  `black_toy_top_base` vocabulary for the new task. A 25-piece visual catalog was made,
+  then the experiment was deliberately narrowed to four physical body components:
+  `chassis`, `interior`, `rear_body`, and `cabin`.
+- The source interval was moved to 190.0 seconds (proxy frame 0) for a clearer initial
+  view. The static calibration workspace gained live decoding and substantial state,
+  queue, finalization, and candidate-table repairs while the user reviewed frame-0 and
+  later masks.
+- A 600-frame / 20-second pilot exposed semantic drift despite stable IDs, including
+  near-identical chassis and cabin masks at sampled later frames. The pilot therefore
+  failed as evidence of four stable physical identities.
+- At the user's explicit request, the failed pilot did not stop an exploratory full run.
+  The 5,901-frame run completed in 474.639 seconds with 2.06 GiB peak allocated VRAM and
+  23,418 masks. Record:
+  [four-part static reassembly](#sep-15-four-part-static-reassembly-experiment).
+- Sep 15 evening. Visual review identified a better experimental boundary: proxy frame
+  3120, where all four components begin separated and are subsequently merged during
+  reassembly. This maps to proxy time 104.0 seconds and source time 294.0 seconds. The
+  next contract is `[3120,5901)`, or 2,781 frames / 92.7 seconds, with a new
+  frame-3120 calibration rather than transferred frame-0 seeds.
+
 ### Plan versus actual
 
 What the plan said, what happened instead, and why, in one line each.
@@ -247,15 +275,121 @@ What the plan said, what happened instead, and why, in one line each.
 
 ### Open items
 
-- Commit the Sep 13 evening work (frame-rate plumbing, exporter fixes, full-rate masks,
-  box derivation, guard, this document).
-- Decide whether to formalize the two-timestamp human QA record for the completed runs.
+- Create a new four-part calibration and bounded run for proxy frames `[3120,5901)`.
+  The components begin separated at frame 3120 and are assembled afterward; this is a
+  cleaner test of identity preservation than carrying tracks through the earlier
+  disassembly/warm-up interval.
+- Inspect the aligned hybrid static and canonical ego model-overlay sheets and complete
+  their pending records under `docs/qa/`. The old static zero-shot record remains historical;
+  no new hybrid pass/flag/fail has been assigned.
 - Next method: MediaPipe Hands on the static view is the plan's core-spine item and
   needs no GPU; WiLoR is the named second wave. Either can reuse the SAM3 hand masks and
   boxes now that they are trusted. Source and license review comes first
   (`docs/SOURCES.md`, `docs/LICENSES.md`).
 - `yellow_toy_top` leaves the frame at ~216.2 s in every arm; its coverage numbers
   describe the scene, not the tracker.
+
+### Sep 13: fixed two-timestamp QA infrastructure
+
+- Contract: `FixedTimestampHumanQARecord` uses the source clock and requires exactly one
+  `easy_manipulation` checkpoint followed by one `hard_or_occluded_manipulation`
+  checkpoint. Every checkpoint has content-addressed visual evidence. Any non-pending
+  decision requires a human identity and timezone-aware review time; aggregate status is
+  severity-conservative and `ground_truth_accuracy_claim` is fixed to false.
+- Preparation: `battle-prepare-human-qa` accepts only explicitly named run directories or
+  manifests, validates the completed run/config provenance, creates an inference-free
+  two-column contact sheet, and writes pending JSON. It refuses to overwrite any record
+  containing a human decision.
+- Timestamp selection aid: `battle-human-qa-candidates` validates both canonical proxy
+  fingerprints and their identical source mapping, then renders 12 evenly spaced raw
+  static/ego frame pairs under gitignored `artifacts/qa/`. It adds no model overlays and
+  assigns no semantic category.
+- Canonical pending set: full static zero-shot
+  `muggledsam-sam3-g3-full-static-c10379-20260909t030710z` and selected full ego
+  four-target human-seeded
+  `muggledsam-sam3-full-ego-manual-seed-multiplexed-ego-hmc21179183-20260910t024052z`.
+  The earlier three-target full ego run is historical and was superseded by the target
+  pivot, so it is not a third canonical QA baseline.
+- Human selection and preparation: the user shifted candidate 03 and candidate 10 to the
+  nearest historical mask-bearing frames and selected them as easy/clear and hard/occluded.
+  Their canonical grid values are analysis frames 984/4,416, source frames 14,868/21,732,
+  and source times 247.8/362.2 seconds. Both canonical records and their fingerprinted
+  local evidence now exist; every disposition remains pending.
+- Claim boundary: the schema and artifact fingerprints make human review auditable; they do
+  not perform that review. Tracker object scores and IoU predictions remain model
+  diagnostics and cannot substitute for this gate.
+
+### Sep 14: aligned static hybrid candidate
+
+- The common output contract is now `left_hand`, `right_hand`, `yellow_toy_top`,
+  `black_toy_top_base` in that order. The first three identities are initialized from
+  human-readable text prompts; the black base uses the user's reviewed frame-zero mask.
+- `configs/muggledsam_static_aligned_hybrid.json` explicitly binds the three-target text
+  config, one-target proposal and target policy, fingerprints, provenance, and canonical
+  slots. This candidate is hybrid and must not be described as pure zero-shot or all-manual.
+- Five bounded black-base text-prompt variants were visually rejected. One broad prompt
+  emitted continuously but selected an unrelated black fixture; none reliably identified
+  the intended base. This prompted the reviewed-mask hybrid pivot rather than broader
+  prompt hacking.
+- Approved smoke: the user reviewed
+  `muggledsam-sam3-smoke-hybrid-static-static-c10379-20260915t005256z/g3_review/static-c10379_contact_sheet.png`
+  and said “Looks good!” at approximately Sep 14 20:53 EDT / Sep 15 00:53 UTC. The earlier
+  `...005001z` smoke was technically valid and rendered identical evidence, but it is not
+  the evidence cited by the approval.
+- Full run: `muggledsam-sam3-g3-full-hybrid-static-static-c10379-20260915t005919z`
+  completed all 5,400 frames in one continuous stream. Its manifest binds the exact approved
+  smoke manifest and QA fingerprints. Worker time was 192.724 s, TTFU 4.203 s, and peak
+  allocated VRAM 2,125,744,128 bytes. Emissions were 5,215/5,400 left hand,
+  5,388/5,400 right hand, 5,396/5,400 yellow top, and 5,397/5,400 black base, with one
+  stable canonical ID per target and no restarts. These are output facts, not accuracy.
+  The full contact sheet samples proxy 0/90/179.967 s.
+- The pending fixed human-QA record samples source 247.8/362.2 s. The reviewed frame-zero
+  mask remains a calibration seed, not annotation ground truth, and tracker diagnostics are
+  not accuracy measurements.
+- The Sep 9 full zero-shot static run is preserved as historical evidence for its original
+  three-target/mismatched contract; it is no longer the aligned canonical static baseline.
+  A new synchronized RRD pairs this hybrid run with the canonical four-target full ego run.
+
+### Sep 15: four-part static reassembly experiment
+
+- Stage: `objects`; state: `succeeded` as an exploratory execution, but failed as
+  evidence of stable four-part segmentation.
+- Taxonomy: `chassis` means the entire visible black lower chassis; `interior` means only
+  the dark interior surface visible through the cabin; `rear_body` is the yellow rounded
+  body shell; `cabin` is the yellow windowed cabin. All four use
+  `visible_surface_only`. This vocabulary supersedes the composite top/base labels only
+  for this experiment.
+- Input contract:
+  `configs/clips/assembly101_nusar_9033_four_part_reassembly_g2.json`, static
+  `C10379`, source `[190.0,386.7)` seconds, 30 FPS, 5,901 proxy frames at 1280×720.
+  The run used max side 720, four frame-memory entries, one prompt-memory entry, and no
+  chunks or intentional ID resets.
+- Calibration: four human-selected frame-0 masks and 11 later correction masks at proxy
+  frames 36, 65, and 162. Corrections replace multiplexed prompt memory and clear frame
+  memory while retaining slots `sam3-00` through `sam3-03`.
+- Pilot: the first 600 frames showed visually incorrect identity transfer, including
+  chassis/cabin masks with approximately 0.907 IoU at sampled frames 65 and 135. Stable
+  slot IDs did not imply stable physical identities. The full run proceeded only because
+  the user explicitly requested an exploratory execution despite that known failure.
+- Full run:
+  `muggledsam-sam3-four-part-static-full-exploratory-static-c10379-20260916t012945z`;
+  5,901/5,901 frames, 474.6386 seconds elapsed, 4.9093 seconds to first usable output,
+  2,209,013,760 bytes peak allocated VRAM, and 23,418 masks written. The 113 MB Rerun
+  recording is `four_part_static_full_exploratory.rrd`; the complete ignored run
+  directory is approximately 309 MB.
+- Full-frame overlap audit: IoU above 0.5 occurred on 77 chassis/cabin frames, 18
+  interior/cabin frames, 9 chassis/rear-body frames, and 7 interior/rear-body frames.
+  This is a geometric conflict screen, not ground-truth accuracy, and projected
+  occlusion can create some overlap; combined with the pilot's visual drift, it is enough
+  to reject the run as evidence of four reliable identities.
+- Next decision: start at proxy frame 3120 (104.0 proxy seconds / 294.0 source seconds),
+  where the four components are separated before being merged. The bounded range is
+  `[3120,5901)`, 2,781 frames / 92.7 seconds. Create new masks at frame 3120 and treat it
+  as the run's local initialization frame; do not reuse the exploratory run's frame-0
+  masks.
+- Claim boundary: reviewed masks are calibration inputs, not evaluation labels. Runtime,
+  mask counts, ID continuity, tracker diagnostics, and overlap counts are factual output
+  properties, not segmentation or association accuracy.
 
 ## Part 2: detailed method records
 
@@ -424,7 +558,8 @@ split, and uncertainty when measured; failure modes, blocker, and next decision.
 - Status: this remains the only zero-shot full-duration result and the static half of
   the synchronized ego-versus-static comparison built on Sep 9. The G4 accept/reject
   decision it asked for was never taken explicitly; it has served as the static baseline
-  since.
+  since. Its formal two-timestamp QA record is prepared with both human-selected source
+  times; both dispositions remain pending.
 
 ### Sep 9, early morning: muggledsam-sam3 ego viewpoint screen
 
@@ -630,6 +765,9 @@ split, and uncertainty when measured; failure modes, blocker, and next decision.
   30 fps action/mistake intervals and optional hand poses, so the target identities rest
   on human review alone.
 - Claim boundary: same as above; coverage is emission coverage, not correctness.
+- Formal QA: this is the selected full ego baseline for the fixed two-timestamp gate. Its
+  record is prepared with both human-selected source times; both dispositions remain
+  pending.
 
 ### Sep 13, evening: muggledsam-sam3 e4 multi-keyframe human corrections
 

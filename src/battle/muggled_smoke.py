@@ -19,12 +19,17 @@ from .schemas import (
     ClockName,
     E4CandidateRunMetadata,
     EncodedAssetInput,
+    FourPartFullRunMetadata,
+    FourPartPilotRunMetadata,
     FrameObservations,
     FrameRange,
     FullDurationCoverage,
     FullEgoManualSeedRunMetadata,
     G2PreprocessingManifest,
     G3CandidateRunMetadata,
+    HybridInitializationMetadata,
+    HybridSmokeHumanApproval,
+    HybridTargetInitializationProvenance,
     ManualSeedCandidateProvenance,
     ManualSeedMultiplexMetadata,
     MethodState,
@@ -32,10 +37,12 @@ from .schemas import (
     MuggledSAMBoxCalibrationManifest,
     MuggledSAMEgoCondition,
     MuggledSAMEgoConditionConfig,
+    MuggledSAMHybridInitializationConfig,
     MuggledSAMManualSeedTargetConfig,
     MuggledSAMMultiKeyframeCorrectionPolicy,
     MuggledSAMMultiKeyframeCorrectionSchedule,
     MuggledSAMProposedTrackingPromptConfig,
+    MuggledSAMTextTargetConfig,
     MultiKeyframeCorrectionScheduleMetadata,
     RunManifest,
     RuntimeMeasurements,
@@ -65,6 +72,10 @@ E4_CANDIDATE_FRAMES = 1800
 E4_CANDIDATE_SECONDS = 60.0
 FULL_EGO_MANUAL_SEED_FRAMES = 5400
 FULL_EGO_MANUAL_SEED_SECONDS = 180.0
+FOUR_PART_PILOT_FRAMES = 600
+FOUR_PART_PILOT_SECONDS = 20.0
+FOUR_PART_FULL_FRAMES = 5901
+FOUR_PART_FULL_SECONDS = 196.7
 MUGGLED_SAM_SOURCE = Path("/home/nick/src/muggled_sam")
 MUGGLED_SAM_PYTHON = Path("/home/nick/.pyenv/versions/muggled_sam/bin/python")
 DEFAULT_MODEL = MUGGLED_SAM_SOURCE / "model_weights" / "sam3.1_multiplex.pt"
@@ -110,6 +121,22 @@ def load_manual_seed_target_config(
         permitted.add(also_permitted_g2_config_path.resolve())
     if (repository_root / target_config.base_g2_config).resolve() not in permitted:
         raise ValueError("manual-seed target config must name the selected G2 configuration")
+    return target_config
+
+
+def load_text_target_config(
+    *,
+    target_config_path: Path,
+    repository_root: Path,
+    g2_config_path: Path,
+    view_id: str,
+) -> MuggledSAMTextTargetConfig:
+    """Load a versioned static prompt-to-output-label contract."""
+    target_config = MuggledSAMTextTargetConfig.model_validate_json(target_config_path.read_text())
+    if target_config.view_id != view_id:
+        raise ValueError("text-target config view must match the selected approved proxy")
+    if (repository_root / target_config.base_g2_config).resolve() != g2_config_path.resolve():
+        raise ValueError("text-target config must name the selected G2 configuration")
     return target_config
 
 
@@ -166,6 +193,20 @@ def require_full_ego_manual_seed_range(
     return FrameRange(start_frame=start_frame, end_frame_exclusive=FULL_EGO_MANUAL_SEED_FRAMES)
 
 
+def require_four_part_pilot_range(view_id: str, start_frame: int, max_frames: int) -> FrameRange:
+    """Permit only the approved first 20 seconds of the static four-part clip."""
+    if view_id != "static-c10379" or start_frame != 0 or max_frames != FOUR_PART_PILOT_FRAMES:
+        raise ValueError("four-part pilot permits only static-c10379 proxy frames [0, 600)")
+    return FrameRange(start_frame=start_frame, end_frame_exclusive=FOUR_PART_PILOT_FRAMES)
+
+
+def require_four_part_full_range(view_id: str, start_frame: int, max_frames: int) -> FrameRange:
+    """Permit only the entire approved source-aligned static four-part proxy."""
+    if view_id != "static-c10379" or start_frame != 0 or max_frames != FOUR_PART_FULL_FRAMES:
+        raise ValueError("four-part full run permits only static-c10379 proxy frames [0, 5901)")
+    return FrameRange(start_frame=start_frame, end_frame_exclusive=FOUR_PART_FULL_FRAMES)
+
+
 def load_observations(path: Path) -> tuple[FrameObservations, ...]:
     """Validate streaming worker records one line at a time."""
     observations: list[FrameObservations] = []
@@ -208,6 +249,8 @@ def _run_worker(
     max_frame_memory: int,
     analysis_fps: float,
     condition: MuggledSAMEgoCondition | None = None,
+    text_targets: list[dict[str, str]] | None = None,
+    hybrid_initialization: dict[str, Any] | None = None,
     manual_seeds: dict[str, Any] | None = None,
     multi_keyframe_schedule: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -272,6 +315,28 @@ def _run_worker(
                     condition.manual_box_seed.model_dump_json(),
                 ]
             )
+    if text_targets is not None:
+        command.extend(
+            [
+                "--concepts-json",
+                json.dumps([target["output_label"] for target in text_targets]),
+                "--text-targets-json",
+                json.dumps(text_targets, sort_keys=True),
+                "--prompt-mode",
+                "text_detection",
+            ]
+        )
+    if hybrid_initialization is not None:
+        command.extend(
+            [
+                "--concepts-json",
+                json.dumps([target["output_label"] for target in hybrid_initialization["targets"]]),
+                "--hybrid-initialization-json",
+                json.dumps(hybrid_initialization, sort_keys=True),
+                "--prompt-mode",
+                "hybrid_text_and_manual_mask",
+            ]
+        )
     if manual_seeds is not None:
         command.extend(
             [
@@ -488,6 +553,11 @@ def _load_manual_seed_multiplex(
     worker_seeds: list[dict[str, Any]] = []
     provenance: list[ManualSeedCandidateProvenance] = []
     selected_mask_uris: set[str] = set()
+    descriptors_by_target = (
+        {descriptor.target_id: descriptor for descriptor in target_config.target_descriptors}
+        if target_config is not None
+        else {}
+    )
     for slot, proposal_seed in enumerate(ordered_seeds):
         candidate = candidates.get(proposal_seed.candidate_id)
         if candidate is None:
@@ -546,6 +616,16 @@ def _load_manual_seed_multiplex(
                     uri=mask_uri, sha256=mask_sha256, source="measured"
                 ),
                 initial_multiplex_slot=slot,
+                display_alias=(
+                    descriptors_by_target[proposal_seed.intended_target].display_alias
+                    if proposal_seed.intended_target in descriptors_by_target
+                    else None
+                ),
+                mask_semantics=(
+                    descriptors_by_target[proposal_seed.intended_target].mask_semantics
+                    if proposal_seed.intended_target in descriptors_by_target
+                    else None
+                ),
             )
         )
     return (
@@ -566,6 +646,223 @@ def _load_manual_seed_multiplex(
             excluded_candidate_ids=("t000000-b18",) if target_config is None else (),
             calibration_transfer_note=calibration_transfer_note,
         ),
+    )
+
+
+def _require_fingerprint(repository_root: Path, fingerprint: ArtifactFingerprint) -> Path:
+    """Resolve and verify one content-addressed hybrid configuration input."""
+    path = (repository_root / fingerprint.uri).resolve()
+    if not path.is_file() or sha256_file(path) != fingerprint.sha256:
+        raise ValueError(f"hybrid input is unavailable or changed: {fingerprint.uri}")
+    return path
+
+
+def _load_hybrid_initialization(
+    *,
+    hybrid_config_path: Path,
+    repository_root: Path,
+    config_path: Path,
+    proxy: Any,
+) -> tuple[
+    dict[str, Any],
+    HybridInitializationMetadata,
+    MuggledSAMTextTargetConfig,
+]:
+    """Validate the explicit static hybrid contract and build its worker payload."""
+    hybrid = MuggledSAMHybridInitializationConfig.model_validate_json(
+        hybrid_config_path.read_text()
+    )
+    if hybrid.view_id != proxy.view_id:
+        raise ValueError("hybrid config view must match the selected approved proxy")
+    if (repository_root / hybrid.base_g2_config).resolve() != config_path.resolve():
+        raise ValueError("hybrid config must name the selected G2 configuration")
+
+    text_config_path = _require_fingerprint(repository_root, hybrid.text_target_config_fingerprint)
+    proposal_path = _require_fingerprint(repository_root, hybrid.manual_seed_proposal_fingerprint)
+    manual_target_config_path = _require_fingerprint(
+        repository_root, hybrid.manual_seed_target_config_fingerprint
+    )
+    text_config = load_text_target_config(
+        target_config_path=text_config_path,
+        repository_root=repository_root,
+        g2_config_path=config_path,
+        view_id=proxy.view_id,
+    )
+    text_labels = tuple(target.output_label for target in text_config.targets)
+    expected_text_labels = tuple(
+        target.output_label
+        for target in hybrid.targets
+        if target.initialization_source == "text_prompt"
+    )
+    if text_labels != expected_text_labels:
+        raise ValueError("hybrid text config must contain exactly the ordered text targets")
+
+    manual_payload, manual_metadata = _load_manual_seed_multiplex(
+        proposal_path=proposal_path,
+        repository_root=repository_root,
+        config_path=config_path,
+        proxy=proxy,
+        manual_seed_target_config_path=manual_target_config_path,
+    )
+    manual_labels = tuple(seed["target"] for seed in manual_payload["seeds"])
+    expected_manual_labels = tuple(
+        target.output_label
+        for target in hybrid.targets
+        if target.initialization_source == "human_reviewed_mask"
+    )
+    if manual_labels != expected_manual_labels or set(text_labels) & set(manual_labels):
+        raise ValueError("hybrid text and manual targets must be exact, unique, and disjoint")
+
+    slots_by_label = {target.output_label: slot for slot, target in enumerate(hybrid.targets)}
+    worker_manual_seeds = [
+        {**seed, "initial_multiplex_slot": slots_by_label[seed["target"]]}
+        for seed in manual_payload["seeds"]
+    ]
+    manual_by_label = {seed.intended_target: seed for seed in manual_metadata.seeds}
+    target_provenance: list[HybridTargetInitializationProvenance] = []
+    for slot, target in enumerate(hybrid.targets):
+        if target.initialization_source == "text_prompt":
+            configured = next(
+                item for item in text_config.targets if item.output_label == target.output_label
+            )
+            target_provenance.append(
+                HybridTargetInitializationProvenance(
+                    output_label=target.output_label,
+                    initial_multiplex_slot=slot,
+                    initialization_source="text_prompt",
+                    source_fingerprint=hybrid.text_target_config_fingerprint,
+                    text_prompt=configured.text_prompt,
+                )
+            )
+        else:
+            seed = manual_by_label[target.output_label]
+            target_provenance.append(
+                HybridTargetInitializationProvenance(
+                    output_label=target.output_label,
+                    initial_multiplex_slot=slot,
+                    initialization_source="human_reviewed_mask",
+                    source_fingerprint=seed.calibration_mask_fingerprint,
+                    candidate_id=seed.candidate_id,
+                    human_selected_candidate_index=seed.human_selected_candidate_index,
+                )
+            )
+
+    metadata = HybridInitializationMetadata(
+        contract_fingerprint=ArtifactFingerprint(
+            uri=relative_uri(hybrid_config_path, repository_root),
+            sha256=sha256_file(hybrid_config_path),
+            source="measured",
+        ),
+        text_target_config_fingerprint=hybrid.text_target_config_fingerprint,
+        manual_seed_proposal_fingerprint=hybrid.manual_seed_proposal_fingerprint,
+        manual_seed_target_config_fingerprint=(hybrid.manual_seed_target_config_fingerprint),
+        calibration_manifest_fingerprint=(manual_metadata.calibration_manifest_fingerprint),
+        targets=tuple(target_provenance),
+        initialization_api="encode_prompt_memory_from_mask",
+        method_label="hybrid_text_and_human_reviewed_mask",
+    )
+    payload = {
+        "targets": [
+            {
+                "output_label": target.output_label,
+                "initialization_source": target.initialization_source,
+                "initial_multiplex_slot": slot,
+            }
+            for slot, target in enumerate(hybrid.targets)
+        ],
+        "text_targets": [target.model_dump(mode="json") for target in text_config.targets],
+        "manual_seeds": worker_manual_seeds,
+    }
+    return payload, metadata, text_config
+
+
+def _load_hybrid_smoke_approval(
+    *,
+    approved_smoke_manifest_path: Path,
+    repository_root: Path,
+    hybrid_metadata: HybridInitializationMetadata,
+    config_path: Path,
+    proxy: Any,
+    max_side_length: int,
+    max_frame_memory: int,
+    approved_at: datetime,
+    approved_by: str,
+    approval_statement: str,
+) -> HybridSmokeHumanApproval:
+    """Bind a full run to the exact technically valid smoke evidence the human reviewed."""
+    if not approved_smoke_manifest_path.is_file():
+        raise ValueError("approved hybrid smoke manifest is unavailable")
+    approved_run = RunManifest.model_validate_json(approved_smoke_manifest_path.read_text())
+    smoke = approved_run.smoke
+    if smoke is None or smoke.hybrid_initialization is None:
+        raise ValueError("approved smoke must declare hybrid initialization")
+    if (
+        smoke.requested_analysis_frame_range
+        != FrameRange(start_frame=0, end_frame_exclusive=SMOKE_FRAMES)
+        or smoke.requested_seconds != SMOKE_SECONDS
+        or smoke.concepts != ("left_hand", "right_hand", "yellow_toy_top", "black_toy_top_base")
+    ):
+        raise ValueError("approved smoke does not use the exact bounded aligned target contract")
+    if (
+        smoke.hybrid_initialization.contract_fingerprint != hybrid_metadata.contract_fingerprint
+        or tuple(
+            (
+                target.output_label,
+                target.initial_multiplex_slot,
+                target.initialization_source,
+                target.initialized_at_frame_zero,
+            )
+            for target in smoke.hybrid_initialization.targets
+        )
+        != (
+            ("left_hand", 0, "text_prompt", True),
+            ("right_hand", 1, "text_prompt", True),
+            ("yellow_toy_top", 2, "text_prompt", True),
+            ("black_toy_top_base", 3, "human_reviewed_mask", True),
+        )
+        or smoke.hybrid_initialization.targets[3].candidate_id != "t000000-b03"
+        or smoke.hybrid_initialization.ground_truth_accuracy_claim is not False
+    ):
+        raise ValueError("approved smoke hybrid provenance differs from the requested full run")
+    if (
+        smoke.config_fingerprint.uri != relative_uri(config_path, repository_root)
+        or smoke.config_fingerprint.sha256 != sha256_file(config_path)
+        or smoke.proxy_fingerprint.uri != proxy.proxy_uri
+        or smoke.proxy_fingerprint.sha256 != proxy.checksum_sha256
+        or smoke.source_fingerprint.uri != proxy.raw_source.raw_uri
+        or smoke.source_fingerprint.sha256 != proxy.raw_source.checksum_sha256
+    ):
+        raise ValueError("approved smoke source/config/proxy provenance differs from G2")
+    if (
+        smoke.runtime_settings.get("analysis_fps") != 30.0
+        or smoke.runtime_settings.get("max_side_length") != max_side_length
+        or smoke.runtime_settings.get("max_frame_memory") != max_frame_memory
+    ):
+        raise ValueError("full hybrid settings must exactly match the approved smoke")
+    succeeded_objects = [
+        status
+        for status in approved_run.method_statuses
+        if status.stage == "objects" and status.state is MethodState.SUCCEEDED
+    ]
+    if len(succeeded_objects) != 1 or smoke.qa_artifact_uri is None:
+        raise ValueError("approved smoke must have succeeded output and persisted QA evidence")
+    qa_path = (repository_root / smoke.qa_artifact_uri).resolve()
+    if not qa_path.is_file():
+        raise ValueError("approved smoke QA evidence is unavailable")
+    return HybridSmokeHumanApproval(
+        approved_smoke_manifest_fingerprint=ArtifactFingerprint(
+            uri=relative_uri(approved_smoke_manifest_path, repository_root),
+            sha256=sha256_file(approved_smoke_manifest_path),
+            source="measured",
+        ),
+        approved_smoke_qa_fingerprint=ArtifactFingerprint(
+            uri=relative_uri(qa_path, repository_root),
+            sha256=sha256_file(qa_path),
+            source="measured",
+        ),
+        approved_at=approved_at,
+        approved_by=approved_by,
+        approval_statement=approval_statement,
     )
 
 
@@ -668,17 +965,13 @@ def _load_multi_keyframe_correction_schedule(
         if (
             candidate.intended_target != correction.target_id
             or candidate.frame != correction.frame
-            or candidate.human_selected_candidate_index
-            != correction.human_selected_candidate_index
+            or candidate.human_selected_candidate_index != correction.human_selected_candidate_index
             or not candidate.human_accepted
             or (
                 candidate.frame.analysis_frame_index == 0
                 and not candidate.selected_for_finalization
             )
-            or (
-                candidate.frame.analysis_frame_index != 0
-                and not candidate.selected_for_correction
-            )
+            or (candidate.frame.analysis_frame_index != 0 and not candidate.selected_for_correction)
         ):
             raise ValueError(
                 f"correction schedule entry does not match an eligible human selection: "
@@ -868,6 +1161,7 @@ def _manual_seed_metrics(
             if any(object_.mask for object_ in observation.objects)
         }
     )
+    mask_period_frames = int(worker_result.get("runtime_settings", {}).get("mask_period_frames", 6))
     return {
         "schema_version": "1.0",
         "measurement_scope": (
@@ -898,11 +1192,11 @@ def _manual_seed_metrics(
         "runtime_seconds": worker_result["elapsed_seconds"],
         "peak_vram_bytes": worker_result.get("gpu_peak_vram_bytes"),
         "external_mask_cadence": {
-            "mask_period_frames": 6,
-            "maximum_hz": 5.0,
+            "mask_period_frames": mask_period_frames,
+            "maximum_hz": analysis_fps / mask_period_frames,
             "frames_with_any_external_mask": all_mask_frames,
             "all_masks_on_declared_cadence": all(
-                frame_index % 6 == 0 for frame_index in all_mask_frames
+                frame_index % mask_period_frames == 0 for frame_index in all_mask_frames
             ),
         },
         "intentional_id_resets": False,
@@ -975,13 +1269,88 @@ def _render_full_ego_manual_seed_contact_sheet(
     (run_directory / "qa.stdout.log").write_text(completed.stdout)
     (run_directory / "qa.stderr.log").write_text(completed.stderr)
     output_path = (
-        run_directory
-        / "g3_review"
-        / "ego-hmc21179183_full_ego_manual_seed_multiplexed_qa.png"
+        run_directory / "g3_review" / "ego-hmc21179183_full_ego_manual_seed_multiplexed_qa.png"
     )
     if completed.returncode != 0 or not output_path.is_file():
         raise RuntimeError(
             f"could not render full ego manual-seed QA contact sheet (exit {completed.returncode})"
+        )
+    return output_path
+
+
+def _render_four_part_pilot_contact_sheet(
+    *,
+    repository_root: Path,
+    run_directory: Path,
+    external_python: Path,
+    full_run: bool = False,
+) -> Path:
+    """Render fixed beginning/middle/end evidence for a four-part run."""
+    timestamps = (
+        ("0.0", str(FOUR_PART_FULL_SECONDS / 2), str((FOUR_PART_FULL_FRAMES - 1) / 30.0))
+        if full_run
+        else ("0.0", "10.0", str((FOUR_PART_PILOT_FRAMES - 1) / 30.0))
+    )
+    command = [
+        str(external_python),
+        str(Path(__file__).with_name("g3_contact_sheet.py")),
+        "--run-directory",
+        str(run_directory),
+        "--repository-root",
+        str(repository_root),
+        "--timestamps",
+        *timestamps,
+    ]
+    completed = subprocess.run(command, capture_output=True, text=True, check=False)
+    (run_directory / "qa.stdout.log").write_text(completed.stdout)
+    (run_directory / "qa.stderr.log").write_text(completed.stderr)
+    output_path = run_directory / "g3_review" / "static-c10379_contact_sheet.png"
+    if completed.returncode != 0 or not output_path.is_file():
+        raise RuntimeError(
+            f"could not render four-part contact sheet (exit {completed.returncode})"
+        )
+    return output_path
+
+
+def _render_hybrid_contact_sheet(
+    *,
+    repository_root: Path,
+    run_directory: Path,
+    external_python: Path,
+    source_offset_seconds: float,
+    full_run: bool,
+) -> Path:
+    """Render fixed hybrid semantic evidence in the OpenCV-capable model environment."""
+    timestamps = (
+        ("0.0", "90.0", str((G3_STATIC_FRAMES - 1) / 30.0))
+        if full_run
+        else ("0.0", "5.0", str((SMOKE_FRAMES - 1) / 30.0))
+    )
+    output_path = (
+        run_directory
+        / "g3_review"
+        / ("static-c10379_full_hybrid_qa.png" if full_run else "static-c10379_contact_sheet.png")
+    )
+    command = [
+        str(external_python),
+        str(Path(__file__).with_name("g3_contact_sheet.py")),
+        "--run-directory",
+        str(run_directory),
+        "--repository-root",
+        str(repository_root),
+        "--timestamps",
+        *timestamps,
+        "--source-offset-seconds",
+        str(source_offset_seconds),
+        "--output",
+        str(output_path),
+    ]
+    completed = subprocess.run(command, capture_output=True, text=True, check=False)
+    (run_directory / "qa.stdout.log").write_text(completed.stdout)
+    (run_directory / "qa.stderr.log").write_text(completed.stderr)
+    if completed.returncode != 0 or not output_path.is_file():
+        raise RuntimeError(
+            f"could not render hybrid QA contact sheet (exit {completed.returncode})"
         )
     return output_path
 
@@ -995,6 +1364,12 @@ def run_smoke(args: argparse.Namespace) -> Path:
         raise ValueError(f"view {args.view!r} is not present in {config_path}")
     condition = None
     condition_config_path = None
+    text_target_config = None
+    text_target_config_path = None
+    text_target_payload = None
+    hybrid_payload = None
+    hybrid_metadata = None
+    hybrid_smoke_approval = None
     manual_seed_payload = None
     manual_seed_metadata = None
     multi_keyframe_schedule_payload = None
@@ -1023,11 +1398,51 @@ def run_smoke(args: argparse.Namespace) -> Path:
     elif args.condition_id is not None:
         raise ValueError("--condition-id requires --condition-config")
     analysis_fps = float(preprocessing.proxy_timing.clocks.fps_for(ClockName.ANALYSIS))
-    if args.manual_seed_proposal is not None:
-        if condition is not None:
-            raise ValueError(
-                "manual-seed multiplexing cannot be combined with a condition experiment"
+    if args.hybrid_config is not None:
+        if any(
+            value is not None
+            for value in (
+                condition,
+                args.text_target_config,
+                args.manual_seed_proposal,
+                args.manual_seed_target_config,
+                args.multi_keyframe_correction_schedule,
             )
+        ):
+            raise ValueError(
+                "--hybrid-config is an explicit prompt mode and cannot be combined "
+                "with condition, text, manual-seed, or correction flags"
+            )
+        (
+            hybrid_payload,
+            hybrid_metadata,
+            text_target_config,
+        ) = _load_hybrid_initialization(
+            hybrid_config_path=args.hybrid_config.resolve(),
+            repository_root=repository_root,
+            config_path=config_path,
+            proxy=proxy,
+        )
+        text_target_config_path = _resolve_artifact_uri(
+            repository_root, hybrid_metadata.text_target_config_fingerprint.uri
+        )
+        text_target_payload = hybrid_payload["text_targets"]
+    if args.text_target_config is not None:
+        if condition is not None:
+            raise ValueError("text-target config cannot be combined with a condition experiment")
+        text_target_config_path = args.text_target_config.resolve()
+        text_target_config = load_text_target_config(
+            target_config_path=text_target_config_path,
+            repository_root=repository_root,
+            g2_config_path=config_path,
+            view_id=proxy.view_id,
+        )
+        text_target_payload = [
+            target.model_dump(mode="json") for target in text_target_config.targets
+        ]
+    if args.manual_seed_proposal is not None:
+        if condition is not None or text_target_payload is not None:
+            raise ValueError("manual-seed multiplexing cannot be combined with another prompt mode")
         manual_seed_payload, manual_seed_metadata = _load_manual_seed_multiplex(
             proposal_path=args.manual_seed_proposal.resolve(),
             repository_root=repository_root,
@@ -1042,7 +1457,11 @@ def run_smoke(args: argparse.Namespace) -> Path:
     elif args.manual_seed_target_config is not None:
         raise ValueError("--manual-seed-target-config requires --manual-seed-proposal")
     if args.multi_keyframe_correction_schedule is not None:
-        if condition is not None or manual_seed_payload is not None:
+        if (
+            condition is not None
+            or text_target_payload is not None
+            or manual_seed_payload is not None
+        ):
             raise ValueError(
                 "a multi-keyframe correction schedule cannot be combined with another prompt mode"
             )
@@ -1059,8 +1478,77 @@ def run_smoke(args: argparse.Namespace) -> Path:
     is_g3_candidate = args.g3_full_static
     is_e4_candidate = args.g4_e4_candidate
     is_full_ego_manual_seed = args.full_ego_manual_seed
-    if sum((is_g3_candidate, is_e4_candidate, is_full_ego_manual_seed)) > 1:
+    is_four_part_pilot = args.four_part_static_pilot
+    is_four_part_full = args.four_part_static_full
+    if (
+        sum(
+            (
+                is_g3_candidate,
+                is_e4_candidate,
+                is_full_ego_manual_seed,
+                is_four_part_pilot,
+                is_four_part_full,
+            )
+        )
+        > 1
+    ):
         raise ValueError("only one approved candidate profile may be selected")
+    four_part_targets = (
+        tuple(seed.intended_target for seed in manual_seed_metadata.seeds)
+        if manual_seed_metadata is not None
+        else tuple(seed["target"] for seed in multi_keyframe_schedule_payload["seeds"])
+        if multi_keyframe_schedule_payload is not None
+        else ()
+    )
+    if is_four_part_pilot and (
+        condition is not None
+        or text_target_payload is not None
+        or hybrid_payload is not None
+        or (manual_seed_payload is None and multi_keyframe_schedule_payload is None)
+        or four_part_targets != ("chassis", "interior", "rear_body", "cabin")
+    ):
+        raise ValueError(
+            "four-part pilot requires only the ordered "
+            "chassis/interior/rear_body/cabin manual-seed or correction-schedule payload"
+        )
+    if is_four_part_full and (
+        condition is not None
+        or text_target_payload is not None
+        or hybrid_payload is not None
+        or manual_seed_payload is not None
+        or multi_keyframe_schedule_payload is None
+        or four_part_targets != ("chassis", "interior", "rear_body", "cabin")
+    ):
+        raise ValueError(
+            "four-part full run requires only the ordered "
+            "chassis/interior/rear_body/cabin correction schedule"
+        )
+    approval_values = (
+        args.approved_smoke_manifest,
+        args.human_approved_at,
+        args.human_approved_by,
+        args.human_approval_statement,
+    )
+    if is_g3_candidate and hybrid_metadata is not None:
+        if any(value is None for value in approval_values):
+            raise ValueError(
+                "full hybrid G3 requires approved smoke manifest, approval time, "
+                "approver, and statement"
+            )
+        hybrid_smoke_approval = _load_hybrid_smoke_approval(
+            approved_smoke_manifest_path=args.approved_smoke_manifest.resolve(),
+            repository_root=repository_root,
+            hybrid_metadata=hybrid_metadata,
+            config_path=config_path,
+            proxy=proxy,
+            max_side_length=args.max_side_length,
+            max_frame_memory=args.max_frame_memory,
+            approved_at=args.human_approved_at,
+            approved_by=args.human_approved_by,
+            approval_statement=args.human_approval_statement,
+        )
+    elif any(value is not None for value in approval_values):
+        raise ValueError("hybrid smoke approval metadata is only valid for a full hybrid G3 run")
     if (is_g3_candidate or is_e4_candidate) and (
         condition is not None
         or manual_seed_payload is not None
@@ -1071,6 +1559,8 @@ def run_smoke(args: argparse.Namespace) -> Path:
         )
     if is_full_ego_manual_seed and (
         condition is not None
+        or text_target_payload is not None
+        or hybrid_payload is not None
         or manual_seed_payload is None
         or multi_keyframe_schedule_payload is not None
     ):
@@ -1084,6 +1574,10 @@ def run_smoke(args: argparse.Namespace) -> Path:
         if is_e4_candidate
         else FULL_EGO_MANUAL_SEED_FRAMES
         if is_full_ego_manual_seed
+        else FOUR_PART_PILOT_FRAMES
+        if is_four_part_pilot
+        else FOUR_PART_FULL_FRAMES
+        if is_four_part_full
         else smoke_frame_count(analysis_fps)
     )
     requested_seconds = (
@@ -1093,6 +1587,10 @@ def run_smoke(args: argparse.Namespace) -> Path:
         if is_e4_candidate
         else FULL_EGO_MANUAL_SEED_SECONDS
         if is_full_ego_manual_seed
+        else FOUR_PART_PILOT_SECONDS
+        if is_four_part_pilot
+        else FOUR_PART_FULL_SECONDS
+        if is_four_part_full
         else SMOKE_SECONDS
     )
     requested_range = (
@@ -1102,22 +1600,34 @@ def run_smoke(args: argparse.Namespace) -> Path:
         if is_e4_candidate
         else require_full_ego_manual_seed_range(proxy.view_id, args.start_frame, args.max_frames)
         if is_full_ego_manual_seed
+        else require_four_part_pilot_range(proxy.view_id, args.start_frame, args.max_frames)
+        if is_four_part_pilot
+        else require_four_part_full_range(proxy.view_id, args.start_frame, args.max_frames)
+        if is_four_part_full
         else require_smoke_range(args.start_frame, args.max_frames, analysis_fps)
     )
 
     profile = (
-        "g3-full"
+        "g3-full-hybrid-static"
+        if is_g3_candidate and hybrid_payload is not None
+        else "g3-full"
         if is_g3_candidate
         else "g4-e4-candidate"
         if is_e4_candidate
         else "full-ego-manual-seed-multiplexed"
         if is_full_ego_manual_seed
+        else "four-part-static-pilot"
+        if is_four_part_pilot
+        else "four-part-static-full-exploratory"
+        if is_four_part_full
         else f"smoke-{condition.condition_id}"
         if condition
         else "smoke-manual-seed-multiplexed"
         if manual_seed_payload is not None
         else "smoke-multi-keyframe-corrections"
         if multi_keyframe_schedule_payload is not None
+        else "smoke-hybrid-static"
+        if hybrid_payload is not None
         else "smoke"
     )
     run_id = make_run_id(proxy.view_id, profile=profile)
@@ -1130,36 +1640,53 @@ def run_smoke(args: argparse.Namespace) -> Path:
     proxy_path = (repository_root / proxy.proxy_uri).resolve()
     model_path = args.model.resolve()
     worker_path = Path(__file__).with_name("muggled_worker.py")
+    configured_concepts = (
+        tuple(target["output_label"] for target in hybrid_payload["targets"])
+        if hybrid_payload is not None
+        else tuple(target.output_label for target in text_target_config.targets)
+        if text_target_config is not None
+        else condition.concepts
+        if condition
+        else tuple(seed["target"] for seed in manual_seed_payload["seeds"])
+        if manual_seed_payload is not None
+        else tuple(seed["target"] for seed in multi_keyframe_schedule_payload["seeds"])
+        if multi_keyframe_schedule_payload is not None
+        else CONCEPTS
+    )
     runtime_invocation = {
         "run_id": run_directory.name,
         "config": relative_uri(config_path, repository_root),
         "view_id": proxy.view_id,
         "proxy": proxy.proxy_uri,
         "run_profile": (
-            "g3_full_static_candidate"
+            "g3_full_static_hybrid_candidate"
+            if is_g3_candidate and hybrid_payload is not None
+            else "g3_full_static_candidate"
             if is_g3_candidate
             else "g4_e4_60_second_candidate"
             if is_e4_candidate
             else "full_ego_manual_seed_multiplexed_baseline"
             if is_full_ego_manual_seed
+            else "four_part_static_20_second_pilot"
+            if is_four_part_pilot
+            else "four_part_static_full_exploratory"
+            if is_four_part_full
+            else "smoke_hybrid_static"
+            if hybrid_payload is not None
             else "smoke"
         ),
         "approved_range": {"start_frame": 0, "end_frame_exclusive": requested_frames},
         "approved_seconds": requested_seconds,
-        "concepts": list(
-            condition.concepts
-            if condition
-            else tuple(seed["target"] for seed in manual_seed_payload["seeds"])
-            if manual_seed_payload is not None
-            else tuple(seed["target"] for seed in multi_keyframe_schedule_payload["seeds"])
-            if multi_keyframe_schedule_payload is not None
-            else CONCEPTS
-        ),
+        "concepts": list(configured_concepts),
         "external_python": str(args.external_python),
         "muggled_sam_source": str(MUGGLED_SAM_SOURCE),
         "model_path": str(model_path),
         "cuda_visible_devices": "0",
     }
+    if is_four_part_full:
+        runtime_invocation["known_pilot_failure"] = (
+            "chassis/cabin identity merge after frame-65 correction"
+        )
     if condition is not None:
         runtime_invocation.update(
             {
@@ -1176,6 +1703,32 @@ def run_smoke(args: argparse.Namespace) -> Path:
                 ),
             }
         )
+    if text_target_config is not None:
+        runtime_invocation.update(
+            {
+                "prompt_mode": "text_detection",
+                "text_target_config": relative_uri(text_target_config_path, repository_root),
+                "text_target_config_sha256": sha256_file(text_target_config_path),
+                "text_prompt_mapping": text_target_payload,
+            }
+        )
+    if hybrid_payload is not None:
+        runtime_invocation.update(
+            {
+                "prompt_mode": "hybrid_text_and_manual_mask",
+                "hybrid_config": relative_uri(args.hybrid_config.resolve(), repository_root),
+                "hybrid_config_sha256": sha256_file(args.hybrid_config.resolve()),
+                "hybrid_initialization": hybrid_payload,
+                "label": (
+                    "hybrid: three text detections plus one human-reviewed mask; "
+                    "not pure zero-shot and not all-manual"
+                ),
+            }
+        )
+        if hybrid_smoke_approval is not None:
+            runtime_invocation["hybrid_smoke_human_approval"] = hybrid_smoke_approval.model_dump(
+                mode="json"
+            )
     if manual_seed_payload is not None:
         runtime_invocation.update(
             {
@@ -1231,6 +1784,8 @@ def run_smoke(args: argparse.Namespace) -> Path:
             max_frame_memory=args.max_frame_memory,
             analysis_fps=analysis_fps,
             condition=condition,
+            text_targets=text_target_payload if hybrid_payload is None else None,
+            hybrid_initialization=hybrid_payload,
             manual_seeds=manual_seed_payload,
             multi_keyframe_schedule=multi_keyframe_schedule_payload,
         )
@@ -1246,6 +1801,20 @@ def run_smoke(args: argparse.Namespace) -> Path:
         )
         frames_processed = 0
         observations = ()
+    if hybrid_metadata is not None and observations:
+        initialized_labels = {object_.label for object_ in observations[0].objects}
+        hybrid_metadata = hybrid_metadata.model_copy(
+            update={
+                "targets": tuple(
+                    target.model_copy(
+                        update={
+                            "initialized_at_frame_zero": (target.output_label in initialized_labels)
+                        }
+                    )
+                    for target in hybrid_metadata.targets
+                )
+            }
+        )
     coverage = FullDurationCoverage(
         source_duration_seconds=preprocessing.clip.source_duration_seconds,
         covered_intervals=(
@@ -1281,7 +1850,9 @@ def run_smoke(args: argparse.Namespace) -> Path:
     method_statuses = [
         MethodStatus(
             method_name=(
-                "muggledsam-sam3-g3-full-static-candidate"
+                "muggledsam-sam3-g3-full-static-hybrid-candidate"
+                if is_g3_candidate and hybrid_payload is not None
+                else "muggledsam-sam3-g3-full-static-candidate"
                 if is_g3_candidate
                 else "muggledsam-sam3-g4-e4-60-second-candidate"
                 if is_e4_candidate
@@ -1289,10 +1860,16 @@ def run_smoke(args: argparse.Namespace) -> Path:
                 if condition
                 else "muggledsam-sam3-full-ego-manual-seed-multiplexed-baseline"
                 if is_full_ego_manual_seed
+                else "muggledsam-sam3-four-part-static-20-second-pilot"
+                if is_four_part_pilot
+                else "muggledsam-sam3-four-part-static-full-exploratory"
+                if is_four_part_full
                 else "muggledsam-sam3-manual-seed-multiplexed-smoke"
                 if manual_seed_payload is not None
                 else "muggledsam-sam3-multi-keyframe-correction-smoke"
                 if multi_keyframe_schedule_payload is not None
+                else "muggledsam-sam3-static-hybrid-smoke"
+                if hybrid_payload is not None
                 else "muggledsam-sam3-core-method-smoke"
             ),
             stage="objects",
@@ -1320,6 +1897,8 @@ def run_smoke(args: argparse.Namespace) -> Path:
                 measured_on=(
                     "fixed [0, 5400) manual-seed multiplexed SAM3 stream; not accuracy"
                     if is_full_ego_manual_seed
+                    else "fixed [0, 600) four-part static pilot; not accuracy"
+                    if is_four_part_pilot
                     else "fixed [0, 300) manual-seed multiplexed SAM3 stream; not accuracy"
                 ),
                 blocker=(
@@ -1336,6 +1915,10 @@ def run_smoke(args: argparse.Namespace) -> Path:
         if is_e4_candidate
         else "full_ego_manual_seed_multiplexed_baseline.rrd"
         if is_full_ego_manual_seed
+        else "four_part_static_pilot.rrd"
+        if is_four_part_pilot
+        else "four_part_static_full_exploratory.rrd"
+        if is_four_part_full
         else "smoke.rrd"
     )
     if method_state is MethodState.SUCCEEDED:
@@ -1381,6 +1964,8 @@ def run_smoke(args: argparse.Namespace) -> Path:
                     if is_e4_candidate
                     else "rerun-full-ego-manual-seed-baseline-export"
                     if is_full_ego_manual_seed
+                    else "rerun-four-part-static-full-exploratory-export"
+                    if is_four_part_full
                     else "rerun-smoke-export",
                     stage="export",
                     state=MethodState.SUCCEEDED,
@@ -1400,6 +1985,8 @@ def run_smoke(args: argparse.Namespace) -> Path:
                         if is_e4_candidate
                         else "rerun-full-ego-manual-seed-baseline-export"
                         if is_full_ego_manual_seed
+                        else "rerun-four-part-static-full-exploratory-export"
+                        if is_four_part_full
                         else "rerun-smoke-export"
                     ),
                     stage="export",
@@ -1417,6 +2004,8 @@ def run_smoke(args: argparse.Namespace) -> Path:
                     if is_e4_candidate
                     else "rerun-full-ego-manual-seed-baseline-export"
                     if is_full_ego_manual_seed
+                    else "rerun-four-part-static-full-exploratory-export"
+                    if is_four_part_full
                     else "rerun-smoke-export"
                 ),
                 stage="export",
@@ -1426,10 +2015,31 @@ def run_smoke(args: argparse.Namespace) -> Path:
         )
 
     qa_path = None
-    if manual_seed_metadata is not None and method_state is MethodState.SUCCEEDED:
+    if (
+        manual_seed_metadata is not None
+        or multi_keyframe_correction_metadata is not None
+        or hybrid_metadata is not None
+    ) and method_state is MethodState.SUCCEEDED:
         try:
             qa_path = (
-                _render_full_ego_manual_seed_contact_sheet(
+                _render_hybrid_contact_sheet(
+                    repository_root=repository_root,
+                    run_directory=run_directory,
+                    external_python=args.external_python,
+                    source_offset_seconds=preprocessing.proxy_timing.source_seconds_for_frame(
+                        ClockName.ANALYSIS, 0
+                    ),
+                    full_run=is_g3_candidate,
+                )
+                if hybrid_metadata is not None
+                else _render_four_part_pilot_contact_sheet(
+                    repository_root=repository_root,
+                    run_directory=run_directory,
+                    external_python=args.external_python,
+                    full_run=is_four_part_full,
+                )
+                if is_four_part_pilot or is_four_part_full
+                else _render_full_ego_manual_seed_contact_sheet(
                     repository_root=repository_root,
                     run_directory=run_directory,
                     external_python=args.external_python,
@@ -1444,8 +2054,14 @@ def run_smoke(args: argparse.Namespace) -> Path:
             method_statuses.append(
                 MethodStatus(
                     method_name=(
-                        "full-ego-manual-seed-multiplexed-qa"
+                        "static-hybrid-semantic-gate"
+                        if hybrid_metadata is not None
+                        else "full-ego-manual-seed-multiplexed-qa"
                         if is_full_ego_manual_seed
+                        else "four-part-static-pilot-qa"
+                        if is_four_part_pilot
+                        else "four-part-static-full-exploratory-qa"
+                        if is_four_part_full
                         else "manual-seed-multiplexed-e4-zero-shot-qa"
                     ),
                     stage="review",
@@ -1454,7 +2070,19 @@ def run_smoke(args: argparse.Namespace) -> Path:
                     measured_on=(
                         "recorded outputs at 0.000, 90.000, and 179.967 seconds; "
                         "review-only, not accuracy"
+                        if hybrid_metadata is not None and is_g3_candidate
+                        else "recorded outputs at 0.000, 5.000, and 9.967 seconds; "
+                        "review-only, not accuracy"
+                        if hybrid_metadata is not None
+                        else "recorded outputs at 0.000, 90.000, and 179.967 seconds; "
+                        "review-only, not accuracy"
                         if is_full_ego_manual_seed
+                        else "recorded outputs at 0.000, 10.000, and 19.967 seconds; "
+                        "review-only, not accuracy"
+                        if is_four_part_pilot
+                        else "recorded outputs at 0.000, 98.350, and 196.667 seconds; "
+                        "review-only, not accuracy"
+                        if is_four_part_full
                         else "recorded outputs at 0.000, 5.000, and 9.967 seconds; "
                         "review-only, not accuracy"
                     ),
@@ -1464,7 +2092,9 @@ def run_smoke(args: argparse.Namespace) -> Path:
             method_statuses.append(
                 MethodStatus(
                     method_name=(
-                        "full-ego-manual-seed-multiplexed-qa"
+                        "static-hybrid-semantic-gate"
+                        if hybrid_metadata is not None
+                        else "full-ego-manual-seed-multiplexed-qa"
                         if is_full_ego_manual_seed
                         else "manual-seed-multiplexed-e4-zero-shot-qa"
                     ),
@@ -1475,15 +2105,7 @@ def run_smoke(args: argparse.Namespace) -> Path:
             )
 
     metadata_common = dict(
-        concepts=(
-            condition.concepts
-            if condition
-            else tuple(seed["target"] for seed in manual_seed_payload["seeds"])
-            if manual_seed_payload is not None
-            else tuple(seed["target"] for seed in multi_keyframe_schedule_payload["seeds"])
-            if multi_keyframe_schedule_payload is not None
-            else CONCEPTS
-        ),
+        concepts=configured_concepts,
         source_fingerprint=ArtifactFingerprint(
             uri=proxy.raw_source.raw_uri,
             sha256=proxy.raw_source.checksum_sha256,
@@ -1509,13 +2131,7 @@ def run_smoke(args: argparse.Namespace) -> Path:
         continuity=StreamContinuityPolicy(
             max_prompt_memory_entries=1,
             max_frame_memory_entries=args.max_frame_memory,
-            detected_object_limit=len(
-                condition.concepts
-                if condition
-                else manual_seed_payload["seeds"]
-                if manual_seed_payload is not None
-                else CONCEPTS
-            ),
+            detected_object_limit=len(configured_concepts),
         ),
         runtime_settings={
             "external_python": str(args.external_python),
@@ -1541,21 +2157,33 @@ def run_smoke(args: argparse.Namespace) -> Path:
         rerun_artifact_uri=relative_uri(rerun_path, repository_root)
         if rerun_path.is_file()
         else None,
-        measurements_artifact_uri=relative_uri(measurements_path, repository_root)
-        if measurements_written
-        else None,
-        qa_artifact_uri=relative_uri(qa_path, repository_root) if qa_path is not None else None,
-        manual_seed_multiplex=manual_seed_metadata,
+    )
+    text_target_config_fingerprint = (
+        ArtifactFingerprint(
+            uri=relative_uri(text_target_config_path, repository_root),
+            sha256=sha256_file(text_target_config_path),
+            source="measured",
+        )
+        if text_target_config_path is not None
+        else None
     )
     smoke = None
     g3_candidate = None
     e4_candidate = None
     full_ego_manual_seed = None
+    four_part_pilot = None
+    four_part_full = None
     if is_g3_candidate:
         g3_candidate = G3CandidateRunMetadata(
             requested_analysis_frame_range=requested_range,
             requested_seconds=G3_STATIC_SECONDS,
             view_id=proxy.view_id,
+            text_target_config_fingerprint=text_target_config_fingerprint,
+            text_prompt_mapping=(
+                text_target_config.targets if text_target_config is not None else ()
+            ),
+            hybrid_initialization=hybrid_metadata,
+            hybrid_smoke_human_approval=hybrid_smoke_approval,
             **metadata_common,
         )
     elif is_e4_candidate:
@@ -1570,12 +2198,50 @@ def run_smoke(args: argparse.Namespace) -> Path:
             requested_analysis_frame_range=requested_range,
             requested_seconds=FULL_EGO_MANUAL_SEED_SECONDS,
             view_id=proxy.view_id,
+            measurements_artifact_uri=relative_uri(measurements_path, repository_root)
+            if measurements_written
+            else None,
+            qa_artifact_uri=relative_uri(qa_path, repository_root) if qa_path is not None else None,
+            manual_seed_multiplex=manual_seed_metadata,
+            **metadata_common,
+        )
+    elif is_four_part_pilot:
+        four_part_pilot = FourPartPilotRunMetadata(
+            requested_analysis_frame_range=requested_range,
+            requested_seconds=FOUR_PART_PILOT_SECONDS,
+            view_id=proxy.view_id,
+            measurements_artifact_uri=relative_uri(measurements_path, repository_root)
+            if measurements_written
+            else None,
+            qa_artifact_uri=relative_uri(qa_path, repository_root) if qa_path is not None else None,
+            manual_seed_multiplex=manual_seed_metadata,
+            multi_keyframe_corrections=multi_keyframe_correction_metadata,
+            **metadata_common,
+        )
+    elif is_four_part_full:
+        four_part_full = FourPartFullRunMetadata(
+            requested_analysis_frame_range=requested_range,
+            requested_seconds=FOUR_PART_FULL_SECONDS,
+            view_id=proxy.view_id,
+            qa_artifact_uri=relative_uri(qa_path, repository_root) if qa_path is not None else None,
+            multi_keyframe_corrections=multi_keyframe_correction_metadata,
+            known_pilot_failure="chassis/cabin identity merge after frame-65 correction",
             **metadata_common,
         )
     else:
         smoke = SmokeRunMetadata(
             requested_analysis_frame_range=requested_range,
             requested_seconds=SMOKE_SECONDS,
+            measurements_artifact_uri=relative_uri(measurements_path, repository_root)
+            if measurements_written
+            else None,
+            qa_artifact_uri=relative_uri(qa_path, repository_root) if qa_path is not None else None,
+            manual_seed_multiplex=manual_seed_metadata,
+            text_target_config_fingerprint=text_target_config_fingerprint,
+            text_prompt_mapping=(
+                text_target_config.targets if text_target_config is not None else ()
+            ),
+            hybrid_initialization=hybrid_metadata,
             **metadata_common,
             multi_keyframe_corrections=multi_keyframe_correction_metadata,
         )
@@ -1590,6 +2256,8 @@ def run_smoke(args: argparse.Namespace) -> Path:
         g3_candidate=g3_candidate,
         e4_candidate=e4_candidate,
         full_ego_manual_seed=full_ego_manual_seed,
+        four_part_pilot=four_part_pilot,
+        four_part_full=four_part_full,
     )
     (run_directory / "manifest.json").write_text(manifest.model_dump_json(indent=2) + "\n")
     return run_directory
@@ -1651,10 +2319,48 @@ def main() -> None:
         action="store_true",
         help="Enable only the approved 5,400-frame manual-seed multiplexed ego baseline.",
     )
+    parser.add_argument(
+        "--four-part-static-pilot",
+        action="store_true",
+        help="Enable only the approved 600-frame/20-second static four-part pilot.",
+    )
+    parser.add_argument(
+        "--four-part-static-full",
+        action="store_true",
+        help="Run the known-imperfect full 5,901-frame static four-part exploration.",
+    )
     parser.add_argument("--external-python", type=Path, default=MUGGLED_SAM_PYTHON)
     parser.add_argument("--model", type=Path, default=DEFAULT_MODEL)
     parser.add_argument("--condition-config", type=Path)
     parser.add_argument("--condition-id")
+    parser.add_argument(
+        "--text-target-config",
+        type=Path,
+        help=(
+            "Versioned static zero-shot mapping from normalized output labels to "
+            "human-readable SAM3 text prompts."
+        ),
+    )
+    parser.add_argument(
+        "--hybrid-config",
+        type=Path,
+        help=(
+            "Versioned static contract that exclusively binds text targets, a reviewed "
+            "manual proposal, source fingerprints, and canonical combined ordering."
+        ),
+    )
+    parser.add_argument(
+        "--approved-smoke-manifest",
+        type=Path,
+        help="Exact reviewed hybrid smoke manifest authorizing a full G3 run.",
+    )
+    parser.add_argument(
+        "--human-approved-at",
+        type=datetime.fromisoformat,
+        help="Timezone-aware ISO-8601 time of the explicit hybrid smoke approval.",
+    )
+    parser.add_argument("--human-approved-by")
+    parser.add_argument("--human-approval-statement")
     parser.add_argument(
         "--manual-seed-proposal",
         type=Path,
@@ -1668,10 +2374,7 @@ def main() -> None:
     parser.add_argument(
         "--multi-keyframe-correction-schedule",
         type=Path,
-        help=(
-            "Integrity-validated frame-0 seed plus later correction schedule; "
-            "permitted only for the 300-frame smoke budget."
-        ),
+        help=("Integrity-validated frame-0 seed plus later correction schedule."),
     )
     args = parser.parse_args()
     if args.g3_full_static and args.max_frames == SMOKE_FRAMES:
@@ -1680,6 +2383,10 @@ def main() -> None:
         args.max_frames = E4_CANDIDATE_FRAMES
     if args.full_ego_manual_seed and args.max_frames == SMOKE_FRAMES:
         args.max_frames = FULL_EGO_MANUAL_SEED_FRAMES
+    if args.four_part_static_pilot and args.max_frames == SMOKE_FRAMES:
+        args.max_frames = FOUR_PART_PILOT_FRAMES
+    if args.four_part_static_full and args.max_frames == SMOKE_FRAMES:
+        args.max_frames = FOUR_PART_FULL_FRAMES
     try:
         run_directory = run_smoke(args)
     except (OSError, ValueError, json.JSONDecodeError) as error:

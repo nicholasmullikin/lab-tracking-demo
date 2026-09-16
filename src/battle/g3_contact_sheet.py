@@ -81,7 +81,13 @@ def _overlay_observation(
     return frame, masks_applied
 
 
-def _panel(frame: Any, frame_index: int, masks_applied: int) -> Any:
+def _panel(
+    frame: Any,
+    frame_index: int,
+    masks_applied: int,
+    *,
+    source_offset_seconds: float | None = None,
+) -> Any:
     import cv2
 
     height, width = frame.shape[:2]
@@ -91,9 +97,15 @@ def _panel(frame: Any, frame_index: int, masks_applied: int) -> Any:
         f"{masks_applied} external mask(s)" if masks_applied else "boxes only; 5 FPS mask cadence"
     )
     cv2.rectangle(panel, (0, 0), (PANEL_WIDTH, 28), (20, 20, 20), -1)
+    timestamp_label = f"t={frame_index / ANALYSIS_FPS:.3f}s"
+    if source_offset_seconds is not None:
+        timestamp_label = (
+            f"proxy={frame_index / ANALYSIS_FPS:.6f}s | "
+            f"source={source_offset_seconds + frame_index / ANALYSIS_FPS:.6f}s"
+        )
     cv2.putText(
         panel,
-        f"t={frame_index / ANALYSIS_FPS:.3f}s | analysis frame {frame_index} | {mask_note}",
+        f"{timestamp_label} | analysis frame {frame_index} | {mask_note}",
         (8, 19),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.43,
@@ -255,6 +267,8 @@ def render_contact_sheet(
     repository_root: Path,
     *,
     timestamps: tuple[float, ...] = TARGET_TIMES_SECONDS,
+    output_path: Path | None = None,
+    source_offset_seconds: float | None = None,
 ) -> Path:
     """Create one contact sheet without loading a model or modifying run outputs."""
     import cv2
@@ -278,7 +292,14 @@ def render_contact_sheet(
             rendered, masks_applied = _overlay_observation(
                 frame, observations[frame_index], run_directory
             )
-            panels.append(_panel(rendered, frame_index, masks_applied))
+            panels.append(
+                _panel(
+                    rendered,
+                    frame_index,
+                    masks_applied,
+                    source_offset_seconds=source_offset_seconds,
+                )
+            )
     finally:
         capture.release()
     pane_height = max(panel.shape[0] for panel in panels)
@@ -296,8 +317,13 @@ def render_contact_sheet(
     ]
     header = np.full((HEADER_HEIGHT, PANEL_WIDTH * len(padded), 3), 35, dtype=np.uint8)
     title = (
-        f"G3 FULL STATIC QA — {runtime['view_id'].upper()}"
-        if runtime.get("run_profile") == "g3_full_static_candidate"
+        (
+            f"G3 FULL STATIC HYBRID QA — {runtime['view_id'].upper()}"
+            if runtime.get("run_profile") == "g3_full_static_hybrid_candidate"
+            else f"G3 FULL STATIC QA — {runtime['view_id'].upper()}"
+        )
+        if runtime.get("run_profile")
+        in {"g3_full_static_candidate", "g3_full_static_hybrid_candidate"}
         else f"G4 E4 CANDIDATE QA — {runtime['view_id'].upper()}"
         if runtime.get("run_profile") == "g4_e4_60_second_candidate"
         else f"FULL EGO MANUAL-SEED MULTIPLEXED QA — {runtime['view_id'].upper()}"
@@ -317,18 +343,23 @@ def render_contact_sheet(
     image = np.vstack(
         (header, np.hstack(padded), _legend(observations[0], runtime["concepts"], header.shape[1]))
     )
-    output_directory = run_directory / "g3_review"
-    output_directory.mkdir(exist_ok=True)
-    suffix = (
-        "full_run_qa"
-        if runtime.get("run_profile") == "g3_full_static_candidate"
-        else "g4_e4_candidate_qa"
-        if runtime.get("run_profile") == "g4_e4_60_second_candidate"
-        else "full_ego_manual_seed_multiplexed_qa"
-        if runtime.get("run_profile") == "full_ego_manual_seed_multiplexed_baseline"
-        else "contact_sheet"
-    )
-    output_path = output_directory / f"{runtime['view_id']}_{suffix}.png"
+    if output_path is None:
+        output_directory = run_directory / "g3_review"
+        output_directory.mkdir(exist_ok=True)
+        suffix = (
+            "full_hybrid_qa"
+            if runtime.get("run_profile") == "g3_full_static_hybrid_candidate"
+            else "full_run_qa"
+            if runtime.get("run_profile") == "g3_full_static_candidate"
+            else "g4_e4_candidate_qa"
+            if runtime.get("run_profile") == "g4_e4_60_second_candidate"
+            else "full_ego_manual_seed_multiplexed_qa"
+            if runtime.get("run_profile") == "full_ego_manual_seed_multiplexed_baseline"
+            else "contact_sheet"
+        )
+        output_path = output_directory / f"{runtime['view_id']}_{suffix}.png"
+    else:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
     if not cv2.imwrite(str(output_path), image):
         raise RuntimeError(f"could not write contact sheet: {output_path}")
     return output_path
@@ -339,6 +370,11 @@ def main() -> None:
     parser.add_argument("--run-directory", type=Path)
     parser.add_argument("--repository-root", type=Path, default=Path.cwd())
     parser.add_argument("--timestamps", type=float, nargs="+", default=list(TARGET_TIMES_SECONDS))
+    parser.add_argument(
+        "--source-offset-seconds",
+        type=float,
+        help="Also label each panel with its mapped source-clock timestamp.",
+    )
     parser.add_argument(
         "--viewpoint-screen-run",
         action="append",
@@ -368,6 +404,8 @@ def main() -> None:
         args.run_directory.resolve(),
         args.repository_root.resolve(),
         timestamps=tuple(args.timestamps),
+        output_path=args.output.resolve() if args.output is not None else None,
+        source_offset_seconds=args.source_offset_seconds,
     )
     print(f"Wrote G3 review contact sheet: {output}")
 

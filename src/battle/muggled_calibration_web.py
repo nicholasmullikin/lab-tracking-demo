@@ -74,6 +74,7 @@ from .schemas import (
 STATIC_DIRECTORY = Path(__file__).with_name("static") / "calibration"
 VIEW_RENDER_CACHE_ENTRIES = 12
 VIEW_SOURCE_CACHE_ENTRIES = 8
+JOB_HISTORY_LIMIT = 32
 # One sentence for both the refused request and the banner the browser shows, so the
 # reason a control is disabled is worded identically wherever a human reads it.
 CANDIDATE_REVIEW_LOCK_REASON = (
@@ -227,13 +228,19 @@ def _muggledsam_prompt_payload(prompt: MuggledSAMCalibrationPendingBox) -> dict[
                 [box.x + box.width, box.y + box.height],
             ]
         ],
-        "fg_points": [
-            [point.x, point.y] for point in prompt.normalized_fg_points
-        ],
-        "bg_points": [
-            [point.x, point.y] for point in prompt.normalized_bg_points
-        ],
+        "fg_points": [[point.x, point.y] for point in prompt.normalized_fg_points],
+        "bg_points": [[point.x, point.y] for point in prompt.normalized_bg_points],
     }
+
+
+def _same_prompt_revision(
+    current: MuggledSAMCalibrationPendingBox | None,
+    queued: MuggledSAMCalibrationPendingBox,
+) -> bool:
+    """Compare editable prompt content while ignoring queue-state bookkeeping."""
+    return current is not None and current.model_copy(
+        update={"stage": "pending"}
+    ) == queued.model_copy(update={"stage": "pending"})
 
 
 def _validate_manifest(
@@ -370,9 +377,7 @@ class Workspace:
                     "finalized": self._plan_is_finalized(),
                     "plan_revision": self._current_plan_revision(),
                     "final_proposal_uri": self.manifest.final_proposal_uri,
-                    "final_correction_schedule_uri": (
-                        self.manifest.final_correction_schedule_uri
-                    ),
+                    "final_correction_schedule_uri": (self.manifest.final_correction_schedule_uri),
                     "superseded_plans": [
                         plan.model_dump(mode="json") for plan in self.manifest.superseded_plans
                     ],
@@ -384,10 +389,6 @@ class Workspace:
                     "finalization": "Human-selected frame-0 masks initialize all slots; "
                     "later selected masks are optional corrections. This workspace never tracks.",
                     "diagnostics": "Decoder IoU and prompt overlap are diagnostics, not accuracy.",
-                },
-                "jobs": {
-                    job_id: {key: value for key, value in job.items() if key != "future"}
-                    for job_id, job in self.jobs.items()
                 },
             }
 
@@ -410,6 +411,28 @@ class Workspace:
     def _current_plan_revision(self) -> int:
         """Return the revision of the plan on disk, treating pre-revision runs as one."""
         return max(self.manifest.plan_revision, 1 if self._plan_is_finalized() else 0)
+
+    def _prune_jobs(self) -> None:
+        completed = [
+            job_id for job_id, job in self.jobs.items() if job["status"] in {"succeeded", "failed"}
+        ]
+        remove_count = max(0, len(self.jobs) - JOB_HISTORY_LIMIT + 1)
+        for job_id in completed[:remove_count]:
+            self.jobs.pop(job_id, None)
+
+    def _active_job_for_box(self, box_id: str) -> dict[str, Any] | None:
+        return next(
+            (
+                job
+                for job in self.jobs.values()
+                if job["status"] in {"queued", "running"} and box_id in job["box_ids"]
+            ),
+            None,
+        )
+
+    def _require_no_active_decode(self) -> None:
+        if any(job["status"] in {"queued", "running"} for job in self.jobs.values()):
+            raise ValueError("wait for the active decoder job before finalizing")
 
     def _plan_paths(self, revision: int) -> tuple[Path, Path]:
         """Name the proposal and schedule files a given plan revision owns.
@@ -459,6 +482,7 @@ class Workspace:
         self, body: dict[str, Any], box_id: str | None = None
     ) -> dict[str, Any]:
         with self.lock:
+            self._require_draft_candidate_review()
             frame = frame_reference(
                 float(body["timestamp"]),
                 fps=self.manifest.proxy_fps,
@@ -467,12 +491,37 @@ class Workspace:
             )
             pixel_box = PixelBox.model_validate(body["pixel_box"])
             pending = list(self.manifest.workspace.pending_boxes)
-            prior = next((item for item in pending if item.box_id == box_id), None)
+            intended_target = str(body["intended_target"]).strip()
+            if box_id is None:
+                matching = [
+                    item
+                    for item in pending
+                    if item.frame.analysis_frame_index == frame.analysis_frame_index
+                    and item.intended_target == intended_target
+                ]
+                if len(matching) > 1:
+                    raise ValueError(
+                        "multiple editable prompts already exist for this target and frame"
+                    )
+                prior = matching[0] if matching else None
+                box_id = prior.box_id if prior is not None else None
+            else:
+                prior = next((item for item in pending if item.box_id == box_id), None)
             if box_id is not None and prior is None:
                 raise KeyError(f"pending prompt does not exist: {box_id}")
+            active_job = self._active_job_for_box(box_id) if box_id is not None else None
+            if active_job is not None and not active_job["live_preview"]:
+                raise ValueError("wait for the manual prompt decode to finish")
+            if any(
+                item.box_id != box_id
+                and item.frame.analysis_frame_index == frame.analysis_frame_index
+                and item.intended_target == intended_target
+                for item in pending
+            ):
+                raise ValueError("an editable prompt already exists for this target and frame")
             prompt = MuggledSAMCalibrationPendingBox(
                 box_id=box_id or next_pending_box_id(self.manifest, frame.analysis_frame_index),
-                intended_target=str(body["intended_target"]).strip(),
+                intended_target=intended_target,
                 frame=frame,
                 pixel_box=pixel_box,
                 normalized_box=_normal_box(pixel_box, self.manifest),
@@ -486,12 +535,8 @@ class Workspace:
             )
             prompt = prompt.model_copy(
                 update={
-                    "normalized_fg_points": _normal_points(
-                        prompt.pixel_fg_points, self.manifest
-                    ),
-                    "normalized_bg_points": _normal_points(
-                        prompt.pixel_bg_points, self.manifest
-                    ),
+                    "normalized_fg_points": _normal_points(prompt.pixel_fg_points, self.manifest),
+                    "normalized_bg_points": _normal_points(prompt.pixel_bg_points, self.manifest),
                 }
             )
             if prior is not None:
@@ -501,11 +546,38 @@ class Workspace:
             workspace = self.manifest.workspace.model_copy(
                 update={"pending_boxes": tuple(pending), "selected_box_id": prompt.box_id}
             )
-            self._persist(self.manifest.model_copy(update={"workspace": workspace}))
+            candidates = tuple(
+                candidate.model_copy(
+                    update={
+                        "human_selected_candidate_index": None,
+                        "human_accepted": False,
+                        "legacy_finalization_requested": False,
+                        "selected_for_finalization": False,
+                        "selected_for_correction": False,
+                    }
+                )
+                if candidate.human_accepted
+                and (
+                    candidate.source_box_id == prompt.box_id
+                    or (
+                        candidate.frame.analysis_frame_index == prompt.frame.analysis_frame_index
+                        and candidate.intended_target == prompt.intended_target
+                    )
+                )
+                else candidate
+                for candidate in self.manifest.candidates
+            )
+            self._persist(
+                self.manifest.model_copy(update={"workspace": workspace, "candidates": candidates})
+            )
             return prompt.model_dump(mode="json")
 
     def delete_prompt(self, box_id: str) -> None:
         with self.lock:
+            self._require_draft_candidate_review()
+            active_job = self._active_job_for_box(box_id)
+            if active_job is not None and not active_job["live_preview"]:
+                raise ValueError("wait for the manual prompt decode to finish")
             pending = tuple(
                 item for item in self.manifest.workspace.pending_boxes if item.box_id != box_id
             )
@@ -518,7 +590,18 @@ class Workspace:
                     "selected_box_id": None if selected == box_id else selected,
                 }
             )
-            self._persist(self.manifest.model_copy(update={"workspace": workspace}))
+            candidates = tuple(
+                candidate
+                for candidate in self.manifest.candidates
+                if not (
+                    candidate.live_preview
+                    and candidate.source_box_id == box_id
+                    and not candidate.human_accepted
+                )
+            )
+            self._persist(
+                self.manifest.model_copy(update={"workspace": workspace, "candidates": candidates})
+            )
 
     def set_active_timestamp(self, timestamp: float) -> None:
         """Persist the current approved frame so an interrupted browser session resumes."""
@@ -534,8 +617,26 @@ class Workspace:
                 for allowed in self.manifest.requested_proxy_timestamps_seconds
             ):
                 raise ValueError("workspace timestamp must be one of the requested timestamps")
+            if self._plan_is_finalized():
+                return
+            selected = next(
+                (
+                    prompt
+                    for prompt in self.manifest.workspace.pending_boxes
+                    if prompt.box_id == self.manifest.workspace.selected_box_id
+                ),
+                None,
+            )
             workspace = self.manifest.workspace.model_copy(
-                update={"active_proxy_timestamp_seconds": frame.proxy_seconds}
+                update={
+                    "active_proxy_timestamp_seconds": frame.proxy_seconds,
+                    "selected_box_id": (
+                        selected.box_id
+                        if selected is not None
+                        and selected.frame.analysis_frame_index == frame.analysis_frame_index
+                        else None
+                    ),
+                }
             )
             self._persist(self.manifest.model_copy(update={"workspace": workspace}))
 
@@ -656,9 +757,7 @@ class Workspace:
                 return {**cached, "cached": True}
         started = time.perf_counter()
         source = self._view_source(image_path, token, divisor)
-        rendered = render_view(
-            source, normalized, cache=self.view_operator_cache, token=token
-        )
+        rendered = render_view(source, normalized, cache=self.view_operator_cache, token=token)
         payload = {
             "frame_index": frame_index,
             "image_png_base64": _encode_view_png(rendered.pixels),
@@ -679,16 +778,20 @@ class Workspace:
                 self.view_renders.popitem(last=False)
         return {**payload, "cached": False}
 
-    def queue_decode(self, box_ids: list[str]) -> str:
+    def queue_decode(self, box_ids: list[str], *, live_preview: bool = False) -> str:
         if self.decoder is None:
             raise WorkerError(
                 "decoder is offline (--no-worker); static workspace remains available"
             )
         with self.lock:
+            self._require_draft_candidate_review()
+            self._prune_jobs()
             pending = list(self.manifest.workspace.pending_boxes)
             chosen = [item for item in pending if item.box_id in set(box_ids)]
             if not chosen or len(chosen) != len(set(box_ids)):
                 raise ValueError("select one or more existing pending prompts")
+            if any(item.stage != "pending" for item in chosen):
+                raise ValueError("wait for the queued prompt decode to finish")
             queued = [
                 item.model_copy(update={"stage": "queued"}) if item in chosen else item
                 for item in pending
@@ -696,12 +799,24 @@ class Workspace:
             workspace = self.manifest.workspace.model_copy(update={"pending_boxes": tuple(queued)})
             self._persist(self.manifest.model_copy(update={"workspace": workspace}))
             job_id = uuid.uuid4().hex
-            self.jobs[job_id] = {"status": "queued", "box_ids": box_ids}
-            future = self.executor.submit(self._decode, job_id, tuple(chosen))
+            self.jobs[job_id] = {
+                "status": "queued",
+                "box_ids": box_ids,
+                "live_preview": live_preview,
+            }
+            future = self.executor.submit(
+                self._decode, job_id, tuple(chosen), live_preview=live_preview
+            )
             self.jobs[job_id]["future"] = future
             return job_id
 
-    def _decode(self, job_id: str, prompts: tuple[MuggledSAMCalibrationPendingBox, ...]) -> None:
+    def _decode(
+        self,
+        job_id: str,
+        prompts: tuple[MuggledSAMCalibrationPendingBox, ...],
+        *,
+        live_preview: bool,
+    ) -> None:
         try:
             with self.lock:
                 self.jobs[job_id]["status"] = "running"
@@ -716,12 +831,11 @@ class Workspace:
                 for prompt in prompts:
                     frame_index = prompt.frame.analysis_frame_index
                     next_number_by_frame[frame_index] = next_number_by_frame.get(frame_index, 0) + 1
+                    candidate_id = f"t{frame_index:06d}-b{next_number_by_frame[frame_index]:02d}"
                     requests.append(
                         {
                             "box_id": prompt.box_id,
-                            "candidate_id": (
-                                f"t{frame_index:06d}-b{next_number_by_frame[frame_index]:02d}"
-                            ),
+                            "candidate_id": candidate_id,
                             "frame_index": frame_index,
                             "pixel_box": prompt.pixel_box.model_dump(mode="json"),
                             "intended_target": prompt.intended_target,
@@ -732,9 +846,33 @@ class Workspace:
             response = self.decoder.request("batch_decode", {"prompts": requests})
             by_box = {item["box_id"]: item for item in response["decoded"]}
             with self.lock:
+                current_by_id = {
+                    prompt.box_id: prompt for prompt in self.manifest.workspace.pending_boxes
+                }
+                fresh_prompts = tuple(
+                    prompt
+                    for prompt in prompts
+                    if _same_prompt_revision(current_by_id.get(prompt.box_id), prompt)
+                )
+                stale_box_ids = sorted(
+                    prompt.box_id for prompt in prompts if prompt not in fresh_prompts
+                )
                 candidates = list(self.manifest.candidates)
-                for prompt in prompts:
+                if live_preview:
+                    source_box_ids = {prompt.box_id for prompt in fresh_prompts}
+                    candidates = [
+                        candidate
+                        for candidate in candidates
+                        if not (
+                            candidate.live_preview
+                            and candidate.source_box_id in source_box_ids
+                            and not candidate.human_accepted
+                        )
+                    ]
+                decoded_candidate_ids = []
+                for prompt in fresh_prompts:
                     item = by_box[prompt.box_id]
+                    decoded_candidate_ids.append(item["candidate_id"])
                     candidates.append(
                         MuggledSAMCalibrationCandidate(
                             candidate_id=item["candidate_id"],
@@ -747,28 +885,68 @@ class Workspace:
                             normalized_fg_points=prompt.normalized_fg_points,
                             normalized_bg_points=prompt.normalized_bg_points,
                             decoder_result=item["decoder_result"],
+                            source_box_id=prompt.box_id if live_preview else None,
+                            live_preview=live_preview,
                         )
                     )
                 removed_ids = {prompt.box_id for prompt in prompts}
-                workspace = self.manifest.workspace.model_copy(
-                    update={
-                        "pending_boxes": tuple(
-                            item
-                            for item in self.manifest.workspace.pending_boxes
-                            if item.box_id not in removed_ids
-                        ),
-                        "selected_box_id": None,
-                    }
-                )
+                if live_preview:
+                    workspace = self.manifest.workspace.model_copy(
+                        update={
+                            "pending_boxes": tuple(
+                                item.model_copy(update={"stage": "pending"})
+                                if item.box_id in removed_ids
+                                else item
+                                for item in self.manifest.workspace.pending_boxes
+                            )
+                        }
+                    )
+                else:
+                    fresh_ids = {prompt.box_id for prompt in fresh_prompts}
+                    workspace = self.manifest.workspace.model_copy(
+                        update={
+                            "pending_boxes": tuple(
+                                item.model_copy(update={"stage": "pending"})
+                                if item.box_id in removed_ids
+                                else item
+                                for item in self.manifest.workspace.pending_boxes
+                                if item.box_id not in fresh_ids
+                            ),
+                            "selected_box_id": (
+                                None
+                                if self.manifest.workspace.selected_box_id in fresh_ids
+                                else self.manifest.workspace.selected_box_id
+                            ),
+                        }
+                    )
                 self._persist(
                     self.manifest.model_copy(
                         update={"candidates": tuple(candidates), "workspace": workspace}
                     )
                 )
-                self.jobs[job_id].update({"status": "succeeded", "candidate_count": len(prompts)})
-        except (KeyError, TypeError, ValueError, WorkerError, OSError) as error:
+                self.jobs[job_id].update(
+                    {
+                        "status": "succeeded",
+                        "candidate_count": len(fresh_prompts),
+                        "candidate_ids": decoded_candidate_ids,
+                        "stale_box_ids": stale_box_ids,
+                    }
+                )
+        except Exception as error:
             with self.lock:
                 self.jobs[job_id].update({"status": "failed", "error": str(error)})
+                failed_box_ids = set(self.jobs[job_id]["box_ids"])
+                workspace = self.manifest.workspace.model_copy(
+                    update={
+                        "pending_boxes": tuple(
+                            item.model_copy(update={"stage": "pending"})
+                            if item.box_id in failed_box_ids
+                            else item
+                            for item in self.manifest.workspace.pending_boxes
+                        )
+                    }
+                )
+                self._persist(self.manifest.model_copy(update={"workspace": workspace}))
 
     def accept_candidate(
         self, candidate_id: str, index: int, eligible: bool, correction: bool | None = None
@@ -787,6 +965,36 @@ class Workspace:
                 raise ValueError("only frame-0 masks can be marked finalization eligible")
             if correction and candidate.frame.analysis_frame_index == 0:
                 raise ValueError("only later-frame masks can be marked correction eligible")
+            candidates = [
+                other.model_copy(
+                    update={
+                        "human_selected_candidate_index": None,
+                        "human_accepted": False,
+                        "legacy_finalization_requested": False,
+                        "selected_for_finalization": False,
+                        "selected_for_correction": False,
+                    }
+                )
+                if other.candidate_id != candidate_id
+                and other.human_accepted
+                and other.intended_target == candidate.intended_target
+                and other.frame.analysis_frame_index == candidate.frame.analysis_frame_index
+                else other
+                for other in candidates
+            ]
+            if (
+                correction
+                and self.correction_policy is not None
+                and self.correction_policy.maximum_later_correction_keyframes_per_target == 1
+            ):
+                candidates = [
+                    other.model_copy(update={"selected_for_correction": False})
+                    if other.candidate_id != candidate_id
+                    and other.intended_target == candidate.intended_target
+                    and other.selected_for_correction
+                    else other
+                    for other in candidates
+                ]
             accepted = candidate.model_copy(
                 update={
                     "human_selected_candidate_index": index,
@@ -836,9 +1044,7 @@ class Workspace:
             if candidate is None:
                 raise KeyError(f"decoded candidate does not exist: {candidate_id}")
             if candidate.human_accepted:
-                raise ValueError(
-                    "unaccept the current accepted candidate before rejecting it"
-                )
+                raise ValueError("unaccept the current accepted candidate before rejecting it")
             rejected = candidate.model_copy(
                 update={
                     "legacy_finalization_requested": False,
@@ -869,6 +1075,8 @@ class Workspace:
 
     def create_proposal(self, candidate_ids: list[str]) -> dict[str, Any]:
         with self.lock:
+            self._require_draft_candidate_review()
+            self._require_no_active_decode()
             if self.decoder is None:
                 raise WorkerError(
                     "cannot render the finalized seed review while the decoder worker is offline"
@@ -931,6 +1139,8 @@ class Workspace:
 
     def create_correction_schedule(self, candidate_ids: list[str]) -> dict[str, Any]:
         with self.lock:
+            self._require_draft_candidate_review()
+            self._require_no_active_decode()
             if self.correction_policy_path is None or self.manual_seed_target_config_path is None:
                 raise WorkerError(
                     "a --correction-policy and --manual-seed-target-config are required "
@@ -986,6 +1196,7 @@ class Workspace:
         """Validate and commit the selected plan without exposing partial artifacts."""
         with self.lock:
             self._require_draft_candidate_review()
+            self._require_no_active_decode()
             initial_ids = tuple(
                 candidate.candidate_id
                 for candidate in self.manifest.candidates
@@ -1001,8 +1212,7 @@ class Workspace:
                     "Later corrections are selected, but this workspace has no correction policy."
                 )
             scheduled_before = self.manifest.final_correction_schedule_uri is not None or any(
-                plan.correction_schedule_uri is not None
-                for plan in self.manifest.superseded_plans
+                plan.correction_schedule_uri is not None for plan in self.manifest.superseded_plans
             )
             if scheduled_before and self.correction_policy_path is None:
                 raise ValueError(
@@ -1028,8 +1238,11 @@ class Workspace:
             temporary_paths: list[Path] = []
             try:
                 with tempfile.NamedTemporaryFile(
-                    mode="w", encoding="utf-8", dir=proposal_path.parent,
-                    prefix=f".{proposal_path.name}.", delete=False
+                    mode="w",
+                    encoding="utf-8",
+                    dir=proposal_path.parent,
+                    prefix=f".{proposal_path.name}.",
+                    delete=False,
                 ) as temporary:
                     proposal_temporary_path = Path(temporary.name)
                 temporary_paths.append(proposal_temporary_path)
@@ -1050,8 +1263,11 @@ class Workspace:
                             "a correction policy requires a manual seed target configuration"
                         )
                     with tempfile.NamedTemporaryFile(
-                        mode="w", encoding="utf-8", dir=schedule_path.parent,
-                        prefix=f".{schedule_path.name}.", delete=False
+                        mode="w",
+                        encoding="utf-8",
+                        dir=schedule_path.parent,
+                        prefix=f".{schedule_path.name}.",
+                        delete=False,
                     ) as temporary:
                         schedule_temporary_path = Path(temporary.name)
                     temporary_paths.append(schedule_temporary_path)
@@ -1100,9 +1316,7 @@ def _encode_view_png(pixels: np.ndarray) -> str:
         coloured, pixels[:, :, 2]
     )
     image = (
-        Image.fromarray(coloured, mode="L")
-        if monochrome
-        else Image.fromarray(pixels, mode="RGB")
+        Image.fromarray(coloured, mode="L") if monochrome else Image.fromarray(pixels, mode="RGB")
     )
     buffer = io.BytesIO()
     image.save(buffer, format="PNG", compress_level=1)
@@ -1113,10 +1327,7 @@ def _scaled_points(points: list[dict[str, Any]], divisor: int) -> list[dict[str,
     """Lift marker coordinates from the working resolution back to frame coordinates."""
     if divisor == 1:
         return list(points)
-    return [
-        {**point, "x": point["x"] * divisor, "y": point["y"] * divisor}
-        for point in points
-    ]
+    return [{**point, "x": point["x"] * divisor, "y": point["y"] * divisor} for point in points]
 
 
 def _json(handler: BaseHTTPRequestHandler, status: HTTPStatus, body: object) -> None:
@@ -1239,18 +1450,19 @@ def make_handler(workspace: Workspace) -> type[BaseHTTPRequestHandler]:
                     _json(
                         self,
                         HTTPStatus.ACCEPTED,
-                        {"job_id": workspace.queue_decode(body["box_ids"])},
+                        {
+                            "job_id": workspace.queue_decode(
+                                body["box_ids"],
+                                live_preview=body.get("live_preview") is True,
+                            )
+                        },
                     )
                 elif self.path.startswith("/api/candidates/") and self.path.endswith("/accept"):
                     workspace.accept_candidate(
                         self.path.split("/")[-2],
                         int(body["candidate_index"]),
                         bool(body["eligible"]),
-                        (
-                            bool(body["correction"])
-                            if "correction" in body
-                            else None
-                        ),
+                        (bool(body["correction"]) if "correction" in body else None),
                     )
                     _json(self, HTTPStatus.OK, workspace.snapshot())
                 elif self.path.startswith("/api/candidates/") and self.path.endswith("/unaccept"):
@@ -1316,6 +1528,7 @@ def make_handler(workspace: Workspace) -> type[BaseHTTPRequestHandler]:
 
 def make_workspace(args: argparse.Namespace, repository_root: Path) -> Workspace:
     timestamps = parse_timestamps(args.timestamps)
+    view_id = getattr(args, "view", "ego-hmc21179183")
     output_directory = (
         args.output_dir.resolve()
         if args.output_dir is not None
@@ -1332,6 +1545,8 @@ def make_workspace(args: argparse.Namespace, repository_root: Path) -> Workspace
             raise ValueError("cannot resume: selected G2 configuration fingerprint changed")
         if manifest.requested_proxy_timestamps_seconds != timestamps:
             raise ValueError("cannot resume with a different --timestamps set")
+        if manifest.view_id != view_id:
+            raise ValueError("cannot resume with a different --view")
     else:
         if output_directory.exists():
             raise ValueError(f"output directory exists; use --resume: {output_directory}")
@@ -1342,6 +1557,7 @@ def make_workspace(args: argparse.Namespace, repository_root: Path) -> Workspace
             timestamps=timestamps,
             result_directory=output_directory / "results",
             calibration_id=calibration_id_from_output_directory(output_directory),
+            view_id=view_id,
         ).model_copy(update={"tool_version": TOOL_VERSION})
         _write_manifest(manifest_path, manifest)
     target_config_path = (
@@ -1430,6 +1646,11 @@ def main() -> None:
         )
     )
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
+    parser.add_argument(
+        "--view",
+        choices=("static-c10379", "ego-hmc21179183"),
+        default="ego-hmc21179183",
+    )
     parser.add_argument("--run-root", type=Path, default=Path("runs"))
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--timestamps", default=",".join(map(str, DEFAULT_TIMESTAMPS_SECONDS)))

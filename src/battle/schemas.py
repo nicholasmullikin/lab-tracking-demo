@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from enum import StrEnum
 from pathlib import PurePosixPath
 from typing import Literal
@@ -34,6 +35,20 @@ class MethodState(StrEnum):
     BLOCKED = "blocked"
     FAILED = "failed"
     NOT_RUN = "not_run"
+
+
+class HumanQADisposition(StrEnum):
+    """A disposition authored only by a human reviewer."""
+
+    PENDING = "pending"
+    PASS = "pass"
+    FLAG = "flag"
+    FAIL = "fail"
+
+
+class HumanQACheckpointRole(StrEnum):
+    EASY = "easy_manipulation"
+    HARD = "hard_or_occluded_manipulation"
 
 
 class HandSide(StrEnum):
@@ -634,6 +649,8 @@ class MuggledSAMCalibrationCandidate(VersionedModel):
     normalized_fg_points: tuple[NormalizedPoint, ...] = ()
     normalized_bg_points: tuple[NormalizedPoint, ...] = ()
     decoder_result: MuggledSAMImageDecoderResult
+    source_box_id: str | None = Field(default=None, pattern=r"^p\d{6}-b\d{2,}$")
+    live_preview: bool = False
     human_selected_candidate_index: int | None = Field(default=None, ge=0)
     human_accepted: bool = False
     legacy_finalization_requested: bool = False
@@ -664,10 +681,14 @@ class MuggledSAMCalibrationCandidate(VersionedModel):
             raise ValueError("human-selected candidate index must be returned by the decoder")
         if self.human_accepted != (self.human_selected_candidate_index is not None):
             raise ValueError("human acceptance requires exactly one selected decoder candidate")
+        if self.live_preview != (self.source_box_id is not None):
+            raise ValueError("live preview candidates must identify their editable source box")
         if self.selected_for_finalization and not self.human_accepted:
             raise ValueError("finalization eligibility requires explicit human mask acceptance")
         if self.selected_for_correction and not self.human_accepted:
             raise ValueError("correction eligibility requires explicit human mask acceptance")
+        if self.selected_for_correction and self.frame.analysis_frame_index == 0:
+            raise ValueError("correction eligibility requires a later-frame mask")
         if self.rejected and (
             self.human_accepted
             or self.human_selected_candidate_index is not None
@@ -728,9 +749,7 @@ def _require_normalized_prompt_points(
                 abs(normalized.x - pixel.x / width) > 1e-9
                 or abs(normalized.y - pixel.y / height) > 1e-9
             ):
-                raise ValueError(
-                    f"{item_name} normalized {kind} point must match its pixel point"
-                )
+                raise ValueError(f"{item_name} normalized {kind} point must match its pixel point")
 
 
 class MuggledSAMSupersededTrackingPlan(VersionedModel):
@@ -759,7 +778,7 @@ class MuggledSAMBoxCalibrationManifest(VersionedModel):
     calibration_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]*$")
     base_g2_config: str = Field(min_length=1)
     base_g2_config_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    view_id: Literal["ego-hmc21179183"]
+    view_id: Literal["static-c10379", "ego-hmc21179183"]
     proxy: ArtifactFingerprint
     source: ArtifactFingerprint
     proxy_dimensions: VideoDimensions
@@ -936,19 +955,107 @@ class ProposedTrackingSeed(VersionedModel):
     human_selected_candidate_index: int = Field(ge=0)
 
 
+class MuggledSAMManualSeedTargetDescriptor(VersionedModel):
+    """Stable dataset identity plus its display and pixel-visibility contract."""
+
+    target_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_]*$")
+    display_alias: str = Field(min_length=1)
+    mask_semantics: Literal["visible_surface_only"]
+
+
 class MuggledSAMManualSeedTargetConfig(VersionedModel):
     """Named target policy for a human-selected e4 manual-seed run."""
 
     manifest_kind: Literal["muggledsam_sam3_manual_seed_targets"]
     config_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]*$")
     base_g2_config: str = Field(min_length=1)
-    view_id: Literal["ego-hmc21179183"]
+    view_id: Literal["static-c10379", "ego-hmc21179183"]
     targets: tuple[str, ...] = Field(min_length=1)
+    target_descriptors: tuple[MuggledSAMManualSeedTargetDescriptor, ...] = ()
 
     @model_validator(mode="after")
     def require_distinct_targets(self) -> MuggledSAMManualSeedTargetConfig:
         if len(set(self.targets)) != len(self.targets):
             raise ValueError("manual-seed target config targets must be distinct")
+        descriptor_ids = [descriptor.target_id for descriptor in self.target_descriptors]
+        if len(set(descriptor_ids)) != len(descriptor_ids):
+            raise ValueError("manual-seed target descriptors must be distinct")
+        if self.target_descriptors and tuple(descriptor_ids) != self.targets:
+            raise ValueError(
+                "manual-seed target descriptors must match the ordered target contract"
+            )
+        return self
+
+
+class MuggledSAMTextTarget(VersionedModel):
+    """One stable output identity and its human-readable SAM3 detector prompt."""
+
+    output_label: str = Field(pattern=r"^[a-z0-9][a-z0-9_]*$")
+    text_prompt: str = Field(min_length=1)
+
+    @field_validator("text_prompt")
+    @classmethod
+    def require_trimmed_text_prompt(cls, prompt: str) -> str:
+        if prompt != prompt.strip():
+            raise ValueError("SAM3 text prompts must not contain leading or trailing whitespace")
+        return prompt
+
+
+class MuggledSAMTextTargetConfig(VersionedModel):
+    """Versioned prompt-to-output-label contract for static zero-shot tracking."""
+
+    manifest_kind: Literal["muggledsam_sam3_text_targets"]
+    config_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]*$")
+    base_g2_config: str = Field(min_length=1)
+    view_id: Literal["static-c10379"]
+    targets: tuple[MuggledSAMTextTarget, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def require_unambiguous_target_mapping(self) -> MuggledSAMTextTargetConfig:
+        labels = [target.output_label for target in self.targets]
+        prompts = [target.text_prompt for target in self.targets]
+        if len(set(labels)) != len(labels):
+            raise ValueError("text-target output labels must be distinct")
+        if len(set(prompts)) != len(prompts):
+            raise ValueError("text-target SAM3 prompts must be distinct")
+        return self
+
+
+class MuggledSAMHybridTarget(VersionedModel):
+    """One canonical target and its declared initialization source."""
+
+    output_label: str = Field(pattern=r"^[a-z0-9][a-z0-9_]*$")
+    initialization_source: Literal["text_prompt", "human_reviewed_mask"]
+
+
+class MuggledSAMHybridInitializationConfig(VersionedModel):
+    """Pinned static contract combining text detections and one reviewed mask."""
+
+    manifest_kind: Literal["muggledsam_sam3_hybrid_initialization"]
+    config_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]*$")
+    base_g2_config: str = Field(min_length=1)
+    view_id: Literal["static-c10379"]
+    text_target_config_fingerprint: ArtifactFingerprint
+    manual_seed_proposal_fingerprint: ArtifactFingerprint
+    manual_seed_target_config_fingerprint: ArtifactFingerprint
+    targets: tuple[MuggledSAMHybridTarget, ...]
+    ground_truth_accuracy_claim: Literal[False] = False
+
+    @model_validator(mode="after")
+    def require_aligned_static_contract(self) -> MuggledSAMHybridInitializationConfig:
+        expected = (
+            ("left_hand", "text_prompt"),
+            ("right_hand", "text_prompt"),
+            ("yellow_toy_top", "text_prompt"),
+            ("black_toy_top_base", "human_reviewed_mask"),
+        )
+        received = tuple(
+            (target.output_label, target.initialization_source) for target in self.targets
+        )
+        if received != expected:
+            raise ValueError(
+                "hybrid static targets must use the exact canonical order and provenance"
+            )
         return self
 
 
@@ -958,7 +1065,7 @@ class MuggledSAMMultiKeyframeCorrectionPolicy(VersionedModel):
     manifest_kind: Literal["muggledsam_sam3_multi_keyframe_correction_policy"]
     policy_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]*$")
     policy_version: Literal["1"]
-    view_id: Literal["ego-hmc21179183"]
+    view_id: Literal["static-c10379", "ego-hmc21179183"]
     manual_seed_target_config_fingerprint: ArtifactFingerprint
     targets: tuple[str, ...] = Field(min_length=1)
     maximum_later_correction_keyframes_per_target: int = Field(ge=0, le=3)
@@ -997,7 +1104,7 @@ class MuggledSAMMultiKeyframeCorrectionSchedule(VersionedModel):
     manifest_kind: Literal["muggledsam_sam3_multi_keyframe_correction_schedule"]
     authority: Literal["proposed_non_authoritative"]
     schedule_version: Literal["1"]
-    view_id: Literal["ego-hmc21179183"]
+    view_id: Literal["static-c10379", "ego-hmc21179183"]
     calibration_manifest_fingerprint: ArtifactFingerprint
     correction_policy_fingerprint: ArtifactFingerprint
     manual_seed_target_config_fingerprint: ArtifactFingerprint
@@ -1070,7 +1177,7 @@ class MuggledSAMProposedTrackingPromptConfig(VersionedModel):
     authority: Literal["proposed_non_authoritative"]
     calibration_manifest_uri: str = Field(min_length=1)
     calibration_manifest_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    view_id: Literal["ego-hmc21179183"]
+    view_id: Literal["static-c10379", "ego-hmc21179183"]
     seeds: tuple[ProposedTrackingSeed, ...] = Field(min_length=1)
     tracker_initialization_limitations: tuple[str, ...] = Field(min_length=1)
     manual_seed_target_config_fingerprint: ArtifactFingerprint | None = None
@@ -1085,6 +1192,8 @@ class ManualSeedCandidateProvenance(VersionedModel):
     human_selected_candidate_index: int = Field(ge=0)
     calibration_mask_fingerprint: ArtifactFingerprint
     initial_multiplex_slot: int = Field(ge=0)
+    display_alias: str | None = Field(default=None, min_length=1)
+    mask_semantics: Literal["visible_surface_only"] | None = None
 
 
 class ManualSeedMultiplexMetadata(VersionedModel):
@@ -1115,6 +1224,85 @@ class ManualSeedMultiplexMetadata(VersionedModel):
         return self
 
 
+class HybridTargetInitializationProvenance(VersionedModel):
+    """Persisted source and slot for one hybrid-initialized target."""
+
+    output_label: str = Field(pattern=r"^[a-z0-9][a-z0-9_]*$")
+    initial_multiplex_slot: int = Field(ge=0)
+    initialization_source: Literal["text_prompt", "human_reviewed_mask"]
+    source_fingerprint: ArtifactFingerprint
+    initialized_at_frame_zero: bool | None = None
+    text_prompt: str | None = None
+    candidate_id: str | None = None
+    human_selected_candidate_index: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def require_source_specific_details(self) -> HybridTargetInitializationProvenance:
+        if self.initialization_source == "text_prompt":
+            if not self.text_prompt or self.candidate_id is not None:
+                raise ValueError("text initialization requires only a text prompt")
+            if self.human_selected_candidate_index is not None:
+                raise ValueError("text initialization cannot claim a human-selected mask")
+        elif (
+            self.text_prompt is not None
+            or self.candidate_id is None
+            or self.human_selected_candidate_index is None
+        ):
+            raise ValueError("reviewed-mask initialization requires candidate provenance")
+        return self
+
+
+class HybridInitializationMetadata(VersionedModel):
+    """Auditable mixed text/reviewed-mask initialization for one SAM3 stream."""
+
+    contract_fingerprint: ArtifactFingerprint
+    text_target_config_fingerprint: ArtifactFingerprint
+    manual_seed_proposal_fingerprint: ArtifactFingerprint
+    manual_seed_target_config_fingerprint: ArtifactFingerprint
+    calibration_manifest_fingerprint: ArtifactFingerprint
+    targets: tuple[HybridTargetInitializationProvenance, ...]
+    initialization_api: Literal["encode_prompt_memory_from_mask"]
+    method_label: Literal["hybrid_text_and_human_reviewed_mask"]
+    ground_truth_accuracy_claim: Literal[False] = False
+
+    @model_validator(mode="after")
+    def require_canonical_targets_and_slots(self) -> HybridInitializationMetadata:
+        expected = (
+            ("left_hand", 0, "text_prompt"),
+            ("right_hand", 1, "text_prompt"),
+            ("yellow_toy_top", 2, "text_prompt"),
+            ("black_toy_top_base", 3, "human_reviewed_mask"),
+        )
+        received = tuple(
+            (
+                target.output_label,
+                target.initial_multiplex_slot,
+                target.initialization_source,
+            )
+            for target in self.targets
+        )
+        if received != expected:
+            raise ValueError("hybrid initialization metadata must preserve canonical target slots")
+        return self
+
+
+class HybridSmokeHumanApproval(VersionedModel):
+    """Exact reviewed smoke evidence authorizing one full hybrid candidate."""
+
+    approved_smoke_manifest_fingerprint: ArtifactFingerprint
+    approved_smoke_qa_fingerprint: ArtifactFingerprint
+    approved_at: datetime
+    approved_by: str = Field(min_length=1)
+    approval_statement: str = Field(min_length=1)
+
+    @field_validator("approved_at")
+    @classmethod
+    def require_timezone(cls, approved_at: datetime) -> datetime:
+        if approved_at.tzinfo is None or approved_at.utcoffset() is None:
+            raise ValueError("hybrid smoke approval time must be timezone-aware")
+        return approved_at
+
+
 class SmokeRunMetadata(VersionedModel):
     """Audit data specific to one deliberately bounded model smoke run."""
 
@@ -1136,6 +1324,9 @@ class SmokeRunMetadata(VersionedModel):
     qa_artifact_uri: str | None = None
     manual_seed_multiplex: ManualSeedMultiplexMetadata | None = None
     multi_keyframe_corrections: MultiKeyframeCorrectionScheduleMetadata | None = None
+    text_target_config_fingerprint: ArtifactFingerprint | None = None
+    text_prompt_mapping: tuple[MuggledSAMTextTarget, ...] = ()
+    hybrid_initialization: HybridInitializationMetadata | None = None
 
     @model_validator(mode="after")
     def require_exact_smoke_budget(self) -> SmokeRunMetadata:
@@ -1161,6 +1352,33 @@ class SmokeRunMetadata(VersionedModel):
                 f"expected {expected_frame_count}, received "
                 f"{self.requested_analysis_frame_range.frame_count}"
             )
+        if self.hybrid_initialization is not None:
+            if self.manual_seed_multiplex is not None:
+                raise ValueError("hybrid smoke cannot be labeled as all-manual initialization")
+            if tuple(target.output_label for target in self.hybrid_initialization.targets) != (
+                self.concepts
+            ):
+                raise ValueError("hybrid provenance must cover the ordered smoke concepts")
+            text_labels = tuple(
+                target.output_label
+                for target in self.hybrid_initialization.targets
+                if target.initialization_source == "text_prompt"
+            )
+            if tuple(target.output_label for target in self.text_prompt_mapping) != text_labels:
+                raise ValueError("hybrid text prompt mapping must cover only text targets")
+            if (
+                self.text_target_config_fingerprint
+                != self.hybrid_initialization.text_target_config_fingerprint
+            ):
+                raise ValueError("hybrid text target fingerprints must match")
+        elif self.text_prompt_mapping:
+            labels = tuple(target.output_label for target in self.text_prompt_mapping)
+            if labels != self.concepts or self.text_target_config_fingerprint is None:
+                raise ValueError(
+                    "text prompt mapping must cover the ordered concepts and fingerprint its config"
+                )
+        elif self.text_target_config_fingerprint is not None:
+            raise ValueError("text target config fingerprint requires a prompt mapping")
         return self
 
 
@@ -1182,6 +1400,10 @@ class G3CandidateRunMetadata(VersionedModel):
     mask_artifact_uri: str | None = None
     mask_artifact_count: int = Field(ge=0)
     rerun_artifact_uri: str | None = None
+    text_target_config_fingerprint: ArtifactFingerprint | None = None
+    text_prompt_mapping: tuple[MuggledSAMTextTarget, ...] = ()
+    hybrid_initialization: HybridInitializationMetadata | None = None
+    hybrid_smoke_human_approval: HybridSmokeHumanApproval | None = None
 
     @model_validator(mode="after")
     def require_exact_g3_static_budget(self) -> G3CandidateRunMetadata:
@@ -1190,6 +1412,35 @@ class G3CandidateRunMetadata(VersionedModel):
             or self.requested_analysis_frame_range.frame_count != 5400
         ):
             raise ValueError("G3 candidate must cover exactly static proxy frames [0, 5400)")
+        if self.hybrid_initialization is not None:
+            if self.hybrid_smoke_human_approval is None:
+                raise ValueError("full hybrid G3 metadata requires exact smoke approval evidence")
+            if tuple(target.output_label for target in self.hybrid_initialization.targets) != (
+                self.concepts
+            ):
+                raise ValueError("hybrid provenance must cover the ordered G3 concepts")
+            text_labels = tuple(
+                target.output_label
+                for target in self.hybrid_initialization.targets
+                if target.initialization_source == "text_prompt"
+            )
+            if tuple(target.output_label for target in self.text_prompt_mapping) != text_labels:
+                raise ValueError("hybrid text prompt mapping must cover only text targets")
+            if (
+                self.text_target_config_fingerprint
+                != self.hybrid_initialization.text_target_config_fingerprint
+            ):
+                raise ValueError("hybrid text target fingerprints must match")
+        elif self.text_prompt_mapping:
+            labels = tuple(target.output_label for target in self.text_prompt_mapping)
+            if labels != self.concepts or self.text_target_config_fingerprint is None:
+                raise ValueError(
+                    "text prompt mapping must cover the ordered concepts and fingerprint its config"
+                )
+        elif self.text_target_config_fingerprint is not None:
+            raise ValueError("text target config fingerprint requires a prompt mapping")
+        if self.hybrid_smoke_human_approval is not None and self.hybrid_initialization is None:
+            raise ValueError("hybrid smoke approval cannot label a non-hybrid G3 run")
         return self
 
 
@@ -1256,6 +1507,81 @@ class FullEgoManualSeedRunMetadata(VersionedModel):
         return self
 
 
+class FourPartPilotRunMetadata(VersionedModel):
+    """Audit data for the approved 20-second static four-part pilot."""
+
+    requested_analysis_frame_range: FrameRange
+    requested_seconds: Literal[20.0]
+    view_id: Literal["static-c10379"]
+    concepts: tuple[str, ...] = Field(min_length=1)
+    source_fingerprint: ArtifactFingerprint
+    proxy_fingerprint: ArtifactFingerprint
+    config_fingerprint: ArtifactFingerprint
+    adapter: AdapterMetadata
+    continuity: StreamContinuityPolicy
+    runtime_settings: dict[str, str | int | float | bool | None]
+    measurements: RuntimeMeasurements
+    observations_uri: str | None = None
+    mask_artifact_uri: str | None = None
+    mask_artifact_count: int = Field(ge=0)
+    rerun_artifact_uri: str | None = None
+    measurements_artifact_uri: str | None = None
+    qa_artifact_uri: str | None = None
+    manual_seed_multiplex: ManualSeedMultiplexMetadata | None = None
+    multi_keyframe_corrections: MultiKeyframeCorrectionScheduleMetadata | None = None
+
+    @model_validator(mode="after")
+    def require_exact_four_part_pilot_budget(self) -> FourPartPilotRunMetadata:
+        if (
+            self.requested_analysis_frame_range.start_frame != 0
+            or self.requested_analysis_frame_range.frame_count != 600
+        ):
+            raise ValueError("four-part pilot must cover exactly static proxy frames [0, 600)")
+        if self.concepts != ("chassis", "interior", "rear_body", "cabin"):
+            raise ValueError("four-part pilot requires chassis/interior/rear_body/cabin ordering")
+        if (self.manual_seed_multiplex is None) == (self.multi_keyframe_corrections is None):
+            raise ValueError(
+                "four-part pilot requires exactly one manual-seed or correction-schedule mode"
+            )
+        return self
+
+
+class FourPartFullRunMetadata(VersionedModel):
+    """Audit data for the known-imperfect full static four-part exploration."""
+
+    requested_analysis_frame_range: FrameRange
+    requested_seconds: Literal[196.7]
+    view_id: Literal["static-c10379"]
+    concepts: tuple[str, ...] = Field(min_length=1)
+    source_fingerprint: ArtifactFingerprint
+    proxy_fingerprint: ArtifactFingerprint
+    config_fingerprint: ArtifactFingerprint
+    adapter: AdapterMetadata
+    continuity: StreamContinuityPolicy
+    runtime_settings: dict[str, str | int | float | bool | None]
+    measurements: RuntimeMeasurements
+    observations_uri: str | None = None
+    mask_artifact_uri: str | None = None
+    mask_artifact_count: int = Field(ge=0)
+    rerun_artifact_uri: str | None = None
+    qa_artifact_uri: str | None = None
+    multi_keyframe_corrections: MultiKeyframeCorrectionScheduleMetadata
+    known_pilot_failure: Literal["chassis/cabin identity merge after frame-65 correction"]
+
+    @model_validator(mode="after")
+    def require_exact_four_part_full_budget(self) -> FourPartFullRunMetadata:
+        if (
+            self.requested_analysis_frame_range.start_frame != 0
+            or self.requested_analysis_frame_range.frame_count != 5901
+        ):
+            raise ValueError("four-part full run must cover exactly static proxy frames [0, 5901)")
+        if self.concepts != ("chassis", "interior", "rear_body", "cabin"):
+            raise ValueError(
+                "four-part full run requires chassis/interior/rear_body/cabin ordering"
+            )
+        return self
+
+
 class RunManifest(VersionedModel):
     run_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]*$")
     clip: ClipManifest
@@ -1267,6 +1593,8 @@ class RunManifest(VersionedModel):
     g3_candidate: G3CandidateRunMetadata | None = None
     e4_candidate: E4CandidateRunMetadata | None = None
     full_ego_manual_seed: FullEgoManualSeedRunMetadata | None = None
+    four_part_pilot: FourPartPilotRunMetadata | None = None
+    four_part_full: FourPartFullRunMetadata | None = None
 
     @model_validator(mode="after")
     def require_monotonic_observations(self) -> RunManifest:
@@ -1277,4 +1605,135 @@ class RunManifest(VersionedModel):
             if prior is not None and current <= prior:
                 raise ValueError("observations must increase monotonically per view")
             per_view[observation.view_id] = current
+        return self
+
+
+class HumanQAEvidence(VersionedModel):
+    """One portable, content-addressed visual artifact presented to a reviewer."""
+
+    uri: str = Field(min_length=1)
+    sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    artifact_kind: Literal["two_checkpoint_contact_sheet", "checkpoint_image"]
+
+    @field_validator("uri")
+    @classmethod
+    def require_portable_evidence_uri(cls, uri: str) -> str:
+        path = PurePosixPath(uri)
+        if path.is_absolute() or ".." in path.parts:
+            raise ValueError("human QA evidence must use a repository-relative portable URI")
+        return uri
+
+
+class HumanQACheckpoint(VersionedModel):
+    """One fixed source-timeline instant and its human-authored disposition."""
+
+    role: HumanQACheckpointRole
+    clock: Literal[ClockName.SOURCE]
+    source_seconds: float = Field(ge=0)
+    source_frame_index: int = Field(ge=0)
+    analysis_frame_index: int = Field(ge=0)
+    evidence: tuple[HumanQAEvidence, ...] = Field(min_length=1)
+    disposition: HumanQADisposition = HumanQADisposition.PENDING
+    notes: str | None = None
+    reviewed_by: str | None = None
+    reviewed_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def require_human_attribution_for_decisions(self) -> HumanQACheckpoint:
+        if self.disposition is HumanQADisposition.PENDING:
+            if self.reviewed_by is not None or self.reviewed_at is not None:
+                raise ValueError("pending human QA checkpoints cannot claim reviewer attribution")
+            return self
+        if not self.reviewed_by or self.reviewed_at is None:
+            raise ValueError("non-pending human QA decisions require reviewer identity and time")
+        if self.reviewed_at.tzinfo is None or self.reviewed_at.utcoffset() is None:
+            raise ValueError("human QA review time must include a timezone")
+        return self
+
+
+def derive_human_qa_status(
+    checkpoints: tuple[HumanQACheckpoint, ...],
+) -> HumanQADisposition:
+    """Aggregate without weakening a known human flag or failure."""
+
+    dispositions = {checkpoint.disposition for checkpoint in checkpoints}
+    if HumanQADisposition.FAIL in dispositions:
+        return HumanQADisposition.FAIL
+    if HumanQADisposition.FLAG in dispositions:
+        return HumanQADisposition.FLAG
+    if dispositions == {HumanQADisposition.PASS}:
+        return HumanQADisposition.PASS
+    return HumanQADisposition.PENDING
+
+
+class FixedTimestampHumanQARecord(VersionedModel):
+    """Auditable hard-gate record for the plan's two fixed semantic checkpoints."""
+
+    manifest_kind: Literal["fixed_timestamp_human_qa"]
+    qa_protocol: Literal["assembly101_easy_hard_source_timestamps_v1"]
+    selection_rule: Literal["one_easy_manipulation_and_one_hard_or_occluded_manipulation"]
+    run_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]*$")
+    run_profile: str = Field(min_length=1)
+    method_id: str = Field(min_length=1)
+    clip_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]*$")
+    view_id: str = Field(min_length=1)
+    run_manifest_fingerprint: ArtifactFingerprint
+    config_fingerprint: ArtifactFingerprint
+    source_video_fingerprint: ArtifactFingerprint
+    timing: TimingModel
+    run_analysis_frame_range: FrameRange
+    checkpoints: tuple[HumanQACheckpoint, HumanQACheckpoint]
+    overall_status: HumanQADisposition
+    ground_truth_accuracy_claim: Literal[False] = False
+
+    @model_validator(mode="after")
+    def require_fixed_source_checkpoints(self) -> FixedTimestampHumanQARecord:
+        expected_roles = (
+            HumanQACheckpointRole.EASY,
+            HumanQACheckpointRole.HARD,
+        )
+        if tuple(checkpoint.role for checkpoint in self.checkpoints) != expected_roles:
+            raise ValueError("human QA requires exactly one ordered easy and one hard checkpoint")
+
+        source_fps = self.timing.clocks.fps_for(ClockName.SOURCE)
+        seen_instants: set[tuple[float, int]] = set()
+        for checkpoint in self.checkpoints:
+            if not (
+                self.run_analysis_frame_range.start_frame
+                <= checkpoint.analysis_frame_index
+                < self.run_analysis_frame_range.end_frame_exclusive
+            ):
+                raise ValueError("human QA analysis checkpoint must be inside the completed run")
+            expected_seconds = self.timing.source_seconds_for_frame(
+                ClockName.ANALYSIS, checkpoint.analysis_frame_index
+            )
+            if abs(checkpoint.source_seconds - expected_seconds) > 1e-9:
+                raise ValueError(
+                    "human QA source timestamp must match its analysis frame and source mapping"
+                )
+            expected_source_frame = round(checkpoint.source_seconds * source_fps)
+            if (
+                abs(checkpoint.source_seconds - expected_source_frame / source_fps) > 1e-9
+                or checkpoint.source_frame_index != expected_source_frame
+            ):
+                raise ValueError("human QA source timestamp must match its source frame")
+            instant = (checkpoint.source_seconds, checkpoint.source_frame_index)
+            if instant in seen_instants:
+                raise ValueError("human QA checkpoints must use distinct source timestamps")
+            seen_instants.add(instant)
+
+        expected_status = derive_human_qa_status(self.checkpoints)
+        if self.overall_status is not expected_status:
+            raise ValueError(
+                f"human QA overall_status must be conservatively derived as {expected_status.value}"
+            )
+
+        for fingerprint in (
+            self.run_manifest_fingerprint,
+            self.config_fingerprint,
+            self.source_video_fingerprint,
+        ):
+            path = PurePosixPath(fingerprint.uri)
+            if path.is_absolute() or ".." in path.parts:
+                raise ValueError("human QA provenance must use repository-relative portable URIs")
         return self

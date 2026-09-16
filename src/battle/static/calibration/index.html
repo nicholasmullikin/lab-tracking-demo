@@ -3,35 +3,30 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Rapid e4 calibration</title>
+  <title>Rapid SAM3 calibration</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <header><h1>Rapid e4 calibration</h1><span id="status">Loading workspace…</span></header>
+  <header><h1>Rapid SAM3 calibration</h1><span id="status">Loading workspace…</span></header>
   <!-- Workspace-wide lock state, deliberately above every collapsible panel. -->
   <div id="plan-lock" class="plan-lock" hidden></div>
   <main>
     <aside>
-      <details class="panel" data-panel="frames" open>
+      <details class="panel" data-panel="frames" title="Choose one of the configured calibration frames." open>
         <summary>Selected frames <span class="panel-count"></span></summary>
         <div id="filmstrip" class="filmstrip"></div>
         <label>Timestamp (proxy seconds)<input id="timestamp" type="number" min="0" step="0.001"></label>
         <input id="time-slider" type="range" min="0" max="0" step="1">
         <button id="load-frame">Load frame</button>
-        <p class="hint">Only requested timestamps are calibratable. Later frames are optional correction keyframes; calibration never tracks video.</p>
       </details>
-      <details class="panel" data-panel="label" open>
+      <details id="label-panel" class="panel" data-panel="label" title="Choose the target for the next prompt." open>
         <summary>Label <span class="panel-count"></span></summary>
         <div id="labels" class="labels"></div>
-        <p id="target-policy" class="hint"></p>
-        <label>Custom label<input id="custom-label" placeholder="Custom label"></label>
-        <button id="duplicate">Duplicate selected</button><button id="delete">Delete selected</button>
+        <span id="target-policy" hidden></span>
+        <label id="custom-label-control">Custom label<input id="custom-label" placeholder="Custom label"></label>
+        <button id="delete">Delete selected</button>
       </details>
-      <details class="panel" data-panel="prompts" open>
-        <summary>Pending prompts <span class="panel-count"></span></summary>
-        <div id="prompts"></div>
-      </details>
-      <details class="panel" data-panel="prompt-clicks" open>
+      <details id="prompt-clicks-panel" class="panel" data-panel="prompt-clicks" title="Draw a box, then add target or exclusion points." open>
         <summary>Prompt clicks <span class="panel-count"></span></summary>
         <div id="prompt-mode" class="prompt-mode">
           <button data-prompt-mode="box" class="active">Draw box (B)</button>
@@ -39,52 +34,48 @@
           <button data-prompt-mode="background">Exclude background (N)</button>
         </div>
         <button id="clear-points">Clear selected points</button>
-        <p id="point-guidance" class="hint">Select a pending box, then click foreground on the hand, background on its shadow.</p>
+        <span id="point-guidance" hidden></span>
+        <label class="mask-control" title="Automatically preview the selected prompt after edits."><input id="live-decode" type="checkbox"> Live decode</label>
+        <label class="mask-control" title="Wait time after the last edit before decoding.">Delay <input id="live-decode-delay" type="number" min="100" max="5000" step="50" value="450"> ms</label>
         <button id="decode">Decode all pending on this frame</button>
-        <button id="decode-selected">Decode selected prompt</button>
       </details>
     </aside>
     <section class="workspace">
       <div class="canvas-tools">
-        <span class="keys">scroll zoom · <kbd>Shift</kbd>/<kbd>Alt</kbd>/middle drag pan · <kbd>B</kbd> box · <kbd>F</kbd> foreground · <kbd>N</kbd> background · drag point edit · right-click remove · <kbd>Del</kbd> box</span>
+        <span class="keys" title="Scroll to zoom. Shift, Alt, or middle-drag to pan. B draws boxes; F adds target points; N adds exclusion points. Drag points to move; right-click removes; Delete removes a box.">Controls</span>
         <span id="active-candidate" class="active-candidate">Decoded masks load after you choose a target.</span>
         <label class="mask-control"><input id="mask-visible" type="checkbox" checked> Show mask</label>
-        <label class="mask-control">Opacity <input id="mask-opacity" type="range" min="10" max="80" value="38"> <output id="mask-opacity-value">38%</output></label>
+        <label class="mask-control">Opacity <input id="mask-opacity" type="range" min="0" max="100" value="38"> <output id="mask-opacity-value">38%</output></label>
       </div>
-      <details id="view-aids" class="panel view-aids" data-panel="view-aids">
+      <details id="view-aids" class="panel view-aids" data-panel="view-aids" title="Display-only, browser-local image aids. They never alter decoder input or provenance.">
         <summary>View aids (display only) — <span id="view-aids-summary" class="panel-count">off</span></summary>
-        <p class="hint">Display only: they never alter the pixels sent to the SAM3 decoder, frames, masks, prompts, or provenance. Browser-local, not stored in calibration manifests. Order: brightness → contrast → threshold → edges → corners, drawn under the mask and prompts.</p>
-        <p class="hint"><b class="fidelity vigra">VIGRA</b> calls <a href="https://ukoethe.github.io/vigra/" target="_blank" rel="noopener">VIGRA</a> directly · <b class="fidelity numpy">NumPy</b> has no VIGRA equivalent · <b class="fidelity partial">partial</b> approximates one step. VIGRA is built from source (<code>docs/vigra-build.md</code>); without it those cards disable themselves.</p>
         <p id="view-aids-backend" class="hint"></p>
         <div class="view-aid-controls">
           <label class="mask-control"><input id="view-aids-bypass" type="checkbox"> Bypass <kbd>V</kbd></label>
-          <label class="mask-control" title="Below full resolution the VIGRA operators run on a smaller image and genuinely see less detail; the result is upscaled unsmoothed for display.">Working resolution <select id="view-aid-resolution"></select></label>
+          <label class="mask-control" title="Lower resolutions are faster but show less detail.">Working resolution <select id="view-aid-resolution"></select></label>
           <button id="view-aids-reset" title="Reset zoom, pan, and every view aid.">Reset view <kbd>R</kbd></button>
         </div>
-        <p class="hint">Brightness and contrast alone are applied in the browser with the same formula, so they need no round trip. Any threshold, edge, or corner aid reads the toned image, so enabling one moves the whole chain back to the server.</p>
         <div id="view-aid-stages"></div>
         <p id="view-aids-timing" class="hint"></p>
       </details>
       <div id="viewport"><canvas id="canvas" width="954" height="720"></canvas><div id="empty">Load a source frame to draw prompts.</div></div>
-      <details class="panel" data-panel="candidates">
+      <details class="panel" data-panel="candidates" title="Review mask options. Keys 1–4 accept the corresponding option; rejection keeps artifacts but excludes the prompt from planning. Scores are diagnostics, not accuracy.">
         <summary>Decoder candidate review <span class="panel-count"></span></summary>
-        <p class="hint">Every decoded prompt, ordered by target, from every calibrated frame. Frame-0 cards carry the required initial masks; cards from later keyframes are optional corrections and each offers its own "include in Later corrections" control. <kbd>1</kbd>–<kbd>4</kbd> accepts masks 0–3 for the canvas target on any frame. Reject / Remove hides a prompt from review and planning but keeps its mask artifact; Show rejected undoes it. Review images pair full-frame context with a padded crop. IoU, area, and overlap are diagnostics, not accuracy.</p>
-        <button id="toggle-rejected" hidden>Show rejected (0)</button>
-        <div id="candidates" class="candidates"></div>
+        <div id="candidate-status"></div>
+        <div id="candidates" class="candidates" hidden></div>
       </details>
     </section>
     <aside>
-      <details class="panel" data-panel="table">
+      <details class="panel" data-panel="table" title="Inspect every pending and decoded prompt across configured frames.">
         <summary>All-frame prompt table <span class="panel-count"></span></summary>
         <div id="table"></div>
       </details>
-      <details class="panel" data-panel="diff">
+      <details class="panel" data-panel="diff" title="Inspect fields changed by the latest persisted edit.">
         <summary>Persisted manifest difference <span class="panel-count"></span></summary>
         <ul id="diff"></ul>
       </details>
-      <details class="panel" data-panel="finalize">
+      <details class="panel" data-panel="finalize" title="Write the tracking plan without launching tracking. Frame 0 requires all initial masks; later corrections are optional.">
         <summary>Finalize tracking plan <span class="panel-count"></span></summary>
-        <p class="hint">Frame 0 requires initial masks; later corrections are optional keyframes. Finalizing writes the plan only, never launches tracking. A finalized plan locks candidate review; Reopen for editing unlocks it and keeps the finalized artifacts as a superseded revision.</p>
         <div id="eligible"></div><button id="finalize-plan">Finalize tracking plan</button>
       </details>
     </aside>

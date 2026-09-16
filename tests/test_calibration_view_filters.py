@@ -125,8 +125,7 @@ def test_settings_are_clamped_snapped_and_defaulted() -> None:
 
 def test_block_size_slider_can_only_produce_odd_values() -> None:
     parameter = next(
-        item for item in OPERATORS_BY_ID["adaptive_threshold"].parameters
-        if item.id == "block_size"
+        item for item in OPERATORS_BY_ID["adaptive_threshold"].parameters if item.id == "block_size"
     )
     produced = {parameter.clamp(value) for value in range(0, 120)}
     assert produced == {float(value) for value in range(3, 100, 2)}
@@ -185,8 +184,15 @@ def test_missing_vigra_reports_a_clear_error_instead_of_a_silent_substitute(
     assert description["vigra_available"] is False
     assert "docs/vigra-build.md" in description["unavailable_reason"]
     assert [item["id"] for item in description["operators"] if not item["available"]] == [
-        "canny", "zero_crossings", "shen_castan", "boundary_tensor",
-        "corner_response", "beaudet", "rohr", "foerstner", "tensor_junction",
+        "canny",
+        "zero_crossings",
+        "shen_castan",
+        "boundary_tensor",
+        "corner_response",
+        "beaudet",
+        "rohr",
+        "foerstner",
+        "tensor_junction",
     ]
     with pytest.raises(ViewFilterError, match="needs VIGRA"):
         render_view(source_frame(), settings)
@@ -235,17 +241,15 @@ def test_read_only_source_arrays_are_accepted() -> None:
 def test_vigra_backed_operators_call_vigra_itself() -> None:
     vigra = pytest.importorskip("vigra")
     frame = source_frame()
-    grey = (
-        0.299 * frame[:, :, 0] + 0.587 * frame[:, :, 1] + 0.114 * frame[:, :, 2]
-    ).astype(np.float32)
+    grey = (0.299 * frame[:, :, 0] + 0.587 * frame[:, :, 1] + 0.114 * frame[:, :, 2]).astype(
+        np.float32
+    )
     tagged = vigra.taggedView(np.ascontiguousarray(grey), "yx")
 
     settings = default_settings()
     settings["canny"].update({"enabled": True, "scale": 1.2, "threshold": 4.0})
     rendered = render_view(frame, settings)
-    expected = np.asarray(
-        vigra.analysis.cannyEdgeImageWithThinning(tagged, 1.2, 4.0, 1)
-    ) > 0
+    expected = np.asarray(vigra.analysis.cannyEdgeImageWithThinning(tagged, 1.2, 4.0, 1)) > 0
     assert expected.any()
     painted = np.all(rendered.pixels == np.array([0xFB, 0x92, 0x3C], dtype=np.uint8), axis=2)
     assert np.array_equal(painted, expected)
@@ -261,10 +265,18 @@ def test_vigra_backed_operators_call_vigra_itself() -> None:
     assert describe_pipeline()["vigra_version"] == str(vigra.version)
     backends = {operator.id: operator.backend for operator in VIEW_FILTER_PIPELINE}
     assert backends == {
-        "brightness": "numpy", "contrast": "numpy", "adaptive_threshold": "numpy",
-        "canny": "vigra", "zero_crossings": "vigra+numpy", "shen_castan": "vigra",
-        "boundary_tensor": "vigra", "corner_response": "vigra", "beaudet": "vigra",
-        "rohr": "vigra", "foerstner": "vigra", "tensor_junction": "vigra",
+        "brightness": "numpy",
+        "contrast": "numpy",
+        "adaptive_threshold": "numpy",
+        "canny": "vigra",
+        "zero_crossings": "vigra+numpy",
+        "shen_castan": "vigra",
+        "boundary_tensor": "vigra",
+        "corner_response": "vigra",
+        "beaudet": "vigra",
+        "rohr": "vigra",
+        "foerstner": "vigra",
+        "tensor_junction": "vigra",
     }
 
 
@@ -276,7 +288,11 @@ def test_corner_markers_are_bounded_and_inside_the_frame() -> None:
         settings[operator_id].update({"enabled": True, "threshold": 0.01})
     rendered = render_view(frame, settings)
     assert [group["id"] for group in rendered.corners] == [
-        "corner_response", "beaudet", "rohr", "foerstner", "tensor_junction"
+        "corner_response",
+        "beaudet",
+        "rohr",
+        "foerstner",
+        "tensor_junction",
     ]
     for group in rendered.corners:
         assert len(group["points"]) <= view_filters.MAXIMUM_CORNER_MARKERS
@@ -316,26 +332,20 @@ def test_view_render_endpoint_returns_a_png_and_caches_per_frame_and_parameters(
     server, base = serve(workspace)
     try:
         settings = all_enabled()
-        first = post_json(
-            base, "/api/view-filters/render", {"timestamp": 0, "settings": settings}
-        )
+        first = post_json(base, "/api/view-filters/render", {"timestamp": 0, "settings": settings})
         assert first["cached"] is False
         assert first["applied"] == list(EXPECTED_ORDER)
         decoded = Image.open(io.BytesIO(base64.b64decode(first["image_png_base64"])))
         assert decoded.format == "PNG"
         assert decoded.size == (frame.shape[1], frame.shape[0])
 
-        again = post_json(
-            base, "/api/view-filters/render", {"timestamp": 0, "settings": settings}
-        )
+        again = post_json(base, "/api/view-filters/render", {"timestamp": 0, "settings": settings})
         assert again["cached"] is True
         assert again["image_png_base64"] == first["image_png_base64"]
 
         changed = dict(settings)
         changed["canny"] = {**settings["canny"], "scale": 3.0}
-        third = post_json(
-            base, "/api/view-filters/render", {"timestamp": 0, "settings": changed}
-        )
+        third = post_json(base, "/api/view-filters/render", {"timestamp": 0, "settings": changed})
         assert third["cached"] is False
         assert third["image_png_base64"] != first["image_png_base64"]
 
@@ -411,7 +421,11 @@ def test_reduced_working_resolution_is_named_rather_than_applied_silently(
     pytest.importorskip("vigra")
     assert view_filters.RESOLUTION_DIVISORS[0] == 1
     assert [view_filters.normalize_resolution_divisor(value) for value in (2, 4, 7, None, "3")] == [
-        2, 4, 1, 1, 3
+        2,
+        4,
+        1,
+        1,
+        3,
     ]
     described = describe_pipeline()["resolution_divisors"]
     assert [item["divisor"] for item in described] == list(view_filters.RESOLUTION_DIVISORS)
@@ -424,9 +438,7 @@ def test_reduced_working_resolution_is_named_rather_than_applied_silently(
     server, base = serve(workspace)
     try:
         settings = all_enabled()
-        full = post_json(
-            base, "/api/view-filters/render", {"timestamp": 0, "settings": settings}
-        )
+        full = post_json(base, "/api/view-filters/render", {"timestamp": 0, "settings": settings})
         assert full["resolution_divisor"] == 1
         assert (full["width"], full["height"]) == (frame.shape[1], frame.shape[0])
 
@@ -466,13 +478,9 @@ def test_cached_view_renders_follow_a_re_extracted_frame(tmp_path: Path) -> None
     server, base = serve(workspace)
     try:
         settings = all_enabled()
-        first = post_json(
-            base, "/api/view-filters/render", {"timestamp": 0, "settings": settings}
-        )
+        first = post_json(base, "/api/view-filters/render", {"timestamp": 0, "settings": settings})
         write_fixture_frame(workspace, source_frame(seed=29))
-        again = post_json(
-            base, "/api/view-filters/render", {"timestamp": 0, "settings": settings}
-        )
+        again = post_json(base, "/api/view-filters/render", {"timestamp": 0, "settings": settings})
         assert again["cached"] is False
         assert again["image_png_base64"] != first["image_png_base64"]
     finally:
@@ -492,9 +500,7 @@ def test_view_render_writes_nothing_into_the_run_directory(tmp_path: Path) -> No
         for scale in (1.0, 2.0, 3.0):
             settings = all_enabled()
             settings["canny"]["scale"] = scale
-            post_json(
-                base, "/api/view-filters/render", {"timestamp": 0, "settings": settings}
-            )
+            post_json(base, "/api/view-filters/render", {"timestamp": 0, "settings": settings})
         assert directory_fingerprint(workspace.manifest_path.parent) == before
         assert (
             json.dumps(workspace.manifest.model_dump(mode="json"), sort_keys=True)
@@ -554,9 +560,7 @@ def test_enabled_view_aids_do_not_change_the_decode_payload_or_frame_bytes(
     plain_payload, plain_digest = decode_with(tmp_path / "plain", render_views=False)
     filtered_payload, filtered_digest = decode_with(tmp_path / "filtered", render_views=True)
 
-    assert json.dumps(filtered_payload, sort_keys=True) == json.dumps(
-        plain_payload, sort_keys=True
-    )
+    assert json.dumps(filtered_payload, sort_keys=True) == json.dumps(plain_payload, sort_keys=True)
     assert filtered_digest == plain_digest
     serialized = json.dumps(filtered_payload)
     for operator_id in EXPECTED_ORDER:
@@ -718,7 +722,7 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const decodes = requests.filter((item) => item.path === "/api/decode");
   if (decodes.length !== 1) throw new Error(`expected one decode request, got ${decodes.length}`);
   const decodeBody = decodes[0].body;
-  if (decodeBody !== JSON.stringify({box_ids: ["p000000-b01"]})) {
+  if (decodeBody !== JSON.stringify({box_ids: ["p000000-b01"], live_preview: false})) {
     throw new Error(`decode body carried view state: ${decodeBody}`);
   }
 
@@ -766,8 +770,14 @@ def test_headless_ui_renders_view_aids_without_touching_the_decode_request(
         payload = workspace.decoder.last_batch_payload
         assert payload is not None
         assert set(payload["prompts"][0]) == {
-            "box_id", "candidate_id", "frame_index", "pixel_box",
-            "intended_target", "boxes", "fg_points", "bg_points",
+            "box_id",
+            "candidate_id",
+            "frame_index",
+            "pixel_box",
+            "intended_target",
+            "boxes",
+            "fg_points",
+            "bg_points",
         }
     finally:
         server.shutdown()
@@ -784,19 +794,16 @@ def test_calibration_ui_exposes_view_aid_controls_and_shortcuts() -> None:
     assert 'id="view-aid-stages"' in markup
     assert 'id="view-aids-reset"' in markup
     assert 'id="view-aids-bypass"' in markup
-    assert "never alter the pixels sent to the SAM3 decoder" in markup
-    assert "docs/vigra-build.md" in markup
-    assert "not stored in calibration manifests" in markup
+    assert "never alter decoder input or provenance" in markup
     # One reset control, offered once.
     assert markup.count('id="view-aids-reset"') == 1
     # A reduced working resolution is a named choice with its cost spelled out.
     assert 'id="view-aid-resolution"' in markup
-    assert "genuinely see less detail" in markup
-    assert "applied in the browser with the same formula" in markup
+    assert "Lower resolutions are faster but show less detail" in markup
 
     assert '"/api/view-filters"' in script
     assert '"/api/view-filters/render"' in script
-    assert "VIEW_AID_SHORTCUTS = {v: \"bypass\", r: \"reset\"" in script
+    assert 'VIEW_AID_SHORTCUTS = {v: "bypass", r: "reset"' in script
     assert "adaptive_threshold" in script and "corner_response" in script
     # Corner markers and the filtered base are drawn before the mask, prompt box and
     # point markers, so the existing overlays stay legible on top.

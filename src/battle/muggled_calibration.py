@@ -98,12 +98,13 @@ def build_manifest(
     timestamps: tuple[float, ...],
     result_directory: Path,
     calibration_id: str,
+    view_id: str = E4_VIEW_ID,
 ) -> MuggledSAMBoxCalibrationManifest:
-    """Create the schema-validated calibration header from the selected G2 e4 proxy."""
+    """Create a schema-validated calibration header for one approved proxy view."""
     config = G2PreprocessingManifest.model_validate_json(config_path.read_text())
-    proxy = next((item for item in config.proxies if item.view_id == E4_VIEW_ID), None)
+    proxy = next((item for item in config.proxies if item.view_id == view_id), None)
     if proxy is None:
-        raise ValueError(f"selected G2 configuration does not contain {E4_VIEW_ID}")
+        raise ValueError(f"selected G2 configuration does not contain {view_id}")
     source_offset_seconds = config.proxy_timing.source_seconds_for_frame("analysis", 0)
     for timestamp in timestamps:
         frame_reference(
@@ -117,7 +118,7 @@ def build_manifest(
         calibration_id=calibration_id,
         base_g2_config=relative_uri(config_path, repository_root),
         base_g2_config_sha256=sha256_file(config_path),
-        view_id=E4_VIEW_ID,
+        view_id=view_id,
         proxy=ArtifactFingerprint(
             uri=proxy.proxy_uri, sha256=proxy.checksum_sha256, source="approved_config"
         ),
@@ -274,9 +275,8 @@ def load_correction_policy(
         raise ValueError("correction policy targets must match the selected target configuration")
     expected_uri = relative_uri(manual_seed_target_config_path.resolve(), repository_root)
     fingerprint = policy.manual_seed_target_config_fingerprint
-    if (
-        fingerprint.uri != expected_uri
-        or fingerprint.sha256 != sha256_file(manual_seed_target_config_path)
+    if fingerprint.uri != expected_uri or fingerprint.sha256 != sha256_file(
+        manual_seed_target_config_path
     ):
         raise ValueError("correction policy target configuration fingerprint does not match")
     return policy
@@ -314,9 +314,7 @@ def finalize_correction_schedule(
         )
 
     slots = tuple(
-        MuggledSAMMultiplexSlot(
-            target_id=target, object_id=f"sam3-{slot:02d}", multiplex_slot=slot
-        )
+        MuggledSAMMultiplexSlot(target_id=target, object_id=f"sam3-{slot:02d}", multiplex_slot=slot)
         for slot, target in enumerate(policy.targets)
     )
     slots_by_target = {slot.target_id: slot for slot in slots}
@@ -340,9 +338,7 @@ def finalize_correction_schedule(
                     f"frame-0 candidate must be marked initialization eligible: {candidate_id}"
                 )
         elif not candidate.selected_for_correction:
-            raise ValueError(
-                f"later candidate must be marked correction eligible: {candidate_id}"
-            )
+            raise ValueError(f"later candidate must be marked correction eligible: {candidate_id}")
         selected_mask = next(
             (
                 item
@@ -423,9 +419,7 @@ def finalize_correction_schedule(
     return schedule
 
 
-def _write_schedule(
-    path: Path, schedule: MuggledSAMMultiKeyframeCorrectionSchedule
-) -> None:
+def _write_schedule(path: Path, schedule: MuggledSAMMultiKeyframeCorrectionSchedule) -> None:
     """Atomically write an integrity-bound correction schedule."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(
@@ -459,13 +453,19 @@ def next_candidate_id(manifest: MuggledSAMBoxCalibrationManifest, frame_index: i
 
 
 def next_pending_box_id(manifest: MuggledSAMBoxCalibrationManifest, frame_index: int) -> str:
-    """Allocate a stable browser-prompt ID for a precise proxy frame."""
+    """Allocate a stable prompt ID without reusing historical artifact suffixes."""
     prefix = f"p{frame_index:06d}-b"
+    candidate_prefix = f"t{frame_index:06d}-b"
     used = [
         int(box.box_id.removeprefix(prefix))
         for box in manifest.workspace.pending_boxes
         if box.box_id.startswith(prefix)
     ]
+    used.extend(
+        int(candidate.candidate_id.removeprefix(candidate_prefix))
+        for candidate in manifest.candidates
+        if candidate.candidate_id.startswith(candidate_prefix)
+    )
     return f"{prefix}{max(used, default=0) + 1:02d}"
 
 

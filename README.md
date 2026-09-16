@@ -18,11 +18,14 @@ and the research brief that preceded it, with the verbatim first request, is
 
 In one paragraph: the repository has typed Pydantic manifests for clips, runs, timing,
 coverage, and observations; an inference-free Rerun exporter; and one method, SAM3 via
-MuggledSAM, running over a pinned 180-second Assembly101 segment on an RGB static view
-(zero-shot text prompts) and a monochrome ego view (human-seeded masks with reviewed
-keyframe corrections, labelled in a browser calibration workspace). Both views share one
-synchronized Rerun timeline. The second method in the plan's core spine, MediaPipe Hands
-on the static view, has not been started.
+MuggledSAM, exercised on Assembly101 RGB static and monochrome ego views. Text prompting,
+human-seeded masks, reviewed keyframe corrections, and a browser calibration workspace
+were all tested. The latest experiment tracks four physical excavator components through
+a 196.7-second static-view interval; that full run completed, but its masks overlap and
+drift enough that it is exploratory evidence rather than a usable segmentation result.
+The next bounded attempt starts at proxy frame 3120, where the four components are
+separated before reassembly. The second method in the original core spine, MediaPipe
+Hands, has not been started.
 
 The rest of this file is the how-to: each section below gives the exact commands that
 reproduce a stage. No recordings, annotations, or model weights are included. The SAM3
@@ -63,21 +66,101 @@ uv run battle-muggled-smoke --view static-c10379
 uv run battle-muggled-smoke --view ego-hmc21110305
 ```
 
-## G3 decision and candidate outcome
+### Aligned static hybrid candidate
 
-The human G3 review approved only the static RGB view and rejected the ego monochrome
-view as a likely grayscale-domain stress case. The completed static candidate is
-`runs/muggledsam-sam3-g3-full-static-c10379-20260909t030710z/`; it covers all 5,400
-analysis frames / 180.0 seconds with unchanged concepts and continuous-memory settings.
-The completed ego 10-second smoke remains a documented negative stress-test result;
-there is no full ego run and its prompts were not changed. This is not an aggregate
-claim that SAM3 works across views.
-
-Re-run the approved candidate only with:
+The aligned four-label static candidate is explicitly hybrid, not pure zero-shot G3:
+`left_hand`, `right_hand`, and `yellow_toy_top` use the three-target text config, while
+`black_toy_top_base` uses one user-reviewed frame-zero mask. The versioned hybrid contract
+pins both inputs, their fingerprints, and the canonical multiplex ordering. The user
+approved smoke `muggledsam-sam3-smoke-hybrid-static-static-c10379-20260915t005256z`
+with “Looks good!” at approximately 2026-09-14 20:53 EDT / 2026-09-15 00:53 UTC.
+This followed rejection of all five black-base text-prompt variants: none visually selected
+the intended base without unacceptable fixture/identity errors.
 
 ```bash
-uv run battle-muggled-smoke --view static-c10379 --g3-full-static
+uv run battle-muggled-smoke \
+  --view static-c10379 \
+  --hybrid-config configs/muggledsam_static_aligned_hybrid.json
 ```
+
+That approval produced full candidate
+`muggledsam-sam3-g3-full-hybrid-static-static-c10379-20260915t005919z`. Its manifest
+fingerprints the exact reviewed smoke and contact sheet. This route records initialization
+provenance and `ground_truth_accuracy_claim: false`; continuity and tracker diagnostics are
+not segmentation-accuracy evidence.
+
+## G3 decision and candidate outcome
+
+The original G3 review approved only the static RGB view and rejected the first ego
+monochrome view as a likely grayscale-domain stress case. The historical static candidate is
+`runs/muggledsam-sam3-g3-full-static-c10379-20260909t030710z/`; it covers all 5,400
+analysis frames / 180.0 seconds, but uses the older three-target zero-shot contract and is
+not the aligned canonical baseline. It remains historical evidence. The aligned canonical
+static result is the four-target hybrid candidate named above; the selected alternate ego
+view later received its own full four-target manual-seed baseline.
+
+Re-running the aligned full candidate requires the explicit G3 flag and exact reviewed
+smoke approval provenance:
+
+```bash
+uv run battle-muggled-smoke \
+  --view static-c10379 \
+  --hybrid-config configs/muggledsam_static_aligned_hybrid.json \
+  --g3-full-static \
+  --approved-smoke-manifest \
+    runs/muggledsam-sam3-smoke-hybrid-static-static-c10379-20260915t005256z/manifest.json \
+  --human-approved-at 2026-09-15T00:53:00+00:00 \
+  --human-approved-by user \
+  --human-approval-statement "Looks good!"
+```
+
+## Four-part static reassembly experiment
+
+The current physical-part vocabulary supersedes the earlier composite
+`yellow_toy_top` / `black_toy_top_base` interpretation for this experiment only:
+`chassis`, `interior`, `rear_body`, and `cabin`, each meaning visible surface only.
+The approved static proxy covers source `[190.0, 386.7)` seconds at 30 FPS.
+
+The exploratory full run
+`muggledsam-sam3-four-part-static-full-exploratory-static-c10379-20260916t012945z`
+processed all 5,901 frames in 474.639 seconds, reached 2,209,013,760 bytes peak
+allocated VRAM, and wrote 23,418 per-object masks. Its reviewed corrections were at
+proxy frames 36, 65, and 162. An all-frame audit found mask IoU above 0.5 for
+chassis/cabin on 77 frames, interior/cabin on 18, chassis/rear body on 9, and
+interior/rear body on 7. Those overlaps, together with visual identity drift already
+seen in the 20-second pilot, mean stable tracker IDs must not be interpreted as stable
+physical identities.
+
+Inspect the ignored local recording with:
+
+```bash
+uv run rerun \
+  runs/muggledsam-sam3-four-part-static-full-exploratory-static-c10379-20260916t012945z/four_part_static_full_exploratory.rrd
+```
+
+The next experiment begins at proxy frame 3120 (proxy time 104.0 seconds; source time
+294.0 seconds) and runs at most through frame 5900. This gives 2,781 frames / 92.7
+seconds in which the components begin separated and are then assembled. It needs a new
+frame-3120 calibration and correction schedule; the frame-0 masks from the exploratory
+run are not transferable initialization evidence.
+
+## Fixed human QA hard gate
+
+`FixedTimestampHumanQARecord` formalizes the plan's pre-accuracy visual gate: exactly one
+human-selected easy manipulation and one human-selected hard/occluded manipulation on the
+source clock. Each checkpoint requires fingerprinted visual evidence. A non-pending
+`pass`/`flag`/`fail` requires reviewer identity and a timezone-aware review time; the
+overall status is validated as a conservative derivation, and
+`ground_truth_accuracy_claim` is always `false`. Tracker IoU predictions and object scores
+cannot populate this record.
+
+The plan specified the easy/hard rule but the approved clip manifests did not preserve
+literal checkpoint times. The human selected mask-bearing source frames 14,868 / 21,732
+(analysis frames 984 / 4,416), and the two canonical SAM3 records are now tracked as
+pending under
+[`docs/qa/`](docs/qa/README.md). `battle-prepare-human-qa` validates only the explicitly
+supplied completed runs, creates a lightweight two-checkpoint sheet without inference,
+fingerprints it, and writes pending JSON records. It refuses to overwrite a reviewed record.
 
 The candidate manifest records the source SHA-256
 `450731ebbb50f46cf8279383e4737db6d76e967f23580d3555de1888b78a9db9`, proxy SHA-256

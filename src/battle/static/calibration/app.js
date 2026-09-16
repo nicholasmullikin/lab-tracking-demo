@@ -4,9 +4,11 @@ const state = {
   manifest: null, frame: null, image: null, active: null, selected: null, drag: null,
   zoom: 1, pan: {x: 0, y: 0}, view: {width: 0, height: 0, pixelRatio: 1},
   label: defaultLabels[0], manualSeedTargets: [], activeCandidateId: null, plan: null,
-  maskImages: new Map(), pendingCandidateSelections: new Map(),
+  maskImages: new Map(), maskVersions: new Map(), pendingCandidateSelections: new Map(),
   maskVisible: true, maskOpacity: 0.38, correctionPolicy: null,
   showRejected: false, promptMode: "box",
+  liveDecode: false, liveDecodeDelayMs: 450, liveDecodeQueuedBoxId: null, decodeInFlight: false,
+  frameRequest: 0, refreshRequest: 0,
   viewFilters: null, viewAids: {}, viewAidsBypass: false, viewRender: null, viewRequest: null,
   viewResolutionDivisor: 1, viewTone: null, viewAbort: null,
 };
@@ -26,6 +28,11 @@ const BACKEND_TITLES = {
 const $ = (selector) => document.querySelector(selector);
 const targetColors = ["#22d3ee", "#a78bfa", "#34d399", "#fb7185", "#f59e0b", "#60a5fa"];
 const PANEL_STORAGE_KEY = "battle.calibration.panels.v1";
+const LIVE_DECODE_STORAGE_KEY = "battle.calibration.live-decode.v1";
+const LIVE_DECODE_DELAY_STORAGE_KEY = "battle.calibration.live-decode-delay.v1";
+const LIVE_DECODE_DELAY_MIN_MS = 100;
+const LIVE_DECODE_DELAY_MAX_MS = 5000;
+let liveDecodeTimer = null;
 /* The markup carries each section's fresh-profile default; a stored choice always wins.
  * Shortcuts keep working while a section is collapsed, so the only automatic expansion
  * is a live error. */
@@ -163,6 +170,19 @@ function activePendingPrompt() {
   );
   return matching.length === 1 ? matching[0] : null;
 }
+function syncDecodeControls() {
+  const button = $("#decode");
+  if (!button || !state.manifest) return;
+  const hasPending = pending().some((item) => isOnActiveFrame(item));
+  button.disabled = state.liveDecode || state.decodeInFlight || !hasPending;
+  button.title = state.liveDecode
+    ? "Disable live decode to run a manual frame batch."
+    : state.decodeInFlight
+      ? "Wait for the current decode to finish."
+      : hasPending
+        ? "Decode every pending prompt on this frame."
+        : "No pending prompts on this frame.";
+}
 function targetColor(target) {
   const position = targetPosition(target);
   return targetColors[position === Number.MAX_SAFE_INTEGER ? 0 : position % targetColors.length];
@@ -234,7 +254,8 @@ function maskImage(candidate, color, opacity) {
     state.maskImages.set(candidate.mask_uri, entry);
     image.onload = () => { entry.loaded = true; render(); };
     image.onerror = () => setStatus(`Could not load decoded mask: ${candidate.mask_uri}`, true);
-    image.src = `/artifacts/${candidate.mask_uri}`;
+    const version = state.maskVersions.get(candidate.mask_uri);
+    image.src = `/artifacts/${candidate.mask_uri}${version ? `?v=${version}` : ""}`;
   }
   if (!entry.loaded) return null;
   const key = `${color}:${opacity}`;
@@ -246,7 +267,11 @@ function maskImage(candidate, color, opacity) {
   return overlay;
 }
 function hit(point) {
-  const p = world(point), box = pending().findLast((item) => p.x >= item.pixel_box.x1 && p.x <= item.pixel_box.x2 && p.y >= item.pixel_box.y1 && p.y <= item.pixel_box.y2);
+  const p = world(point), box = pending().findLast((item) => (
+    isOnActiveFrame(item)
+    && p.x >= item.pixel_box.x1 && p.x <= item.pixel_box.x2
+    && p.y >= item.pixel_box.y1 && p.y <= item.pixel_box.y2
+  ));
   if (!box) return null;
   const b = box.pixel_box, edge = 12 / viewScale();
   const handle = p.x > b.x2 - edge && p.y > b.y2 - edge ? "resize" : "move";
@@ -437,6 +462,7 @@ async function requestViewRender() {
     if (state.viewRequest !== key) return;
     const image = new Image();
     image.onload = () => {
+      if (state.viewRequest !== key || key !== viewAidKey()) return;
       state.viewRender = {
         key, image, corners: result.corners, backends: result.backends,
         divisor: result.resolution_divisor || 1,
@@ -511,10 +537,8 @@ function viewAidNode(operator) {
   backend.textContent = blocked
     ? `${BACKEND_LABELS[operator.backend]} · unavailable`
     : BACKEND_LABELS[operator.backend];
-  const note = document.createElement("code");
-  note.className = "note";
-  note.textContent = operator.provenance;
-  card.append(toggle, backend, note);
+  card.title = operator.provenance;
+  card.append(toggle, backend);
   for (const choice of operator.choices) {
     const row = document.createElement("label"), select = document.createElement("select");
     row.className = "parameter";
@@ -683,7 +707,9 @@ function render() {
   ctx.setTransform(state.view.pixelRatio, 0, 0, state.view.pixelRatio, 0, 0);
   ctx.clearRect(0, 0, state.view.width, state.view.height);
   ctx.save(); ctx.translate(state.pan.x, state.pan.y); ctx.scale(scale, scale);
-  const aids = state.viewAidsBypass ? null : state.viewRender;
+  const aids = !state.viewAidsBypass && state.viewRender?.key === viewAidKey()
+    ? state.viewRender
+    : null;
   // A reduced working resolution is shown as the pixels it really produced, not as a
   // smoothed interpolation that would look like detail the operator never saw.
   const coarse = aids?.divisor > 1;
@@ -698,7 +724,8 @@ function render() {
     ctx.drawImage(image, 0, 0, width, height);
     ctx.restore();
   }
-  if (decoded && mask) {
+  const editablePrompt = activePendingPrompt();
+  if (decoded && mask && !editablePrompt) {
     const b = decoded.pixel_box, color = targetColor(decoded.intended_target);
     ctx.strokeStyle = color; ctx.lineWidth = 3 / scale;
     ctx.strokeRect(b.x1, b.y1, b.x2 - b.x1, b.y2 - b.y1);
@@ -708,7 +735,7 @@ function render() {
       b.x1 + 3 / scale, b.y1 - 5 / scale
     );
   }
-  for (const item of pending()) {
+  for (const item of pending().filter(isOnActiveFrame)) {
     const preview = state.drag?.box?.box_id === item.box_id ? state.drag.preview : null;
     const b = preview || item.pixel_box, selected = item.box_id === state.selected;
     ctx.strokeStyle = selected ? "#f59e0b" : targetColor(item.intended_target); ctx.lineWidth = 3 / scale;
@@ -760,9 +787,14 @@ function renderLabels() {
   renderLabelSummary();
 }
 function renderTargetPolicy(policy) {
-  $("#target-policy").textContent = policy
+  const help = policy
     ? `Frame 0 requires ${policy.required_target_count} distinct masks: ${labels().join(", ")}.`
     : "Custom labels are allowed; no named proposal policy is active.";
+  const targetPolicy = $("#target-policy"), panel = $("#label-panel");
+  if (targetPolicy) targetPolicy.textContent = "";
+  if (panel) panel.title = help;
+  const customLabel = $("#custom-label-control");
+  if (customLabel) customLabel.hidden = Boolean(policy);
 }
 function setPromptMode(mode) {
   state.promptMode = mode;
@@ -777,13 +809,16 @@ function renderPointControls() {
   if (!guidance || !clear) return;
   const prompt = activePendingPrompt();
   const names = {
-    box: "Drag a box for the selected target; select it before adding clicks.",
-    foreground: "Click the hand for green points; drag to edit, right-click to remove.",
-    background: "Click the shadow for pink exclusions; drag to edit, right-click to remove.",
+    box: "Drag a tight box around the target.",
+    foreground: "Click unambiguous target pixels.",
+    background: "Click pixels the mask must exclude.",
   };
-  guidance.textContent = prompt
+  const help = prompt
     ? `${names[state.promptMode]} ${prompt.pixel_fg_points.length} foreground and ${prompt.pixel_bg_points.length} background point(s) on ${prompt.intended_target.replaceAll("_", " ")}.`
     : `Select exactly one pending ${state.label.replaceAll("_", " ")} box on this frame before adding points.`;
+  guidance.textContent = "";
+  const panel = $("#prompt-clicks-panel");
+  if (panel) panel.title = help;
   clear.disabled = !prompt || !(prompt.pixel_fg_points.length || prompt.pixel_bg_points.length);
   setPanelSummary("prompt-clicks", prompt
     ? `${state.promptMode} · +${prompt.pixel_fg_points.length}/−${prompt.pixel_bg_points.length}`
@@ -795,10 +830,12 @@ function renderActiveCandidate() {
   const item = activeCandidate(), mask = selectedMask(item);
   if (!item || !mask) {
     node.textContent = `No decoded mask for ${state.label.replaceAll("_", " ")} on this frame.`;
+    node.title = "Decode a prompt for this target to preview its mask.";
     return;
   }
   const status = item.human_accepted ? "accepted" : "model-best preview";
-  node.textContent = `Canvas: ${item.intended_target.replaceAll("_", " ")} · mask ${mask.candidate_index + 1}/${item.decoder_result.candidates.length} (${status}) · 1–4 selects and accepts`;
+  node.textContent = `${item.intended_target.replaceAll("_", " ")} · mask ${mask.candidate_index + 1}/${item.decoder_result.candidates.length} · ${status}`;
+  node.title = "Keys 1–4 select and accept the corresponding mask.";
 }
 /* The lock is a workspace-wide mode, so it is announced above every panel rather than
  * inside the review section whose controls it disables. */
@@ -841,8 +878,18 @@ async function reopenPlan() {
   } catch (error) { setStatus(error.message, true); }
 }
 async function refresh() {
-  const data = await api("/api/state"); state.manifest = data.manifest; state.manualSeedTargets = data.manual_seed_targets; state.correctionPolicy = data.correction_policy;
+  const request = ++state.refreshRequest;
+  const data = await api("/api/state");
+  if (request !== state.refreshRequest) return;
+  state.manifest = data.manifest; state.manualSeedTargets = data.manual_seed_targets; state.correctionPolicy = data.correction_policy;
   state.plan = data.plan || null;
+  const selectedPrompt = pending().find((item) => (
+    item.box_id === state.selected && isOnActiveFrame(item)
+  ));
+  const persistedPrompt = pending().find((item) => (
+    item.box_id === state.manifest.workspace.selected_box_id && isOnActiveFrame(item)
+  ));
+  state.selected = selectedPrompt?.box_id || persistedPrompt?.box_id || null;
   renderLabels();
   renderTargetPolicy(data.manual_seed_target_policy);
   const finalizeButton = $("#finalize-plan");
@@ -861,8 +908,9 @@ async function refresh() {
     button.className = time === state.active ? "active" : ""; button.onclick = () => loadFrame(time); return button;
   }));
   const onFrame = pending().filter((p) => p.frame.proxy_seconds === state.active);
-  $("#prompts").replaceChildren(...onFrame.map(promptNode));
-  $("#decode-selected").disabled = !pending().some((item) => item.box_id === state.selected);
+  const prompts = $("#prompts");
+  if (prompts) prompts.replaceChildren(...onFrame.map(promptNode));
+  syncDecodeControls();
   const rows = [...pending(), ...state.manifest.candidates];
   $("#table").replaceChildren(...rows.map(tableNode));
   $("#diff").replaceChildren(...data.last_diff.map((change) => { const li = document.createElement("li"); li.textContent = change; return li; }));
@@ -908,7 +956,11 @@ function candidatesSignature() {
     state.activeCandidateId,
     activeCandidate()?.candidate_id ?? null,
     activeTimestamp() ?? null,
+    state.label,
     labels(),
+    pending().map((item) => [
+      item.box_id, item.intended_target, item.frame.proxy_seconds, item.stage,
+    ]),
     [...state.pendingCandidateSelections],
     planLocked(),
     state.manifest.candidates.map((item) => [
@@ -920,6 +972,111 @@ function candidatesSignature() {
   ]);
 }
 let candidatesRendered = null;
+function renderCandidateStatusTable(host, locked, lockReason) {
+  const table = document.createElement("table");
+  table.className = "candidate-status-table";
+  const heading = document.createElement("tr");
+  const frameHeading = document.createElement("th");
+  frameHeading.textContent = "Frame";
+  heading.append(frameHeading);
+  for (const target of labels()) {
+    const cell = document.createElement("th");
+    cell.textContent = target.replaceAll("_", " ");
+    heading.append(cell);
+  }
+  table.append(heading);
+  for (const time of state.manifest.requested_proxy_timestamps_seconds) {
+    const row = document.createElement("tr");
+    const frame = document.createElement("th");
+    const frameIndex = Math.round(time * state.manifest.proxy_fps);
+    frame.textContent = `${frameIndex} · ${time.toFixed(3)}s`;
+    row.append(frame);
+    for (const target of labels()) {
+      const cell = document.createElement("td");
+      const candidates = state.manifest.candidates.filter((item) => (
+        item.intended_target === target && Math.abs(item.frame.proxy_seconds - time) <= 1e-9
+      ));
+      const accepted = candidates.find((item) => item.human_accepted && !item.rejected);
+      const preview = candidates.filter((item) => !item.rejected).at(-1);
+      const rejected = candidates.filter((item) => item.rejected).at(-1);
+      const pendingPrompt = pending().find((item) => (
+        item.intended_target === target && Math.abs(item.frame.proxy_seconds - time) <= 1e-9
+      ));
+      const item = accepted || preview || (state.showRejected ? rejected : null);
+      const isInitial = frameIndex === 0;
+      const scheduled = accepted && (
+        isInitial ? accepted.selected_for_finalization : accepted.selected_for_correction
+      );
+      const done = Boolean(accepted);
+      const status = accepted
+        ? "✓ Done"
+        : preview
+          ? "◐ Preview"
+          : pendingPrompt
+            ? "○ Editing"
+            : rejected && state.showRejected
+              ? "× Rejected"
+              : "○ Not done";
+      const wrapper = document.createElement("span");
+      wrapper.className = `status-cell ${done ? "done" : preview || accepted ? "preview" : ""}${
+        state.label === target && Math.abs(activeTimestamp() - time) <= 1e-9 ? " active" : ""}`;
+      const select = document.createElement("button");
+      select.className = "status-main";
+      select.textContent = status;
+      select.title = accepted
+        ? `Accepted${scheduled ? isInitial ? " as the initial mask" : " and scheduled as the correction" : ""}. Show it on the canvas.`
+        : item
+          ? "Show this target and candidate on the canvas."
+        : "Show this target and frame on the canvas.";
+      select.onclick = () => {
+        state.label = target;
+        state.selected = pendingPrompt?.box_id || null;
+        state.activeCandidateId = item?.candidate_id || null;
+        loadFrame(time);
+      };
+      wrapper.append(select);
+      if (accepted) {
+        const clear = document.createElement("button");
+        clear.className = "status-clear";
+        clear.textContent = "×";
+        clear.title = locked ? lockReason : "Unaccept this mask.";
+        clear.disabled = locked;
+        clear.onclick = (event) => {
+          event.stopPropagation();
+          unacceptCandidate(accepted);
+        };
+        wrapper.append(clear);
+      } else if (preview) {
+        const clear = document.createElement("button");
+        clear.className = "status-clear";
+        clear.textContent = "×";
+        clear.title = locked ? lockReason : "Discard this preview.";
+        clear.disabled = locked;
+        clear.onclick = (event) => {
+          event.stopPropagation();
+          if (pendingPrompt) deletePrompt(pendingPrompt.box_id);
+          else rejectCandidate(preview);
+        };
+        wrapper.append(clear);
+      } else if (rejected && state.showRejected) {
+        const restore = document.createElement("button");
+        restore.className = "status-clear";
+        restore.textContent = "↶";
+        restore.title = locked ? lockReason : "Restore this rejected candidate.";
+        restore.disabled = locked;
+        restore.onclick = (event) => {
+          event.stopPropagation();
+          restoreCandidate(rejected);
+        };
+        wrapper.append(restore);
+      }
+      cell.append(wrapper);
+      row.append(cell);
+    }
+    table.append(row);
+  }
+  host.replaceChildren(table);
+}
 function renderCandidates() {
   const signature = candidatesSignature();
   if (signature === candidatesRendered) return;
@@ -928,19 +1085,22 @@ function renderCandidates() {
   const locked = planLocked(), lockReason = planLockReason();
   const items = reviewedCandidates();
   const active = state.manifest.candidates.filter((item) => !item.rejected);
-  const rejectedCount = state.manifest.candidates.length - active.length;
-  const acceptedCount = active.filter((item) => item.human_accepted).length;
-  const keyframe = activeTimestamp();
-  const onKeyframe = active.filter(
-    (item) => item.frame.analysis_frame_index !== 0
-      && Math.abs(item.frame.proxy_seconds - keyframe) <= 1e-9,
-  );
-  const correctionsHere = onKeyframe.filter((item) => item.selected_for_correction).length;
+  const completedCells = new Set(
+    active
+      .filter((item) => item.human_accepted)
+      .map((item) => `${item.frame.analysis_frame_index}:${item.intended_target}`),
+  ).size;
+  const totalCells = state.manifest.requested_proxy_timestamps_seconds.length * labels().length;
   setPanelSummary(
     "candidates",
-    `${acceptedCount}/${active.length} accepted${rejectedCount ? ` · ${rejectedCount} rejected` : ""}${
-      onKeyframe.length ? ` · ${correctionsHere}/${onKeyframe.length} corrections at ${keyframe.toFixed(3)} s` : ""}`,
+    `${completedCells}/${totalCells} done`,
   );
+  const statusHost = $("#candidate-status");
+  if (statusHost) {
+    parent.replaceChildren();
+    renderCandidateStatusTable(statusHost, locked, lockReason);
+    return;
+  }
   if (!items.length) {
     const empty = document.createElement("p");
     empty.className = "hint";
@@ -963,22 +1123,20 @@ function renderCandidates() {
     heading.textContent = `${targetLabel} · ${item.candidate_id}`;
     const metadata = document.createElement("small");
     metadata.className = "candidate-metadata";
-    metadata.textContent = `Frame ${item.frame.analysis_frame_index} (${item.frame.proxy_seconds.toFixed(3)} s) · ${
-      isInitial ? "initial mask · required" : "later correction · optional"} · ${item.decoder_result.candidates.length} mask option(s)`;
-    const guidance = document.createElement("small");
-    const role = isInitial
-      ? "Frame 0 needs exactly one accepted mask for every configured target."
-      : "Optional later correction: accept a mask only if this target is visible at this keyframe.";
-    guidance.textContent = item.rejected
-      ? "Rejected from normal review and planning; mask artifacts remain available for provenance."
+    metadata.textContent = `${item.live_preview ? "Live preview · updates in place · " : ""}Frame ${
+      item.frame.analysis_frame_index} (${item.frame.proxy_seconds.toFixed(3)} s) · ${
+      isInitial ? "initial mask · required" : "later correction · optional"} · ${
+      item.decoder_result.candidates.length} mask option(s)`;
+    card.title = item.rejected
+      ? "Rejected; retained for provenance."
       : locked
-        ? `${role} ${lockReason}`
-        : `${role} ${isActive
-          ? "Shown on the canvas; use keys 1–4 or choose a mask below."
-          : "Select one mask after comparing the full-frame context and padded crop."}`;
+        ? lockReason
+        : isInitial
+          ? "Choose one initial mask."
+          : "Choose a correction only when needed.";
     const options = document.createElement("div");
     options.className = "candidate-options";
-    card.append(heading, metadata, guidance, options);
+    card.append(heading, metadata, options);
     if (item.rejected) {
       for (const candidate of item.decoder_result.candidates) {
         if (!candidate.review_uri) continue;
@@ -1121,6 +1279,14 @@ async function restoreCandidate(item) {
     await refresh();
   } catch (error) { setStatus(error.message, true); }
 }
+async function deletePrompt(boxId) {
+  try {
+    await api(`/api/prompts/${boxId}`, {method: "DELETE"});
+    if (state.selected === boxId) state.selected = null;
+    setStatus("Discarded editable prompt and live preview.");
+    await refresh();
+  } catch (error) { setStatus(error.message, true); }
+}
 function renderEligible() {
   const parent = $("#eligible"); parent.replaceChildren();
   const initial = state.manifest.candidates.filter((item) => !item.rejected && item.selected_for_finalization);
@@ -1176,20 +1342,38 @@ function renderEligible() {
 }
 async function loadFrame(time = Number($("#timestamp").value)) {
   try {
+    const request = ++state.frameRequest;
+    const preserveView = state.image !== null;
+    const selectedLabel = state.label;
     setStatus("Decoding selected source frame…"); state.active = time;
-    await api("/api/workspace", {method: "POST", body: JSON.stringify({timestamp: time})});
     const response = await api(`/api/frame?timestamp=${encodeURIComponent(time)}`);
+    if (request !== state.frameRequest) return;
+    await api("/api/workspace", {method: "POST", body: JSON.stringify({timestamp: time})});
+    if (request !== state.frameRequest) return;
     const image = new Image(); image.onload = () => {
+      if (request !== state.frameRequest) return;
       state.image = image; state.viewRender = null; state.viewRequest = null;
+      state.label = selectedLabel;
       $("#empty").hidden = true;
-      requestAnimationFrame(() => { resizeCanvas({reset: true}); render(); refresh(); requestViewRender(); });
+      requestAnimationFrame(() => {
+        resizeCanvas({preserveCenter: preserveView, reset: !preserveView});
+        render(); refresh(); requestViewRender();
+      });
     };
     image.src = `/artifacts/${response.image_uri}?v=${Date.now()}`; state.frame = response.frame_index;
   } catch (error) { setStatus(error.message, true); }
 }
 async function saveBox(box, id = null) {
-  const path = id ? `/api/prompts/${id}` : "/api/prompts", method = id ? "PATCH" : "POST";
-  await api(path, {method, body: JSON.stringify({timestamp: state.active, intended_target: state.label, pixel_box: box})}); await refresh();
+  const existing = id
+    ? pending().find((item) => item.box_id === id)
+    : activePendingPrompt();
+  const boxId = existing?.box_id || null;
+  const intendedTarget = existing?.intended_target || state.label;
+  const path = boxId ? `/api/prompts/${boxId}` : "/api/prompts";
+  const method = boxId ? "PATCH" : "POST";
+  await api(path, {method, body: JSON.stringify({timestamp: state.active, intended_target: intendedTarget, pixel_box: box})});
+  await refresh();
+  scheduleLiveDecode(boxId || activePendingPrompt()?.box_id);
 }
 function clampPoint(point) {
   const {width, height} = modelSize();
@@ -1207,6 +1391,7 @@ async function savePromptPoints(item, foreground, background) {
     }),
   });
   await refresh();
+  scheduleLiveDecode(item.box_id);
 }
 canvas.addEventListener("contextmenu", (event) => event.preventDefault());
 canvas.addEventListener("pointerdown", async (event) => {
@@ -1313,7 +1498,8 @@ document.addEventListener("keydown", async (event) => {
     const candidateIndex = Number(event.key) - 1;
     if (item && item.decoder_result.candidates.some((candidate) => candidate.candidate_index === candidateIndex)) {
       event.preventDefault();
-      await accept(item, candidateIndex);
+      const isInitial = item.frame.analysis_frame_index === 0;
+      await accept(item, candidateIndex, isInitial, !isInitial);
       return;
     }
   }
@@ -1331,10 +1517,14 @@ document.addEventListener("keydown", async (event) => {
     else toggleViewAid(viewAid);
     return;
   }
-  if (event.key === "Delete" && state.selected) { await api(`/api/prompts/${state.selected}`, {method:"DELETE"}); state.selected = null; await refresh(); }
+  if (event.key === "Delete" && state.selected) await deletePrompt(state.selected);
 });
 $("#labels").onclick = (event) => { if (event.target.dataset.label) selectLabel(event.target.dataset.label); };
-$("#custom-label").onchange = (event) => { if (event.target.value.trim()) state.label = event.target.value.trim(); };
+$("#custom-label").onchange = (event) => {
+  if (event.target.value.trim() && !state.manualSeedTargets.length) {
+    selectLabel(event.target.value.trim());
+  }
+};
 const promptMode = $("#prompt-mode");
 if (promptMode) promptMode.onclick = (event) => {
   if (event.target.dataset.promptMode) setPromptMode(event.target.dataset.promptMode);
@@ -1350,27 +1540,92 @@ if (clearPoints) clearPoints.onclick = async () => {
 };
 $("#load-frame").onclick = () => loadFrame();
 $("#time-slider").oninput = (event) => loadFrame(state.manifest.requested_proxy_timestamps_seconds[Number(event.target.value)]);
-$("#delete").onclick = async () => { if (state.selected) { await api(`/api/prompts/${state.selected}`, {method:"DELETE"}); state.selected = null; await refresh(); } };
-$("#duplicate").onclick = async () => { const item = pending().find((p) => p.box_id === state.selected); if (item) await saveBox({...item.pixel_box, x1:item.pixel_box.x1+10, y1:item.pixel_box.y1+10, x2:item.pixel_box.x2+10, y2:item.pixel_box.y2+10}); };
-async function decode(boxIds) {
+$("#delete").onclick = async () => { if (state.selected) await deletePrompt(state.selected); };
+function scheduleLiveDecode(boxId) {
+  if (!state.liveDecode || !boxId || state.plan?.finalized) return;
+  state.liveDecodeQueuedBoxId = boxId;
+  if (liveDecodeTimer !== null) clearTimeout(liveDecodeTimer);
+  liveDecodeTimer = setTimeout(() => {
+    liveDecodeTimer = null;
+    const queuedBoxId = state.liveDecodeQueuedBoxId;
+    if (!state.liveDecode || !queuedBoxId || state.plan?.finalized) return;
+    if (state.decodeInFlight) {
+      scheduleLiveDecode(queuedBoxId);
+      return;
+    }
+    if (!pending().some((item) => item.box_id === queuedBoxId)) {
+      state.liveDecodeQueuedBoxId = null;
+      return;
+    }
+    state.liveDecodeQueuedBoxId = null;
+    decode([queuedBoxId], true);
+  }, state.liveDecodeDelayMs);
+}
+async function decode(boxIds, livePreview = false) {
+  if (!boxIds.length) return;
+  if (!livePreview && state.liveDecode) {
+    setStatus("Disable live decode before running a manual frame batch.", true);
+    return;
+  }
+  if (state.decodeInFlight) {
+    if (livePreview) scheduleLiveDecode(boxIds.at(-1));
+    else setStatus("A decoder job is already running; wait for it to finish.", true);
+    return;
+  }
+  state.decodeInFlight = true;
+  syncDecodeControls();
   try {
-    const result = await api("/api/decode", {method:"POST", body:JSON.stringify({box_ids: boxIds})});
-    setStatus(`Decoder job ${result.job_id} queued; workspace remains responsive.`);
+    const result = await api("/api/decode", {
+      method:"POST", body:JSON.stringify({box_ids: boxIds, live_preview: livePreview}),
+    });
+    setStatus(`${livePreview ? "Live preview" : "Decoder"} job ${result.job_id} queued; workspace remains responsive.`);
+    let polling = false;
     const timer = setInterval(async () => {
-      const job = await api(`/api/jobs/${result.job_id}`);
-      if (job.status === "succeeded" || job.status === "failed") {
+      if (polling) return;
+      polling = true;
+      try {
+        const job = await api(`/api/jobs/${result.job_id}`);
+        if (job.status === "succeeded" || job.status === "failed") {
+          clearInterval(timer);
+          state.decodeInFlight = false;
+          syncDecodeControls();
+          if (job.status === "succeeded" && job.candidate_ids?.length) {
+            for (const item of state.manifest.candidates) {
+              if (!job.candidate_ids.includes(item.candidate_id)) continue;
+              for (const candidate of item.decoder_result.candidates) {
+                state.maskImages.delete(candidate.mask_uri);
+                state.maskVersions.set(candidate.mask_uri, result.job_id);
+              }
+            }
+            state.activeCandidateId = job.candidate_ids.at(-1);
+          }
+          setStatus(
+            job.status === "succeeded"
+              ? `${livePreview ? "Live preview" : "Decoder batch"} completed.`
+              : job.error,
+            job.status === "failed",
+          );
+          await refresh();
+          if (state.liveDecodeQueuedBoxId) scheduleLiveDecode(state.liveDecodeQueuedBoxId);
+        }
+      } catch (error) {
         clearInterval(timer);
-        setStatus(job.status === "succeeded" ? "Decoder batch completed." : job.error, job.status === "failed");
-        await refresh();
+        state.decodeInFlight = false;
+        syncDecodeControls();
+        setStatus(`Could not read decoder status: ${error.message}`, true);
+        if (state.liveDecodeQueuedBoxId) scheduleLiveDecode(state.liveDecodeQueuedBoxId);
+      } finally {
+        polling = false;
       }
     }, 500);
     await refresh();
-  } catch (error) { setStatus(error.message, true); }
+  } catch (error) {
+    state.decodeInFlight = false;
+    syncDecodeControls();
+    setStatus(error.message, true);
+  }
 }
 $("#decode").onclick = () => decode(pending().filter((item) => item.frame.proxy_seconds === state.active).map((item) => item.box_id));
-$("#decode-selected").onclick = () => {
-  if (state.selected) decode([state.selected]);
-};
 const toggleRejected = $("#toggle-rejected");
 if (toggleRejected) toggleRejected.onclick = () => {
   state.showRejected = !state.showRejected;
@@ -1387,6 +1642,45 @@ if (maskOpacity) maskOpacity.oninput = () => {
   $("#mask-opacity-value").textContent = `${maskOpacity.value}%`;
   render();
 };
+const liveDecode = $("#live-decode"), liveDecodeDelay = $("#live-decode-delay");
+if (liveDecode) {
+  state.liveDecode = globalThis.localStorage?.getItem(LIVE_DECODE_STORAGE_KEY) === "true";
+  liveDecode.checked = state.liveDecode;
+  liveDecode.onchange = () => {
+    state.liveDecode = liveDecode.checked;
+    globalThis.localStorage?.setItem(LIVE_DECODE_STORAGE_KEY, String(state.liveDecode));
+    if (!state.liveDecode && liveDecodeTimer !== null) {
+      clearTimeout(liveDecodeTimer);
+      liveDecodeTimer = null;
+      state.liveDecodeQueuedBoxId = null;
+    } else if (state.liveDecode) {
+      scheduleLiveDecode(activePendingPrompt()?.box_id);
+    }
+    syncDecodeControls();
+  };
+}
+if (liveDecodeDelay) {
+  const storedDelay = Number(globalThis.localStorage?.getItem(LIVE_DECODE_DELAY_STORAGE_KEY));
+  if (Number.isFinite(storedDelay)) {
+    state.liveDecodeDelayMs = Math.min(
+      LIVE_DECODE_DELAY_MAX_MS,
+      Math.max(LIVE_DECODE_DELAY_MIN_MS, Math.round(storedDelay)),
+    );
+  }
+  liveDecodeDelay.value = String(state.liveDecodeDelayMs);
+  liveDecodeDelay.onchange = () => {
+    state.liveDecodeDelayMs = Math.min(
+      LIVE_DECODE_DELAY_MAX_MS,
+      Math.max(LIVE_DECODE_DELAY_MIN_MS, Math.round(Number(liveDecodeDelay.value) || 450)),
+    );
+    liveDecodeDelay.value = String(state.liveDecodeDelayMs);
+    globalThis.localStorage?.setItem(
+      LIVE_DECODE_DELAY_STORAGE_KEY,
+      String(state.liveDecodeDelayMs),
+    );
+    if (state.liveDecodeQueuedBoxId) scheduleLiveDecode(state.liveDecodeQueuedBoxId);
+  };
+}
 const viewAidsBypass = $("#view-aids-bypass"), viewAidsReset = $("#view-aids-reset");
 if (viewAidsBypass) viewAidsBypass.onchange = () => setViewAidsBypass(viewAidsBypass.checked);
 if (viewAidsReset) viewAidsReset.onclick = () => resetViewAids();
@@ -1405,6 +1699,6 @@ $("#finalize-plan").onclick = async () => {
 };
 registerPanels();
 refresh()
-  .then(() => loadFrame(state.manifest.requested_proxy_timestamps_seconds[0]))
+  .then(() => loadFrame(activeTimestamp()))
   .then(() => loadViewFilters())
   .catch((error) => setStatus(error.message, true));

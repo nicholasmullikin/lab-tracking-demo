@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0",
+  "manifest_kind": "muggledsam_sam3_text_targets",
+  "config_id": "static-three-text-targets",
+  "base_g2_config": "configs/clips/assembly101_nusar_9033_g2.json",
+  "view_id": "static-c10379",
+  "targets": [
+    {
+      "schema_version": "1.0",
+      "output_label": "left_hand",
+      "text_prompt": "left hand"
+    },
+    {
+      "schema_version": "1.0",
+      "output_label": "right_hand",
+      "text_prompt": "right hand"
+    },
+    {
+      "schema_version": "1.0",
+      "output_label": "yellow_toy_top",
+      "text_prompt": "yellow toy top"
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0",
+  "manifest_kind": "muggledsam_sam3_manual_seed_targets",
+  "config_id": "static-black-toy-top-base",
+  "base_g2_config": "configs/clips/assembly101_nusar_9033_g2.json",
+  "view_id": "static-c10379",
+  "targets": [
+    "black_toy_top_base"
+  ]
+}

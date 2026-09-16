@@ -128,7 +128,11 @@ def build_comparison(
             checksum_sha256=static_proxy.checksum_sha256,
         ),
         static_mask_artifact_root=static_run_directory,
-        static_label="existing G3 SAM3 candidate outputs (not manual-seed)",
+        static_label=(
+            "aligned hybrid G3 outputs (three text targets, one reviewed-mask target)"
+            if static_metadata.hybrid_initialization is not None
+            else "historical G3 SAM3 zero-shot candidate outputs"
+        ),
     )
 
 

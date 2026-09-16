@@ -110,6 +110,21 @@ def _runtime_settings(args: argparse.Namespace, concepts: tuple[str, ...]) -> di
             "1.0 is a human-selected-mask initialization sentinel; it is not a "
             "detector confidence or an accuracy score"
         )
+    if args.hybrid_initialization_json:
+        hybrid = json.loads(args.hybrid_initialization_json)
+        settings["hybrid_initialization"] = {
+            "targets": hybrid["targets"],
+            "text_targets": hybrid["text_targets"],
+            "manual_seeds": [
+                {key: value for key, value in seed.items() if key != "mask_path"}
+                for seed in hybrid["manual_seeds"]
+            ],
+        }
+        settings["initialization_api"] = "encode_prompt_memory_from_mask"
+        settings["initial_confidence_semantics"] = (
+            "text targets retain detector confidence; 1.0 marks the human-reviewed "
+            "mask and is not a detector confidence or accuracy score"
+        )
     if args.multi_keyframe_schedule_json:
         schedule = json.loads(args.multi_keyframe_schedule_json)
         settings["multi_keyframe_correction_schedule"] = {
@@ -127,6 +142,8 @@ def _runtime_settings(args: argparse.Namespace, concepts: tuple[str, ...]) -> di
             "1.0 marks a human-selected initialization/correction mask; it is not a "
             "detector confidence or an accuracy score"
         )
+    if args.text_targets_json:
+        settings["text_prompt_mapping"] = json.loads(args.text_targets_json)
     return settings
 
 
@@ -349,6 +366,74 @@ def _validate_manual_seed_slots(
             raise ValueError("manual seed target-to-multiplex-slot association is invalid")
 
 
+def _validate_text_targets(text_targets: list[dict[str, Any]], concepts: tuple[str, ...]) -> None:
+    """Require one distinct detector prompt for each ordered output label."""
+    labels = [target.get("output_label") for target in text_targets]
+    prompts = [target.get("text_prompt") for target in text_targets]
+    if tuple(labels) != concepts:
+        raise ValueError("text-target labels must match the ordered output concepts")
+    if any(not isinstance(prompt, str) or not prompt.strip() for prompt in prompts):
+        raise ValueError("text-target prompts must be non-empty strings")
+    if len(set(prompts)) != len(prompts):
+        raise ValueError("text-target prompts must be distinct")
+
+
+def _validate_hybrid_initialization(hybrid: dict[str, Any], concepts: tuple[str, ...]) -> None:
+    """Require the explicit canonical 3-text/1-reviewed-mask worker contract."""
+    expected = (
+        ("left_hand", 0, "text_prompt"),
+        ("right_hand", 1, "text_prompt"),
+        ("yellow_toy_top", 2, "text_prompt"),
+        ("black_toy_top_base", 3, "human_reviewed_mask"),
+    )
+    targets = tuple(
+        (
+            target.get("output_label"),
+            target.get("initial_multiplex_slot"),
+            target.get("initialization_source"),
+        )
+        for target in hybrid.get("targets", [])
+    )
+    if concepts != tuple(item[0] for item in expected) or targets != expected:
+        raise ValueError("hybrid worker targets must preserve canonical labels, slots, and sources")
+    text_targets = list(hybrid.get("text_targets", []))
+    expected_text = tuple(item[0] for item in expected if item[2] == "text_prompt")
+    _validate_text_targets(text_targets, expected_text)
+    manual_seeds = list(hybrid.get("manual_seeds", []))
+    expected_manual = [item for item in expected if item[2] == "human_reviewed_mask"]
+    if len(manual_seeds) != len(expected_manual):
+        raise ValueError("hybrid worker requires exactly one reviewed manual mask")
+    for seed, (label, slot, _) in zip(manual_seeds, expected_manual, strict=True):
+        if seed.get("target") != label or seed.get("initial_multiplex_slot") != slot:
+            raise ValueError("hybrid reviewed mask target-to-slot association is invalid")
+    if {target["output_label"] for target in text_targets} & {
+        seed["target"] for seed in manual_seeds
+    }:
+        raise ValueError("hybrid text and manual target labels must be disjoint")
+
+
+def _ordered_hybrid_initial_masks(
+    targets: list[dict[str, Any]],
+    text_masks: dict[str, tuple[Any, float]],
+    manual_masks: dict[str, Any],
+) -> list[TrackedMask]:
+    """Order present text detections and required manual masks by canonical slot."""
+    ordered: list[TrackedMask] = []
+    for target in targets:
+        label = str(target["output_label"])
+        slot = int(target["initial_multiplex_slot"])
+        if target["initialization_source"] == "text_prompt":
+            detected = text_masks.get(label)
+            if detected is not None:
+                mask, confidence = detected
+                ordered.append((slot, label, mask, confidence, None, None))
+        else:
+            if label not in manual_masks:
+                raise ValueError(f"hybrid reviewed mask is unavailable for {label}")
+            ordered.append((slot, label, manual_masks[label], 1.0, None, None))
+    return ordered
+
+
 def _corrections_by_frame(
     schedule: dict[str, Any], concepts: tuple[str, ...]
 ) -> dict[int, list[dict[str, Any]]]:
@@ -430,11 +515,29 @@ def run(args: argparse.Namespace) -> int:
     video_path = Path(args.video)
     model_path = Path(args.model)
     concepts = tuple(json.loads(args.concepts_json))
+    text_targets = (
+        json.loads(args.text_targets_json)
+        if args.text_targets_json
+        else [{"output_label": concept, "text_prompt": concept} for concept in concepts]
+    )
     manual_box = json.loads(args.manual_box_json) if args.manual_box_json else None
     manual_seeds = json.loads(args.manual_seeds_json) if args.manual_seeds_json else None
+    hybrid_initialization = (
+        json.loads(args.hybrid_initialization_json) if args.hybrid_initialization_json else None
+    )
     multi_keyframe_schedule = (
         json.loads(args.multi_keyframe_schedule_json) if args.multi_keyframe_schedule_json else None
     )
+    if hybrid_initialization is not None and any(
+        value is not None
+        for value in (
+            args.text_targets_json,
+            manual_box,
+            manual_seeds,
+            multi_keyframe_schedule,
+        )
+    ):
+        raise ValueError("hybrid initialization cannot be combined with another prompt payload")
     runtime_settings = _runtime_settings(args, concepts)
     start = perf_counter()
     gpu_processes = _gpu_processes()
@@ -531,7 +634,43 @@ def run(args: argparse.Namespace) -> int:
         initial_masks: list[TrackedMask] = []
         initial_memory: Any = None
         correction_schedule: dict[int, list[dict[str, Any]]] = {}
-        if manual_seeds is not None or multi_keyframe_schedule is not None:
+        if hybrid_initialization is not None:
+            _validate_hybrid_initialization(hybrid_initialization, concepts)
+            detector = core.get_detector_context()
+            detector_encoded = detector.encode_image(first_model_frame, MAX_SIDE_LENGTH, True)
+            text_masks: dict[str, tuple[Any, float]] = {}
+            for target in hybrid_initialization["text_targets"]:
+                exemplars = detector.encode_exemplars(detector_encoded, text=target["text_prompt"])
+                masks, _, scores, _ = detector.generate_detections(
+                    detector_encoded,
+                    exemplars,
+                    detection_filter_threshold=DETECTION_THRESHOLD,
+                )
+                if masks.shape[1] == 0:
+                    continue
+                best_index = int(scores[0].argmax())
+                source_mask = _source_binary_masks(masks[:, [best_index]], first_frame.shape[:2])[0]
+                text_masks[target["output_label"]] = (
+                    source_mask,
+                    float(scores[0, best_index]),
+                )
+            manual_masks = {
+                seed["target"]: _read_verified_mask(
+                    str(seed["mask_path"]),
+                    str(seed["mask_sha256"]),
+                    first_frame.shape[:2],
+                )
+                for seed in hybrid_initialization["manual_seeds"]
+            }
+            initial_masks = _ordered_hybrid_initial_masks(
+                hybrid_initialization["targets"], text_masks, manual_masks
+            )
+            tracking_encoded = tracking.encode_image(first_model_frame, MAX_SIDE_LENGTH, True)
+            initial_memory = tracking.encode_prompt_memory_from_mask(
+                tracking_encoded,
+                np.stack([mask for _, _, mask, *_ in initial_masks], axis=0),
+            )
+        elif manual_seeds is not None or multi_keyframe_schedule is not None:
             if manual_seeds is not None and multi_keyframe_schedule is not None:
                 raise ValueError("manual seeds and a multi-keyframe schedule cannot be combined")
             seed_records = (
@@ -573,10 +712,12 @@ def run(args: argparse.Namespace) -> int:
             )
             initial_masks.append((0, concepts[0], initial_mask, 1.0, None, None))
         else:
+            _validate_text_targets(text_targets, concepts)
             detector = core.get_detector_context()
             detector_encoded = detector.encode_image(first_model_frame, MAX_SIDE_LENGTH, True)
-            for concept_index, concept in enumerate(concepts):
-                exemplars = detector.encode_exemplars(detector_encoded, text=concept)
+            for concept_index, target in enumerate(text_targets):
+                concept = target["output_label"]
+                exemplars = detector.encode_exemplars(detector_encoded, text=target["text_prompt"])
                 masks, _, scores, _ = detector.generate_detections(
                     detector_encoded, exemplars, detection_filter_threshold=DETECTION_THRESHOLD
                 )
@@ -599,6 +740,18 @@ def run(args: argparse.Namespace) -> int:
                 initial_memory = tracking.encode_prompt_memory_from_mask(
                     tracking_encoded, initial_tensor
                 )
+
+        if hybrid_initialization is not None:
+            initialized_labels = {label for _, label, *_ in initial_masks}
+            runtime_settings["hybrid_initialization_outcomes"] = [
+                {
+                    "output_label": target["output_label"],
+                    "initial_multiplex_slot": target["initial_multiplex_slot"],
+                    "initialization_source": target["initialization_source"],
+                    "initialized_at_frame_zero": target["output_label"] in initialized_labels,
+                }
+                for target in hybrid_initialization["targets"]
+            ]
 
         masks_directory.mkdir(exist_ok=True)
         processed = 0
@@ -680,7 +833,7 @@ def run(args: argparse.Namespace) -> int:
                             "schema_version": "1.0",
                             "object_id": f"sam3-{index:02d}",
                             "label": concept,
-                            "multiplex_slot": position,
+                            "multiplex_slot": index,
                             "object_score": float(scores[position]),
                             "iou_prediction": _scalar(ious, position),
                             "active": bool(active[position]),
@@ -784,8 +937,16 @@ def main() -> None:
     parser.add_argument("--view-id", required=True)
     parser.add_argument("--source-offset-seconds", type=float, required=True)
     parser.add_argument("--model", required=True)
-    parser.add_argument("--max-frames", type=int, choices=(300, 600, 1800, 5400), default=300)
+    parser.add_argument("--max-frames", type=int, choices=(300, 600, 1800, 5400, 5901), default=300)
     parser.add_argument("--concepts-json", default=json.dumps(CONCEPTS))
+    parser.add_argument(
+        "--text-targets-json",
+        help="Ordered output_label/text_prompt mappings for text detection.",
+    )
+    parser.add_argument(
+        "--hybrid-initialization-json",
+        help="Explicit combined text/reviewed-mask target and slot contract.",
+    )
     parser.add_argument(
         "--preprocessing",
         choices=("original_bgr", "gray_p01_p99_clahe"),
@@ -802,6 +963,7 @@ def main() -> None:
             "manual_box",
             "manual_seed_multiplexed",
             "manual_seed_multiplexed_keyframes",
+            "hybrid_text_and_manual_mask",
         ),
         default="text_detection",
     )

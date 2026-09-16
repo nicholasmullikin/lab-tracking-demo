@@ -1,0 +1,48 @@
+{
+  "schema_version": "1.0",
+  "manifest_kind": "muggledsam_sam3_hybrid_initialization",
+  "config_id": "static-aligned-three-text-one-reviewed-mask",
+  "base_g2_config": "configs/clips/assembly101_nusar_9033_g2.json",
+  "view_id": "static-c10379",
+  "text_target_config_fingerprint": {
+    "schema_version": "1.0",
+    "uri": "configs/muggledsam_static_three_text_targets.json",
+    "sha256": "f8e36d9043273ed8384e3438b19d8dee001ccdbbcbab8055f51a7dfa9eefecf7",
+    "source": "measured"
+  },
+  "manual_seed_proposal_fingerprint": {
+    "schema_version": "1.0",
+    "uri": "runs/muggledsam-sam3-static-black-toy-top-base-calibration-20260914t022125z/proposed_tracking_prompt.json",
+    "sha256": "ff76ca922afdc500a4559cfb1b1ef8d93505d9e925d71568bf54fd9a10f7c950",
+    "source": "measured"
+  },
+  "manual_seed_target_config_fingerprint": {
+    "schema_version": "1.0",
+    "uri": "configs/muggledsam_static_black_toy_top_base_manual_seed.json",
+    "sha256": "0256be9d1421a91be75399d73dfb504f06e7bd6b8056762d03629aad2ce4a01a",
+    "source": "measured"
+  },
+  "targets": [
+    {
+      "schema_version": "1.0",
+      "output_label": "left_hand",
+      "initialization_source": "text_prompt"
+    },
+    {
+      "schema_version": "1.0",
+      "output_label": "right_hand",
+      "initialization_source": "text_prompt"
+    },
+    {
+      "schema_version": "1.0",
+      "output_label": "yellow_toy_top",
+      "initialization_source": "text_prompt"
+    },
+    {
+      "schema_version": "1.0",
+      "output_label": "black_toy_top_base",
+      "initialization_source": "human_reviewed_mask"
+    }
+  ],
+  "ground_truth_accuracy_claim": false
+}

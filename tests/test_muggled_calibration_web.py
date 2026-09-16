@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -139,9 +140,7 @@ def make_correction_workspace(tmp_path: Path) -> Workspace:
     return workspace
 
 
-def decode_candidates(
-    workspace: Workspace, prompts: list[tuple[float, str]]
-) -> tuple[object, ...]:
+def decode_candidates(workspace: Workspace, prompts: list[tuple[float, str]]) -> tuple[object, ...]:
     boxes = [
         workspace.add_or_update_prompt(
             {
@@ -155,6 +154,254 @@ def decode_candidates(
     job_id = workspace.queue_decode([box["box_id"] for box in boxes])
     workspace.jobs[job_id]["future"].result(timeout=2)
     return workspace.manifest.candidates
+
+
+def test_live_preview_retains_prompt_and_replaces_logical_preview_with_immutable_artifacts(
+    tmp_path: Path,
+) -> None:
+    workspace = make_workspace(tmp_path)
+    prompt = workspace.add_or_update_prompt(
+        {
+            "timestamp": 0.0,
+            "intended_target": "left_hand",
+            "pixel_box": {"x1": 10, "y1": 20, "x2": 100, "y2": 120},
+        }
+    )
+
+    first_job = workspace.queue_decode([prompt["box_id"]], live_preview=True)
+    workspace.jobs[first_job]["future"].result(timeout=2)
+    first_candidate = workspace.manifest.candidates[0]
+
+    assert workspace.manifest.workspace.pending_boxes[0].stage == "pending"
+    assert workspace.manifest.workspace.pending_boxes[0].box_id == prompt["box_id"]
+    assert first_candidate.live_preview
+    assert first_candidate.source_box_id == prompt["box_id"]
+
+    second_job = workspace.queue_decode([prompt["box_id"]], live_preview=True)
+    workspace.jobs[second_job]["future"].result(timeout=2)
+
+    assert len(workspace.manifest.candidates) == 1
+    second_candidate = workspace.manifest.candidates[0]
+    assert second_candidate.candidate_id != first_candidate.candidate_id
+    assert workspace.jobs[second_job]["candidate_ids"] == [
+        workspace.manifest.candidates[0].candidate_id
+    ]
+
+    workspace.accept_candidate(second_candidate.candidate_id, 0, eligible=False)
+    third_job = workspace.queue_decode([prompt["box_id"]], live_preview=True)
+    workspace.jobs[third_job]["future"].result(timeout=2)
+
+    assert len(workspace.manifest.candidates) == 2
+    assert workspace.manifest.candidates[0].candidate_id == second_candidate.candidate_id
+    assert workspace.manifest.candidates[0].human_accepted
+    assert workspace.manifest.candidates[1].candidate_id != second_candidate.candidate_id
+
+
+def test_one_editable_prompt_per_target_and_frame_updates_in_place(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    first = workspace.add_or_update_prompt(
+        {
+            "timestamp": 0.0,
+            "intended_target": "left_hand",
+            "pixel_box": {"x1": 10, "y1": 20, "x2": 100, "y2": 120},
+        }
+    )
+    updated = workspace.add_or_update_prompt(
+        {
+            "timestamp": 0.0,
+            "intended_target": "left_hand",
+            "pixel_box": {"x1": 30, "y1": 40, "x2": 130, "y2": 140},
+        }
+    )
+
+    assert updated["box_id"] == first["box_id"]
+    assert len(workspace.manifest.workspace.pending_boxes) == 1
+    assert workspace.manifest.workspace.pending_boxes[0].pixel_box.x1 == 30
+
+    other_target = workspace.add_or_update_prompt(
+        {
+            "timestamp": 0.0,
+            "intended_target": "right_hand",
+            "pixel_box": {"x1": 10, "y1": 20, "x2": 100, "y2": 120},
+        }
+    )
+    later_frame = workspace.add_or_update_prompt(
+        {
+            "timestamp": 10.0,
+            "intended_target": "left_hand",
+            "pixel_box": {"x1": 10, "y1": 20, "x2": 100, "y2": 120},
+        }
+    )
+
+    assert other_target["box_id"] != first["box_id"]
+    assert later_frame["box_id"] != first["box_id"]
+    assert len(workspace.manifest.workspace.pending_boxes) == 3
+
+
+def test_accepting_a_new_mask_replaces_the_prior_choice_for_that_target_frame(
+    tmp_path: Path,
+) -> None:
+    workspace = make_workspace(tmp_path)
+    first = decode_candidates(workspace, [(0.0, "left_hand")])[-1]
+    second = decode_candidates(workspace, [(0.0, "left_hand")])[-1]
+
+    workspace.accept_candidate(first.candidate_id, 0, eligible=True)
+    workspace.accept_candidate(second.candidate_id, 0, eligible=True)
+
+    by_id = {candidate.candidate_id: candidate for candidate in workspace.manifest.candidates}
+    assert not by_id[first.candidate_id].human_accepted
+    assert not by_id[first.candidate_id].selected_for_finalization
+    assert by_id[second.candidate_id].human_accepted
+    assert by_id[second.candidate_id].selected_for_finalization
+
+
+def test_editing_an_accepted_live_prompt_invalidates_its_stale_choice(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    prompt = workspace.add_or_update_prompt(
+        {
+            "timestamp": 0.0,
+            "intended_target": "left_hand",
+            "pixel_box": {"x1": 10, "y1": 20, "x2": 100, "y2": 120},
+        }
+    )
+    job_id = workspace.queue_decode([prompt["box_id"]], live_preview=True)
+    workspace.jobs[job_id]["future"].result(timeout=2)
+    candidate = workspace.manifest.candidates[0]
+    workspace.accept_candidate(candidate.candidate_id, 0, eligible=True)
+
+    workspace.add_or_update_prompt(
+        {
+            "timestamp": 0.0,
+            "intended_target": "left_hand",
+            "pixel_box": {"x1": 20, "y1": 30, "x2": 110, "y2": 130},
+        },
+        box_id=prompt["box_id"],
+    )
+
+    edited = workspace.manifest.candidates[0]
+    assert not edited.human_accepted
+    assert edited.human_selected_candidate_index is None
+    assert not edited.selected_for_finalization
+
+
+def test_completed_live_decode_job_history_is_bounded(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    prompt = workspace.add_or_update_prompt(
+        {
+            "timestamp": 0.0,
+            "intended_target": "left_hand",
+            "pixel_box": {"x1": 10, "y1": 20, "x2": 100, "y2": 120},
+        }
+    )
+
+    for _ in range(40):
+        job_id = workspace.queue_decode([prompt["box_id"]], live_preview=True)
+        workspace.jobs[job_id]["future"].result(timeout=2)
+
+    assert len(workspace.jobs) <= 32
+    assert job_id in workspace.jobs
+
+
+def test_tracking_plan_cannot_finalize_during_an_active_decode(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    workspace.jobs["active"] = {
+        "status": "running",
+        "box_ids": [],
+        "live_preview": True,
+    }
+
+    with pytest.raises(ValueError, match="active decoder job"):
+        workspace.finalize_tracking_plan()
+
+
+def test_failed_live_decode_restores_editable_prompt_state(tmp_path: Path) -> None:
+    class FailingDecoder(FixtureDecoder):
+        def request(
+            self, command: str, payload: dict[str, object], timeout: float = 120
+        ) -> dict[str, object]:
+            if command == "batch_decode":
+                raise OSError("fixture decode failed")
+            return super().request(command, payload, timeout)
+
+    workspace = make_workspace(tmp_path)
+    workspace.decoder = FailingDecoder()
+    prompt = workspace.add_or_update_prompt(
+        {
+            "timestamp": 0.0,
+            "intended_target": "left_hand",
+            "pixel_box": {"x1": 10, "y1": 20, "x2": 100, "y2": 120},
+        }
+    )
+
+    job_id = workspace.queue_decode([prompt["box_id"]], live_preview=True)
+    workspace.jobs[job_id]["future"].result(timeout=2)
+
+    assert workspace.jobs[job_id]["status"] == "failed"
+    assert workspace.manifest.workspace.pending_boxes[0].stage == "pending"
+
+
+def test_live_decode_discards_a_stale_prompt_revision(tmp_path: Path) -> None:
+    class BlockingDecoder(FixtureDecoder):
+        def __init__(self) -> None:
+            self.started = threading.Event()
+            self.release = threading.Event()
+
+        def request(
+            self, command: str, payload: dict[str, object], timeout: float = 120
+        ) -> dict[str, object]:
+            if command == "batch_decode":
+                self.started.set()
+                assert self.release.wait(timeout=2)
+            return super().request(command, payload, timeout)
+
+    workspace = make_workspace(tmp_path)
+    decoder = BlockingDecoder()
+    workspace.decoder = decoder
+    prompt = workspace.add_or_update_prompt(
+        {
+            "timestamp": 0.0,
+            "intended_target": "left_hand",
+            "pixel_box": {"x1": 10, "y1": 20, "x2": 100, "y2": 120},
+        }
+    )
+    job_id = workspace.queue_decode([prompt["box_id"]], live_preview=True)
+    assert decoder.started.wait(timeout=2)
+
+    workspace.add_or_update_prompt(
+        {
+            "timestamp": 0.0,
+            "intended_target": "left_hand",
+            "pixel_box": {"x1": 20, "y1": 30, "x2": 110, "y2": 130},
+        },
+        box_id=prompt["box_id"],
+    )
+    decoder.release.set()
+    workspace.jobs[job_id]["future"].result(timeout=2)
+
+    assert workspace.jobs[job_id]["stale_box_ids"] == [prompt["box_id"]]
+    assert not workspace.manifest.candidates
+    assert workspace.manifest.workspace.pending_boxes[0].stage == "pending"
+    assert workspace.manifest.workspace.pending_boxes[0].pixel_box.x1 == 20
+
+
+def test_deleting_an_editable_prompt_discards_its_unaccepted_live_preview(
+    tmp_path: Path,
+) -> None:
+    workspace = make_workspace(tmp_path)
+    prompt = workspace.add_or_update_prompt(
+        {
+            "timestamp": 0.0,
+            "intended_target": "left_hand",
+            "pixel_box": {"x1": 10, "y1": 20, "x2": 100, "y2": 120},
+        }
+    )
+    job_id = workspace.queue_decode([prompt["box_id"]], live_preview=True)
+    workspace.jobs[job_id]["future"].result(timeout=2)
+
+    workspace.delete_prompt(prompt["box_id"])
+
+    assert not workspace.manifest.workspace.pending_boxes
+    assert not workspace.manifest.candidates
 
 
 def write_selected_masks(workspace: Workspace) -> None:
@@ -262,15 +509,24 @@ globalThis.fetch = (path, options) => nativeFetch(base + path, options);
 
 
 def test_calibration_ui_exposes_one_tracking_plan_action() -> None:
-    markup = (
-        Path(__file__).parents[1] / "src/battle/static/calibration/index.html"
-    ).read_text()
+    markup = (Path(__file__).parents[1] / "src/battle/static/calibration/index.html").read_text()
 
     assert "initial masks" in markup.lower()
     assert "later corrections" in markup.lower()
     assert markup.count("Finalize tracking plan") == 2
     assert "Create frame-0 proposal" not in markup
     assert "Create correction schedule" not in markup
+    assert 'id="decode-selected"' not in markup
+    assert 'id="duplicate"' not in markup
+    assert 'id="toggle-rejected"' not in markup
+    assert 'data-panel="prompts"' not in markup
+    assert 'id="candidate-status"' in markup
+    assert 'id="candidates" class="candidates" hidden' in markup
+    assert 'id="live-decode"' in markup
+    assert 'id="live-decode-delay"' in markup
+    assert "Automatically preview" in markup
+    assert "Wait time after the last edit" in markup
+    assert 'id="mask-opacity" type="range" min="0" max="100"' in markup
 
 
 def test_calibration_canvas_maps_css_and_dpr_to_model_pixels() -> None:
@@ -344,7 +600,7 @@ globalThis.Image = class Image {
 };
 const manifest = {
   proxy_dimensions: {width: 1920, height: 1080},
-  requested_proxy_timestamps_seconds: [0],
+  requested_proxy_timestamps_seconds: [0, 1],
   workspace: {
     active_proxy_timestamp_seconds: 0,
     pending_boxes: [{
@@ -364,7 +620,7 @@ globalThis.fetch = async (path, options = {}) => {
   if (path.startsWith("/api/frame")) {
     return {ok: true, status: 200, json: async () => ({frame_index: 0, image_uri: "frame.jpg"})};
   }
-  if (path.startsWith("/api/prompts/")) {
+  if (path.startsWith("/api/prompts")) {
     calls.push(["prompt", JSON.parse(options.body)]);
     return {ok: true, status: 201, json: async () => ({})};
   }
@@ -406,6 +662,21 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
       !calls.some((entry) => entry[0] === "scale" && entry[1] === 0.575)) {
     throw new Error(`expected DPR transform and visible 1.15x zoom: ${JSON.stringify(calls)}`);
   }
+  selectLabel("right_hand");
+  calls.length = 0;
+  await elements["#filmstrip"].children[1].onclick();
+  await tick(); await tick();
+  if (!calls.some((entry) => entry[0] === "scale" && entry[1] === 0.575)) {
+    throw new Error(`frame switch reset zoom: ${JSON.stringify(calls)}`);
+  }
+  setPromptMode("box");
+  down({pointerId: 3, button: 0, clientX: 100, clientY: 70});
+  move({clientX: 200, clientY: 170});
+  await up({});
+  const switchedPrompt = calls.filter((entry) => entry[0] === "prompt").at(-1)?.[1];
+  if (switchedPrompt?.intended_target !== "right_hand") {
+    throw new Error(`frame switch reset label: ${JSON.stringify(switchedPrompt)}`);
+  }
 })().catch((error) => {
   console.error(error.stack || error);
   process.exitCode = 1;
@@ -434,9 +705,7 @@ def test_point_prompts_persist_normalized_and_reach_the_decoder(tmp_path: Path) 
             }
         )
         persisted = json.loads(workspace.manifest_path.read_text())["workspace"]["pending_boxes"][0]
-        assert persisted["pixel_fg_points"] == [
-            {"schema_version": "1.0", "x": 150, "y": 200}
-        ]
+        assert persisted["pixel_fg_points"] == [{"schema_version": "1.0", "x": 150, "y": 200}]
         assert persisted["normalized_fg_points"][0]["x"] == pytest.approx(150 / 954)
         assert persisted["normalized_bg_points"][0]["y"] == pytest.approx(220 / 720)
 
@@ -704,7 +973,7 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
       maskCalls().some((path) => !path.endsWith("mask-1.png"))) {
     throw new Error(`key candidate switch failed: ${JSON.stringify({accepted, calls, prevented})}`);
   }
-  if (!elements["#active-candidate"].textContent.includes("mask 2/4 (accepted)")) {
+  if (!elements["#active-candidate"].textContent.includes("mask 2/4 · accepted")) {
     throw new Error(
       `active candidate indicator missing: ${elements["#active-candidate"].textContent}`
     );
@@ -980,11 +1249,11 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
     if (!headings[index].includes(`Target ${index + 1}/4: ${target.replaceAll("_", " ")}`)) {
       throw new Error(`target group ${index + 1} label missing: ${headings[index]}`);
     }
-    if (cards[index].children[3].children.length !== 2) {
+    if (cards[index].children[2].children.length !== 2) {
       throw new Error(`target group ${target} did not render both mask options`);
     }
   }
-  const secondMask = cards[0].children[3].children[1].children[0].children[0];
+  const secondMask = cards[0].children[2].children[1].children[0].children[0];
   await secondMask.onchange();
   if (accepted.length !== 1 || accepted[0].body.candidate_index !== 1 ||
       !accepted[0].path.endsWith("/t000000-b01/accept")) {
@@ -1200,6 +1469,15 @@ def test_completed_tracking_plan_locks_candidate_rejection_state(tmp_path: Path)
 
         with pytest.raises(ValueError, match="candidate review is locked"):
             workspace.unaccept_candidate(candidate.candidate_id)
+        with pytest.raises(ValueError, match="candidate review is locked"):
+            workspace.add_or_update_prompt(
+                {
+                    "timestamp": 0.0,
+                    "intended_target": "right_hand",
+                    "pixel_box": {"x1": 10, "y1": 20, "x2": 100, "y2": 120},
+                }
+            )
+        workspace.set_active_timestamp(10.0)
 
         assert workspace.manifest_path.read_bytes() == manifest_before
         assert (tmp_path / "proposed_tracking_prompt.json").read_bytes() == proposal_before
@@ -1265,7 +1543,7 @@ def test_static_and_state_routes_are_available_without_a_model(tmp_path: Path) -
     thread.start()
     base = f"http://127.0.0.1:{server.server_port}"
     try:
-        assert b"Rapid e4 calibration" in urllib.request.urlopen(f"{base}/").read()
+        assert b"Rapid SAM3 calibration" in urllib.request.urlopen(f"{base}/").read()
         state = json.loads(urllib.request.urlopen(f"{base}/api/state").read())
         assert state["manifest"]["view_id"] == "ego-hmc21179183"
         request = urllib.request.Request(
@@ -1637,7 +1915,6 @@ def test_web_create_proposal_uses_configured_target_policy_without_ui_shape_erro
 EXPECTED_PANELS = (
     "frames",
     "label",
-    "prompts",
     "prompt-clicks",
     "view-aids",
     "candidates",
@@ -1646,7 +1923,7 @@ EXPECTED_PANELS = (
     "finalize",
 )
 # The prompting workflow is open on a fresh profile; review and reporting stay collapsed.
-DEFAULT_OPEN_PANELS = frozenset({"frames", "label", "prompts", "prompt-clicks"})
+DEFAULT_OPEN_PANELS = frozenset({"frames", "label", "prompt-clicks"})
 
 
 def test_calibration_sections_are_collapsible_with_prompting_open_by_default() -> None:
@@ -1802,7 +2079,7 @@ function mountDocument() {
 
   const fresh = Object.values(first.panels).filter((panel) => panel.open)
     .map((panel) => panel.dataset.panel).sort().join(",");
-  if (fresh !== "frames,label,prompt-clicks,prompts") {
+  if (fresh !== "frames,label,prompt-clicks") {
     throw new Error(`unexpected fresh-profile sections: ${fresh}`);
   }
   for (const name of ["frames", "candidates", "finalize", "table"]) {
@@ -1813,7 +2090,7 @@ function mountDocument() {
   if (!first.panels.frames.badge.textContent.includes("1 frame")) {
     throw new Error(`unexpected frame summary: ${first.panels.frames.badge.textContent}`);
   }
-  if (!first.panels.candidates.badge.textContent.includes("0/0 accepted")) {
+  if (!first.panels.candidates.badge.textContent.includes("0/4 done")) {
     throw new Error(`unexpected review summary: ${first.panels.candidates.badge.textContent}`);
   }
 
@@ -1838,7 +2115,7 @@ function mountDocument() {
   await tick(); await tick(); await tick();
   const restored = Object.values(second.panels).filter((panel) => panel.open)
     .map((panel) => panel.dataset.panel).sort().join(",");
-  if (restored !== "candidates,frames,label,prompts") {
+  if (restored !== "candidates,frames,label") {
     throw new Error(`stored preferences were not honored: ${restored}`);
   }
 })().catch((error) => {
@@ -2054,9 +2331,7 @@ def test_reopened_correction_plan_rehashes_both_artifacts(tmp_path: Path) -> Non
         assert plan["correction_schedule"]["calibration_manifest_fingerprint"]["sha256"] == (
             manifest_sha256
         )
-        schedule = json.loads(
-            (tmp_path / "multi_keyframe_correction_schedule.r2.json").read_text()
-        )
+        schedule = json.loads((tmp_path / "multi_keyframe_correction_schedule.r2.json").read_text())
         assert schedule["calibration_manifest_fingerprint"]["sha256"] == manifest_sha256
         assert len(schedule["corrections"]) == len(targets) + 1
         persisted = json.loads(workspace.manifest_path.read_text())

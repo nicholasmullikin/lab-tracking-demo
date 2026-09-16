@@ -101,6 +101,70 @@ def test_timestamp_mapping_persists_exact_proxy_and_source_times() -> None:
         frame_reference(180.0, fps=30, source_offset_seconds=215.0, frame_count=5400)
 
 
+def test_build_manifest_supports_static_frame_zero_workspace(tmp_path: Path) -> None:
+    root = Path(__file__).parents[1]
+    manifest = build_manifest(
+        repository_root=root,
+        config_path=root / "configs/clips/assembly101_nusar_9033_g2.json",
+        timestamps=(0.0,),
+        result_directory=tmp_path / "results",
+        calibration_id="static-black-base-calibration",
+        view_id="static-c10379",
+    )
+
+    assert manifest.view_id == "static-c10379"
+    assert manifest.requested_proxy_timestamps_seconds == (0.0,)
+    assert manifest.proxy_dimensions.width == 1280
+    assert manifest.proxy_dimensions.height == 720
+    assert manifest.proxy_fps == 30
+    assert manifest.source_offset_seconds == 215.0
+
+
+def test_finalize_prompt_supports_static_manual_seed_workspace(tmp_path: Path) -> None:
+    root = Path(__file__).parents[1]
+    candidate = _candidate(
+        selected_for_finalization=True,
+        frame_index=0,
+        human_accepted=True,
+        intended_target="black_toy_top_base",
+    )
+    candidate = candidate.model_copy(
+        update={
+            "normalized_box": candidate.normalized_box.model_copy(
+                update={
+                    "x": 100 / 1280,
+                    "y": 120 / 720,
+                    "width": 200 / 1280,
+                    "height": 280 / 720,
+                }
+            )
+        }
+    )
+    manifest = build_manifest(
+        repository_root=root,
+        config_path=root / "configs/clips/assembly101_nusar_9033_g2.json",
+        timestamps=(0.0,),
+        result_directory=tmp_path / "results",
+        calibration_id="static-black-base-calibration",
+        view_id="static-c10379",
+    ).model_copy(update={"candidates": (candidate,)})
+    manifest_path = tmp_path / "calibration_manifest.json"
+    manifest_path.write_text(manifest.model_dump_json(indent=2) + "\n")
+
+    proposal = finalize_prompt(
+        manifest_path=manifest_path,
+        candidate_ids=("t000000-b01",),
+        proposal_path=tmp_path / "proposed_tracking_prompt.json",
+        repository_root=root,
+        manual_seed_target_config_path=(
+            root / "configs/muggledsam_static_black_toy_top_base_manual_seed.json"
+        ),
+    )
+
+    assert proposal.view_id == "static-c10379"
+    assert [seed.intended_target for seed in proposal.seeds] == ["black_toy_top_base"]
+
+
 def test_timestamp_parser_preserves_user_order_and_refuses_duplicates() -> None:
     assert parse_timestamps("0, 10,30,50") == (0.0, 10.0, 30.0, 50.0)
     with pytest.raises(ValueError, match="strictly increasing"):

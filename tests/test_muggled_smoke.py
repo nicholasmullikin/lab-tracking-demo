@@ -12,15 +12,22 @@ from battle.muggled_calibration import build_manifest, finalize_correction_sched
 from battle.muggled_smoke import (
     CONCEPTS,
     E4_CANDIDATE_FRAMES,
+    FOUR_PART_FULL_FRAMES,
+    FOUR_PART_PILOT_FRAMES,
     FULL_EGO_MANUAL_SEED_FRAMES,
     G3_STATIC_FRAMES,
     SMOKE_FRAMES,
+    _load_hybrid_initialization,
+    _load_hybrid_smoke_approval,
     _load_manual_seed_multiplex,
     _load_multi_keyframe_correction_schedule,
     load_manual_seed_target_config,
     load_observations,
+    load_text_target_config,
     make_run_id,
     require_e4_candidate_range,
+    require_four_part_full_range,
+    require_four_part_pilot_range,
     require_full_ego_manual_seed_range,
     require_g3_static_range,
     require_smoke_range,
@@ -33,14 +40,19 @@ from battle.muggled_worker import (
     _corrections_by_frame,
     _is_numpy_mask,
     _looks_like_model_process,
+    _ordered_hybrid_initial_masks,
     _replace_prompt_memory_for_correction,
+    _validate_hybrid_initialization,
     _validate_manual_seed_slots,
+    _validate_text_targets,
 )
 from battle.schemas import (
+    ArtifactFingerprint,
     ChunkContinuityPolicy,
     G2PreprocessingManifest,
     MuggledSAMCalibrationCandidate,
     MuggledSAMEgoConditionConfig,
+    MuggledSAMHybridInitializationConfig,
     MuggledSAMProposedTrackingPromptConfig,
     ProposedTrackingSeed,
 )
@@ -82,9 +94,7 @@ def test_box_from_mask_covers_only_the_dominant_components() -> None:
 
     box = _box_from_mask(mask)
 
-    assert box == pytest.approx(
-        {"x": 10 / 96, "y": 20 / 72, "width": 32 / 96, "height": 20 / 72}
-    )
+    assert box == pytest.approx({"x": 10 / 96, "y": 20 / 72, "width": 32 / 96, "height": 20 / 72})
     assert _box_from_mask(numpy.zeros((72, 96), dtype=bool)) is None
 
 
@@ -103,14 +113,48 @@ def test_gpu_guard_tolerates_an_open_rerun_viewer_but_not_other_python_processes
 def test_worker_accepts_four_ordered_manual_multiplex_slots() -> None:
     concepts = ("left_hand", "right_hand", "yellow_toy_top", "black_toy_top_base")
     seed_records = [
-        {"target": target, "initial_multiplex_slot": slot}
-        for slot, target in enumerate(concepts)
+        {"target": target, "initial_multiplex_slot": slot} for slot, target in enumerate(concepts)
     ]
 
     _validate_manual_seed_slots(seed_records, concepts)
 
     with pytest.raises(ValueError, match="one mask for each"):
         _validate_manual_seed_slots(seed_records[:3], concepts)
+
+
+def test_static_text_target_mapping_preserves_common_output_labels() -> None:
+    root = Path(__file__).parents[1]
+    config = load_text_target_config(
+        target_config_path=root / "configs/muggledsam_static_common_four_target_text.json",
+        repository_root=root,
+        g2_config_path=root / "configs/clips/assembly101_nusar_9033_g2.json",
+        view_id="static-c10379",
+    )
+
+    assert tuple(target.output_label for target in config.targets) == (
+        "left_hand",
+        "right_hand",
+        "yellow_toy_top",
+        "black_toy_top_base",
+    )
+    assert tuple(target.text_prompt for target in config.targets) == (
+        "left hand",
+        "right hand",
+        "yellow toy top",
+        "black toy top base",
+    )
+
+
+def test_worker_rejects_ambiguous_text_target_mapping() -> None:
+    targets = [
+        {"output_label": "left_hand", "text_prompt": "hand"},
+        {"output_label": "right_hand", "text_prompt": "hand"},
+    ]
+
+    with pytest.raises(ValueError, match="prompts must be distinct"):
+        _validate_text_targets(targets, ("left_hand", "right_hand"))
+    with pytest.raises(ValueError, match="ordered output concepts"):
+        _validate_text_targets(targets[:1], ("left_hand", "right_hand"))
 
 
 def test_correction_orchestration_replaces_prompt_and_resets_frame_history() -> None:
@@ -129,8 +173,9 @@ def test_correction_orchestration_replaces_prompt_and_resets_frame_history() -> 
         prompt_memories=prompt_memories,
         frame_memories=frame_memories,
         encoded_frame="encoded-frame",
-        encode_prompt_memory_from_mask=lambda frame, masks: calls.append((frame, masks.copy()))
-        or "replacement-prompt",
+        encode_prompt_memory_from_mask=lambda frame, masks: (
+            calls.append((frame, masks.copy())) or "replacement-prompt"
+        ),
     )
 
     assert result[2].tolist() == corrected.tolist()
@@ -197,6 +242,34 @@ def test_e4_candidate_range_allows_only_the_approved_sixty_seconds() -> None:
     assert frame_range.frame_count == 1800
     with pytest.raises(ValueError, match="only ego-hmc21179183"):
         require_e4_candidate_range("ego-hmc21110305", start_frame=0, max_frames=E4_CANDIDATE_FRAMES)
+
+
+def test_four_part_pilot_range_allows_only_the_approved_static_window() -> None:
+    frame_range = require_four_part_pilot_range(
+        "static-c10379", start_frame=0, max_frames=FOUR_PART_PILOT_FRAMES
+    )
+
+    assert frame_range.frame_count == 600
+    with pytest.raises(ValueError, match="only static-c10379"):
+        require_four_part_pilot_range(
+            "ego-hmc21179183", start_frame=0, max_frames=FOUR_PART_PILOT_FRAMES
+        )
+    with pytest.raises(ValueError, match=r"\[0, 600\)"):
+        require_four_part_pilot_range("static-c10379", start_frame=0, max_frames=599)
+
+
+def test_four_part_full_range_allows_only_the_complete_static_proxy() -> None:
+    frame_range = require_four_part_full_range(
+        "static-c10379", start_frame=0, max_frames=FOUR_PART_FULL_FRAMES
+    )
+
+    assert frame_range.frame_count == 5901
+    with pytest.raises(ValueError, match="only static-c10379"):
+        require_four_part_full_range(
+            "ego-hmc21179183", start_frame=0, max_frames=FOUR_PART_FULL_FRAMES
+        )
+    with pytest.raises(ValueError, match=r"\[0, 5901\)"):
+        require_four_part_full_range("static-c10379", start_frame=0, max_frames=5900)
 
 
 def test_full_ego_manual_seed_range_allows_only_the_approved_proxy() -> None:
@@ -286,8 +359,7 @@ def test_new_manual_seed_target_config_is_bound_to_e4_and_has_four_distinct_targ
     root = Path(__file__).parents[1]
     config = load_manual_seed_target_config(
         target_config_path=(
-            root
-            / "configs/"
+            root / "configs/"
             "muggledsam_e4_left_hand_right_hand_yellow_toy_top_black_toy_top_base_manual_seed.json"
         ),
         repository_root=root,
@@ -301,6 +373,221 @@ def test_new_manual_seed_target_config_is_bound_to_e4_and_has_four_distinct_targ
         "yellow_toy_top",
         "black_toy_top_base",
     )
+
+
+def test_static_manual_seed_target_config_is_bound_to_one_canonical_label() -> None:
+    root = Path(__file__).parents[1]
+    config = load_manual_seed_target_config(
+        target_config_path=root / "configs/muggledsam_static_black_toy_top_base_manual_seed.json",
+        repository_root=root,
+        g2_config_path=root / "configs/clips/assembly101_nusar_9033_g2.json",
+        view_id="static-c10379",
+    )
+
+    assert config.targets == ("black_toy_top_base",)
+
+
+def _hybrid_worker_payload() -> dict[str, object]:
+    return {
+        "targets": [
+            {
+                "output_label": label,
+                "initial_multiplex_slot": slot,
+                "initialization_source": source,
+            }
+            for slot, (label, source) in enumerate(
+                (
+                    ("left_hand", "text_prompt"),
+                    ("right_hand", "text_prompt"),
+                    ("yellow_toy_top", "text_prompt"),
+                    ("black_toy_top_base", "human_reviewed_mask"),
+                )
+            )
+        ],
+        "text_targets": [
+            {"output_label": "left_hand", "text_prompt": "left hand"},
+            {"output_label": "right_hand", "text_prompt": "right hand"},
+            {"output_label": "yellow_toy_top", "text_prompt": "yellow toy top"},
+        ],
+        "manual_seeds": [
+            {
+                "target": "black_toy_top_base",
+                "initial_multiplex_slot": 3,
+                "mask_path": "/fixture/mask.png",
+                "mask_sha256": "0" * 64,
+            }
+        ],
+    }
+
+
+def test_static_hybrid_contract_loads_reviewed_mask_with_manifest_provenance() -> None:
+    root = Path(__file__).parents[1]
+    g2_path = root / "configs/clips/assembly101_nusar_9033_g2.json"
+    g2 = G2PreprocessingManifest.model_validate_json(g2_path.read_text())
+    proxy = next(item for item in g2.proxies if item.view_id == "static-c10379")
+
+    payload, metadata, text_config = _load_hybrid_initialization(
+        hybrid_config_path=root / "configs/muggledsam_static_aligned_hybrid.json",
+        repository_root=root,
+        config_path=g2_path,
+        proxy=proxy,
+    )
+
+    assert [target.output_label for target in text_config.targets] == [
+        "left_hand",
+        "right_hand",
+        "yellow_toy_top",
+    ]
+    assert [target["initial_multiplex_slot"] for target in payload["targets"]] == [0, 1, 2, 3]
+    assert payload["manual_seeds"][0]["initial_multiplex_slot"] == 3
+    persisted = metadata.model_dump(mode="json")
+    assert [target["initialization_source"] for target in persisted["targets"]] == [
+        "text_prompt",
+        "text_prompt",
+        "text_prompt",
+        "human_reviewed_mask",
+    ]
+    assert (
+        persisted["targets"][3]["source_fingerprint"]["sha256"]
+        == (payload["manual_seeds"][0]["mask_sha256"])
+    )
+    assert persisted["ground_truth_accuracy_claim"] is False
+
+
+def test_full_hybrid_approval_binds_exact_reviewed_smoke_evidence() -> None:
+    root = Path(__file__).parents[1]
+    g2_path = root / "configs/clips/assembly101_nusar_9033_g2.json"
+    g2 = G2PreprocessingManifest.model_validate_json(g2_path.read_text())
+    proxy = next(item for item in g2.proxies if item.view_id == "static-c10379")
+    _, metadata, _ = _load_hybrid_initialization(
+        hybrid_config_path=root / "configs/muggledsam_static_aligned_hybrid.json",
+        repository_root=root,
+        config_path=g2_path,
+        proxy=proxy,
+    )
+    smoke_manifest = (
+        root
+        / "runs/muggledsam-sam3-smoke-hybrid-static-static-c10379-20260915t005256z"
+        / "manifest.json"
+    )
+
+    approval = _load_hybrid_smoke_approval(
+        approved_smoke_manifest_path=smoke_manifest,
+        repository_root=root,
+        hybrid_metadata=metadata,
+        config_path=g2_path,
+        proxy=proxy,
+        max_side_length=504,
+        max_frame_memory=4,
+        approved_at=datetime(2026, 9, 15, 0, 53, tzinfo=UTC),
+        approved_by="user",
+        approval_statement="Looks good!",
+    )
+
+    assert approval.approved_smoke_manifest_fingerprint.uri.endswith(
+        "20260915t005256z/manifest.json"
+    )
+    assert approval.approved_smoke_qa_fingerprint.sha256 == (
+        "898b5d8057563d1bb0bca4cd82b9d105570fcd072ccde6cf6f585208214a6043"
+    )
+    with pytest.raises(ValueError, match="settings must exactly match"):
+        _load_hybrid_smoke_approval(
+            approved_smoke_manifest_path=smoke_manifest,
+            repository_root=root,
+            hybrid_metadata=metadata,
+            config_path=g2_path,
+            proxy=proxy,
+            max_side_length=720,
+            max_frame_memory=4,
+            approved_at=datetime(2026, 9, 15, 0, 53, tzinfo=UTC),
+            approved_by="user",
+            approval_statement="Looks good!",
+        )
+
+
+def test_hybrid_contract_rejects_order_overlap_and_missing_manual_mask() -> None:
+    concepts = (
+        "left_hand",
+        "right_hand",
+        "yellow_toy_top",
+        "black_toy_top_base",
+    )
+    valid = _hybrid_worker_payload()
+    _validate_hybrid_initialization(valid, concepts)
+
+    reordered = json.loads(json.dumps(valid))
+    reordered["targets"][0], reordered["targets"][1] = (
+        reordered["targets"][1],
+        reordered["targets"][0],
+    )
+    with pytest.raises(ValueError, match="canonical labels"):
+        _validate_hybrid_initialization(reordered, concepts)
+
+    overlap = json.loads(json.dumps(valid))
+    overlap["manual_seeds"][0]["target"] = "yellow_toy_top"
+    with pytest.raises(ValueError, match="target-to-slot"):
+        _validate_hybrid_initialization(overlap, concepts)
+
+    with pytest.raises(ValueError, match="reviewed mask is unavailable"):
+        _ordered_hybrid_initial_masks(valid["targets"], {}, {})
+
+
+def test_hybrid_missing_text_detection_preserves_canonical_slot_identity() -> None:
+    payload = _hybrid_worker_payload()
+    left_mask, yellow_mask, black_mask = object(), object(), object()
+
+    ordered = _ordered_hybrid_initial_masks(
+        payload["targets"],
+        {
+            "left_hand": (left_mask, 0.8),
+            "yellow_toy_top": (yellow_mask, 0.7),
+        },
+        {"black_toy_top_base": black_mask},
+    )
+
+    assert [(slot, label) for slot, label, *_ in ordered] == [
+        (0, "left_hand"),
+        (2, "yellow_toy_top"),
+        (3, "black_toy_top_base"),
+    ]
+    assert all(label != "right_hand" for _, label, *_ in ordered)
+
+
+def test_hybrid_loader_rejects_changed_fingerprint_and_view(tmp_path: Path) -> None:
+    root = Path(__file__).parents[1]
+    g2_path = root / "configs/clips/assembly101_nusar_9033_g2.json"
+    g2 = G2PreprocessingManifest.model_validate_json(g2_path.read_text())
+    static_proxy = next(item for item in g2.proxies if item.view_id == "static-c10379")
+    hybrid_path = root / "configs/muggledsam_static_aligned_hybrid.json"
+    changed = MuggledSAMHybridInitializationConfig.model_validate_json(
+        hybrid_path.read_text()
+    ).model_copy(
+        update={
+            "manual_seed_proposal_fingerprint": ArtifactFingerprint(
+                uri="missing/proposal.json",
+                sha256="0" * 64,
+                source="measured",
+            )
+        }
+    )
+    changed_path = tmp_path / "changed-hybrid.json"
+    changed_path.write_text(changed.model_dump_json(indent=2) + "\n")
+    with pytest.raises(ValueError, match="unavailable or changed"):
+        _load_hybrid_initialization(
+            hybrid_config_path=changed_path,
+            repository_root=root,
+            config_path=g2_path,
+            proxy=static_proxy,
+        )
+
+    wrong_proxy = next(item for item in g2.proxies if item.view_id != "static-c10379")
+    with pytest.raises(ValueError, match="view must match"):
+        _load_hybrid_initialization(
+            hybrid_config_path=hybrid_path,
+            repository_root=root,
+            config_path=g2_path,
+            proxy=wrong_proxy,
+        )
 
 
 def test_four_target_manual_seed_initializes_four_ordered_multiplex_slots(tmp_path: Path) -> None:
@@ -396,8 +683,7 @@ def test_four_target_manual_seed_initializes_four_ordered_multiplex_slots(tmp_pa
         config_path=g2_path,
         proxy=proxy,
         manual_seed_target_config_path=(
-            root
-            / "configs/"
+            root / "configs/"
             "muggledsam_e4_left_hand_right_hand_yellow_toy_top_black_toy_top_base_manual_seed.json"
         ),
     )
@@ -428,8 +714,7 @@ def test_four_target_manual_seed_initializes_four_ordered_multiplex_slots(tmp_pa
             root / "configs/muggledsam_e4_four_target_keyframe_correction_policy.json"
         ),
         manual_seed_target_config_path=(
-            root
-            / "configs/"
+            root / "configs/"
             "muggledsam_e4_left_hand_right_hand_yellow_toy_top_black_toy_top_base_manual_seed.json"
         ),
         repository_root=root,
