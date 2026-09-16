@@ -24,8 +24,10 @@ were all tested. A 196.7-second static exploration failed through identity drift
 aligned 92.7-second static and monochrome ego runs were completed from a cleaner
 separated-parts frame. Human review retained only their first 60 seconds for the
 synchronized two-view comparison; later outputs remain failure evidence. The second
-method in the original core spine, MediaPipe Hands, now has a CPU-only 20-second
-static-view smoke result; the selected 60-second run and combined comparison remain next.
+method in the original core spine, MediaPipe Hands, has a selected 60-second static run
+merged into the focused first-minute comparison. The Sep 16 exploratory pass added bounded
+WiLoR, BoxMOT, and CLIP+Drop-DTW smokes; Grounded-SAM-2, SAMURAI/DAM4SAM, ATHENA, and
+Kineo are documented as blocked with precise prerequisites.
 
 The rest of this file is the how-to: each section below gives the exact commands that
 reproduce a stage. No recordings, annotations, or model weights are included. The SAM3
@@ -96,6 +98,58 @@ video, `contact_sheet.png`, and `hands.rrd` under `runs/<run-id>/`. The Rerun re
 shows landmarks, hand skeletons, boxes, detection count, and mean handedness confidence.
 Detection presence and handedness are model outputs without hand-pose ground truth, not
 accuracy measurements.
+
+## WiLoR hand-pose smoke (exploratory)
+
+`battle-wilor-hands` wraps the local WiLoR repo through an isolated wilor-environment
+worker at batch size one with mesh export disabled. It emits normalized 2D landmarks,
+21-joint camera-relative 3D pose with explicit non-metric semantics, handedness, and
+frame-local hand IDs. WiLoR is CC-BY-NC-ND and is not a multi-view reconstruction claim.
+
+```bash
+uv run battle-wilor-hands --seconds 20 --save-native-evidence
+```
+
+Completed smoke: `runs/wilor-hands-static-20s-20260916t0438z/` (600 frames, 598 with at
+least one hand, `hands.rrd` inference-free).
+
+## BoxMOT box tracking smoke (exploratory)
+
+`battle-boxmot-track` associates independent per-frame YOLOv8n COCO `person` detections
+with BoxMOT BotSort. MuggledSAM track IDs are never used as detections.
+
+```bash
+mkdir -p models/yolo
+cp /path/to/yolov8n.pt models/yolo/yolov8n.pt
+uv run battle-boxmot-track --seconds 20
+```
+
+Completed smoke: `runs/boxmot-yolo-static-20s-20260916t0445z/` (557/600 frames with
+tracks, `tracks.rrd` inference-free). Association is conditional on the declared
+detector source.
+
+## CLIP + Drop-DTW weak supervision (exploratory)
+
+`battle-drop-dtw-align` builds an ordered transcript from local Assembly101 coarse
+ground-truth labels, embeds proxy frames with OpenCLIP ViT-B-32 at 1 FPS, and aligns with
+pinned SamsungLabs/Drop-DTW. The transcript is weak supervision only.
+
+```bash
+uv run battle-drop-dtw-align --seconds 20
+```
+
+Completed run: `runs/drop-dtw-static-20s-20260916t0450z/` (`alignment.json` cost 15.295,
+`alignment.rrd` with cost/interval scalars only).
+
+## Exploratory methods blocked in this pass
+
+See `docs/method-ledger.md` (Sep 16 exploratory queue) for precise blockers:
+
+- Grounded-SAM-2: no local checkout / SAM2 CUDA build within 90 minutes.
+- SAMURAI / DAM4SAM: no compatible local SAM2 tracker environment.
+- ATHENA: Assembly101 camera intrinsics/extrinsics not in approved local raw tree.
+- Kineo: offline pipeline requires interactive SAM2 person-selection UI (headless stall).
+- Deferred without integration: LM-EEC, ObjectRelator, Qwen VLMs, supervised TAS, long-video VLMs.
 
 ## Fixed SAM3 core-method smoke
 

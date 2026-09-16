@@ -66,6 +66,32 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
   bundle's license was not independently confirmed during this run. Treat redistribution
   as unapproved until that review is complete.
 
+## Model source: WiLoR
+
+- Source path: `/home/nick/src/WiLoR`; git revision `fcb911312a38fa8badd30d9656a167485d61b8f9`.
+- Checkpoints (ignored, outside Git): `pretrained_models/wilor_final.ckpt` SHA-256
+  `3e97aafc7dd08d883a4cc5a027df61fdb6fda6136dbd1319405413862ada6bb2`;
+  `pretrained_models/detector.pt` SHA-256
+  `5ef3df44e42d2db52d4ffe91f83a22ce9925e2acc9abebf453f2c5d22e380033`.
+- Stated license: CC-BY-NC-ND for WiLoR weights; MANO and Ultralytics carry separate
+  terms. Battle does not copy vendor source; the wilor pyenv runs `wilor_worker.py`.
+
+## Model source: BoxMOT + YOLOv8n detector
+
+- BoxMOT: pip package 25.0.0 / `https://github.com/mikel-brostrom/boxmot`.
+- Independent detector: Ultralytics YOLOv8n (`yolov8n.pt`), local ignored path
+  `models/yolo/yolov8n.pt`, SHA-256
+  `31e20dde3def09e2cf938c7be6fe23d9150bbbe503982af13345706515f2ef95`.
+- ReID weights downloaded by BoxMOT to the wilor environment on first use
+  (`osnet_x0_25_msmt17.pt`); not committed.
+
+## Model source: OpenCLIP + Drop-DTW
+
+- OpenCLIP: `open-clip-torch` 3.3.0, model `ViT-B-32` / `openai` weights (downloaded on
+  first run into the wilor environment cache).
+- Drop-DTW: `/home/nick/src/Drop-DTW` @ `32ce9c82c6a0d717a94f4139b1902ad146923444`.
+- Assembly101 coarse transcript: local file under approved raw tree; weak supervision only.
+
 ## Approved local source: Assembly101 ego viewpoint screen
 
 - Status: `approved` only for the bounded e1/e2/e4 viewpoint-screen inputs in

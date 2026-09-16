@@ -33,7 +33,7 @@ methods:
     external_source: https://github.com/mikel-brostrom/boxmot
     detector_source: ultralytics YOLOv8n per-frame COCO detections; not MuggledSAM IDs
   drop_dtw:
-    state: ready
+    state: succeeded
     environment: "~/.pyenv/versions/wilor"
     adapter: battle.drop_dtw_align
     external_source: https://github.com/SamsungLabs/Drop-DTW
@@ -52,9 +52,9 @@ methods:
     state: blocked
     blocker: Assembly101 intrinsics/extrinsics/positions not present in approved local raw tree
   kineo:
-    state: pending
+    state: blocked
     environment: pixi-managed /home/nick/src/kineo
-    adapter: battle.kineo_offline
+    blocker: offline pipeline blocks at interactive SAM2 semi-auto person selection; headless protocol incompatible within two-hour timebox
     license_caveat: calibration-free person-centric; not hand-part specialized
   deferred:
     - LM-EEC

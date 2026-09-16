@@ -1017,3 +1017,102 @@ split, and uncertainty when measured; failure modes, blocker, and next decision.
   Structure was verified without opening a viewer.
 - Next: human visual review of the combined recording. WiLoR remains a separately
   licensed upgrade if MediaPipe's occlusion failures are unacceptable.
+
+### Sep 16: exploratory queue (autonomous pass)
+
+Human gates G1–G5 remain deferred; this pass executed the plan's exploratory queue at
+tier-1 (20-second static smokes) unless noted. States below are factual output records,
+not accuracy claims.
+
+#### WiLoR hand-pose adapter
+
+- Stage: `pose`; state: `succeeded` for the bounded 20-second static smoke.
+- Adapter: `battle-wilor-hands` + `wilor_worker.py` in `/home/nick/.pyenv/versions/wilor`
+  with `PYTHONPATH=/home/nick/src/WiLoR`; batch size 1; mesh export disabled.
+- Input: focused static proxy `static-c10379`, frames `[0, 600)` / 20.0 seconds.
+- Output contract: normalized 2D landmarks, 21-joint camera-relative 3D pose with explicit
+  non-metric semantics, handedness from the WiLoR detector, frame-local hand IDs, and
+  optional per-frame native evidence JSON under `native_evidence/`.
+- Run: `runs/wilor-hands-static-20s-20260916t0438z/`; 600/600 frames, 57.0 s elapsed,
+  5.9 s TTFU, 2.82 GiB peak allocated VRAM; 598/600 frames emitted at least one hand.
+  Ten-second validation run `runs/wilor-hands-static-10s-test/` processed 300 frames in
+  29.3 s with 298/300 hand frames.
+- Artifacts: `observations.jsonl`, `manifest.json`, `contact_sheet.png`, `hands.rrd`
+  (inference-free), and native evidence frames.
+- License boundary: WiLoR checkpoints are CC-BY-NC-ND; MANO and Ultralytics carry separate
+  terms. Camera-relative 3D is not metric reconstruction or multi-view ground truth.
+- Reproduce:
+  `uv run battle-wilor-hands --seconds 20 --save-native-evidence`
+
+#### BoxMOT over independent YOLO detections
+
+- Stage: `objects`; state: `succeeded` for the bounded 20-second box-only smoke.
+- Detector source (required): Ultralytics YOLOv8n COCO per-frame detections, class
+  filter `person` only; no MuggledSAM track IDs are used.
+- Tracker: BoxMOT 25.0.0 `BotSort` in the wilor environment.
+- Run: `runs/boxmot-yolo-static-20s-20260916t0445z/`; 600/600 frames, 7.5 s elapsed,
+  557 frames with at least one track observation (557 total box observations).
+- Artifacts: normalized box observations, `tracks.rrd`, contact sheet.
+- Claim boundary: association is conditional on the declared detector and COCO person
+  class filter; it is not comparable to SAM3 masks or part-level identities.
+- Reproduce:
+  `uv run battle-boxmot-track --seconds 20`
+
+#### CLIP + Drop-DTW weak supervision
+
+- Stage: `alignment`; state: `succeeded` for the bounded 20-second exploratory alignment.
+- Transcript source: Assembly101 coarse labels file already present under the approved
+  raw tree; ordered text is declared GT weak supervision, not model output.
+- Model stack: OpenCLIP ViT-B-32 (`openai` weights) frame embeddings at 1 FPS plus
+  SamsungLabs/Drop-DTW @ `32ce9c82c6a0d717a94f4139b1902ad146923444`.
+- Run: `runs/drop-dtw-static-20s-20260916t0450z/`; two coarse steps overlapped the
+  window (`attach interior`, `screw chassis`); alignment cost 15.295; matched 16 and 1
+  sampled frames respectively.
+- Artifacts: `gt_transcript.json`, `alignment.json`, `alignment.rrd` (cost + interval
+  scalars only; inference-free).
+- Claim boundary: intervals and alignment cost are exploratory weak-supervision artifacts;
+  they cannot support accuracy or temporal-action-segmentation claims.
+- Reproduce:
+  `uv run battle-drop-dtw-align --seconds 20`
+
+#### Grounded-SAM-2
+
+- Stage: `objects`; state: `blocked`.
+- Blocker: no local Grounded-SAM-2 checkout, SAM2 CUDA extension build, or first correct
+  GPU output within the 90-minute adapter timebox.
+- Prerequisite: clone/build Grounded-SAM-2 with working SAM2 CUDA extensions on the 16 GB
+  card, then rerun a 20-second open-vocabulary detection + propagation smoke.
+
+#### SAMURAI and DAM4SAM
+
+- Stage: `objects`; state: `blocked` (both).
+- Blocker: no compatible local SAM2 tracker checkout bootable from an existing SAM2
+  environment; SAMURAI and DAM4SAM repositories are not present under `/home/nick/src/`.
+- Prerequisite: install one SAM2-compatible tracker matching the clip failure mode, then
+  reuse the focused four-part initialization for a bounded ablation.
+
+#### ATHENA multi-view hand triangulation
+
+- Stage: `pose`; state: `blocked`.
+- Blocker: Assembly101 intrinsics, extrinsics, and camera positions are not present in
+  the approved local raw tree (`data/raw/assembly101/...` contains recordings and coarse
+  annotations only).
+- Prerequisite: obtain and approve shipped camera calibration assets under existing
+  dataset terms, then time-box coordinate conversion for the focused static+ego pair.
+
+#### Kineo offline pipeline
+
+- Stage: `pose`; state: `blocked` within the two-hour input-format timebox.
+- Environment: `/home/nick/src/kineo` pixi default env installs and imports successfully.
+- Attempt: `pixi run python -m kineo.demo.offline.demo --sequence-name assembly101_smoke
+  --target-fps 30 --shared-intrinsics runs/wilor-hands-static-10s-test/input.mp4`
+  reached `SAM2 Semi-Auto Bbox Detection` and stalled without headless progress for 120 s.
+- Blocker: offline demo requires interactive SAM2 person selection UI; incompatible with
+  the lab's headless-only protocol.
+- Claim boundary: Kineo remains calibration-free, person-centric, and low return for
+  hand-and-part Assembly101 clips even if later unblocked.
+
+#### Explicitly deferred (not integrated)
+
+- LM-EEC, ObjectRelator, Qwen video VLMs, supervised temporal-action models, and
+  long-video VLMs remain out of scope per the Sep 8 plan line 59.

@@ -37,6 +37,14 @@ inputs outside Git.
   downloaded official Hand Landmarker float16 v1 task bundle remains ignored and is not
   redistributed; its model-specific license was not independently confirmed, so no
   redistribution permission is claimed.
+- **WiLoR:** checkpoints are CC-BY-NC-ND; MANO and Ultralytics dependencies carry
+  separate licenses. Camera-relative 3D outputs are non-metric model estimates.
+- **BoxMOT / YOLOv8n:** association is conditional on COCO person detections from an
+  independent per-frame detector; not comparable to SAM3 masks.
+- **OpenCLIP + Drop-DTW:** alignment uses Assembly101 coarse labels as declared weak
+  supervision; intervals and cost are not accuracy claims.
+- **Kineo:** blocked pending interactive SAM2 UI; calibration-free person-centric outputs
+  would remain distinct from hand-part claims if later unblocked.
 
 ## Dependency and future-model review
 
