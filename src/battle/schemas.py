@@ -351,6 +351,18 @@ class NormalizedPoint(VersionedModel):
     y: float = Field(ge=0, le=1)
 
 
+class CameraRelativePoint3D(VersionedModel):
+    """One joint in WiLoR's camera-relative frame.
+
+    Units are model-native and non-metric; they must not be treated as millimetres or
+    compared across methods without an explicit calibration bridge.
+    """
+
+    x: float
+    y: float
+    z: float
+
+
 class NormalizedBox(VersionedModel):
     x: float = Field(ge=0, le=1)
     y: float = Field(ge=0, le=1)
@@ -409,6 +421,15 @@ class PerFrameHand(VersionedModel):
     box: NormalizedBox
     model_side: HandSide
     model_handedness_confidence: float = Field(ge=0, le=1)
+    joints_3d_camera_relative: tuple[CameraRelativePoint3D, ...] | None = Field(
+        default=None,
+        min_length=21,
+        max_length=21,
+        description=(
+            "Optional 21-joint camera-relative 3D pose in the method's native non-metric "
+            "frame. Present for WiLoR and absent for 2D-only baselines."
+        ),
+    )
 
 
 class TrackerSlotDiagnostic(VersionedModel):
@@ -1630,6 +1651,48 @@ class FourPartFocusedRunMetadata(VersionedModel):
         return self
 
 
+class WiLoRHandsRunMetadata(VersionedModel):
+    """Audit data for one bounded WiLoR hand-pose video run."""
+
+    requested_analysis_frame_range: FrameRange
+    requested_seconds: float = Field(gt=0, le=60.0)
+    source_fingerprint: ArtifactFingerprint
+    proxy_fingerprint: ArtifactFingerprint
+    config_fingerprint: ArtifactFingerprint
+    checkpoint_fingerprint: ArtifactFingerprint
+    detector_fingerprint: ArtifactFingerprint
+    adapter: AdapterMetadata
+    runtime_settings: dict[str, str | int | float | bool | None]
+    measurements: RuntimeMeasurements
+    observations_uri: str
+    native_evidence_uri: str | None = None
+    rerun_artifact_uri: str | None = None
+    qa_artifact_uri: str | None = None
+    license_caveat: str = Field(
+        min_length=1,
+        default=(
+            "WiLoR checkpoints are CC-BY-NC-ND; MANO and Ultralytics carry separate "
+            "licenses. Outputs are model estimates in a non-metric camera-relative "
+            "frame and are not multi-view reconstruction or ground-truth pose."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def require_consistent_budget(self) -> WiLoRHandsRunMetadata:
+        if self.requested_analysis_frame_range.start_frame != 0:
+            raise ValueError("WiLoR range must start at proxy frame zero")
+        analysis_fps = self.runtime_settings.get("analysis_fps")
+        if isinstance(analysis_fps, bool) or not isinstance(analysis_fps, (int, float)):
+            raise ValueError("runtime_settings.analysis_fps must be numeric")
+        if self.requested_analysis_frame_range.frame_count != round(
+            self.requested_seconds * analysis_fps
+        ):
+            raise ValueError(
+                "WiLoR frame count must equal requested_seconds * analysis_fps"
+            )
+        return self
+
+
 class MediaPipeHandsRunMetadata(VersionedModel):
     """Audit data for one bounded MediaPipe Hand Landmarker video run."""
 
@@ -1677,6 +1740,7 @@ class RunManifest(VersionedModel):
     four_part_full: FourPartFullRunMetadata | None = None
     four_part_focused: FourPartFocusedRunMetadata | None = None
     mediapipe_hands: MediaPipeHandsRunMetadata | None = None
+    wilor_hands: WiLoRHandsRunMetadata | None = None
 
     @model_validator(mode="after")
     def require_monotonic_observations(self) -> RunManifest:

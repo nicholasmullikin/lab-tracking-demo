@@ -327,6 +327,11 @@ def _log_hands(
     landmark_colors = []
     strips = []
     strip_colors = []
+    joints_3d_positions = []
+    joints_3d_labels = []
+    joints_3d_colors = []
+    joints_3d_strips = []
+    joints_3d_strip_colors = []
     for hand in observation.hands:
         color = colors[str(hand.side)]
         positions = [
@@ -339,6 +344,19 @@ def _log_hands(
         landmark_colors.extend([color] * len(positions))
         strips.extend([[positions[start], positions[end]] for start, end in HAND_CONNECTIONS])
         strip_colors.extend([color] * len(HAND_CONNECTIONS))
+        if hand.joints_3d_camera_relative:
+            joint_positions = [
+                [joint.x, joint.y, joint.z] for joint in hand.joints_3d_camera_relative
+            ]
+            joints_3d_positions.extend(joint_positions)
+            joints_3d_labels.extend(
+                f"{hand.hand_id}: {name}" for name in HAND_LANDMARK_NAMES
+            )
+            joints_3d_colors.extend([color] * len(joint_positions))
+            joints_3d_strips.extend(
+                [[joint_positions[start], joint_positions[end]] for start, end in HAND_CONNECTIONS]
+            )
+            joints_3d_strip_colors.extend([color] * len(HAND_CONNECTIONS))
     rr.log(
         f"{hands_root}/landmarks",
         rr.Points2D(
@@ -369,6 +387,23 @@ def _log_hands(
             draw_order=2.0,
         ),
     )
+    if joints_3d_positions:
+        rr.log(
+            f"{hands_root}/joints_3d_camera_relative",
+            rr.Points3D(
+                joints_3d_positions,
+                labels=joints_3d_labels,
+                colors=joints_3d_colors,
+                radii=0.002,
+            ),
+        )
+        rr.log(
+            f"{hands_root}/skeletons_3d_camera_relative",
+            rr.LineStrips3D(joints_3d_strips, colors=joints_3d_strip_colors, radii=0.001),
+        )
+    else:
+        rr.log(f"{hands_root}/joints_3d_camera_relative", rr.Clear(recursive=True))
+        rr.log(f"{hands_root}/skeletons_3d_camera_relative", rr.Clear(recursive=True))
 
 
 def _spatial_view_contents() -> list[str]:
