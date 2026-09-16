@@ -157,10 +157,10 @@ and `grounded_sam2.rrd`; it intentionally does not claim video propagation or a 
 ### SAMURAI — external partial
 
 `tracking.mp4` is a genuine 1280×720, 30-FPS, 602-frame output matching the 602-frame /
-20.0667-second input, seeded by the preserved `(881,446,152,129)` hand box. However, its
-recorded `scripts/demo.py` calls the fork’s plain `build_sam2_video_predictor`; no
-SAMURAI-specific tracker path, normalized masks, runtime log, or durable command manifest was
-preserved. It is not integrated and must not be called a SAMURAI method success.
+20.0667-second input, seeded by the preserved `(881,446,152,129)` hand box. The script selects
+`configs/samurai/sam2.1_hiera_t.yaml`, which sets `samurai_mode: true`; it is genuine SAMURAI
+mode despite calling the shared predictor constructor. No native masks, normalized output, runtime
+log, or durable command manifest was preserved, so it remains an external partial.
 
 ### DAM4SAM — external partial
 

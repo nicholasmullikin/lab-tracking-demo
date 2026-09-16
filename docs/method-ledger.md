@@ -1085,11 +1085,13 @@ by a worker, manifest, or native log appear below. Human gates G1–G5 remain de
 - Classification: `external partial`. `tracking.mp4` decodes as a real 1280×720 30-FPS
   602-frame/20.0667-second output matching its input; three sampled decoded frame hashes differ.
   The seed file records `(881,446,152,129)`.
-- Critical code-path correction: the cited `scripts/demo.py` calls
-  `sam2.build_sam.build_sam2_video_predictor` and does not call a SAMURAI-specific tracker.
-  There is no native mask archive, run manifest, runtime log, or durable exact command. It is
-  therefore neither integrated nor evidence of SAMURAI-specific behavior. The old ~16 s timing
-  is unsupported and removed.
+- Code-path correction: `scripts/demo.py` calls the shared `build_sam2_video_predictor`, but
+  chooses `configs/samurai/sam2.1_hiera_t.yaml`; that config sets `samurai_mode: true` and
+  SAMURAI-specific stability/memory-bank settings. The prior assertion that it was plain SAM2
+  was false.
+- There is nevertheless no native mask archive, Battle-normalized output, runtime log, or
+  durable exact command. It is a genuine but unintegrated SAMURAI external partial; the old
+  ~16 s timing remains unsupported and removed.
 
 #### DAM4SAM
 
