@@ -1,0 +1,64 @@
+schema_version: "1.0"
+hardware_assumption:
+  gpu: "NVIDIA RTX 5070 Ti"
+  vram_gb: 16
+  measured: true
+
+clocks:
+  source_fps: 60
+  analysis_fps: 30
+  annotation_fps: 30
+  pose_fps: 60
+
+methods:
+  muggledsam_sam3:
+    state: succeeded
+    environment: "~/.pyenv/versions/muggled_sam"
+    adapter: battle.muggled_smoke
+    external_source: /home/nick/src/muggled_sam
+  mediapipe_hands:
+    state: succeeded
+    environment: battle uv / CPython 3.12
+    adapter: battle.mediapipe_hands
+  wilor_hands:
+    state: succeeded
+    environment: "~/.pyenv/versions/wilor"
+    adapter: battle.wilor_hands
+    external_source: /home/nick/src/WiLoR
+    license_caveat: CC-BY-NC-ND; non-metric camera-relative 3D only
+  boxmot:
+    state: succeeded
+    environment: "~/.pyenv/versions/wilor"
+    adapter: battle.boxmot_track
+    external_source: https://github.com/mikel-brostrom/boxmot
+    detector_source: ultralytics YOLOv8n per-frame COCO detections; not MuggledSAM IDs
+  drop_dtw:
+    state: ready
+    environment: "~/.pyenv/versions/wilor"
+    adapter: battle.drop_dtw_align
+    external_source: https://github.com/SamsungLabs/Drop-DTW
+    external_revision: 32ce9c82c6a0d717a94f4139b1902ad146923444
+    supervision: assembly101_gt_transcript_weak_supervision
+  grounded_sam2:
+    state: blocked
+    blocker: no local Grounded-SAM-2 checkout or CUDA extension build within 90-minute timebox
+  samurai:
+    state: blocked
+    blocker: no compatible local SAM2 tracker checkout bootable from existing SAM2 environment
+  dam4sam:
+    state: blocked
+    blocker: no local DAM4SAM checkout; SAMURAI/SAM2 prerequisite unmet
+  athena:
+    state: blocked
+    blocker: Assembly101 intrinsics/extrinsics/positions not present in approved local raw tree
+  kineo:
+    state: pending
+    environment: pixi-managed /home/nick/src/kineo
+    adapter: battle.kineo_offline
+    license_caveat: calibration-free person-centric; not hand-part specialized
+  deferred:
+    - LM-EEC
+    - ObjectRelator
+    - Qwen video VLMs
+    - supervised temporal-action models
+    - long-video VLMs

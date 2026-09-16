@@ -1651,6 +1651,72 @@ class FourPartFocusedRunMetadata(VersionedModel):
         return self
 
 
+class DropDTWRunMetadata(VersionedModel):
+    """Audit data for one bounded CLIP + Drop-DTW weak-supervision alignment."""
+
+    requested_seconds: float = Field(gt=0, le=60.0)
+    source_fingerprint: ArtifactFingerprint
+    proxy_fingerprint: ArtifactFingerprint
+    config_fingerprint: ArtifactFingerprint
+    transcript_fingerprint: ArtifactFingerprint
+    adapter: AdapterMetadata
+    runtime_settings: dict[str, str | int | float | bool | None]
+    measurements: RuntimeMeasurements
+    alignment_uri: str
+    rerun_artifact_uri: str | None = None
+    weak_supervision_note: str = Field(
+        min_length=1,
+        default=(
+            "Ordered text derives from Assembly101 coarse ground-truth annotations and is "
+            "weak supervision only; alignment intervals and cost are not accuracy claims."
+        ),
+    )
+    drop_dtw_revision: str = Field(min_length=1)
+
+
+class BoxMOTRunMetadata(VersionedModel):
+    """Audit data for one bounded BoxMOT association run over independent detections."""
+
+    requested_analysis_frame_range: FrameRange
+    requested_seconds: float = Field(gt=0, le=60.0)
+    source_fingerprint: ArtifactFingerprint
+    proxy_fingerprint: ArtifactFingerprint
+    config_fingerprint: ArtifactFingerprint
+    detector_fingerprint: ArtifactFingerprint
+    adapter: AdapterMetadata
+    runtime_settings: dict[str, str | int | float | bool | None]
+    measurements: RuntimeMeasurements
+    observations_uri: str
+    rerun_artifact_uri: str | None = None
+    qa_artifact_uri: str | None = None
+    detector_source: str = Field(
+        min_length=1,
+        description="Independent per-frame detector; must not be MuggledSAM track IDs.",
+    )
+    association_coverage_note: str = Field(
+        min_length=1,
+        default=(
+            "Track identities are conditional on the declared detector source and class "
+            "filter; they are not comparable to SAM3 masks or ground-truth object labels."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def require_consistent_budget(self) -> BoxMOTRunMetadata:
+        if self.requested_analysis_frame_range.start_frame != 0:
+            raise ValueError("BoxMOT range must start at proxy frame zero")
+        analysis_fps = self.runtime_settings.get("analysis_fps")
+        if isinstance(analysis_fps, bool) or not isinstance(analysis_fps, (int, float)):
+            raise ValueError("runtime_settings.analysis_fps must be numeric")
+        if self.requested_analysis_frame_range.frame_count != round(
+            self.requested_seconds * analysis_fps
+        ):
+            raise ValueError(
+                "BoxMOT frame count must equal requested_seconds * analysis_fps"
+            )
+        return self
+
+
 class WiLoRHandsRunMetadata(VersionedModel):
     """Audit data for one bounded WiLoR hand-pose video run."""
 
@@ -1741,6 +1807,8 @@ class RunManifest(VersionedModel):
     four_part_focused: FourPartFocusedRunMetadata | None = None
     mediapipe_hands: MediaPipeHandsRunMetadata | None = None
     wilor_hands: WiLoRHandsRunMetadata | None = None
+    boxmot: BoxMOTRunMetadata | None = None
+    drop_dtw: DropDTWRunMetadata | None = None
 
     @model_validator(mode="after")
     def require_monotonic_observations(self) -> RunManifest:

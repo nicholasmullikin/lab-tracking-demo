@@ -20,6 +20,8 @@ battle-muggled-calibration-web = "battle.muggled_calibration_web:main"
 battle-build-ego-static-comparison = "battle.rerun_comparison:main"
 battle-mediapipe-hands = "battle.mediapipe_hands:main"
 battle-wilor-hands = "battle.wilor_hands:main"
+battle-boxmot-track = "battle.boxmot_track:main"
+battle-drop-dtw-align = "battle.drop_dtw_align:main"
 battle-prepare-human-qa = "battle.human_qa:main"
 battle-human-qa-candidates = "battle.human_qa:candidate_main"
 
