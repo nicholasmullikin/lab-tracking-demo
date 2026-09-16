@@ -27,11 +27,13 @@ from .schemas import (
     FrameObservations,
     FullDurationCoverage,
     G2PreprocessingManifest,
+    ImageLandmark2D,
     MaskReference,
     MaskStorage,
     MethodState,
     MethodStatus,
     NormalizedBox,
+    PerFrameNlfBody2D,
     PerFrameObject,
     RunManifest,
     RuntimeMeasurements,
@@ -53,6 +55,7 @@ DEFAULT_GROUNDED_SAM2_NATIVE = Path(
 )
 DEFAULT_SMOKE_VIDEO = Path("data/derived/assembly101/smoke_frames/focused_static_20s.mp4")
 DEFAULT_SMOKE_IMAGE = Path("data/derived/assembly101/smoke_frames/focused_static_frame0.jpg")
+NLF_BODY_JOINT_COUNT = 55
 
 
 def sha256_file(path: Path) -> str:
@@ -377,6 +380,26 @@ def import_dam4sam(args: argparse.Namespace) -> Path:
     )
 
 
+def _nlf_body_landmarks(
+    keypoint_row: dict[str, object], joint_names: list[str], width: int, height: int
+) -> PerFrameNlfBody2D:
+    xy = keypoint_row["xy"][:NLF_BODY_JOINT_COUNT]
+    scores = keypoint_row["scores"][:NLF_BODY_JOINT_COUNT]
+    landmarks = tuple(
+        ImageLandmark2D(
+            name=joint_names[index],
+            x=min(max(float(point[0]) / width, 0.0), 1.0),
+            y=min(max(float(point[1]) / height, 0.0), 1.0),
+            confidence=float(scores[index]),
+        )
+        for index, point in enumerate(xy)
+    )
+    return PerFrameNlfBody2D(
+        subject_id=str(keypoint_row["subject_id"]),
+        landmarks=landmarks,
+    )
+
+
 def import_kineo(args: argparse.Namespace) -> Path:
     root = args.repository_root.resolve()
     config = G2PreprocessingManifest.model_validate_json((root / args.config).read_text())
@@ -385,15 +408,23 @@ def import_kineo(args: argparse.Namespace) -> Path:
     bboxes_path = native_root / "bboxes_2d.pkl"
     keypoints_path = native_root / "keypoints_2d.pkl"
     timings_path = native_root / "stage_timings.pkl"
-    bboxes = pickle.loads(bboxes_path.read_bytes())["annotations"]
-    keypoints = pickle.loads(keypoints_path.read_bytes())["annotations"]
+    intrinsics_path = native_root / "camera_intrinsics.pkl"
+    bbox_payload = pickle.loads(bboxes_path.read_bytes())
+    keypoint_payload = pickle.loads(keypoints_path.read_bytes())
     timings = pickle.loads(timings_path.read_bytes())["annotations"]
+    bboxes = bbox_payload["annotations"]
+    keypoints = keypoint_payload["annotations"]
+    joint_names = keypoint_payload["metadata"]["formats"][0]["keypoints_names"][
+        :NLF_BODY_JOINT_COUNT
+    ]
     if len(bboxes) != len(keypoints):
         raise ValueError("Kineo bbox/keypoint annotation counts differ")
-    by_frame: dict[int, list[PerFrameObject]] = {}
-    for bbox in bboxes:
+    by_frame_objects: dict[int, list[PerFrameObject]] = {}
+    by_frame_body: dict[int, list[PerFrameNlfBody2D]] = {}
+    for bbox, keypoint in zip(bboxes, keypoints, strict=True):
+        frame_idx = int(bbox["frame_idx"])
         x1, y1, x2, y2 = bbox["xyxy"]
-        by_frame.setdefault(int(bbox["frame_idx"]), []).append(
+        by_frame_objects.setdefault(frame_idx, []).append(
             PerFrameObject(
                 object_id=f"kineo-{bbox['subject_id']}",
                 label="person_nlf_bbox",
@@ -401,13 +432,17 @@ def import_kineo(args: argparse.Namespace) -> Path:
                 box=_normalize_box(x1, y1, x2, y2, 1280, 720),
             )
         )
-    frame_count = max(by_frame) + 1
+        by_frame_body.setdefault(frame_idx, []).append(
+            _nlf_body_landmarks(keypoint, joint_names, 1280, 720)
+        )
+    frame_count = max(by_frame_objects) + 1 if by_frame_objects else 0
     observations = tuple(
         FrameObservations(
             view_id="static-c10379",
             analysis_frame_index=index,
             source_seconds=DEFAULT_SOURCE_OFFSET_SECONDS + index / 30,
-            objects=tuple(by_frame.get(index, ())),
+            objects=tuple(by_frame_objects.get(index, ())),
+            nlf_body_2d=tuple(by_frame_body.get(index, ())),
         )
         for index in range(frame_count)
     )
@@ -416,42 +451,39 @@ def import_kineo(args: argparse.Namespace) -> Path:
     run_directory.mkdir(parents=True, exist_ok=False)
     normalized_path = run_directory / "observations.jsonl"
     _write_observations(normalized_path, observations)
-    native_index = _write_native_index(
-        [bboxes_path, keypoints_path, timings_path], run_directory / "native_pkls_index.json", root
-    )
+    native_paths = [bboxes_path, keypoints_path, timings_path]
+    if intrinsics_path.is_file():
+        native_paths.append(intrinsics_path)
+    native_index = _write_native_index(native_paths, run_directory / "native_pkls_index.json", root)
     stage_seconds = sum(float(item["duration_seconds"]) for item in timings)
     metadata = ExternalPartialRunMetadata(
-        classification="nlf_only_partial",
+        classification="kineo_nlf_only_partial",
         requested_input_fingerprint=_fingerprint(source_video, root),
         native_artifact_fingerprints=(native_index,),
         adapter=AdapterMetadata(
             name="kineo-nlf-pkl-import",
-            version="0.1.0",
-            implementation_basis="imported Kineo NLF 2D bbox/keypoint pickle outputs",
+            version="0.2.0",
+            implementation_basis=(
+                "imported Kineo NLF 2D bbox and first 55 SMPL-X body joints in image pixels"
+            ),
             external_source_uri="/home/nick/src/kineo",
             external_revision="03b36e31c79bd40bc8bb1ce4c9c08907140952dd",
         ),
         reproduced_command=(
-            "pixi run python -m kineo.demo.offline.demo --config-file "
-            "<nlf-headless-only.yaml> --sequence-name assembly101_focused_static_20s "
-            "--target-fps 30 --shared-intrinsics <focused_static_20s.mp4>"
+            "uv run battle-kineo-nlf --seconds 20 "
+            "--kineo-config configs/kineo_nlf_headless_only.yaml"
         ),
         decoded_frame_count=frame_count,
-        frames_with_normalized_output=len(by_frame),
+        frames_with_normalized_output=len(by_frame_objects),
         source_offset_seconds=DEFAULT_SOURCE_OFFSET_SECONDS,
         measurements=RuntimeMeasurements(elapsed_seconds=stage_seconds),
         normalized_artifact_uri=relative_uri(normalized_path, root),
-        rerun_artifact_uri=relative_uri(run_directory / "kineo_nlf_boxes.rrd", root),
+        rerun_artifact_uri=relative_uri(run_directory / "kineo_nlf_partial.rrd", root),
         limitations=(
-            "Only 462 of 602 frames contain a person bbox/1079-point NLF-SMPLX annotation.",
-            (
-                "The imported RRD intentionally exposes boxes only: 1079 NLF-SMPLX points "
-                "are not Battle hand landmarks."
-            ),
-            (
-                "Kineo working tree was modified during the smoke; no SfM, world coordinates, "
-                "or BVH was produced."
-            ),
+            f"{len(by_frame_objects)} of {frame_count} frames contain person bbox/body joints.",
+            "Body joints are NLF SMPL-X image pixels, not Battle hand landmarks or metric 3D.",
+            "MoGe intrinsics are estimated and retained only in native PKL; no world metric pose.",
+            "No SfM, BVH, or multi-view Kineo pipeline output was produced.",
         ),
     )
     return _write_imported_run(
@@ -461,7 +493,7 @@ def import_kineo(args: argparse.Namespace) -> Path:
         config=config,
         observations=observations,
         metadata=metadata,
-        output_name="kineo_nlf_boxes.rrd",
+        output_name="kineo_nlf_partial.rrd",
         source_video=source_video,
         video_dimensions=(1280, 720),
     )

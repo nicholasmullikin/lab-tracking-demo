@@ -172,19 +172,22 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
   `runs/dam4sam-static-20s-smoke-20260916t0520z/` (1-indexed filenames; superseded by
   source-aligned 0-indexed integrated runs).
 
-## External source: ATHENA (blocked)
+## External source: ATHENA (blocked for Assembly101 real data)
 
 - Checkout: `/home/nick/src/athena` @ `e85bd49444253aed9532439ace8ede146d1b6470` (MIT).
-- Official download documentation places camera extrinsics and positions in the ~72 GB
-  `AssemblyPoses.zip`; it does not prove intrinsics are absent. The archive was not downloaded.
-- Unofficial extrinsics sample downloaded from `pablovela5620/assembly101-720p` for
-  inspection only; not approved upstream calibration.
+- Range probe evidence: `data/logs/athena_hf_calibration_probe.json` and selective extract under
+  `data/raw/assembly101/athena_calibration_extract/` from official `cvml-nus/assembly101`
+  `AssemblyPoses.zip` @ `bfc15ea5…` (72 GB; central directory inspected, not whole-archive download).
+- Archive members for the approved recording include extrinsics/positions/timestamps but no
+  intrinsics path; ATHENA fixture smoke only: `uv run battle-athena-fixture-smoke`.
 
-## External source: Kineo
+## External source: Kineo (`kineo_nlf_only_partial`)
 
-- Checkout: `/home/nick/src/kineo` (pixi env) had tracked modifications during the NLF-only
-  smoke; its ignored headless config is `data/logs/kineo_nlf_headless_only.yaml`.
-- Outputs under ignored `runs/kineo/infer_nlf_headless_only/`.
+- Checkout: `/home/nick/src/kineo` @ `03b36e31…` (dirty working tree during smokes).
+- Checked-in Battle config: `configs/kineo_nlf_headless_only.yaml`.
+- Wrapper: `uv run battle-kineo-nlf --seconds 20`.
+- Native PKLs under ignored `runs/kineo/infer_nlf_headless_only/`; normalized runs under
+  `runs/kineo-nlf-headless-*`.
 
 ## Candidate source: FineBio
 

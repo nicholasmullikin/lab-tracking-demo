@@ -55,7 +55,8 @@ inputs outside Git.
   from Meta public URLs (SHA-256 `7402e0…be69`). Battle adapters `samurai_sam2_video_smoke` and
   `dam4sam_video_smoke` preserve native SAMURAI/DAM4SAM semantics on a shared deterministic hand
   bbox seed; they do not establish accuracy or distractor-scene proof.
-- **ATHENA:** MIT source checkout; no Assembly101 triangulation run. Official sources place
+- **ATHENA:** MIT source checkout; Assembly101 real triangulation blocked (no intrinsics in
+  official `AssemblyPoses.zip` member inventory). Fixture smoke only. Official sources place
   extrinsics/positions in `AssemblyPoses.zip` but do not establish that intrinsics are absent.
 - **Kineo:** research/evaluation terms per upstream README; its checkout was dirty during the
   NLF-only partial smoke. The readable PKLs are person-centric outputs without SfM, metric

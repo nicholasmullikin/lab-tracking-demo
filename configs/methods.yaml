@@ -66,12 +66,14 @@ methods:
     state: blocked
     external_source: /home/nick/src/athena
     external_revision: e85bd49444253aed9532439ace8ede146d1b6470
-    blocker: official cvml-nus/assembly101 revision lacks extractable intrinsics; AssemblyPoses.zip only path
-    evidence_log: data/logs/athena_hf_calibration_probe.log
+    blocker: AssemblyPoses.zip exposes extrinsics/positions but no intrinsics member for ATHENA calibration
+    evidence_log: docs/athena_hf_calibration_probe.json
+    fixture_command: battle-athena-fixture-smoke
   kineo:
     state: external_partial
     environment: pixi-managed /home/nick/src/kineo
-    smoke_scope: 602-frame NLF-only partial (462 bboxes/keypoint PKLs; no SfM/BVH)
+    adapter: battle.kineo_nlf
+    smoke_scope: kineo_nlf_only_partial; 602-frame NLF-only (462 bbox/body-joint PKLs; no SfM/BVH)
     install_caveat: full offline config requires multi-view SfM or interactive SAM2 UI
     license_caveat: calibration-free person-centric; not hand-part specialized
   deferred:

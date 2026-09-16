@@ -413,6 +413,23 @@ class PerFrameObject(VersionedModel):
     )
 
 
+class ImageLandmark2D(VersionedModel):
+    """One named 2D landmark in normalized image coordinates."""
+
+    name: str = Field(min_length=1)
+    x: float = Field(ge=0, le=1)
+    y: float = Field(ge=0, le=1)
+    confidence: float = Field(ge=0, le=1)
+
+
+class PerFrameNlfBody2D(VersionedModel):
+    """NLF SMPL-X body joints projected to image pixels, not Battle hand landmarks."""
+
+    subject_id: str = Field(min_length=1)
+    coordinate_frame: Literal["image_normalized_top_left"] = "image_normalized_top_left"
+    landmarks: tuple[ImageLandmark2D, ...] = Field(min_length=1)
+
+
 class PerFrameHand(VersionedModel):
     hand_id: str = Field(min_length=1)
     side: HandSide
@@ -454,6 +471,7 @@ class FrameObservations(VersionedModel):
     source_seconds: float = Field(ge=0)
     objects: tuple[PerFrameObject, ...] = ()
     hands: tuple[PerFrameHand, ...] = ()
+    nlf_body_2d: tuple[PerFrameNlfBody2D, ...] = ()
     tracker_diagnostics: tuple[TrackerSlotDiagnostic, ...] = ()
 
 
@@ -1876,7 +1894,13 @@ class ExternalPartialRunMetadata(VersionedModel):
     upstream method's semantics.
     """
 
-    classification: Literal["single_frame_smoke", "external_partial", "nlf_only_partial"]
+    classification: Literal[
+        "single_frame_smoke",
+        "external_partial",
+        "nlf_only_partial",
+        "kineo_nlf_only_partial",
+        "fixture_smoke",
+    ]
     requested_input_fingerprint: ArtifactFingerprint
     native_artifact_fingerprints: tuple[ArtifactFingerprint, ...] = Field(min_length=1)
     adapter: AdapterMetadata

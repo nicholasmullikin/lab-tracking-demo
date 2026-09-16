@@ -1,0 +1,58 @@
+output_root_dir: "${oc.env:OUTPUT_ROOT_DIR,/home/nick/src/battle/runs/kineo}/infer_nlf_headless_only"
+cache_root_dir: "${oc.env:CACHE_ROOT_DIR,/home/nick/src/battle/data/logs/kineo_cache}/infer_nlf_headless_only"
+use_cache: False
+batch_size: 32
+use_half_precision: True
+shared_intrinsics: True
+rtmlib_bbox_detection_frame_step: 5
+
+pipeline:
+  seed: 19
+  stages:
+    rtmlib_bbox_detection:
+      _target_: kineo.pipeline.stages.rtmlib.rtmlib_bbox_detection.RtmlibBboxDetectionStage
+      name: "Rtmlib Bbox Detection"
+      order: 5
+      bbox_model: "https://download.openmmlab.com/mmpose/v1/projects/rtmposev1/onnx_sdk/yolox_tiny_8xb8-300e_humanart-6f3252f9.zip"
+      bbox_model_input_shape_hw: [416, 416]
+      runtime_cfg:
+        _target_: kineo.pipeline.stages.rtmlib.rtmlib_bbox_detection.RtmlibBboxDetectionRuntimeConfig
+        use_cache: ${use_cache}
+        cache_output_path_template: "${cache_root_dir}/{sequence_name}/{annotation_key}.pkl"
+        show: False
+        frame_step: ${rtmlib_bbox_detection_frame_step}
+        best_bbox_only: True
+
+    moge_intrinsics_estimation:
+      _target_: kineo.pipeline.stages.moge_intrinsics_estimation.MoGeIntrinsicsEstimationStage
+      name: "MoGe Intrinsics Estimation"
+      order: 10
+      model_name_or_path: "Ruicheng/moge-2-vitl"
+      runtime_cfg:
+        _target_: kineo.pipeline.stages.moge_intrinsics_estimation.MoGeIntrinsicsEstimationRuntimeConfig
+        use_cache: ${use_cache}
+        use_half_precision: ${use_half_precision}
+        cache_output_path_template: "${cache_root_dir}/{sequence_name}/{annotation_key}.pkl"
+
+    nlf_smpl_keypoints_detection:
+      _target_: kineo.pipeline.stages.nlf.smpl_keypoints_detection.NLFSMPLKeypointsDetectionStage
+      name: "NLF SMPL Keypoints Detection"
+      order: 20
+      torchscript_model_path: "./checkpoints/nlf_l_multi_0.3.2.torchscript"
+      runtime_cfg:
+        _target_: kineo.pipeline.stages.nlf.smpl_keypoints_detection.NLFSMPLKeypointsDetectionRuntimeConfig
+        batch_size: ${batch_size}
+        use_half_precision: ${use_half_precision}
+        use_cache: ${use_cache}
+        cache_output_path_template: "${cache_root_dir}/{sequence_name}/{annotation_key}.pkl"
+
+    annotations_export:
+      _target_: kineo.pipeline.stages.annotations_export.AnnotationsExportStage
+      name: "Annotations Export"
+      order: 170
+      runtime_cfg:
+        _target_: kineo.pipeline.stages.annotations_export.AnnotationsExportRuntimeConfig
+        annotations_keys: "*"
+        excluded_annotations_keys: []
+        not_found_error: False
+        output_path_template: "${output_root_dir}/offline_demo/annotations/{sequence_name}/{annotation_key}.pkl"

@@ -296,6 +296,31 @@ def _log_tracker_diagnostics(
             )
 
 
+def _log_nlf_body_2d(
+    observation: FrameObservations,
+    *,
+    view_root: str,
+    video_dimensions: tuple[int, int] | None,
+) -> None:
+    width, height = video_dimensions or (1, 1)
+    root = f"{view_root}/nlf_body_2d"
+    if not observation.nlf_body_2d:
+        rr.log(root, rr.Clear(recursive=True))
+        return
+    for pose in observation.nlf_body_2d:
+        positions = [[landmark.x * width, landmark.y * height] for landmark in pose.landmarks]
+        labels = [f"{pose.subject_id}:{landmark.name}" for landmark in pose.landmarks]
+        rr.log(
+            f"{root}/{pose.subject_id}/landmarks",
+            rr.Points2D(
+                positions,
+                labels=labels,
+                colors=[(120, 220, 160)] * len(positions),
+                radii=2.5,
+            ),
+        )
+
+
 def _log_hands(
     observation: FrameObservations,
     *,
@@ -639,6 +664,11 @@ def _log_observation(
         view_root=view_root,
         video_dimensions=video_dimensions,
     )
+    _log_nlf_body_2d(
+        observation,
+        view_root=view_root,
+        video_dimensions=video_dimensions,
+    )
 
 
 def _require_synchronized_observations(
@@ -952,6 +982,11 @@ def export_run(
         )
 
         _log_hands(
+            observation,
+            view_root=view_root,
+            video_dimensions=video_dimensions,
+        )
+        _log_nlf_body_2d(
             observation,
             view_root=view_root,
             video_dimensions=video_dimensions,

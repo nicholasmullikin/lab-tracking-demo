@@ -29,6 +29,7 @@ battle-samurai-video = "battle.samurai_video:main"
 battle-dam4sam-video = "battle.dam4sam_video:main"
 battle-athena-calibration-probe = "battle.athena_calibration_probe:main"
 battle-athena-fixture-smoke = "battle.athena_triangulation:main"
+battle-kineo-nlf = "battle.kineo_nlf:main"
 battle-prepare-human-qa = "battle.human_qa:main"
 battle-human-qa-candidates = "battle.human_qa:candidate_main"
 

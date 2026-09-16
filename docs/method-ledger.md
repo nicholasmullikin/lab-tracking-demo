@@ -1125,28 +1125,34 @@ by a worker, manifest, or native log appear below. Human gates G1–G5 remain de
 
 #### ATHENA multi-view hand triangulation
 
-- Classification: `blocked`. The `athena` checkout is at `e85bd494…`; any reported tests are
-  synthetic only and do not demonstrate Assembly101 triangulation.
-- Official Assembly101 download documentation and site say `AssemblyPoses.zip` contains 2D/3D
-  hand poses, camera extrinsics, and positions; the latter explicitly places extrinsics there.
-  They do not prove intrinsics are absent. The old “official intrinsics absent upstream” claim
-  was unsupported and is retracted.
-- Genuine blocker: no approved, bounded calibration artifact providing ATHENA’s required camera
-  inputs was acquired. The 72 GB archive was not downloaded/inspected, and the unofficial mirror
-  cannot substitute for approved calibration. No real-data ATHENA output exists.
+- Classification: `blocked` for Assembly101 real data; `fixture_smoke` only via
+  `uv run battle-athena-fixture-smoke`.
+- Checkout: `/home/nick/src/athena` @ `e85bd494…`. ATHENA requires per-camera intrinsics plus
+  extrinsics in JARVIS YAML or Anipose TOML form.
+- HTTP Range probe (`uv run battle-athena-calibration-probe`, evidence
+  `docs/athena_hf_calibration_probe.json`): `AssemblyPoses.zip` at
+  `cvml-nus/assembly101` @ `bfc15ea5…` supports Range requests; central directory has 3381
+  members. For recording `nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532` the
+  archive exposes six calibration-like members (`camera_extrinsics_fixed`, `camera_position_fixed`,
+  `camera_extrinsics_ego`, `camera_position_ego`, `timestamp`, `xf_transf`) and no path containing
+  `intrinsic`. Selective extract (no whole-archive download) retrieved fixed extrinsics (2347 B),
+  fixed positions (596 B), timestamps (1.1 MB), and `xf_transf` (31.4 MB).
+- Fixture smoke (`runs/athena-fixture-triangulation-smoke/`): synthetic two-view normalized 2D
+  inputs triangulated with ATHENA DLT logic; separate 2D view logs and 3D world points in
+  `athena_fixture.rrd`. No accuracy claim and no Assembly101 landmarks consumed.
 
 #### Kineo offline pipeline
 
-- Classification: `external partial`. The loaded PKLs contain 462 bbox records and 462
-  `nlf_smplx` keypoint records (1,079 points each) for `subject_0`, on 462 of 602 frames
-  0–601; one estimated 1280×720 intrinsics record; and stage durations of 1.5419, 0.6829,
-  and 26.6264 s (28.8513 s total). Seven raw boxes extend beyond image bounds.
-- The full single-view config demonstrably fails in SfM initialization. The trimmed YAML is
-  ignored and the Kineo checkout is dirty, so this is not a clean Kineo pipeline result or a
-  reproducible command. It is neither SfM, metric 3D, BVH, hand-only pose, nor full coverage.
-- Remediation: `battle-import-external-smoke kineo` reads the PKLs, preserves a native hash
-  index, emits 602 normalized frame records with the 462 person boxes, and writes
-  `kineo_nlf_boxes.rrd`. It deliberately does not miscast 1,079 NLF-SMPLX points as hands.
+- Classification: `kineo_nlf_only_partial`. Checked-in config
+  `configs/kineo_nlf_headless_only.yaml`; wrapper `uv run battle-kineo-nlf --seconds 20`.
+- Kineo checkout `/home/nick/src/kineo` @ `03b36e31…` remains dirty (tracked edits in
+  `rerun_export.py`, `sfm_camera_extrinsics_initialization.py`, `pyproject.toml`, `pixi.lock`).
+- Person selection: `best_bbox_only=True` on RTMLib detections (highest score per frame; not largest
+  area), `frame_step=5`, `bbox_thr=0.3`, `nms_iou_thr=0.65`.
+- Latest bounded rerun `runs/kineo-nlf-headless-20s-20260916t0540z/`: wall inference 30.4 s;
+  PKLs hold 462/602 frames with bbox + 55-body-joint NLF outputs; MoGe intrinsics remain native
+  only. Normalized export includes boxes plus image-normalized NLF body joints; RRD
+  `kineo_nlf_partial.rrd`. Not SfM, metric world pose, BVH, or multi-view Kineo.
 
 #### Explicitly deferred (not integrated)
 

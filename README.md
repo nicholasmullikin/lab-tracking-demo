@@ -199,26 +199,28 @@ uv run battle-dam4sam-video --seconds 10
 uv run battle-import-external-smoke dam4sam
 ```
 
-### Kineo — external partial
+### Kineo — `kineo_nlf_only_partial`
 
-The trimmed NLF-only job produced readable PKLs: 462 `subject_0` 2D boxes and 462
-`nlf_smplx` records (1,079 points each) over input frames 0–601, plus one estimated intrinsics
-record. Its stage durations sum to 28.851 s; no total wall runtime is claimed. Seven raw boxes
-extend outside image bounds. The Kineo checkout is dirty and the headless YAML is ignored, so it
-is not a reproducible clean-upstream run. The importer preserves PKL hashes, normalizes its person
-boxes (not its incompatible 1,079-point format), and creates `kineo_nlf_boxes.rrd`.
+Checked-in config `configs/kineo_nlf_headless_only.yaml` runs the headless NLF-only path with
+deterministic `best_bbox_only` person selection (highest detector confidence, not largest area).
+`battle-kineo-nlf` records Kineo `HEAD` plus dirty diff fingerprint, model/checkpoint identities,
+proxy checksum, PKL validation, native PKL hashes, normalized boxes, and the first 55 NLF body joints
+in image-normalized coordinates. It is not SfM, metric 3D, BVH, or full Kineo.
 
 ```bash
-uv run battle-import-external-smoke kineo
+uv run battle-kineo-nlf --seconds 20
 ```
+
+Latest bounded rerun: `runs/kineo-nlf-headless-20s-20260916t0540z/` with inference-free
+`kineo_nlf_partial.rrd`.
 
 ## Exploratory methods still blocked
 
-- **ATHENA:** blocked. Official Assembly101 documentation says the ~72 GB `AssemblyPoses.zip`
-  contains 2D/3D hand poses, camera extrinsics, and positions; it does not establish that
-  intrinsics are absent. The archive was not downloaded or inspected while ATHENA requires
-  calibration inputs. The blocker is lack of approved, bounded-access calibration files—not a
-  proven upstream absence of intrinsics.
+- **ATHENA:** blocked for Assembly101 real data. HTTP Range inspection of official
+  `cvml-nus/assembly101` `AssemblyPoses.zip` (72 GB, not downloaded whole) found extrinsics,
+  positions, timestamps, and landmarks for the approved recording, but no intrinsics member.
+  ATHENA requires per-camera intrinsics. Fixture-only smoke:
+  `uv run battle-athena-fixture-smoke`. Evidence: `docs/athena_hf_calibration_probe.json`.
 - **Deferred without integration:** LM-EEC, ObjectRelator, Qwen VLMs, supervised TAS, long-video
   VLMs.
 

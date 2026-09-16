@@ -46,3 +46,35 @@ def test_external_partial_contract_requires_native_provenance() -> None:
 
     assert metadata.classification == "external_partial"
     assert metadata.decoded_frame_count == 2
+
+
+def test_external_partial_contract_accepts_kineo_classification() -> None:
+    payload = {
+        "classification": "kineo_nlf_only_partial",
+        "requested_input_fingerprint": {
+            "uri": "data/input.mp4",
+            "sha256": "a" * 64,
+            "source": "measured",
+        },
+        "native_artifact_fingerprints": [
+            {
+                "uri": "runs/native-index.json",
+                "sha256": "b" * 64,
+                "source": "measured",
+            }
+        ],
+        "adapter": {
+            "name": "kineo-nlf-pkl-import",
+            "version": "0.2.0",
+            "implementation_basis": "fixture",
+            "external_source_uri": "https://example.invalid/kineo",
+            "external_revision": "deadbeef",
+        },
+        "reproduced_command": "uv run battle-kineo-nlf --seconds 20",
+        "decoded_frame_count": 602,
+        "source_offset_seconds": 294.0,
+        "normalized_artifact_uri": "runs/import/observations.jsonl",
+        "limitations": ["NLF-only partial"],
+    }
+    metadata = ExternalPartialRunMetadata.model_validate(payload)
+    assert metadata.classification == "kineo_nlf_only_partial"
