@@ -1054,15 +1054,19 @@ by a worker, manifest, or native log appear below. Human gates G1–G5 remain de
 
 #### CLIP + Drop-DTW weak supervision
 
-- Classification: `external partial`. The worker directly imports `dp.exact_dp.drop_dtw` from
+- Classification: `integrated smoke`. The worker directly imports `dp.exact_dp.drop_dtw` from
   `Drop-DTW` at `32ce9c8…`, creates OpenCLIP ViT-B-32 image/text embeddings, builds cosine
   costs, and calls the algorithm twice (cost and labels); no synthetic substitute was used.
 - Evidence: exact coarse transcript source/hash is in the manifest; two GT weak-supervision
   steps overlap frames 8820–9420. Twenty 1-FPS samples produce cost 15.2950248 and matched
   counts 16 (`attach interior`) and 1 (`screw chassis`). `alignment.json` and scalar-only
   `alignment.rrd` are inference-free.
-- Measured worker runtime: 2.6582 s. The OpenCLIP `openai` weights lack a recorded revision,
-  checksum, and separate license review, so this is not an integrated reproducible result.
+- Measured worker runtime: 2.6622 s in the pinned rerun
+  `runs/drop-dtw-static-20s-pinned-openclip-rerun/`. It requires the verified
+  `timm/vit_base_patch32_clip_224.openai` snapshot
+  `a6f597a30f7b82c51704746581f9a4e41421e878`, with checkpoint SHA-256
+  `e6d1bd7789aa45192b3bf90570a789b478bae1b74ebcce7eddd908e83a2b7c31`; the runner is
+  offline and fails rather than silently downloading a different weight.
 
 #### Grounded-SAM-2
 

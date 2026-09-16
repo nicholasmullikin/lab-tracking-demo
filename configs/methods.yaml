@@ -33,12 +33,12 @@ methods:
     external_source: https://github.com/mikel-brostrom/boxmot
     detector_source: ultralytics YOLOv8n per-frame COCO detections; not MuggledSAM IDs
   drop_dtw:
-    state: external_partial
+    state: integrated_smoke
     environment: "~/.pyenv/versions/wilor"
     adapter: battle.drop_dtw_align
     external_source: https://github.com/SamsungLabs/Drop-DTW
     external_revision: 32ce9c82c6a0d717a94f4139b1902ad146923444
-    supervision: assembly101_gt_transcript_weak_supervision; OpenCLIP weight revision/checksum unrecorded
+    supervision: assembly101_gt_transcript_weak_supervision; OpenCLIP ViT-B-32/openai checkpoint pinned
   grounded_sam2:
     state: external_partial
     environment: "~/.pyenv/versions/grounded_sam2"

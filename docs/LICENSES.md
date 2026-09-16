@@ -44,9 +44,9 @@ inputs outside Git.
   declares AGPL-3.0. Association is conditional on independent per-frame COCO-person
   detections and is not comparable to SAM3 masks. The detector file is hashed, but its
   upstream acquisition/model-license decision remains unrecorded.
-- **OpenCLIP + Drop-DTW:** alignment uses Assembly101 coarse labels as declared weak
-  supervision; intervals and cost are not accuracy claims. The OpenCLIP weight revision,
-  checksum, and separate model-license review were not recorded.
+- **OpenCLIP + Drop-DTW:** the pinned `open-clip-torch` 3.3.0 package declares MIT; the
+  OpenCLIP checkpoint is content-addressed in `docs/SOURCES.md`. Alignment uses Assembly101
+  coarse labels as declared weak supervision; intervals and cost are not accuracy claims.
 - **Grounded-SAM-2 / SAM2 / Grounding DINO:** Apache-2.0 source; Meta SAM2.1 and IDEA
   Grounding DINO weights downloaded to ignored paths; HF Grounding DINO Tiny used when
   local CUDA extension build failed.

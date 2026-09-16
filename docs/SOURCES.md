@@ -94,8 +94,12 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
 
 - OpenCLIP: `open-clip-torch` 3.3.0, model `ViT-B-32` / `openai` weights (downloaded on
   first run into the wilor environment cache).
-- Audit gap: the cached OpenCLIP weight revision/checksum and separate model-license review
-  were not recorded, so the evidence is not fully reproducible.
+- Pinned rerun: Hugging Face `timm/vit_base_patch32_clip_224.openai` snapshot
+  `a6f597a30f7b82c51704746581f9a4e41421e878`,
+  `open_clip_model.safetensors` SHA-256
+  `e6d1bd7789aa45192b3bf90570a789b478bae1b74ebcce7eddd908e83a2b7c31`.
+  The installed OpenCLIP package metadata declares MIT. `battle-drop-dtw-align` requires
+  that local checkpoint and runs with `HF_HUB_OFFLINE=1`.
 - Drop-DTW: `/home/nick/src/Drop-DTW` @ `32ce9c82c6a0d717a94f4139b1902ad146923444`.
 - Assembly101 coarse transcript: local file under approved raw tree; weak supervision only.
 

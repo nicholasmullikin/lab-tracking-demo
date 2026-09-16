@@ -26,7 +26,7 @@ separated-parts frame. Human review retained only their first 60 seconds for the
 synchronized two-view comparison; later outputs remain failure evidence. The second
 method in the original core spine, MediaPipe Hands, has a selected 60-second static run
 merged into the focused first-minute comparison. The Sep 16 exploratory queue has one
-Battle-integrated BoxMOT smoke. WiLoR, CLIP+Drop-DTW, Grounded-SAM-2, SAMURAI, DAM4SAM,
+Battle-integrated BoxMOT and CLIP+Drop-DTW smokes. WiLoR, Grounded-SAM-2, SAMURAI, DAM4SAM,
 and Kineo remain external partials after an adversarial evidence audit; ATHENA is blocked.
 
 The rest of this file is the how-to: each section below gives the exact commands that
@@ -132,14 +132,15 @@ Association remains conditional on the COCO `person` detector. Installed BoxMOT 
 Ultralytics 8.1.34 package metadata both declare AGPL-3.0; the local detector is
 content-addressed but has no recorded upstream acquisition URL or separate model-license review.
 
-### CLIP + Drop-DTW — external partial
+### CLIP + Drop-DTW — integrated smoke
 
 The worker directly calls OpenCLIP `encode_image`, `encode_text`, and
 `dp.exact_dp.drop_dtw`; this is not synthetic alignment. It sampled 20 frames at 1 FPS, used
 two Assembly101 coarse-label steps as declared weak supervision, and wrote cost 15.295 with
 16/1 matched samples plus an inference-free scalar-only `alignment.rrd`. Worker runtime is
-2.658 s. This remains external partial: the Drop-DTW source is pinned to `32ce9c8…`, but the
-OpenCLIP `openai` weights have no recorded revision/checksum or separate license review.
+2.662 s. The rerun is offline and pins Drop-DTW `32ce9c8…` plus OpenCLIP 3.3.0,
+`ViT-B-32`/`openai`, HF snapshot `a6f597a…`, and checkpoint SHA-256
+`e6d1bd…2b7c31` (MIT package metadata). Its GT transcript remains weak supervision only.
 
 ```bash
 uv run battle-drop-dtw-align --seconds 20
