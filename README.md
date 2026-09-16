@@ -25,9 +25,9 @@ aligned 92.7-second static and monochrome ego runs were completed from a cleaner
 separated-parts frame. Human review retained only their first 60 seconds for the
 synchronized two-view comparison; later outputs remain failure evidence. The second
 method in the original core spine, MediaPipe Hands, has a selected 60-second static run
-merged into the focused first-minute comparison. The Sep 16 exploratory pass added bounded
-WiLoR, BoxMOT, CLIP+Drop-DTW, Grounded-SAM-2 (HF path), SAMURAI, DAM4SAM, and Kineo
-(NLF-only headless) smokes; ATHENA remains blocked pending official Assembly101 intrinsics.
+merged into the focused first-minute comparison. The Sep 16 exploratory queue has one
+Battle-integrated BoxMOT smoke. WiLoR, CLIP+Drop-DTW, Grounded-SAM-2, SAMURAI, DAM4SAM,
+and Kineo remain external partials after an adversarial evidence audit; ATHENA is blocked.
 
 The rest of this file is the how-to: each section below gives the exact commands that
 reproduce a stage. No recordings, annotations, or model weights are included. The SAM3
@@ -99,81 +99,103 @@ shows landmarks, hand skeletons, boxes, detection count, and mean handedness con
 Detection presence and handedness are model outputs without hand-pose ground truth, not
 accuracy measurements.
 
-## WiLoR hand-pose smoke (exploratory)
+## Audited exploratory queue
 
-`battle-wilor-hands` wraps the local WiLoR repo through an isolated wilor-environment
-worker at batch size one with mesh export disabled. It emits normalized 2D landmarks,
-21-joint camera-relative 3D pose with explicit non-metric semantics, handedness, and
-frame-local hand IDs. WiLoR is CC-BY-NC-ND and is not a multi-view reconstruction claim.
+The classifications below are deliberately strict. An “integrated smoke” has Battle
+normalization, a Rerun recording, and reproducible runner provenance. An “external partial”
+may have native output or an inference-free Battle import, but it is not an end-to-end
+Battle integration. None of these results supports an accuracy claim.
+
+### WiLoR — external partial
+
+`battle-wilor-hands` emitted 600 normalized rows (frames 0–599), 582 frames with a hand,
+1,171 hand observations, 582 native JSON evidence files, and an inference-free `hands.rrd`.
+Each emitted hand has 21 image-space joints and 21 non-metric camera-relative joints. The
+worker measured 47.247 s (TTFU 5.885 s; 2,819,373,056 bytes peak allocated VRAM), correcting
+the prior 57 s claim. The checkout used for inference is dirty, so its base revision alone
+does not reproduce this run; it must not be promoted to an integrated smoke. WiLoR weights are
+CC-BY-NC-ND and are not a multi-view reconstruction result.
+
+### BoxMOT — integrated smoke
+
+`battle-boxmot-track` invokes `YOLO(...)(frame)` per frame and passes those six-column
+detections directly to `BotSort.update`; MuggledSAM IDs are not used. The audited run has 600
+rows (frames 0–599), 557 frames/observations with tracks, IDs `boxmot-0` and `boxmot-1`, and
+an inference-free `tracks.rrd`. Worker runtime is 7.483 s (TTFU 2.237 s; 74,796,544 bytes
+allocated).
 
 ```bash
-uv run battle-wilor-hands --seconds 20 --save-native-evidence
-```
-
-Completed smoke: `runs/wilor-hands-static-20s-20260916t0438z/` (600 frames, 598 with at
-least one hand, `hands.rrd` inference-free).
-
-## BoxMOT box tracking smoke (exploratory)
-
-`battle-boxmot-track` associates independent per-frame YOLOv8n COCO `person` detections
-with BoxMOT BotSort. MuggledSAM track IDs are never used as detections.
-
-```bash
-mkdir -p models/yolo
-cp /path/to/yolov8n.pt models/yolo/yolov8n.pt
 uv run battle-boxmot-track --seconds 20
 ```
 
-Completed smoke: `runs/boxmot-yolo-static-20s-20260916t0445z/` (557/600 frames with
-tracks, `tracks.rrd` inference-free). Association is conditional on the declared
-detector source.
+Association remains conditional on the COCO `person` detector. Installed BoxMOT 25.0.0 and
+Ultralytics 8.1.34 package metadata both declare AGPL-3.0; the local detector is
+content-addressed but has no recorded upstream acquisition URL or separate model-license review.
 
-## CLIP + Drop-DTW weak supervision (exploratory)
+### CLIP + Drop-DTW — external partial
 
-`battle-drop-dtw-align` builds an ordered transcript from local Assembly101 coarse
-ground-truth labels, embeds proxy frames with OpenCLIP ViT-B-32 at 1 FPS, and aligns with
-pinned SamsungLabs/Drop-DTW. The transcript is weak supervision only.
+The worker directly calls OpenCLIP `encode_image`, `encode_text`, and
+`dp.exact_dp.drop_dtw`; this is not synthetic alignment. It sampled 20 frames at 1 FPS, used
+two Assembly101 coarse-label steps as declared weak supervision, and wrote cost 15.295 with
+16/1 matched samples plus an inference-free scalar-only `alignment.rrd`. Worker runtime is
+2.658 s. This remains external partial: the Drop-DTW source is pinned to `32ce9c8…`, but the
+OpenCLIP `openai` weights have no recorded revision/checksum or separate license review.
 
 ```bash
 uv run battle-drop-dtw-align --seconds 20
 ```
 
-Completed run: `runs/drop-dtw-static-20s-20260916t0450z/` (`alignment.json` cost 15.295,
-`alignment.rrd` with cost/interval scalars only).
+### Grounded-SAM-2 — external partial / single-frame smoke
 
-## Grounded-SAM-2 smoke (exploratory)
+The native JSON records one 1280×720 `hand` box (score 0.953125) and a COCO-RLE SAM2 mask for
+the `hand.` prompt. It used Hugging Face `IDEA-Research/grounding-dino-tiny` after the local
+CUDA extension build failed, but does not pin that HF model revision or record a measured
+runtime. `battle-import-external-smoke grounded-sam2` now creates normalized box observations
+and `grounded_sam2.rrd`; it intentionally does not claim video propagation or a normalized mask.
 
-Bounded single-frame open-vocabulary detection + SAM2 mask on the focused static proxy
-(`hand.` prompt). Local Grounding DINO CUDA build failed (CUDA 13.2 vs torch 12.8); smoke
-used Hugging Face `IDEA-Research/grounding-dino-tiny` instead.
+### SAMURAI — external partial
+
+`tracking.mp4` is a genuine 1280×720, 30-FPS, 602-frame output matching the 602-frame /
+20.0667-second input, seeded by the preserved `(881,446,152,129)` hand box. However, its
+recorded `scripts/demo.py` calls the fork’s plain `build_sam2_video_predictor`; no
+SAMURAI-specific tracker path, normalized masks, runtime log, or durable command manifest was
+preserved. It is not integrated and must not be called a SAMURAI method success.
+
+### DAM4SAM — external partial
+
+The native output has 602 unique, nonempty 1280×720 PNG masks named `00001.png` through
+`00602.png`; its log measures 53.6 s. The source log is consistent with DAM4SAM/SAM2 code, but
+the headless wrapper and exact command were not preserved, and the SAM2 post-processing extension
+was skipped for an ABI error. The importer writes 602 normalized frame records, a
+content-addressed mask index, and `dam4sam.rrd`, but this is not proof of DAM4SAM distractor
+semantics.
 
 ```bash
-# external env ~/.pyenv/versions/grounded_sam2; see docs/method-ledger.md
-# run: grounded_sam2_hf_model_demo.py on focused_static_frame0.jpg
+uv run battle-import-external-smoke dam4sam
 ```
 
-Run: `runs/grounded-sam2-static-frame0-smoke-20260916t0450z/`.
+### Kineo — external partial
 
-## SAMURAI / DAM4SAM tracker smokes (exploratory)
+The trimmed NLF-only job produced readable PKLs: 462 `subject_0` 2D boxes and 462
+`nlf_smplx` records (1,079 points each) over input frames 0–601, plus one estimated intrinsics
+record. Its stage durations sum to 28.851 s; no total wall runtime is claimed. Seven raw boxes
+extend outside image bounds. The Kineo checkout is dirty and the headless YAML is ignored, so it
+is not a reproducible clean-upstream run. The importer preserves PKL hashes, normalizes its person
+boxes (not its incompatible 1,079-point format), and creates `kineo_nlf_boxes.rrd`.
 
-Both ran 20 s on `focused_static_20s.mp4` with the same frame-0 hand bbox seed derived
-from the Grounded-SAM-2 detection. Headless DAM4SAM bypasses the interactive bbox drawer.
-
-- SAMURAI: `runs/samurai-static-20s-smoke-20260916t0510z/tracking.mp4`
-- DAM4SAM: `runs/dam4sam-static-20s-smoke-20260916t0520z/masks/` (602 PNG)
-
-## Kineo headless NLF smoke (exploratory)
-
-Use `nlf_single_person.yaml` (rtmlib bbox), not `nlf_single_person_sam2.yaml`. Full
-offline config fails on single-view SfM; trimmed NLF-only config exported pkls:
-
-`runs/kineo/infer_nlf_headless_only/offline_demo/annotations/assembly101_focused_static_20s/`
+```bash
+uv run battle-import-external-smoke kineo
+```
 
 ## Exploratory methods still blocked
 
-- **ATHENA:** official `cvml-nus/assembly101` @ `bfc15ea5…` exposes `AssemblyPoses.zip`
-  (~72 GB) but no per-file intrinsics; HF probe log `data/logs/athena_hf_calibration_probe.log`.
-- **Deferred without integration:** LM-EEC, ObjectRelator, Qwen VLMs, supervised TAS, long-video VLMs.
+- **ATHENA:** blocked. Official Assembly101 documentation says the ~72 GB `AssemblyPoses.zip`
+  contains 2D/3D hand poses, camera extrinsics, and positions; it does not establish that
+  intrinsics are absent. The archive was not downloaded or inspected while ATHENA requires
+  calibration inputs. The blocker is lack of approved, bounded-access calibration files—not a
+  proven upstream absence of intrinsics.
+- **Deferred without integration:** LM-EEC, ObjectRelator, Qwen VLMs, supervised TAS, long-video
+  VLMs.
 
 ## Fixed SAM3 core-method smoke
 

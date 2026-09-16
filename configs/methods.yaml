@@ -21,11 +21,11 @@ methods:
     environment: battle uv / CPython 3.12
     adapter: battle.mediapipe_hands
   wilor_hands:
-    state: succeeded
+    state: external_partial
     environment: "~/.pyenv/versions/wilor"
     adapter: battle.wilor_hands
     external_source: /home/nick/src/WiLoR
-    license_caveat: CC-BY-NC-ND; non-metric camera-relative 3D only
+    license_caveat: CC-BY-NC-ND; non-metric camera-relative 3D only; source checkout was dirty
   boxmot:
     state: succeeded
     environment: "~/.pyenv/versions/wilor"
@@ -33,31 +33,31 @@ methods:
     external_source: https://github.com/mikel-brostrom/boxmot
     detector_source: ultralytics YOLOv8n per-frame COCO detections; not MuggledSAM IDs
   drop_dtw:
-    state: succeeded
+    state: external_partial
     environment: "~/.pyenv/versions/wilor"
     adapter: battle.drop_dtw_align
     external_source: https://github.com/SamsungLabs/Drop-DTW
     external_revision: 32ce9c82c6a0d717a94f4139b1902ad146923444
-    supervision: assembly101_gt_transcript_weak_supervision
+    supervision: assembly101_gt_transcript_weak_supervision; OpenCLIP weight revision/checksum unrecorded
   grounded_sam2:
-    state: succeeded
+    state: external_partial
     environment: "~/.pyenv/versions/grounded_sam2"
     external_source: /home/nick/src/Grounded-SAM-2
     external_revision: b7a9c29f196edff0eb54dbe14588d7ae5e3dde28
-    smoke_scope: single-frame HF Grounding-DINO-tiny + SAM2.1 tiny image segmentation
+    smoke_scope: single-frame HF Grounding-DINO-tiny + SAM2.1 tiny image segmentation; no video propagation
     install_caveat: local Grounding DINO CUDA extension failed (CUDA 13.2 vs torch 12.8)
   samurai:
-    state: succeeded
+    state: external_partial
     environment: "~/.pyenv/versions/samurai"
     external_source: /home/nick/src/samurai
     external_revision: 76ba195984892b0d1e3db5d9c90bb62175680a
-    smoke_scope: 20s bbox-init propagation; seed from Grounded-SAM-2 hand box frame 0
+    smoke_scope: 602-frame bbox-init propagation; source script uses plain SAM2 video predictor
   dam4sam:
-    state: succeeded
+    state: external_partial
     environment: "~/.pyenv/versions/samurai"
     external_source: /home/nick/src/DAM4SAM
     external_revision: 9c954504b39ebca4c412f207be0787c26bfac85a
-    smoke_scope: 20s headless bbox-init mask propagation; same seed as SAMURAI
+    smoke_scope: 602-frame headless bbox-init mask propagation; unversioned wrapper command
     install_caveat: official torch 2.1.0+cu121 env incompatible with sm_120 GPU
   athena:
     state: blocked
@@ -66,9 +66,9 @@ methods:
     blocker: official cvml-nus/assembly101 revision lacks extractable intrinsics; AssemblyPoses.zip only path
     evidence_log: data/logs/athena_hf_calibration_probe.log
   kineo:
-    state: succeeded
+    state: external_partial
     environment: pixi-managed /home/nick/src/kineo
-    smoke_scope: headless NLF-only 20s partial (bboxes, MoGe intrinsics, keypoints_2d pkls)
+    smoke_scope: 602-frame NLF-only partial (462 bboxes/keypoint PKLs; no SfM/BVH)
     install_caveat: full offline config requires multi-view SfM or interactive SAM2 UI
     license_caveat: calibration-free person-centric; not hand-part specialized
   deferred:

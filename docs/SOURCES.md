@@ -69,6 +69,9 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
 ## Model source: WiLoR
 
 - Source path: `/home/nick/src/WiLoR`; git revision `fcb911312a38fa8badd30d9656a167485d61b8f9`.
+- Audit status: the checkout has uncommitted tracked changes (`demo.py`, `requirements.txt`,
+  and `wilor/models/backbones/__init__.py`). The revision alone does not reproduce the
+  Sep 16 evidence run.
 - Checkpoints (ignored, outside Git): `pretrained_models/wilor_final.ckpt` SHA-256
   `3e97aafc7dd08d883a4cc5a027df61fdb6fda6136dbd1319405413862ada6bb2`;
   `pretrained_models/detector.pt` SHA-256
@@ -79,6 +82,8 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
 ## Model source: BoxMOT + YOLOv8n detector
 
 - BoxMOT: pip package 25.0.0 / `https://github.com/mikel-brostrom/boxmot`.
+- Installed package metadata declares AGPL-3.0. Ultralytics 8.1.34 metadata also declares
+  AGPL-3.0; this is a license caveat, not a permission determination.
 - Independent detector: Ultralytics YOLOv8n (`yolov8n.pt`), local ignored path
   `models/yolo/yolov8n.pt`, SHA-256
   `31e20dde3def09e2cf938c7be6fe23d9150bbbe503982af13345706515f2ef95`.
@@ -89,6 +94,8 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
 
 - OpenCLIP: `open-clip-torch` 3.3.0, model `ViT-B-32` / `openai` weights (downloaded on
   first run into the wilor environment cache).
+- Audit gap: the cached OpenCLIP weight revision/checksum and separate model-license review
+  were not recorded, so the evidence is not fully reproducible.
 - Drop-DTW: `/home/nick/src/Drop-DTW` @ `32ce9c82c6a0d717a94f4139b1902ad146923444`.
 - Assembly101 coarse transcript: local file under approved raw tree; weak supervision only.
 
@@ -121,6 +128,8 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
 - Weights (ignored): `sam2.1_hiera_tiny.pt` SHA-256
   `7402e0d864fa82708a20fbd15bc84245c2f26dff0eb43a4b5b93452deb34be69`; HF
   `IDEA-Research/grounding-dino-tiny` at runtime.
+- Audit gap: the HF Grounding DINO revision was not recorded. The preserved evidence is one
+  image JSON/RLE output, not a video-propagation run.
 - Install note: local Grounding DINO CUDA extension build failed (CUDA 13.2 vs torch 12.8);
   smoke used HF detector path only.
 
@@ -137,18 +146,21 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
 - Environment: executed from pyenv `samurai` (torch 2.11) after official torch 2.1 env
   failed on sm_120 GPU; `vot-toolkit==0.7.1`.
 - Headless bbox-init smoke; interactive `run_bbox_example.py` not used.
+- The exact unversioned headless-wrapper command was not preserved. Native masks are useful
+  external evidence, not a standalone DAM4SAM integration.
 
 ## External source: ATHENA (blocked)
 
 - Checkout: `/home/nick/src/athena` @ `e85bd49444253aed9532439ace8ede146d1b6470` (MIT).
-- Assembly101 HF probe: see `data/logs/athena_hf_calibration_probe.log`.
+- Official download documentation places camera extrinsics and positions in the ~72 GB
+  `AssemblyPoses.zip`; it does not prove intrinsics are absent. The archive was not downloaded.
 - Unofficial extrinsics sample downloaded from `pablovela5620/assembly101-720p` for
   inspection only; not approved upstream calibration.
 
 ## External source: Kineo
 
-- Checkout: `/home/nick/src/kineo` (pixi env); headless NLF-only smoke config stored under
-  ignored `data/logs/kineo_nlf_headless_only.yaml`.
+- Checkout: `/home/nick/src/kineo` (pixi env) had tracked modifications during the NLF-only
+  smoke; its ignored headless config is `data/logs/kineo_nlf_headless_only.yaml`.
 - Outputs under ignored `runs/kineo/infer_nlf_headless_only/`.
 
 ## Candidate source: FineBio

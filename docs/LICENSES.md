@@ -38,19 +38,27 @@ inputs outside Git.
   redistributed; its model-specific license was not independently confirmed, so no
   redistribution permission is claimed.
 - **WiLoR:** checkpoints are CC-BY-NC-ND; MANO and Ultralytics dependencies carry
-  separate licenses. Camera-relative 3D outputs are non-metric model estimates.
-- **BoxMOT / YOLOv8n:** association is conditional on COCO person detections from an
-  independent per-frame detector; not comparable to SAM3 masks.
+  separate licenses. Camera-relative 3D outputs are non-metric model estimates. The
+  evidence checkout was dirty, so its base revision is not a reproducible source snapshot.
+- **BoxMOT / YOLOv8n:** installed BoxMOT 25.0.0 and Ultralytics 8.1.34 package metadata
+  declares AGPL-3.0. Association is conditional on independent per-frame COCO-person
+  detections and is not comparable to SAM3 masks. The detector file is hashed, but its
+  upstream acquisition/model-license decision remains unrecorded.
 - **OpenCLIP + Drop-DTW:** alignment uses Assembly101 coarse labels as declared weak
-  supervision; intervals and cost are not accuracy claims.
+  supervision; intervals and cost are not accuracy claims. The OpenCLIP weight revision,
+  checksum, and separate model-license review were not recorded.
 - **Grounded-SAM-2 / SAM2 / Grounding DINO:** Apache-2.0 source; Meta SAM2.1 and IDEA
   Grounding DINO weights downloaded to ignored paths; HF Grounding DINO Tiny used when
   local CUDA extension build failed.
 - **SAMURAI / DAM4SAM:** Apache-2.0 and project licenses respectively; SAM2.1 checkpoints
-  from Meta public URLs; tracker smokes are seeded propagation only, not accuracy claims.
-- **ATHENA:** MIT source checkout; no Assembly101 triangulation run (intrinsics blocker).
-- **Kineo:** research/evaluation terms per upstream README; headless NLF-only partial smoke
-  exports person-centric pkls without metric world scale or hand-part claims.
+  from Meta public URLs. SAMURAI's preserved script uses a plain SAM2 video-predictor call;
+  DAM4SAM's headless command is unpreserved and its SAM2 post-processing was skipped. They
+  are external partials, not accuracy or tracker-semantic claims.
+- **ATHENA:** MIT source checkout; no Assembly101 triangulation run. Official sources place
+  extrinsics/positions in `AssemblyPoses.zip` but do not establish that intrinsics are absent.
+- **Kineo:** research/evaluation terms per upstream README; its checkout was dirty during the
+  NLF-only partial smoke. The readable PKLs are person-centric outputs without SfM, metric
+  world scale, BVH, or hand-part claims.
 
 ## Dependency and future-model review
 
