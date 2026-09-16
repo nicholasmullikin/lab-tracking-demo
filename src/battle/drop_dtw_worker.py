@@ -24,6 +24,8 @@ def main() -> None:
     parser.add_argument("--transcript-json", type=Path, required=True)
     parser.add_argument("--sample-fps", type=float, default=1.0)
     parser.add_argument("--keep-percentile", type=float, default=0.3)
+    parser.add_argument("--openclip-checkpoint", type=Path, required=True)
+    parser.add_argument("--openclip-cache-dir", type=Path)
     args = parser.parse_args()
 
     run_directory = args.run_directory
@@ -49,7 +51,10 @@ def main() -> None:
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
         model, _, preprocess = open_clip.create_model_and_transforms(
-            "ViT-B-32", pretrained="openai", device=device
+            "ViT-B-32",
+            pretrained="openai",
+            cache_dir=str(args.openclip_cache_dir) if args.openclip_cache_dir else None,
+            device=device,
         )
         tokenizer = open_clip.get_tokenizer("ViT-B-32")
         model.eval()
@@ -124,6 +129,7 @@ def main() -> None:
         artifact = {
             "transcript_source": transcript,
             "clip_model": "ViT-B-32/openai",
+            "openclip_checkpoint": str(args.openclip_checkpoint),
             "sample_fps": args.sample_fps,
             "keep_percentile": args.keep_percentile,
             "alignment_cost": float(min_cost),

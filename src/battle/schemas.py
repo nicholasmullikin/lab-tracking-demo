@@ -1659,6 +1659,7 @@ class DropDTWRunMetadata(VersionedModel):
     proxy_fingerprint: ArtifactFingerprint
     config_fingerprint: ArtifactFingerprint
     transcript_fingerprint: ArtifactFingerprint
+    openclip_checkpoint_fingerprint: ArtifactFingerprint
     adapter: AdapterMetadata
     runtime_settings: dict[str, str | int | float | bool | None]
     measurements: RuntimeMeasurements

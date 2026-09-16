@@ -42,6 +42,13 @@ MAX_SECONDS = 60.0
 WILOR_PYTHON = Path("/home/nick/.pyenv/versions/wilor/bin/python")
 DROP_DTW_SOURCE = Path("/home/nick/src/Drop-DTW")
 DROP_DTW_REVISION = "32ce9c82c6a0d717a94f4139b1902ad146923444"
+OPENCLIP_REPOSITORY = "timm/vit_base_patch32_clip_224.openai"
+OPENCLIP_REVISION = "a6f597a30f7b82c51704746581f9a4e41421e878"
+DEFAULT_OPENCLIP_CHECKPOINT = Path(
+    "/home/nick/.cache/huggingface/hub/models--timm--vit_base_patch32_clip_224.openai/"
+    f"snapshots/{OPENCLIP_REVISION}/open_clip_model.safetensors"
+)
+DEFAULT_OPENCLIP_CACHE = Path("/home/nick/.cache/huggingface/hub")
 
 
 def sha256_file(path: Path) -> str:
@@ -107,6 +114,7 @@ def run(args: argparse.Namespace) -> Path:
     repository_root = args.repository_root.resolve()
     config_path = (repository_root / args.config).resolve()
     labels_path = (repository_root / args.labels).resolve()
+    checkpoint_path = args.openclip_checkpoint.resolve()
     config = G2PreprocessingManifest.model_validate_json(config_path.read_text())
     proxy = next((item for item in config.proxies if item.view_id == args.view), None)
     if proxy is None:
@@ -118,6 +126,8 @@ def run(args: argparse.Namespace) -> Path:
         raise ValueError("proxy checksum mismatch")
     if not labels_path.is_file():
         raise FileNotFoundError(labels_path)
+    if not checkpoint_path.is_file():
+        raise FileNotFoundError(checkpoint_path)
 
     requested_frames = min(round(args.seconds * proxy.fps), proxy.frame_count)
     source_offset_seconds = config.proxy_timing.source_seconds_for_frame(ClockName.ANALYSIS, 0)
@@ -164,6 +174,7 @@ def run(args: argparse.Namespace) -> Path:
     worker_path = Path(__file__).with_name("drop_dtw_worker.py")
     environment = os.environ.copy()
     environment["CUDA_VISIBLE_DEVICES"] = "0"
+    environment["HF_HUB_OFFLINE"] = "1"
     command = [
         str(WILOR_PYTHON),
         str(worker_path.resolve()),
@@ -177,6 +188,10 @@ def run(args: argparse.Namespace) -> Path:
         str(args.sample_fps),
         "--keep-percentile",
         str(args.keep_percentile),
+        "--openclip-checkpoint",
+        str(checkpoint_path),
+        "--openclip-cache-dir",
+        str(args.openclip_cache_dir.resolve()),
     ]
     completed = subprocess.run(
         command, capture_output=True, text=True, env=environment, check=False
@@ -216,6 +231,14 @@ def run(args: argparse.Namespace) -> Path:
             sha256=sha256_file(labels_path),
             source="measured",
         ),
+        openclip_checkpoint_fingerprint=ArtifactFingerprint(
+            uri=(
+                f"hf://{OPENCLIP_REPOSITORY}@{OPENCLIP_REVISION}/"
+                "open_clip_model.safetensors"
+            ),
+            sha256=sha256_file(checkpoint_path),
+            source="measured",
+        ),
         adapter=AdapterMetadata(
             name="clip-drop-dtw",
             version="0.1.0",
@@ -232,6 +255,10 @@ def run(args: argparse.Namespace) -> Path:
             "keep_percentile": args.keep_percentile,
             "transcript_step_count": len(steps),
             "alignment_cost": alignment["alignment_cost"],
+            "openclip_architecture": "ViT-B-32",
+            "openclip_pretrained": "openai",
+            "openclip_repository": OPENCLIP_REPOSITORY,
+            "openclip_revision": OPENCLIP_REVISION,
         },
         measurements=RuntimeMeasurements(
             elapsed_seconds=float(worker_result["elapsed_seconds"]),
@@ -283,6 +310,8 @@ def main() -> None:
     parser.add_argument("--seconds", type=float, default=DEFAULT_SECONDS)
     parser.add_argument("--sample-fps", type=float, default=1.0)
     parser.add_argument("--keep-percentile", type=float, default=0.3)
+    parser.add_argument("--openclip-checkpoint", type=Path, default=DEFAULT_OPENCLIP_CHECKPOINT)
+    parser.add_argument("--openclip-cache-dir", type=Path, default=DEFAULT_OPENCLIP_CACHE)
     parser.add_argument("--output-root", type=Path, default=Path("runs"))
     parser.add_argument("--run-id")
     args = parser.parse_args()
