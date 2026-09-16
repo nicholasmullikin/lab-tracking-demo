@@ -318,17 +318,35 @@ def _contact_sheet(
     return output_path
 
 
-def _external_revision() -> str | None:
+def _external_source_state() -> tuple[str | None, bool, str | None, tuple[str, ...]]:
     try:
-        completed = subprocess.run(
+        revision = subprocess.run(
             ["git", "-C", str(WILOR_SOURCE), "rev-parse", "HEAD"],
             check=True,
             capture_output=True,
             text=True,
         )
+        status = subprocess.run(
+            ["git", "-C", str(WILOR_SOURCE), "status", "--porcelain"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        diff = subprocess.run(
+            ["git", "-C", str(WILOR_SOURCE), "diff", "--binary"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
     except (FileNotFoundError, subprocess.CalledProcessError):
-        return None
-    return completed.stdout.strip() or None
+        return None, False, None, ()
+    status_lines = tuple(line for line in status.stdout.splitlines() if line)
+    return (
+        revision.stdout.strip() or None,
+        bool(status_lines),
+        hashlib.sha256(diff.stdout.encode()).hexdigest() if status_lines else None,
+        status_lines,
+    )
 
 
 def run(args: argparse.Namespace) -> Path:
@@ -394,6 +412,10 @@ def run(args: argparse.Namespace) -> Path:
     )
     runtime_settings = dict(worker_result.get("runtime_settings", {}))
     runtime_settings["analysis_fps"] = proxy.fps
+    external_revision, source_dirty, source_diff_sha256, source_status = _external_source_state()
+    runtime_settings["external_source_dirty"] = source_dirty
+    runtime_settings["external_source_diff_sha256"] = source_diff_sha256
+    runtime_settings["external_source_status"] = json.dumps(source_status)
     metadata = WiLoRHandsRunMetadata(
         requested_analysis_frame_range=FrameRange(
             start_frame=0, end_frame_exclusive=requested_frames
@@ -429,7 +451,7 @@ def run(args: argparse.Namespace) -> Path:
                 "WiLoR frame-wise demo with batch size one and mesh export disabled"
             ),
             external_source_uri=str(WILOR_SOURCE),
-            external_revision=_external_revision(),
+            external_revision=external_revision,
         ),
         runtime_settings=runtime_settings,
         measurements=measurements,
