@@ -83,6 +83,15 @@ methods:
     artifact_uri: runs/exploratory-first-20s-comparison/exploratory_first_20s_comparison.rrd
     index_uri: runs/exploratory-first-20s-comparison/exploratory_comparison_index.json
     scope: source-aligned static RGB frames 0-599; inference-free composition only
+  four_part_segmentation_comparison:
+    state: succeeded
+    adapter: battle.four_part_segmentation + battle.four_part_comparison
+    contract_uri: configs/four_part_segmentation_comparison.json
+    artifact_uri: runs/four-part-segmentation-comparison/four_part_segmentation_comparison.rrd
+    index_uri: runs/four-part-segmentation-comparison/four_part_segmentation_comparison_index.json
+    scope: focused static RGB frames 0-599 / source 294.0-314.0; masks only
+    initialization: Grounding-DINO arm uses independent prompts; SAM2 control, SAMURAI, and DAM4SAM use identical reviewed frame-zero masks
+    claim_boundary: output coverage and model detections are not segmentation accuracy; human semantic QA remains pending
   deferred:
     - LM-EEC
     - ObjectRelator

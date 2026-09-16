@@ -1,0 +1,79 @@
+{
+  "schema_version": "1.0",
+  "manifest_kind": "four_part_segmentation_comparison_contract",
+  "comparison_id": "four-part-segmentation-comparison",
+  "focused_static_config_fingerprint": {
+    "uri": "configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_g2.json",
+    "sha256": "adcc501dd6fb1b9ccb7b12ae03b4582812131a9f74270a978f69abb973f05812",
+    "source": "measured"
+  },
+  "focused_static_proxy_fingerprint": {
+    "uri": "data/derived/assembly101/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532/C10379_rgb_294.000-386.700_1280x720_30fps.mp4",
+    "sha256": "bd57acd0482fee3f5bf0ee9f31a59687f2bc8eb403fc55a51345e8e64b76b62e",
+    "source": "approved_config"
+  },
+  "source_interval": {"start_seconds": 294.0, "end_seconds": 314.0},
+  "analysis_frame_range": {"start_frame": 0, "end_frame_exclusive": 600},
+  "analysis_fps": 30,
+  "view_id": "static-c10379",
+  "targets": ["chassis", "interior", "rear_body", "cabin"],
+  "reviewed_schedule_fingerprint": {
+    "uri": "runs/muggledsam-sam3-four-part-focused-corrections-327-1235-20260916t022433z/multi_keyframe_correction_schedule.json",
+    "sha256": "e5981586452cd2f934ee527e89f2ca3f7d43c1ae8fa726bb72add68d20746a99",
+    "source": "measured"
+  },
+  "reviewed_frame_zero_seeds": [
+    {
+      "target_id": "chassis",
+      "candidate_id": "t000000-b08",
+      "mask_fingerprint": {
+        "uri": "runs/muggledsam-sam3-four-part-focused-corrections-327-1235-20260916t022433z/results/masks/t000000-b08_candidate-02.png",
+        "sha256": "ee5713589ecb512ec24ea2d7931115a2162b4bf6d97a34c93634e3aab5709245",
+        "source": "measured"
+      },
+      "derived_box_xyxy": [793, 468, 955, 549]
+    },
+    {
+      "target_id": "interior",
+      "candidate_id": "t000000-b09",
+      "mask_fingerprint": {
+        "uri": "runs/muggledsam-sam3-four-part-focused-corrections-327-1235-20260916t022433z/results/masks/t000000-b09_candidate-02.png",
+        "sha256": "ac8be8b775aba47b865a25434b5988544d98d565f6d29f94ff1764b18e9f9c93",
+        "source": "measured"
+      },
+      "derived_box_xyxy": [845, 254, 909, 313]
+    },
+    {
+      "target_id": "rear_body",
+      "candidate_id": "t000000-b54",
+      "mask_fingerprint": {
+        "uri": "runs/muggledsam-sam3-four-part-focused-corrections-327-1235-20260916t022433z/results/masks/t000000-b54_candidate-03.png",
+        "sha256": "71dc52e78d142d9550c37969f71fa0bcf510426faef4b5d7525d57a9ada4705b",
+        "source": "measured"
+      },
+      "derived_box_xyxy": [773, 572, 844, 628]
+    },
+    {
+      "target_id": "cabin",
+      "candidate_id": "t000000-b66",
+      "mask_fingerprint": {
+        "uri": "runs/muggledsam-sam3-four-part-focused-corrections-327-1235-20260916t022433z/results/masks/t000000-b66_candidate-03.png",
+        "sha256": "9f204135306143d3287bd3ead7c694ecb826668bd06d57cba3ccef8dd526391b",
+        "source": "measured"
+      },
+      "derived_box_xyxy": [997, 504, 1179, 632]
+    }
+  ],
+  "open_vocabulary_prompts": {
+    "chassis": ["toy chassis.", "black toy chassis.", "toy vehicle base."],
+    "interior": ["toy interior.", "black toy interior block.", "vehicle interior."],
+    "rear_body": ["toy rear body.", "yellow toy body shell.", "yellow vehicle rear body."],
+    "cabin": ["toy cabin.", "yellow toy cabin.", "toy vehicle cab."]
+  },
+  "baseline_sam3_manifest_fingerprint": {
+    "uri": "runs/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260916t023700z/manifest.json",
+    "sha256": "3125fa58ed95ca4c74483dd451e2b081da24ddb84197c0e920bf1d2a0bc88e10",
+    "source": "measured"
+  },
+  "ground_truth_accuracy_claim": false
+}

@@ -31,6 +31,8 @@ battle-athena-calibration-probe = "battle.athena_calibration_probe:main"
 battle-athena-fixture-smoke = "battle.athena_triangulation:main"
 battle-kineo-nlf = "battle.kineo_nlf:main"
 battle-build-exploratory-comparison = "battle.exploratory_comparison:main"
+battle-four-part-segmentation = "battle.four_part_segmentation:main"
+battle-build-four-part-segmentation-comparison = "battle.four_part_comparison:main"
 battle-prepare-human-qa = "battle.human_qa:main"
 battle-human-qa-candidates = "battle.human_qa:candidate_main"
 

@@ -981,6 +981,47 @@ ATHENA remains metadata-only and its synthetic fixture is never overlaid on Asse
 Recordings are keyed by clip (`battle-<clip_id>`) and run id, so runs of different clips
 or of the same clip open side by side without merging.
 
+### Four-part segmentation comparison
+
+`configs/four_part_segmentation_comparison.json` is the checked-in fair-comparison
+contract: the approved focused static RGB proxy, source interval 294.0–314.0 s, 30 FPS
+frames `[0,600)`, exact ordered targets (`chassis`, `interior`, `rear_body`, `cabin`),
+and SHA-256 fingerprints for the four reviewed frame-zero masks and their mask-derived
+boxes. It binds the accepted focused SAM3 run as the baseline. It never copies a mask
+into Git; the reviewed source artifacts remain under ignored `runs/`.
+
+Run the four GPU arms serially (the commands use one process at a time):
+
+```bash
+uv run battle-four-part-segmentation grounding_dino_sam2_open_vocabulary
+uv run battle-four-part-segmentation reviewed_seed_sam2_control
+uv run battle-four-part-segmentation samurai
+uv run battle-four-part-segmentation dam4sam
+uv run battle-build-four-part-segmentation-comparison \
+  --grounding-dino-sam2-open-vocabulary runs/<grounding-arm> \
+  --reviewed-seed-sam2-control runs/<sam2-control-arm> \
+  --samurai runs/<samurai-arm> --dam4sam runs/<dam4sam-arm>
+rerun rrd print runs/four-part-segmentation-comparison/four_part_segmentation_comparison.rrd
+```
+
+Grounding-DINO receives only the independently recorded target prompts/synonyms in the
+contract, never a reviewed box or mask. Its first-frame detector outcome is persisted per
+target before SAM2 propagation. `reviewed_seed_sam2_control` uses the exact four
+fingerprinted reviewed masks to isolate detector failure from propagation. SAMURAI runs
+with `samurai_mode: true`; because its mode failed with a four-object state, it releases
+one real SAMURAI predictor per reviewed target and combines only source-aligned labelled
+observations. DAM4SAM runs four independent `DAM4SAMTracker` DRM streams from the same
+masks and records DRM additions by label.
+
+The side-by-side recording embeds one 600-frame video asset and gives SAM3 baseline,
+Grounding-DINO+SAM2, SAM2 control, SAMURAI, and DAM4SAM independent colored entity
+roots. At every frame, the render subtree is cleared before any new mask/box is logged,
+so a missing target cannot persist visually. It is a mask-only comparison: MediaPipe and
+WiLoR are hand-pose layers, BoxMOT is detector-conditioned box tracking, Kineo NLF is
+body-pose output, and Drop-DTW is weak temporal alignment; none are segmentation
+comparators. The earlier unified exploratory recording remains indexed at
+`runs/exploratory-first-20s-comparison/exploratory_first_20s_comparison.rrd`.
+
 ## Validate and export fixtures
 
 ```bash

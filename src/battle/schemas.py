@@ -1939,6 +1939,84 @@ class MediaPipeHandsRunMetadata(VersionedModel):
         return self
 
 
+class FourPartTargetInitialization(VersionedModel):
+    """The actual source and result of one frame-zero target initialization."""
+
+    target_id: Literal["chassis", "interior", "rear_body", "cabin"]
+    source: Literal["open_vocabulary_detection", "reviewed_mask"]
+    state: Literal["succeeded", "failed"]
+    prompts: tuple[str, ...] = ()
+    selected_prompt: str | None = None
+    selected_score: float | None = Field(default=None, ge=0, le=1)
+    derived_box_xyxy: tuple[int, int, int, int] | None = None
+    reviewed_mask_fingerprint: ArtifactFingerprint | None = None
+    failure_reason: str | None = None
+
+    @model_validator(mode="after")
+    def require_source_specific_evidence(self) -> FourPartTargetInitialization:
+        if self.source == "reviewed_mask":
+            if self.state != "succeeded" or self.reviewed_mask_fingerprint is None:
+                raise ValueError(
+                    "reviewed-mask initialization must retain a successful mask fingerprint"
+                )
+        elif self.reviewed_mask_fingerprint is not None:
+            raise ValueError("open-vocabulary initialization cannot claim a reviewed mask")
+        if self.state == "failed" and not self.failure_reason:
+            raise ValueError("failed initialization requires a recorded reason")
+        return self
+
+
+class FourPartSegmentationRunMetadata(VersionedModel):
+    """Provenance for one exact 20-second arm in the four-part comparison."""
+
+    method_arm: Literal[
+        "grounding_dino_sam2_open_vocabulary",
+        "reviewed_seed_sam2_control",
+        "samurai",
+        "dam4sam",
+    ]
+    requested_analysis_frame_range: FrameRange
+    requested_seconds: Literal[20.0]
+    target_order: tuple[
+        Literal["chassis"], Literal["interior"], Literal["rear_body"], Literal["cabin"]
+    ]
+    source_fingerprint: ArtifactFingerprint
+    proxy_fingerprint: ArtifactFingerprint
+    contract_fingerprint: ArtifactFingerprint
+    reviewed_schedule_fingerprint: ArtifactFingerprint
+    adapter: AdapterMetadata
+    runtime_settings: dict[str, str | int | float | bool | None]
+    measurements: RuntimeMeasurements
+    observations_uri: str
+    native_masks_uri: str
+    qa_artifact_uri: str | None = None
+    target_initializations: tuple[FourPartTargetInitialization, ...]
+    drm_memory_additions: dict[str, int] | None = None
+    ground_truth_accuracy_claim: Literal[False] = False
+
+    @model_validator(mode="after")
+    def require_exact_ordered_comparison_contract(self) -> FourPartSegmentationRunMetadata:
+        if (
+            self.requested_analysis_frame_range.start_frame != 0
+            or self.requested_analysis_frame_range.frame_count != 600
+            or self.target_order != ("chassis", "interior", "rear_body", "cabin")
+        ):
+            raise ValueError("four-part segmentation arms require ordered frames [0, 600)")
+        received = tuple(item.target_id for item in self.target_initializations)
+        if received != self.target_order:
+            raise ValueError("initialization records must cover every ordered target")
+        if self.method_arm == "grounding_dino_sam2_open_vocabulary":
+            if any(
+                item.source != "open_vocabulary_detection" for item in self.target_initializations
+            ):
+                raise ValueError("the open-vocabulary arm cannot use reviewed-mask seeds")
+        elif any(item.source != "reviewed_mask" for item in self.target_initializations):
+            raise ValueError("control/tracker arms must use the shared reviewed masks")
+        if self.method_arm == "dam4sam" and self.drm_memory_additions is None:
+            raise ValueError("DAM4SAM arm must retain available DRM diagnostics")
+        return self
+
+
 class RunManifest(VersionedModel):
     run_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]*$")
     clip: ClipManifest
@@ -1960,6 +2038,7 @@ class RunManifest(VersionedModel):
     grounding_dino_sam2_video: GroundingDinoSam2VideoRunMetadata | None = None
     samurai_video: SamuraiVideoRunMetadata | None = None
     dam4sam_video: Dam4samVideoRunMetadata | None = None
+    four_part_segmentation: FourPartSegmentationRunMetadata | None = None
     external_partial: ExternalPartialRunMetadata | None = None
 
     @model_validator(mode="after")
@@ -2051,6 +2130,56 @@ class ExploratoryComparisonIndexManifest(VersionedModel):
             and athena.timeline_alignment is not ExploratoryTimelineAlignment.METADATA_ONLY
         ):
             raise ValueError("ATHENA must remain metadata-only until real calibration is available")
+        return self
+
+
+class FourPartSegmentationComparisonMethod(VersionedModel):
+    """One mask-producing arm included in the focused four-target visual comparison."""
+
+    method_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_]*$")
+    display_name: str = Field(min_length=1)
+    run_manifest: ArtifactFingerprint
+    observations: ArtifactFingerprint
+    native_masks: ArtifactFingerprint | None = None
+    initialization_summary: tuple[str, ...] = Field(min_length=1)
+    target_coverage: dict[str, int]
+
+    @model_validator(mode="after")
+    def require_exact_target_coverage_keys(self) -> FourPartSegmentationComparisonMethod:
+        if tuple(self.target_coverage) != ("chassis", "interior", "rear_body", "cabin"):
+            raise ValueError("four-part comparison coverage must preserve target order")
+        if any(value < 0 or value > 600 for value in self.target_coverage.values()):
+            raise ValueError("four-part coverage must be within the 600-frame contract")
+        return self
+
+
+class FourPartSegmentationComparisonIndex(VersionedModel):
+    """Inference-free index for the fixed static RGB four-part comparison."""
+
+    manifest_kind: Literal["four_part_segmentation_comparison"]
+    comparison_id: Literal["four_part_segmentation_comparison"]
+    contract_fingerprint: ArtifactFingerprint
+    source_video: ArtifactFingerprint
+    bounded_video: ArtifactFingerprint
+    frame_count: Literal[600]
+    analysis_fps: Literal[30]
+    source_interval: TimeInterval
+    methods: tuple[FourPartSegmentationComparisonMethod, ...] = Field(min_length=2)
+    prior_unified_comparison_uri: str
+    ground_truth_accuracy_claim: Literal[False] = False
+
+    @model_validator(mode="after")
+    def require_expected_method_roots(self) -> FourPartSegmentationComparisonIndex:
+        roots = {method.method_id for method in self.methods}
+        if "baseline_sam3" not in roots:
+            raise ValueError("comparison requires the existing SAM3 baseline")
+        if not roots & {
+            "grounding_dino_sam2_open_vocabulary",
+            "reviewed_seed_sam2_control",
+            "samurai",
+            "dam4sam",
+        }:
+            raise ValueError("comparison requires at least one applicable new arm")
         return self
 
 

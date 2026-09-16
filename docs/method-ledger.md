@@ -1185,3 +1185,53 @@ observations clear their render subtree and coverage/output-presence traces expo
 default blueprint shows MediaPipe and BoxMOT over the one shared embedded static video; other
 layers remain available from the entity tree. G3/G4/G5 human review gates remain deferred, and
 this comparison makes no accuracy or cross-method identity claim.
+
+### Sep 16: focused static four-part segmentation comparison
+
+- Contract: `configs/four_part_segmentation_comparison.json` pins the reviewed focused static
+  RGB proxy, source 294.0–314.0 s / frames `[0,600)` at 30 FPS, and the exact ordered
+  physical targets `chassis`, `interior`, `rear_body`, `cabin`. It validates the focused
+  correction schedule and all four user-reviewed frame-zero mask SHA-256 values before each
+  run. Its mask-derived boxes are 793,468–955,549; 845,254–909,313; 773,572–844,628; and
+  997,504–1179,632 respectively. The matching accepted SAM3 v2 run is a read-only baseline.
+- Open-vocabulary arm:
+  `runs/grounding-dino-sam2-open-vocabulary-four-part-20s-20260916t1004z/`, 600 observations,
+  55.911 s, 3,011,449,856 B peak allocated VRAM. Grounding-DINO independently tried each
+  recorded prompt/synonym, then SAM2 propagated every threshold-passing candidate. All four
+  calls produced a candidate, but this is not four semantic successes: chassis, rear body, and
+  cabin selected essentially the same cabin-region box, while `vehicle interior` selected almost
+  the full frame. The contact sheet at frames 0/300/599 therefore flags the arm as visually
+  non-one-to-one; no reviewed mask/box was substituted. The raw attempt list and scores remain
+  in `worker_result.json`.
+- Reviewed-seed SAM2 control:
+  `runs/reviewed-seed-sam2-control-four-part-20s-20260916t1005z/`, 600 observations,
+  52.594 s, 3,033,928,704 B. All four exact reviewed masks initialized a multi-object SAM2
+  state; every target emitted 600 nonempty masks with 600 distinct mask byte hashes. This is a
+  control for detector failure, not a Grounding-DINO result.
+- SAMURAI:
+  `runs/samurai-four-part-reviewed-seed-20s-20260916t1007z/`, 600 observations, 103.557 s,
+  1,058,056,704 B. `samurai_mode: true` was active. Its four-object propagation raised the
+  upstream ambiguous-tensor error, so the completed arm uses four independent real SAMURAI
+  predictor streams, one shared reviewed mask per named target, combined only on the common
+  source clock. Each target emitted 600 nonempty masks; rear body has 599 distinct byte hashes.
+- DAM4SAM:
+  `runs/dam4sam-four-part-reviewed-seed-20s-20260916t1009z/`, 600 observations, 78.429 s,
+  3,534,988,800 B. Four independent `DAM4SAMTracker('sam21pp-T')` streams use
+  `initialize(image, init_mask)` rather than the prior hand-box fallback. Each target emitted
+  600 nonempty masks; rear body has 599 distinct byte hashes. Native DRM additions were
+  chassis 27, interior 32, rear body 20, cabin 27.
+- Skeptical visual screen (not human QA): sampled frame 0, 300, and 599 for the baseline and
+  every arm. The reviewed-seed SAM2, SAMURAI, and DAM4SAM samples retain nonempty output for
+  all labels, but the interior/chassis regions visibly migrate around the hand/tool area by the
+  middle/final samples; their physical attachment is not confirmed. Cabin remains visually
+  localized to the orange cab in those samples and rear-body remains localized near the lower
+  yellow component, but this is only an agent visual observation, not acceptance or accuracy.
+  The open-vocabulary arm fails this screen for the reasons above. There were no output gaps in
+  `[0,600)` and hence no target-loss frames to add; masks clear on any later missing observation.
+- Viewer: `runs/four-part-segmentation-comparison/four_part_segmentation_comparison.rrd` is
+  inference-free, embeds the bounded video exactly once, and contains separate colored roots for
+  `baseline_sam3`, `grounding_dino_sam2_open_vocabulary`, `reviewed_seed_sam2_control`,
+  `samurai`, and `dam4sam`. Its typed fingerprint index links the earlier mixed-modality viewer
+  at `runs/exploratory-first-20s-comparison/exploratory_first_20s_comparison.rrd`; MediaPipe,
+  WiLoR, Kineo NLF, BoxMOT, and Drop-DTW are deliberately excluded because they do not produce
+  comparable part masks. ATHENA remains metadata-blocked.
