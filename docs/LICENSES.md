@@ -47,9 +47,10 @@ inputs outside Git.
 - **OpenCLIP + Drop-DTW:** the pinned `open-clip-torch` 3.3.0 package declares MIT; the
   OpenCLIP checkpoint is content-addressed in `docs/SOURCES.md`. Alignment uses Assembly101
   coarse labels as declared weak supervision; intervals and cost are not accuracy claims.
-- **Grounded-SAM-2 / SAM2 / Grounding DINO:** Apache-2.0 source; Meta SAM2.1 and IDEA
-  Grounding DINO weights downloaded to ignored paths; HF Grounding DINO Tiny used when
-  local CUDA extension build failed.
+- **Grounded-SAM-2 / SAM2 / Grounding DINO:** Apache-2.0 source; Meta SAM2.1 tiny checkpoint
+  and IDEA Grounding DINO Tiny (HF revision `a2bb814…`) used by
+  `transformers_grounding_dino_plus_sam2_video_smoke`. Local Grounding DINO CUDA extension
+  build failed; Battle uses the HF fallback detector, not the vendor CUDA extension.
 - **SAMURAI / DAM4SAM:** Apache-2.0 and project licenses respectively; SAM2.1 checkpoints
   from Meta public URLs. SAMURAI's preserved script uses a plain SAM2 video-predictor call;
   DAM4SAM's headless command is unpreserved and its SAM2 post-processing was skipped. They

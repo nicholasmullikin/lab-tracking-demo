@@ -1760,6 +1760,43 @@ class WiLoRHandsRunMetadata(VersionedModel):
         return self
 
 
+class GroundingDinoSam2VideoRunMetadata(VersionedModel):
+    """Audit data for one bounded HF Grounding DINO + SAM2 video propagation run."""
+
+    requested_analysis_frame_range: FrameRange
+    requested_seconds: float = Field(gt=0, le=20.0)
+    source_fingerprint: ArtifactFingerprint
+    proxy_fingerprint: ArtifactFingerprint
+    config_fingerprint: ArtifactFingerprint
+    grounding_model_fingerprint: ArtifactFingerprint
+    sam2_checkpoint_fingerprint: ArtifactFingerprint
+    adapter: AdapterMetadata
+    runtime_settings: dict[str, str | int | float | bool | None]
+    measurements: RuntimeMeasurements
+    observations_uri: str
+    native_masks_uri: str
+    rerun_artifact_uri: str | None = None
+    qa_artifact_uri: str | None = None
+    text_prompt: str = Field(min_length=1)
+    sam2_model_config: str = Field(min_length=1)
+    initialization_note: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def require_consistent_budget(self) -> GroundingDinoSam2VideoRunMetadata:
+        if self.requested_analysis_frame_range.start_frame != 0:
+            raise ValueError("Grounding DINO + SAM2 range must start at proxy frame zero")
+        analysis_fps = self.runtime_settings.get("analysis_fps")
+        if isinstance(analysis_fps, bool) or not isinstance(analysis_fps, (int, float)):
+            raise ValueError("runtime_settings.analysis_fps must be numeric")
+        if self.requested_analysis_frame_range.frame_count != round(
+            self.requested_seconds * analysis_fps
+        ):
+            raise ValueError(
+                "Grounding DINO + SAM2 frame count must equal requested_seconds * analysis_fps"
+            )
+        return self
+
+
 class ExternalPartialRunMetadata(VersionedModel):
     """Provenance for an imported upstream smoke whose original runner is external.
 
@@ -1832,6 +1869,7 @@ class RunManifest(VersionedModel):
     wilor_hands: WiLoRHandsRunMetadata | None = None
     boxmot: BoxMOTRunMetadata | None = None
     drop_dtw: DropDTWRunMetadata | None = None
+    grounding_dino_sam2_video: GroundingDinoSam2VideoRunMetadata | None = None
     external_partial: ExternalPartialRunMetadata | None = None
 
     @model_validator(mode="after")

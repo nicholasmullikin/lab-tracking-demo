@@ -26,7 +26,7 @@ separated-parts frame. Human review retained only their first 60 seconds for the
 synchronized two-view comparison; later outputs remain failure evidence. The second
 method in the original core spine, MediaPipe Hands, has a selected 60-second static run
 merged into the focused first-minute comparison. The Sep 16 exploratory queue has one
-Battle-integrated BoxMOT and CLIP+Drop-DTW smokes. WiLoR, Grounded-SAM-2, SAMURAI, DAM4SAM,
+Battle-integrated BoxMOT, CLIP+Drop-DTW, and Grounded-SAM-2 video smokes. WiLoR, SAMURAI, DAM4SAM,
 and Kineo remain external partials after an adversarial evidence audit; ATHENA is blocked.
 
 The rest of this file is the how-to: each section below gives the exact commands that
@@ -146,13 +146,22 @@ two Assembly101 coarse-label steps as declared weak supervision, and wrote cost 
 uv run battle-drop-dtw-align --seconds 20
 ```
 
-### Grounded-SAM-2 — external partial / single-frame smoke
+### Grounded-SAM-2 — bounded video smoke (`transformers_grounding_dino_plus_sam2_video_smoke`)
 
-The native JSON records one 1280×720 `hand` box (score 0.953125) and a COCO-RLE SAM2 mask for
-the `hand.` prompt. It used Hugging Face `IDEA-Research/grounding-dino-tiny` after the local
-CUDA extension build failed, but does not pin that HF model revision or record a measured
-runtime. `battle-import-external-smoke grounded-sam2` now creates normalized box observations
-and `grounded_sam2.rrd`; it intentionally does not claim video propagation or a normalized mask.
+Battle now runs a checked-in bounded video smoke on the approved focused static proxy: frame 0
+is initialized with the pinned Hugging Face `IDEA-Research/grounding-dino-tiny` revision
+`a2bb814…` and prompt `hand.`, then SAM2.1 tiny (`configs/sam2.1/sam2.1_hiera_t.yaml`,
+checkpoint SHA-256 `7402e0…be69`) propagates masks through the proxy prefix. The preserved
+10-second / 300-frame run measures 15.9 s wall time and 6.37 GB peak VRAM; all 300 native
+masks are nonempty with distinct content hashes. Normalized observations carry per-frame boxes,
+scores, and `native/masks/*.png` references; `propagation.rrd` is inference-free.
+
+The earlier one-frame external JSON (`score 0.953125` on an un-pinned HF revision) remains
+importable via `battle-import-external-smoke grounded-sam2` and is not upgraded to a video run.
+
+```bash
+uv run battle-grounding-dino-sam2-video --seconds 10
+```
 
 ### SAMURAI — external partial
 

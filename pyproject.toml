@@ -23,6 +23,7 @@ battle-wilor-hands = "battle.wilor_hands:main"
 battle-boxmot-track = "battle.boxmot_track:main"
 battle-drop-dtw-align = "battle.drop_dtw_align:main"
 battle-import-external-smoke = "battle.external_smoke_import:main"
+battle-grounding-dino-sam2-video = "battle.grounding_dino_sam2_video:main"
 battle-prepare-human-qa = "battle.human_qa:main"
 battle-human-qa-candidates = "battle.human_qa:candidate_main"
 

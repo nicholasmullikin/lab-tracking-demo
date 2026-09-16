@@ -40,12 +40,13 @@ methods:
     external_revision: 32ce9c82c6a0d717a94f4139b1902ad146923444
     supervision: assembly101_gt_transcript_weak_supervision; OpenCLIP ViT-B-32/openai checkpoint pinned
   grounded_sam2:
-    state: external_partial
+    state: smoke_only
+    adapter: battle.grounding_dino_sam2_video
     environment: "~/.pyenv/versions/grounded_sam2"
     external_source: /home/nick/src/Grounded-SAM-2
     external_revision: b7a9c29f196edff0eb54dbe14588d7ae5e3dde28
-    smoke_scope: single-frame HF Grounding-DINO-tiny + SAM2.1 tiny image segmentation; no video propagation
-    install_caveat: local Grounding DINO CUDA extension failed (CUDA 13.2 vs torch 12.8)
+    smoke_scope: bounded HF Grounding-DINO-tiny frame-0 detect + SAM2.1 tiny video propagation
+    install_caveat: local Grounding DINO CUDA extension failed (CUDA 13.2 vs torch 12.8); HF fallback only
   samurai:
     state: external_partial
     environment: "~/.pyenv/versions/samurai"

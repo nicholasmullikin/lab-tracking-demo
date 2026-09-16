@@ -130,12 +130,18 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
   (`IDEA-Research/Grounded-SAM-2`, Apache-2.0).
 - Environment: pyenv `grounded_sam2` (torch 2.11.0+cu128).
 - Weights (ignored): `sam2.1_hiera_tiny.pt` SHA-256
-  `7402e0d864fa82708a20fbd15bc84245c2f26dff0eb43a4b5b93452deb34be69`; HF
-  `IDEA-Research/grounding-dino-tiny` at runtime.
-- Audit gap: the HF Grounding DINO revision was not recorded. The preserved evidence is one
-  image JSON/RLE output, not a video-propagation run.
+  `7402e0d864fa82708a20fbd15bc84245c2f26dff0eb43a4b5b93452deb34be69`; SAM2 config
+  `configs/sam2.1/sam2.1_hiera_t.yaml` from the checkout.
+- Detector: Hugging Face `IDEA-Research/grounding-dino-tiny` revision
+  `a2bb814dd30d776dcf7e30523b00659f4f141c71` (pinned in Battle worker); prompt `hand.`.
+- Battle adapter: `battle-grounding-dino-sam2-video` (`transformers_grounding_dino_plus_sam2_video_smoke`).
+  Preserved 300-frame run:
+  `runs/transformers_grounding_dino_plus_sam2_video_smoke-10s-20260916t0518z/`.
+- Legacy one-frame external JSON (un-pinned HF revision, no video propagation) remains under
+  `runs/grounded-sam2-static-frame0-smoke-20260916t0450z/` and is imported by
+  `battle-import-external-smoke grounded-sam2`.
 - Install note: local Grounding DINO CUDA extension build failed (CUDA 13.2 vs torch 12.8);
-  smoke used HF detector path only.
+  smoke uses HF detector path only. This is not the vendor CUDA Grounded-SAM-2 extension.
 
 ## External source: SAMURAI
 

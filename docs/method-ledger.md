@@ -1068,17 +1068,27 @@ by a worker, manifest, or native log appear below. Human gates G1–G5 remain de
   `e6d1bd7789aa45192b3bf90570a789b478bae1b74ebcce7eddd908e83a2b7c31`; the runner is
   offline and fails rather than silently downloading a different weight.
 
-#### Grounded-SAM-2
+#### Grounded-SAM-2 (`transformers_grounding_dino_plus_sam2_video_smoke`)
 
-- Classification: `external partial`, specifically a single-frame smoke. Its native JSON has one
-  1280×720 `hand` box (score 0.953125) and a COCO RLE mask for the `hand.` prompt.
-- Provenance: source revision `b7a9c29…`; SAM2 tiny checkpoint hash was recorded, but the
-  Hugging Face Grounding DINO Tiny revision was not. The local Grounding DINO CUDA extension
-  build failed and the documented HF fallback was used.
-- Remediation: `battle-import-external-smoke grounded-sam2` now creates a schema-validated
-  one-frame manifest, normalized box observation, native-JSON fingerprint, and inference-free
-  `grounded_sam2.rrd`. The RRD does not claim to contain the RLE mask or any video propagation.
-  No measured runtime exists; the old approximate “~17 s” assertion was removed.
+- Classification: `smoke_only` bounded video propagation. Frame 0 uses pinned HF
+  `IDEA-Research/grounding-dino-tiny` revision `a2bb814…` with prompt `hand.` (score 0.5595,
+  box ≈881×446→1034×577); SAM2.1 tiny (`configs/sam2.1/sam2.1_hiera_t.yaml`, checkpoint SHA-256
+  `7402e0…be69`) propagates one tracked object across the approved proxy prefix.
+- Provenance: Grounded-SAM-2 checkout `b7a9c29…`; pyenv `grounded_sam2` (torch 2.11.0+cu128).
+  Input proxy fingerprint verified from
+  `configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_g2.json`
+  (`bd57acd…b62e`, `static-c10379`, analysis frames 0–299 → source seconds 294.0–303.967).
+- Measured runtime (300 frames / 10.0 s): 15.88 s wall; TTFU 15.39 s (includes model load +
+  frame-0 detect + full propagation before normalized write); peak VRAM 6.37 GB. All 300 native
+  masks nonempty; 300 distinct mask content hashes.
+- Artifacts:
+  `runs/transformers_grounding_dino_plus_sam2_video_smoke-10s-20260916t0518z/` with
+  `observations.jsonl`, `native/masks/*.png`, `manifest.json`, and inference-free
+  `propagation.rrd` (embedded bounded video, boxes, mask overlays at exporter cadence).
+- Command: `uv run battle-grounding-dino-sam2-video --seconds 10`. This is the HF detector +
+  SAM2 video predictor path, not the vendor CUDA Grounded-SAM-2 extension.
+- Legacy one-frame external JSON (`score 0.953125`, un-pinned HF revision) remains importable via
+  `battle-import-external-smoke grounded-sam2`; it is not relabelled as video propagation.
 
 #### SAMURAI
 
