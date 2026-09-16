@@ -1759,6 +1759,28 @@ class WiLoRHandsRunMetadata(VersionedModel):
         return self
 
 
+class ExternalPartialRunMetadata(VersionedModel):
+    """Provenance for an imported upstream smoke whose original runner is external.
+
+    This deliberately distinguishes an inference-free Battle import from an integrated
+    Battle runner.  It records only observed native outputs and never upgrades the
+    upstream method's semantics.
+    """
+
+    classification: Literal["single_frame_smoke", "external_partial", "nlf_only_partial"]
+    requested_input_fingerprint: ArtifactFingerprint
+    native_artifact_fingerprints: tuple[ArtifactFingerprint, ...] = Field(min_length=1)
+    adapter: AdapterMetadata
+    reproduced_command: str = Field(min_length=1)
+    decoded_frame_count: int | None = Field(default=None, ge=1)
+    frames_with_normalized_output: int | None = Field(default=None, ge=0)
+    source_offset_seconds: float | None = Field(default=None, ge=0)
+    measurements: RuntimeMeasurements | None = None
+    normalized_artifact_uri: str = Field(min_length=1)
+    rerun_artifact_uri: str | None = None
+    limitations: tuple[str, ...] = Field(min_length=1)
+
+
 class MediaPipeHandsRunMetadata(VersionedModel):
     """Audit data for one bounded MediaPipe Hand Landmarker video run."""
 
@@ -1809,6 +1831,7 @@ class RunManifest(VersionedModel):
     wilor_hands: WiLoRHandsRunMetadata | None = None
     boxmot: BoxMOTRunMetadata | None = None
     drop_dtw: DropDTWRunMetadata | None = None
+    external_partial: ExternalPartialRunMetadata | None = None
 
     @model_validator(mode="after")
     def require_monotonic_observations(self) -> RunManifest:
