@@ -981,6 +981,41 @@ ATHENA remains metadata-only and its synthetic fixture is never overlaid on Asse
 Recordings are keyed by clip (`battle-<clip_id>`) and run id, so runs of different clips
 or of the same clip open side by side without merging.
 
+### Build the focused interaction review
+
+The review-focused package combines the already verified exploratory artifacts with the
+completed four-part comparison without running inference or opening a viewer:
+
+```bash
+uv run battle-build-interaction-review
+rerun runs/interaction-review-first-20s/interaction_review.rrd
+```
+
+It validates all input fingerprints, source timestamps, the approved 30 FPS / `[0,600)`
+contract, reference-mask dimensions, and the single 1280×720 embedded RGB asset before
+writing `interaction_review.rrd`, `interaction_review_index.json`, `review_guide.md`, and a
+labeled contact sheet under `runs/interaction-review-first-20s/`.
+
+The default primary panel is deliberately focused: it shows the selected
+`reviewed_seed_sam2_control` four-part reference masks with blue MediaPipe skeletons. The
+reviewer may substitute the coherent focused SAM3 baseline with
+`--reference-segmentation baseline_sam3`, but the default control is preferred because all four
+of its reviewed-mask-seeded parts have complete 600-frame output. Orange WiLoR 2D is shown in its
+own comparison panel; matching is same-frame nearest-wrist spatial assignment only, never a
+cross-method or persistent-ID assertion. WiLoR's camera-relative non-metric 3D has a separate
+3D panel. BoxMOT is hidden from the default composition as an optional person/occlusion context,
+not part tracking or segmentation. Kineo exposes only its partial 2D NLF body context.
+
+The contact time series is a review navigation aid: for each MediaPipe spatial proximity lane and
+each named reference part, it retains palm/wrist, nearest-fingertip, and minimum source-pixel
+distance. A raw candidate is inside the mask or at most 12 pixels away; it starts after two
+observed candidate frames and ends after three observed non-candidate frames. Missing hand/mask
+values are explicitly cleared and reset the debounce state rather than being treated as distant.
+`contact_candidate_start`/`contact_candidate_end` are geometry heuristics, not touch or grasp
+ground truth. The guide records deterministic required frames 0/300/599 plus high-disagreement,
+missing-hand, transition, Kineo-gap, and late-occlusion bookmarks; every human disposition stays
+pending.
+
 ### Four-part segmentation comparison
 
 `configs/four_part_segmentation_comparison.json` is the checked-in fair-comparison

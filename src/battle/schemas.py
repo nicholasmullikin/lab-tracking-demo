@@ -2183,6 +2183,114 @@ class FourPartSegmentationComparisonIndex(VersionedModel):
         return self
 
 
+class InteractionContactDiagnostic(VersionedModel):
+    """One source-pixel hand-to-part proximity measurement for review only."""
+
+    analysis_frame_index: int = Field(ge=0, lt=600)
+    hand_source_id: str = Field(min_length=1)
+    part_id: Literal["chassis", "interior", "rear_body", "cabin"]
+    observation_state: Literal["observed", "missing_hand", "missing_mask"]
+    palm_distance_pixels: float | None = Field(default=None, ge=0)
+    fingertip_distance_pixels: float | None = Field(default=None, ge=0)
+    minimum_distance_pixels: float | None = Field(default=None, ge=0)
+    inside_mask: bool | None = None
+    raw_contact_candidate: bool | None = None
+    debounced_contact_candidate: bool | None = None
+
+    @model_validator(mode="after")
+    def require_distances_only_when_observed(self) -> InteractionContactDiagnostic:
+        values = (
+            self.palm_distance_pixels,
+            self.fingertip_distance_pixels,
+            self.minimum_distance_pixels,
+            self.inside_mask,
+            self.raw_contact_candidate,
+            self.debounced_contact_candidate,
+        )
+        if self.observation_state == "observed":
+            if any(value is None for value in values):
+                raise ValueError("observed contact diagnostics require every derived value")
+        elif any(value is not None for value in values):
+            raise ValueError("missing hand or mask diagnostics cannot retain stale contact values")
+        return self
+
+
+class InteractionContactEvent(VersionedModel):
+    """A debounced geometry transition, never a ground-truth interaction label."""
+
+    analysis_frame_index: int = Field(ge=0, lt=600)
+    hand_source_id: str = Field(min_length=1)
+    part_id: Literal["chassis", "interior", "rear_body", "cabin"]
+    event_type: Literal["contact_candidate_start", "contact_candidate_end"]
+
+
+class InteractionHandDisagreement(VersionedModel):
+    """Same-frame spatial assignment between two frame-local hand detections."""
+
+    analysis_frame_index: int = Field(ge=0, lt=600)
+    assignment_state: Literal["matched", "mediapipe_only", "wilor_only"]
+    mediapipe_hand_id: str | None = None
+    wilor_hand_id: str | None = None
+    mean_landmark_distance_pixels: float | None = Field(default=None, ge=0)
+    max_landmark_distance_pixels: float | None = Field(default=None, ge=0)
+    handedness_disagrees: bool | None = None
+
+    @model_validator(mode="after")
+    def require_assignment_evidence(self) -> InteractionHandDisagreement:
+        if self.assignment_state == "matched":
+            if (
+                self.mediapipe_hand_id is None
+                or self.wilor_hand_id is None
+                or self.mean_landmark_distance_pixels is None
+                or self.max_landmark_distance_pixels is None
+                or self.handedness_disagrees is None
+            ):
+                raise ValueError("matched hands require both IDs and disagreement values")
+        elif (
+            self.mean_landmark_distance_pixels is not None
+            or self.max_landmark_distance_pixels is not None
+        ):
+            raise ValueError("unmatched hands cannot claim landmark disagreement")
+        return self
+
+
+class InteractionReviewPinnedMoment(VersionedModel):
+    """A deterministic review bookmark; human disposition intentionally remains pending."""
+
+    analysis_frame_index: int = Field(ge=0, lt=600)
+    source_seconds: float = Field(ge=0)
+    categories: tuple[str, ...] = Field(min_length=1)
+    rationale: str = Field(min_length=1)
+    disposition: Literal["pending"] = "pending"
+
+
+class InteractionReviewIndexManifest(VersionedModel):
+    """Complete reproducibility index for the focused interaction review package."""
+
+    manifest_kind: Literal["interaction_review_first_20s"]
+    comparison_id: Literal["interaction_review_first_20s"]
+    source_video: ArtifactFingerprint
+    bounded_video: ArtifactFingerprint
+    frame_count: Literal[600]
+    analysis_fps: Literal[30]
+    source_interval: TimeInterval
+    reference_segmentation_method: Literal["reviewed_seed_sam2_control", "baseline_sam3"]
+    reference_segmentation_manifest: ArtifactFingerprint
+    input_artifacts: tuple[ArtifactFingerprint, ...] = Field(min_length=1)
+    contact_heuristic: str = Field(min_length=1)
+    hand_matching_rule: str = Field(min_length=1)
+    coordinate_semantics: tuple[str, ...] = Field(min_length=1)
+    claim_boundaries: tuple[str, ...] = Field(min_length=1)
+    coverage: dict[str, int]
+    contact_diagnostics: tuple[InteractionContactDiagnostic, ...] = ()
+    hand_disagreements: tuple[InteractionHandDisagreement, ...] = ()
+    contact_events: tuple[InteractionContactEvent, ...] = ()
+    pinned_moments: tuple[InteractionReviewPinnedMoment, ...] = Field(min_length=3)
+    output_rrd: ArtifactFingerprint | None = None
+    review_guide: ArtifactFingerprint | None = None
+    contact_sheet: ArtifactFingerprint | None = None
+
+
 class HumanQAEvidence(VersionedModel):
     """One portable, content-addressed visual artifact presented to a reviewer."""
 

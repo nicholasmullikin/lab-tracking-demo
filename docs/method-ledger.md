@@ -1235,3 +1235,41 @@ this comparison makes no accuracy or cross-method identity claim.
   at `runs/exploratory-first-20s-comparison/exploratory_first_20s_comparison.rrd`; MediaPipe,
   WiLoR, Kineo NLF, BoxMOT, and Drop-DTW are deliberately excluded because they do not produce
   comparable part masks. ATHENA remains metadata-blocked.
+
+### Sep 16: focused non-segmentation interaction review package
+
+- `uv run battle-build-interaction-review` is inference-free and composes the verified static
+  RGB source outputs with the reviewed-seed SAM2 four-part control. It validates every available
+  source/proxy/config/bounded-input artifact fingerprint, common source clock, 600 retained
+  timeline rows where applicable, exact source timestamps, reference-mask dimensions, and the
+  one 600-frame 1280×720 video asset before writing the ignored
+  `runs/interaction-review-first-20s/interaction_review.rrd`, typed
+  `interaction_review_index.json`, `review_guide.md`, and contact sheet.
+- Reference choice: `reviewed_seed_sam2_control` is the default because every one of the four
+  exact reviewed-mask-seeded targets has a nonempty 600-frame mask sequence. It is a
+  detector-failure control/reference layer—not ground truth, an accuracy result, or confirmed
+  physical part attachment. `--reference-segmentation baseline_sam3` is an explicit review-time
+  override; it does not conflate either source with the other comparison arms.
+- The primary panel contains only the reference part masks and MediaPipe's blue skeletons. WiLoR
+  orange 2D is side-by-side and its non-metric camera-relative 3D is separate; same-frame
+  assignment is greedy nearest wrist and never claims hand ID equivalence across methods or
+  persistent identity. The compact time series records 21-point mean/max pixel disagreement,
+  one-method-only detection counts, and handedness disagreement counts. It is a diagnostic, not
+  hand-pose accuracy.
+- Hand-to-part candidates take the minimum source-pixel distance among wrist/palm and five
+  fingertips for each MediaPipe spatial proximity lane and `chassis`, `interior`, `rear_body`,
+  and `cabin`. Inside-mask or ≤12 px is raw positive; starts require 2 observed positive frames
+  and ends 3 observed negative frames. Missing hand/mask values are explicit nulls, clear their
+  Rerun paths, and reset debounce state. The generated `contact_candidate_start/end` records are
+  geometry heuristics only, never touch/grasp labels or ground truth.
+- BoxMOT is retained under a disabled-by-default person/occlusion context root, not part tracking
+  or segmentation. Kineo remains its own NLF-only 2D body/box panel with 456/600-frame coverage:
+  no hand articulation, SfM, metric 3D, multi-view, or BVH claim. Drop-DTW is only a navigation
+  bookmark based on Assembly101 coarse GT transcript weak supervision. ATHENA is metadata-only,
+  blocked on missing real intrinsics, and its fixture never appears on the real timeline.
+- Generated deterministic review pins retain required frames 0, 300, and 599 and add the first
+  contact transition (frame 1), first Kineo gap (91), late one-method-only detection/possible
+  occlusion (597), and highest same-frame landmark disagreement (599; ties resolve by frame).
+  Human dispositions are all pending. Fixture coverage includes contact distance/inside behavior,
+  debounce/missing propagation, nearest-wrist pairing, deterministic pins, timestamp rejection,
+  output paths, and Rerun clear behavior. Full suite count after this addition: 222 passing tests.
