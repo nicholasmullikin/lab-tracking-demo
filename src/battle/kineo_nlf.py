@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import pickle
+import re
 import subprocess
 import sys
 import time
@@ -34,6 +35,24 @@ RTMLIB_MODEL_URL = (
     "https://download.openmmlab.com/mmpose/v1/projects/rtmposev1/onnx_sdk/"
     "yolox_tiny_8xb8-300e_humanart-6f3252f9.zip"
 )
+
+
+def _config_with_frame_step(source_config: Path, output_config: Path, frame_step: int) -> Path:
+    """Write a Battle-owned override without mutating the external Kineo checkout."""
+
+    if frame_step < 1:
+        raise ValueError("rtmlib bbox frame step must be >= 1")
+    source = source_config.read_text(encoding="utf-8")
+    updated, count = re.subn(
+        r"(?m)^rtmlib_bbox_detection_frame_step:[ \t]*\d+[ \t]*$",
+        f"rtmlib_bbox_detection_frame_step: {frame_step}",
+        source,
+    )
+    if count != 1:
+        raise ValueError("Kineo config must contain one rtmlib bbox frame-step setting")
+    output_config.parent.mkdir(parents=True, exist_ok=True)
+    output_config.write_text(updated, encoding="utf-8")
+    return output_config
 
 
 def _git_fingerprint(repository_root: Path) -> dict[str, str]:
@@ -142,11 +161,17 @@ def run_kineo_nlf(args: argparse.Namespace) -> Path:
         f"kineo-nlf-headless-{int(args.seconds)}s-{datetime.now(UTC).strftime('%Y%m%dt%H%M%Sz')}"
     )
     proxy_path = (repository_root / args.proxy).resolve()
+    source_kineo_config = (repository_root / args.kineo_config).resolve()
     bounded_proxy_dir = repository_root / "data/logs/kineo_cache/bounded_inputs"
     bounded_proxy_dir.mkdir(parents=True, exist_ok=True)
     bounded_proxy = bounded_proxy_dir / f"{args.sequence_name}_{frame_count}f.mp4"
     if not bounded_proxy.exists():
         _bounded_proxy(proxy_path, bounded_proxy, frame_count)
+    active_kineo_config = _config_with_frame_step(
+        source_kineo_config,
+        repository_root / "data/logs/kineo_cache/generated_configs" / f"{run_id}.yaml",
+        args.rtmlib_bbox_detection_frame_step,
+    )
 
     git_state = _git_fingerprint(kineo_root)
     checkpoint_path = kineo_root / NLF_CHECKPOINT
@@ -156,7 +181,8 @@ def run_kineo_nlf(args: argparse.Namespace) -> Path:
         "kineo_repository": str(kineo_root),
         "kineo_git": git_state,
         "battle_config": str(args.config),
-        "kineo_config": str(args.kineo_config),
+        "kineo_config": str(active_kineo_config.relative_to(repository_root)),
+        "kineo_config_sha256": sha256_file(active_kineo_config),
         "sequence_name": args.sequence_name,
         "proxy_uri": proxy_path.relative_to(repository_root).as_posix(),
         "proxy_sha256": sha256_file(proxy_path),
@@ -168,7 +194,7 @@ def run_kineo_nlf(args: argparse.Namespace) -> Path:
             "description": (
                 "Per frame keep highest detector-confidence person bbox (not largest area)."
             ),
-            "frame_step": 5,
+            "frame_step": args.rtmlib_bbox_detection_frame_step,
             "bbox_thr": 0.3,
             "nms_iou_thr": 0.65,
         },
@@ -192,7 +218,7 @@ def run_kineo_nlf(args: argparse.Namespace) -> Path:
             "-m",
             "kineo.demo.offline.demo",
             "--config-file",
-            str((repository_root / args.kineo_config).resolve()),
+            str(active_kineo_config),
             "--sequence-name",
             args.sequence_name,
             "--shared-intrinsics",
@@ -243,6 +269,7 @@ def main() -> None:
     parser.add_argument("--seconds", type=float, default=DEFAULT_SECONDS)
     parser.add_argument("--output-root", type=Path, default=Path("runs"))
     parser.add_argument("--run-id")
+    parser.add_argument("--rtmlib-bbox-detection-frame-step", type=int, default=5)
     parser.add_argument(
         "--skip-inference",
         action="store_true",
