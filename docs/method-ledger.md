@@ -1364,4 +1364,7 @@ this comparison makes no accuracy or cross-method identity claim.
   bookmarks. Raw WiLoR, MediaPipe fallback, BoxMOT, and the exploratory substep arm remain
   separately labeled; the 11 agent-authored substeps are primary. `rerun rrd print` completed
   without a viewer popup. The v3 QA record preserves user feedback as human-authored text and
-  leaves human pass/fail pending.
+  leaves human pass/fail pending. Final agent-authored visual review
+  (`runs/interaction-review-overnight-v3/final_agent_review.md`, gitignored) fixed a
+  `mediapipe_fallback` audit-sheet labeling bug in `scripts/render_overnight_v3_audits.py`.
+  Full suite after that fix: 245 passing tests.

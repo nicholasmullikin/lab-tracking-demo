@@ -103,7 +103,7 @@ def render_wilor_audits() -> None:
     stabilized = _rows(STABILIZED)
     fallback_by_frame: dict[int, set[str]] = {}
     for item in json.loads(HAND_PROVENANCE.read_text(encoding="utf-8")):
-        if item["source"] == "mediapipe":
+        if item["source"] in {"mediapipe", "mediapipe_fallback"}:
             fallback_by_frame.setdefault(item["analysis_frame_index"], set()).add(
                 item["output_hand_id"]
             )
