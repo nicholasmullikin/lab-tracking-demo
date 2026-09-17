@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import re
+import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -12,11 +15,15 @@ from battle.interaction_review import (
     CONTACT_END_FRAMES,
     CONTACT_START_FRAMES,
     DEFAULT_SOURCES,
+    FIRST_20S_STATIC_TEXT_PANELS,
+    _blueprint,
     _contacts,
     _drop_dtw_bookmarks,
     _log_diagnostics_frame,
+    _log_navigation_frame,
     build_interaction_review,
     cluster_segmentation_triggers,
+    coarse_gt_for_frame,
     contact_measurement,
     debounce_contact,
     deterministic_pinned_moments,
@@ -25,10 +32,21 @@ from battle.interaction_review import (
     validate_review_observations,
 )
 from battle.interaction_review_v4 import (
+    COARSE_GT,
+    FINE_LABELS,
+    SEGMENTATION_CONTACT_ELIGIBLE_THROUGH,
+    STATIC_TEXT_PANELS,
+    _log_static_documents,
+    _prepare_output_root,
+)
+from battle.interaction_review_v4 import (
     FRAME_COUNT as FIRST_MINUTE_FRAME_COUNT,
 )
 from battle.interaction_review_v4 import (
-    SEGMENTATION_CONTACT_ELIGIBLE_THROUGH,
+    OUTPUT_NAME as V4_OUTPUT_NAME,
+)
+from battle.interaction_review_v4 import (
+    OUTPUT_ROOT as V4_OUTPUT_ROOT,
 )
 from battle.schemas import (
     FrameObservations,
@@ -203,6 +221,171 @@ def test_late_invalid_masks_clear_every_previously_seen_lane() -> None:
 def test_v4_declares_first_minute_alignment_and_late_contact_cutoff() -> None:
     assert FIRST_MINUTE_FRAME_COUNT == 1800
     assert SEGMENTATION_CONTACT_ELIGIBLE_THROUGH == 1200
+
+
+def _blueprint_views(blueprint) -> list:
+    from rerun.blueprint.api import View
+
+    def walk(node):
+        if isinstance(node, View):
+            yield node
+            return
+        for child in node.contents:
+            yield from walk(child)
+
+    return list(walk(blueprint.root_container))
+
+
+def _referenced_entities(blueprint) -> set[str]:
+    """Entity paths a blueprint's text and time-series views expect to find."""
+    referenced: set[str] = set()
+    for view in _blueprint_views(blueprint):
+        kind = type(view).__name__
+        if kind == "TextDocumentView":
+            referenced.add(str(view.origin))
+        elif kind == "TimeSeriesView" and isinstance(view.contents, tuple):
+            for item in view.contents:
+                referenced.add(str(item).replace("$origin", str(view.origin)))
+    return referenced
+
+
+def _logged_paths(monkeypatch: pytest.MonkeyPatch, log_calls) -> set[str]:
+    logged: set[str] = set()
+
+    def record(path, value, **_):
+        if value.__class__.__name__ != "Clear":
+            logged.add(path)
+
+    monkeypatch.setattr("battle.interaction_review.rr.log", record)
+    monkeypatch.setattr("battle.interaction_review_v4.rr.log", record)
+    log_calls()
+    return logged
+
+
+def test_v4_blueprint_text_and_navigation_panels_have_logged_entities(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The user saw empty guide/GT/substep panels: every referenced entity must be logged."""
+    from battle.fine_substep_contract import load_contract, substep_for_frame
+
+    root = "world/clip/interaction_review_v4"
+    contract = load_contract(FINE_LABELS)
+
+    def log_everything() -> None:
+        _log_static_documents(root, guide="# guide", fine_contract=contract)
+        for frame in (0, 599, 600, 1799):
+            _log_navigation_frame(
+                root,
+                frame,
+                source_seconds=294 + frame / 30,
+                substep=substep_for_frame(contract, frame) if frame < 600 else None,
+                coarse_gt=coarse_gt_for_frame(COARSE_GT, frame),
+            )
+
+    logged = _logged_paths(monkeypatch, log_everything)
+    referenced = _referenced_entities(
+        _blueprint(root, (1280, 720), static_text_panels=STATIC_TEXT_PANELS)
+    )
+
+    assert f"{root}/metadata/review_notes" in referenced
+    assert f"{root}/metadata/navigation/current" in referenced
+    assert f"{root}/metadata/navigation/agent_substep_index" in referenced
+    assert f"{root}/metadata/navigation/coarse_gt_index" in referenced
+    assert f"{root}/metadata/coarse_gt" in referenced
+    assert referenced <= logged, referenced - logged
+
+
+def test_v3_blueprint_references_only_paths_the_20s_builder_logs() -> None:
+    root = "world/clip/interaction_review"
+    referenced = _referenced_entities(
+        _blueprint(root, (1280, 720), static_text_panels=FIRST_20S_STATIC_TEXT_PANELS)
+    )
+    builder_source = Path("src/battle/interaction_review.py").read_text()
+
+    assert f"{root}/metadata/review_notes" in referenced
+    assert f"{root}/metadata/drop_dtw" in referenced
+    assert f"{root}/metadata/agent_substeps" in referenced
+    for suffix in ("REVIEW_NOTES", "metadata/drop_dtw", "metadata/agent_substeps"):
+        assert suffix in builder_source
+
+
+def test_navigation_frame_clears_substep_index_outside_agent_labels(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    logged: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "battle.interaction_review.rr.log",
+        lambda path, value, **_: logged.append((path, value.__class__.__name__)),
+    )
+    _log_navigation_frame(
+        "world/x",
+        1500,
+        source_seconds=344.0,
+        substep=None,
+        coarse_gt=coarse_gt_for_frame(COARSE_GT, 1500),
+    )
+
+    assert ("world/x/metadata/navigation/agent_substep_index", "Clear") in logged
+    assert ("world/x/metadata/navigation/coarse_gt_index", "Scalars") in logged
+    assert ("world/x/metadata/navigation/current", "TextDocument") in logged
+    assert coarse_gt_for_frame(COARSE_GT, 1500) == (3, ("screw chassis", 1281, 1800))
+    assert coarse_gt_for_frame(COARSE_GT, 1800) is None
+
+
+def test_v4_output_root_accepts_empty_directory_and_explains_non_empty(tmp_path: Path) -> None:
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    _prepare_output_root(empty, overwrite=False)
+    assert empty.is_dir()
+
+    (empty / "review_guide.md").write_text("old")
+    with pytest.raises(FileExistsError, match="--overwrite"):
+        _prepare_output_root(empty, overwrite=False)
+    _prepare_output_root(empty, overwrite=True)
+    assert not (empty / "review_guide.md").exists()
+
+    (empty / "unrelated.txt").write_text("keep")
+    with pytest.raises(FileExistsError, match="unexpected entry"):
+        _prepare_output_root(empty, overwrite=True)
+    assert (empty / "unrelated.txt").exists()
+
+
+_CHUNK_HEADER = re.compile(r"^Chunk\(\S+\) with (\d+) rows? \([^)]*\) - (/\S+) - ", re.MULTILINE)
+
+
+def _rrd_row_counts(rrd_path: Path) -> tuple[dict[str, int], str]:
+    printed = subprocess.run(
+        [str(Path(sys.executable).with_name("rerun")), "rrd", "print", str(rrd_path)],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    counts: dict[str, int] = {}
+    for rows, entity in _CHUNK_HEADER.findall(printed):
+        counts[entity] = counts.get(entity, 0) + int(rows)
+    return counts, printed
+
+
+def test_exported_v4_rrd_carries_navigation_entities_and_blueprint_views() -> None:
+    """Integration check against the ignored, rebuilt package (skipped when absent)."""
+    rrd_path = Path(V4_OUTPUT_ROOT) / V4_OUTPUT_NAME
+    if not rrd_path.is_file():
+        pytest.skip(f"{rrd_path} is not built in this checkout")
+    counts, printed = _rrd_row_counts(rrd_path)
+    roots = {path.split("/metadata/")[0] for path in counts if "/metadata/navigation/" in path}
+    assert len(roots) == 1, roots
+    root = roots.pop()
+
+    assert counts[f"{root}/metadata/navigation/current"] == FIRST_MINUTE_FRAME_COUNT
+    assert counts[f"{root}/metadata/navigation/coarse_gt_index"] >= FIRST_MINUTE_FRAME_COUNT
+    assert counts[f"{root}/metadata/navigation/agent_substep_index"] >= 600
+    for relative, _ in STATIC_TEXT_PANELS:
+        assert counts[f"{root}/metadata/{relative.split('/', 1)[1]}"] >= 1
+    assert counts[f"{root}/metadata/review_notes"] >= 1
+    expected_views = _blueprint_views(
+        _blueprint(root.lstrip("/"), (1280, 720), static_text_panels=STATIC_TEXT_PANELS)
+    )
+    assert printed.count("ViewBlueprint:display_name") == len(expected_views)
 
 
 def test_drop_dtw_bookmarks_use_only_declared_matched_frames(tmp_path) -> None:

@@ -912,7 +912,94 @@ def _log_diagnostics_frame(
     )
 
 
-def _blueprint(root: str, dimensions: tuple[int, int]) -> rrb.Blueprint:
+NAVIGATION_CURRENT = "metadata/navigation/current"
+NAVIGATION_SUBSTEP_INDEX = "metadata/navigation/agent_substep_index"
+NAVIGATION_COARSE_GT_INDEX = "metadata/navigation/coarse_gt_index"
+REVIEW_NOTES = "metadata/review_notes"
+# (relative entity path, panel title) pairs the 20 s blueprint shows as static documents.
+FIRST_20S_STATIC_TEXT_PANELS = (
+    ("metadata/drop_dtw", "Drop-DTW weak supervision"),
+    ("metadata/agent_substeps", "Agent-authored substeps (contract)"),
+)
+CoarseGtSegment = tuple[str, int, int]
+
+
+def coarse_gt_for_frame(
+    segments: tuple[CoarseGtSegment, ...], frame: int
+) -> tuple[int, CoarseGtSegment] | None:
+    """Return the (segment index, segment) covering `frame`, if any."""
+    for index, segment in enumerate(segments):
+        if segment[1] <= frame < segment[2]:
+            return index, segment
+    return None
+
+
+def _log_navigation_static(root: str) -> None:
+    rr.log(
+        f"{root}/{NAVIGATION_SUBSTEP_INDEX}",
+        rr.SeriesLines(names="agent-authored substep S01-S11 (visual review, [0,600) only)"),
+        static=True,
+    )
+    rr.log(
+        f"{root}/{NAVIGATION_COARSE_GT_INDEX}",
+        rr.SeriesLines(names="coarse Assembly101 GT segment index (weak supervision)"),
+        static=True,
+    )
+
+
+def _log_navigation_frame(
+    root: str,
+    frame: int,
+    *,
+    source_seconds: float,
+    substep: object | None,
+    coarse_gt: tuple[int, CoarseGtSegment] | None,
+    extra_lines: tuple[str, ...] = (),
+) -> None:
+    """Log the per-frame navigation document plus its step-index time series.
+
+    The document is re-logged every frame so a `TextDocumentView` always shows the current
+    agent-authored substep and coarse GT segment; step indices give the same information a
+    visible shape on the time panel.  Neither is a prediction or an accuracy claim.
+    """
+    if substep is None:
+        substep_line = "- agent-authored substep: none (outside the checked-in `[0,600)` labels)"
+        rr.log(f"{root}/{NAVIGATION_SUBSTEP_INDEX}", rr.Clear(recursive=False))
+    else:
+        substep_line = (
+            f"- agent-authored substep: `{substep.substep_id}` **{substep.label}** "
+            f"(frames [{substep.start_frame},{substep.end_frame_exclusive}), confidence "
+            f"{substep.confidence}, provenance `agent_authored_visual_review`)"
+        )
+        rr.log(f"{root}/{NAVIGATION_SUBSTEP_INDEX}", rr.Scalars([int(substep.substep_id[1:])]))
+    if coarse_gt is None:
+        gt_line = "- coarse Assembly101 GT: none declared for this frame"
+        rr.log(f"{root}/{NAVIGATION_COARSE_GT_INDEX}", rr.Clear(recursive=False))
+    else:
+        gt_index, (action, start, end) = coarse_gt
+        gt_line = (
+            f"- coarse Assembly101 GT (weak supervision, not prediction): segment {gt_index} "
+            f"**{action}** (frames [{start},{end}))"
+        )
+        rr.log(f"{root}/{NAVIGATION_COARSE_GT_INDEX}", rr.Scalars([gt_index]))
+    body = "\n".join(
+        [
+            f"# Navigation — frame {frame} / source {source_seconds:.3f} s",
+            "",
+            substep_line,
+            gt_line,
+            *extra_lines,
+        ]
+    )
+    rr.log(f"{root}/{NAVIGATION_CURRENT}", rr.TextDocument(body, media_type="text/markdown"))
+
+
+def _blueprint(
+    root: str,
+    dimensions: tuple[int, int],
+    *,
+    static_text_panels: tuple[tuple[str, str], ...] = FIRST_20S_STATIC_TEXT_PANELS,
+) -> rrb.Blueprint:
     primary = rrb.Spatial2DView(
         origin=root,
         name="Primary interaction: corrected SAM3 + stabilized WiLoR",
@@ -956,6 +1043,14 @@ def _blueprint(root: str, dimensions: tuple[int, int]) -> rrb.Blueprint:
                         name="MediaPipe vs WiLoR disagreement",
                         contents="$origin/**",
                     ),
+                    rrb.TimeSeriesView(
+                        origin=f"{root}/metadata/navigation",
+                        name="Navigation: agent substep index + coarse GT segment",
+                        contents=(
+                            f"$origin/{NAVIGATION_SUBSTEP_INDEX.rsplit('/', 1)[1]}",
+                            f"$origin/{NAVIGATION_COARSE_GT_INDEX.rsplit('/', 1)[1]}",
+                        ),
+                    ),
                 ),
                 column_shares=[3, 2],
             ),
@@ -977,14 +1072,18 @@ def _blueprint(root: str, dimensions: tuple[int, int]) -> rrb.Blueprint:
                     name="WiLoR camera-relative non-metric 3D",
                     contents="$origin/**",
                 ),
-                rrb.TextDocumentView(origin=f"{root}/metadata/review_notes", name="Review guide"),
+                rrb.TextDocumentView(origin=f"{root}/{REVIEW_NOTES}", name="Review guide"),
                 rrb.TextDocumentView(
-                    origin=f"{root}/metadata/drop_dtw", name="Drop-DTW weak supervision"
+                    origin=f"{root}/{NAVIGATION_CURRENT}",
+                    name="Current substep + coarse GT (per frame)",
                 ),
-                rrb.TextDocumentView(
-                    origin=f"{root}/metadata/agent_substeps", name="Agent-authored substeps"
+                rrb.Tabs(
+                    *[
+                        rrb.TextDocumentView(origin=f"{root}/{path}", name=title)
+                        for path, title in static_text_panels
+                    ]
                 ),
-                column_shares=[2, 2, 2, 2],
+                column_shares=[2, 2, 2, 2, 2],
             ),
             row_shares=[4, 3, 2],
         ),
@@ -1320,6 +1419,17 @@ def build_interaction_review(
         ),
         static=True,
     )
+    guide = _review_guide(rrd_path, index, moments)
+    rr.log(
+        f"{root}/{REVIEW_NOTES}",
+        rr.TextDocument(guide, media_type="text/markdown"),
+        static=True,
+    )
+    coarse_gt_segments: tuple[CoarseGtSegment, ...] = tuple(
+        (anchor.action, anchor.proxy_start_frame, anchor.proxy_end_frame_exclusive)
+        for anchor in fine_contract.coarse_gt_anchors
+    )
+    _log_navigation_static(root)
     for frame in range(FRAME_COUNT):
         time = frame / ANALYSIS_FPS
         rr.set_time("analysis_frame", sequence=frame)
@@ -1390,12 +1500,23 @@ def build_interaction_review(
                 f"{agent_substep.substep_id}: {agent_substep.label} (agent_authored_visual_review)"
             ),
         )
+        _log_navigation_frame(
+            root,
+            frame,
+            source_seconds=294.0 + time,
+            substep=agent_substep,
+            coarse_gt=coarse_gt_for_frame(coarse_gt_segments, frame),
+            extra_lines=(
+                (f"- Drop-DTW weak-supervision bookmark at this frame: **{action}**",)
+                if action is not None
+                else ()
+            ),
+        )
         if frame == 0:
             rr.log(f"{root}/metadata/drop_dtw_alignment_cost", rr.Scalars([drop_cost]))
     rr.send_blueprint(_blueprint(root, dimensions))
     rr.disconnect()
     _make_contact_sheet(video_path, sheet_path, moments, reference, sources["stabilized_wilor"])
-    guide = _review_guide(rrd_path, index, moments)
     guide_path.write_text(guide, encoding="utf-8")
     final = index.model_copy(
         update={

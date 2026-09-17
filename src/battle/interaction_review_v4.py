@@ -8,7 +8,6 @@ context, never a joint tracker or an action prediction.
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 
 import rerun as rr
@@ -46,6 +45,21 @@ COARSE_GT = (
 )
 
 
+STATIC_TEXT_PANELS = (
+    ("metadata/coarse_gt", "Coarse Assembly101 GT (weak supervision)"),
+    ("metadata/agent_substeps_first_20s", "Agent-authored substeps (contract, [0,600))"),
+    ("metadata/drop_dtw", "Drop-DTW status"),
+)
+DROP_DTW_STATUS = """# Drop-DTW weak supervision (first minute)
+
+No Drop-DTW alignment was run for the first-minute window. The only Drop-DTW artifact is the
+20 s pinned OpenCLIP alignment shown in `runs/interaction-review-first-20s`. In this package the
+coarse Assembly101 GT transcript (same weak-supervision basis, no model alignment) drives the
+per-frame navigation document and the coarse GT segment index time series. It is navigation
+context only, never a prediction or an accuracy claim.
+"""
+
+
 def _output_paths(root: Path) -> tuple[Path, Path, Path, Path]:
     return (
         root / OUTPUT_NAME,
@@ -53,6 +67,39 @@ def _output_paths(root: Path) -> tuple[Path, Path, Path, Path]:
         root / GUIDE_NAME,
         root / CONTACT_SHEET_NAME,
     )
+
+
+def _coarse_gt_markdown() -> str:
+    rows = "\n".join(
+        f"| {index} | {action} | {start} | {end} | "
+        f"{SOURCE_START_SECONDS + start / ANALYSIS_FPS:.3f}–"
+        f"{SOURCE_START_SECONDS + end / ANALYSIS_FPS:.3f} s |"
+        for index, (action, start, end) in enumerate(COARSE_GT)
+    )
+    return (
+        "# Coarse Assembly101 GT over the first minute\n\n"
+        "Weak navigation context from the dataset transcript, not a prediction and not a "
+        "fine-grained label. Segment index is what the navigation time series plots.\n\n"
+        "| index | action | start frame | end frame (excl.) | source |\n"
+        "| --- | --- | --- | --- | --- |\n"
+        f"{rows}\n"
+    )
+
+
+def _prepare_output_root(root: Path, *, overwrite: bool) -> None:
+    """Create the output root; an existing empty directory is fine, existing files are not."""
+    existing = sorted(root.iterdir()) if root.is_dir() else []
+    if existing and not overwrite:
+        raise FileExistsError(
+            f"{root} already contains {len(existing)} entries; pass --overwrite to replace the "
+            "package files or choose another --output-root"
+        )
+    for path in existing:
+        if path.name in {OUTPUT_NAME, INDEX_NAME, GUIDE_NAME, CONTACT_SHEET_NAME}:
+            path.unlink()
+        else:
+            raise FileExistsError(f"{root} holds an unexpected entry {path.name}; not overwriting")
+    root.mkdir(parents=True, exist_ok=True)
 
 
 def _guide(index: InteractionReviewIndexManifest, rrd_path: Path) -> str:
@@ -68,6 +115,17 @@ This recording embeds one RGB asset spanning analysis frames `[0,1800)` / source
 294.000–354.000 s at 30 FPS. The default panel is corrected focused SAM3 plus the
 WiLoR-primary stabilized hand layer. Raw WiLoR, MediaPipe, BoxMOT person context, and
 partial Kineo NLF body context are separate/toggleable evidence layers.
+
+## Navigation panels
+
+- **Review guide** (bottom row) is this document, logged at `metadata/review_notes`.
+- **Current substep + coarse GT (per frame)** re-renders every frame from
+  `metadata/navigation/current`: the agent-authored substep for `[0,600)`, the coarse
+  Assembly101 GT segment for `[0,1800)`, and the segmentation contact-eligibility state.
+- **Navigation: agent substep index + coarse GT segment** (right column) plots the same two
+  step indices on the time panel so transitions are visible as steps.
+- The bottom-right tabs hold the static coarse GT table, the checked-in substep contract
+  JSON, and the Drop-DTW status note (no Drop-DTW alignment exists for the first minute).
 
 ## Validity and claim boundaries
 
@@ -98,7 +156,34 @@ not accuracy or interaction assertions.
 """
 
 
-def build_first_minute_review(*, repository_root: Path, output_root: Path = OUTPUT_ROOT) -> Path:
+def _log_static_documents(entity: str, *, guide: str, fine_contract: object) -> None:
+    """Log every static document the blueprint's text panels reference."""
+    rr.log(
+        f"{entity}/metadata/coarse_gt",
+        rr.TextDocument(_coarse_gt_markdown(), media_type="text/markdown"),
+        static=True,
+    )
+    rr.log(
+        f"{entity}/metadata/agent_substeps_first_20s",
+        rr.TextDocument(fine_contract.model_dump_json(indent=2), media_type="application/json"),
+        static=True,
+    )
+    rr.log(
+        f"{entity}/metadata/drop_dtw",
+        rr.TextDocument(DROP_DTW_STATUS, media_type="text/markdown"),
+        static=True,
+    )
+    rr.log(
+        f"{entity}/{review.REVIEW_NOTES}",
+        rr.TextDocument(guide, media_type="text/markdown"),
+        static=True,
+    )
+    review._log_navigation_static(entity)
+
+
+def build_first_minute_review(
+    *, repository_root: Path, output_root: Path = OUTPUT_ROOT, overwrite: bool = False
+) -> Path:
     """Build a 1,800-row review package from retained, source-aligned artifacts."""
 
     repository_root = repository_root.resolve()
@@ -144,9 +229,7 @@ def build_first_minute_review(*, repository_root: Path, output_root: Path = OUTP
     )
     root = (repository_root / output_root).resolve()
     rrd_path, index_path, guide_path, sheet_path = _output_paths(root)
-    if root.exists() and any(root.iterdir()):
-        raise FileExistsError(root)
-    root.mkdir(parents=True, exist_ok=True)
+    _prepare_output_root(root, overwrite=overwrite)
     artifacts = [
         _file_fingerprint(video_path, repository_root),
         *[item for source in [*sources.values(), reference] for item in source.artifacts],
@@ -237,16 +320,7 @@ def build_first_minute_review(*, repository_root: Path, output_root: Path = OUTP
         rr.TextDocument(index.model_dump_json(indent=2), media_type="application/json"),
         static=True,
     )
-    rr.log(
-        f"{entity}/metadata/coarse_gt",
-        rr.TextDocument(json.dumps(COARSE_GT, indent=2), media_type="application/json"),
-        static=True,
-    )
-    rr.log(
-        f"{entity}/metadata/agent_substeps_first_20s",
-        rr.TextDocument(fine_contract.model_dump_json(indent=2), media_type="application/json"),
-        static=True,
-    )
+    _log_static_documents(entity, guide=_guide(index, rrd_path), fine_contract=fine_contract)
     trigger_counts = {
         frame: sum(item.analysis_frame_index == frame for item in triggers)
         for frame in range(FRAME_COUNT)
@@ -313,13 +387,30 @@ def build_first_minute_review(*, repository_root: Path, output_root: Path = OUTP
             f"{entity}/diagnostics/segmentation_contact_eligible",
             rr.Scalars([float(frame < SEGMENTATION_CONTACT_ELIGIBLE_THROUGH)]),
         )
-        if frame < 600:
-            substep = substep_for_frame(fine_contract, frame)
+        substep = substep_for_frame(fine_contract, frame) if frame < 600 else None
+        if substep is not None:
             rr.log(
                 f"{entity}/metadata/agent_substeps_first_20s/timeline",
                 rr.TextLog(f"{substep.substep_id}: {substep.label} (agent_authored_visual_review)"),
             )
-    rr.send_blueprint(review._blueprint(entity, dimensions))
+        eligible = frame < SEGMENTATION_CONTACT_ELIGIBLE_THROUGH
+        review._log_navigation_frame(
+            entity,
+            frame,
+            source_seconds=SOURCE_START_SECONDS + time,
+            substep=substep,
+            coarse_gt=review.coarse_gt_for_frame(COARSE_GT, frame),
+            extra_lines=(
+                "- corrected SAM3 masks: "
+                + (
+                    "`contact_eligible`"
+                    if eligible
+                    else "`not_contact_eligible` (visible for comparison only; contact fields "
+                    "are `invalid_mask`)"
+                ),
+            ),
+        )
+    rr.send_blueprint(review._blueprint(entity, dimensions, static_text_panels=STATIC_TEXT_PANELS))
     rr.disconnect()
     sheet_moments = tuple(
         item
@@ -348,10 +439,17 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repository-root", type=Path, default=Path.cwd())
     parser.add_argument("--output-root", type=Path, default=OUTPUT_ROOT)
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Replace an existing package in --output-root (an empty directory never needs it).",
+    )
     args = parser.parse_args()
     print(
         build_first_minute_review(
-            repository_root=args.repository_root, output_root=args.output_root
+            repository_root=args.repository_root,
+            output_root=args.output_root,
+            overwrite=args.overwrite,
         )
     )
 
