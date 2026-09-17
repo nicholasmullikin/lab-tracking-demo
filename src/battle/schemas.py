@@ -1666,6 +1666,33 @@ class FourPartFocusedRunMetadata(VersionedModel):
         return self
 
 
+class FineSubstepRunMetadata(VersionedModel):
+    """Audit data for one bounded fine-substep crop CLIP experiment."""
+
+    requested_seconds: float = Field(gt=0, le=60.0)
+    source_fingerprint: ArtifactFingerprint
+    proxy_fingerprint: ArtifactFingerprint
+    config_fingerprint: ArtifactFingerprint
+    label_contract_fingerprint: ArtifactFingerprint
+    openclip_checkpoint_fingerprint: ArtifactFingerprint
+    adapter: AdapterMetadata
+    runtime_settings: dict[str, str | int | float | bool | None]
+    measurements: RuntimeMeasurements
+    scores_uri: str
+    evaluation_uri: str
+    rerun_artifact_uri: str | None = None
+    contact_sheet_uri: str | None = None
+    review_guide_uri: str | None = None
+    provenance_tag: Literal["agent_authored_visual_review"] = "agent_authored_visual_review"
+    agent_review_note: str = Field(
+        min_length=1,
+        default=(
+            "Predicted substeps are compared only to agent-authored visual-review labels "
+            "tagged agent_authored_visual_review; this is not benchmark accuracy."
+        ),
+    )
+
+
 class DropDTWRunMetadata(VersionedModel):
     """Audit data for one bounded CLIP + Drop-DTW weak-supervision alignment."""
 
@@ -2035,6 +2062,7 @@ class RunManifest(VersionedModel):
     wilor_hands: WiLoRHandsRunMetadata | None = None
     boxmot: BoxMOTRunMetadata | None = None
     drop_dtw: DropDTWRunMetadata | None = None
+    fine_substep: FineSubstepRunMetadata | None = None
     grounding_dino_sam2_video: GroundingDinoSam2VideoRunMetadata | None = None
     samurai_video: SamuraiVideoRunMetadata | None = None
     dam4sam_video: Dam4samVideoRunMetadata | None = None

@@ -1,0 +1,224 @@
+{
+  "schema_version": "1.0",
+  "manifest_kind": "fine_substep_agent_labels",
+  "clip_id": "assembly101-nusar-9033-four-part-reassembly-focused-g2",
+  "view_id": "static-c10379",
+  "provenance_tag": "agent_authored_visual_review",
+  "author_type": "agent",
+  "analysis_fps": 30,
+  "frame_count": 600,
+  "source_interval": {
+    "start_seconds": 294.0,
+    "end_seconds": 314.0
+  },
+  "claim_boundaries": [
+    "These substeps are agent-authored visual review labels, not Assembly101 ground truth or human annotations.",
+    "Coarse GT anchors are weak protocol references only and must not be used as segmentation accuracy targets.",
+    "Checkpoint comparisons are agent-review diagnostics, not benchmark metrics."
+  ],
+  "coarse_gt_anchors": [
+    {
+      "action": "attach interior",
+      "annotation_start_frame": 8736,
+      "annotation_end_frame": 9138,
+      "proxy_start_frame": 0,
+      "proxy_end_frame_exclusive": 318
+    },
+    {
+      "action": "screw chassis",
+      "annotation_start_frame": 9138,
+      "annotation_end_frame": 10039,
+      "proxy_start_frame": 318,
+      "proxy_end_frame_exclusive": 600
+    }
+  ],
+  "checkpoints": [
+    {"analysis_frame_index": 0, "source_seconds": 294.0, "note": "required boundary"},
+    {"analysis_frame_index": 1, "source_seconds": 294.03333333333336, "note": "first contact transition"},
+    {"analysis_frame_index": 91, "source_seconds": 297.03333333333336, "note": "kineo gap region"},
+    {"analysis_frame_index": 150, "source_seconds": 299.0, "note": "interior insertion"},
+    {"analysis_frame_index": 300, "source_seconds": 304.0, "note": "midpoint pre-tool"},
+    {"analysis_frame_index": 318, "source_seconds": 304.6, "note": "coarse GT attach/screw boundary"},
+    {"analysis_frame_index": 405, "source_seconds": 307.5, "note": "visual screwdriver onset"},
+    {"analysis_frame_index": 480, "source_seconds": 310.0, "note": "legacy Drop-DTW screw sample"},
+    {"analysis_frame_index": 599, "source_seconds": 313.96666666666664, "note": "terminal hold"}
+  ],
+  "substeps": [
+    {
+      "substep_id": "S01",
+      "label": "stabilize_chassis_reach_interior",
+      "start_frame": 0,
+      "end_frame_exclusive": 45,
+      "source_start_seconds": 294.0,
+      "source_end_seconds_exclusive": 295.5,
+      "confidence": "high",
+      "coarse_gt_anchor": "attach interior",
+      "evidence_frames": [0, 1, 30],
+      "prompts": [
+        "hand reaching for black toy interior block",
+        "approaching chassis with interior part held above table",
+        "stabilizing black chassis while reaching for interior component"
+      ]
+    },
+    {
+      "substep_id": "S02",
+      "label": "grasp_reorient_interior_block",
+      "start_frame": 45,
+      "end_frame_exclusive": 90,
+      "source_start_seconds": 295.5,
+      "source_end_seconds_exclusive": 297.0,
+      "confidence": "high",
+      "coarse_gt_anchor": "attach interior",
+      "evidence_frames": [45, 60, 75],
+      "prompts": [
+        "grasping black interior block with both hands",
+        "reorienting black interior component above chassis",
+        "rotating interior block before insertion"
+      ]
+    },
+    {
+      "substep_id": "S03",
+      "label": "align_interior_to_chassis_socket",
+      "start_frame": 90,
+      "end_frame_exclusive": 135,
+      "source_start_seconds": 297.0,
+      "source_end_seconds_exclusive": 298.5,
+      "confidence": "high",
+      "coarse_gt_anchor": "attach interior",
+      "evidence_frames": [90, 105, 120],
+      "prompts": [
+        "aligning interior block above chassis socket",
+        "positioning black interior over black chassis opening",
+        "hovering interior part above chassis mount point"
+      ]
+    },
+    {
+      "substep_id": "S04",
+      "label": "insert_press_interior_into_chassis",
+      "start_frame": 135,
+      "end_frame_exclusive": 210,
+      "source_start_seconds": 298.5,
+      "source_end_seconds_exclusive": 301.0,
+      "confidence": "high",
+      "coarse_gt_anchor": "attach interior",
+      "evidence_frames": [150, 165, 195],
+      "prompts": [
+        "pressing interior into black chassis",
+        "inserting interior component into chassis socket",
+        "pushing black interior block into chassis"
+      ]
+    },
+    {
+      "substep_id": "S05",
+      "label": "micro_adjust_interior_seat",
+      "start_frame": 210,
+      "end_frame_exclusive": 270,
+      "source_start_seconds": 301.0,
+      "source_end_seconds_exclusive": 303.0,
+      "confidence": "high",
+      "coarse_gt_anchor": "attach interior",
+      "evidence_frames": [210, 240, 255],
+      "prompts": [
+        "adjusting seated interior in chassis",
+        "fine finger adjustment on chassis top",
+        "micro repositioning interior component in chassis"
+      ]
+    },
+    {
+      "substep_id": "S06",
+      "label": "verify_interior_fit_pre_fastener",
+      "start_frame": 270,
+      "end_frame_exclusive": 345,
+      "source_start_seconds": 303.0,
+      "source_end_seconds_exclusive": 305.5,
+      "confidence": "high",
+      "coarse_gt_anchor": "attach interior",
+      "evidence_frames": [285, 300, 330],
+      "prompts": [
+        "checking interior fit before fastening",
+        "holding chassis while preparing small peg or fastener",
+        "inspecting interior seating before tool use"
+      ]
+    },
+    {
+      "substep_id": "S07",
+      "label": "reach_pick_screwdriver",
+      "start_frame": 345,
+      "end_frame_exclusive": 405,
+      "source_start_seconds": 305.5,
+      "source_end_seconds_exclusive": 307.5,
+      "confidence": "medium",
+      "coarse_gt_anchor": "attach interior",
+      "evidence_frames": [345, 375, 390],
+      "prompts": [
+        "reaching for yellow screwdriver on table",
+        "hand moving from chassis toward screwdriver",
+        "preparing to pick up screwdriver near chassis"
+      ]
+    },
+    {
+      "substep_id": "S08",
+      "label": "engage_screwdriver_to_chassis",
+      "start_frame": 405,
+      "end_frame_exclusive": 465,
+      "source_start_seconds": 307.5,
+      "source_end_seconds_exclusive": 309.5,
+      "confidence": "high",
+      "coarse_gt_anchor": "screw chassis",
+      "evidence_frames": [405, 420, 435],
+      "prompts": [
+        "engaging yellow screwdriver to black chassis",
+        "positioning screwdriver tip on chassis fastener",
+        "holding screwdriver against chassis screw point"
+      ]
+    },
+    {
+      "substep_id": "S09",
+      "label": "turn_screw_fasten_chassis",
+      "start_frame": 465,
+      "end_frame_exclusive": 540,
+      "source_start_seconds": 309.5,
+      "source_end_seconds_exclusive": 312.0,
+      "confidence": "high",
+      "coarse_gt_anchor": "screw chassis",
+      "evidence_frames": [465, 510, 525],
+      "prompts": [
+        "turning screwdriver on black chassis",
+        "screwing chassis fastener with yellow tool",
+        "rotating screwdriver to fasten chassis"
+      ]
+    },
+    {
+      "substep_id": "S10",
+      "label": "release_tool_reposition_assembly",
+      "start_frame": 540,
+      "end_frame_exclusive": 585,
+      "source_start_seconds": 312.0,
+      "source_end_seconds_exclusive": 313.5,
+      "confidence": "medium",
+      "coarse_gt_anchor": "screw chassis",
+      "evidence_frames": [540, 555, 570],
+      "prompts": [
+        "lowering screwdriver after fastening",
+        "repositioning chassis after screwing",
+        "releasing tool and adjusting assembly hold"
+      ]
+    },
+    {
+      "substep_id": "S11",
+      "label": "hold_paused_near_cabin",
+      "start_frame": 585,
+      "end_frame_exclusive": 600,
+      "source_start_seconds": 313.5,
+      "source_end_seconds_exclusive": 314.0,
+      "confidence": "medium",
+      "coarse_gt_anchor": "screw chassis",
+      "evidence_frames": [585, 597, 599],
+      "prompts": [
+        "holding assembled chassis near yellow cabin",
+        "paused hold with chassis near yellow cab",
+        "waiting with chassis near yellow toy cabin"
+      ]
+    }
+  ]
+}
