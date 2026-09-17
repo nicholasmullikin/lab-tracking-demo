@@ -2319,6 +2319,40 @@ class InteractionReviewIndexManifest(VersionedModel):
     contact_sheet: ArtifactFingerprint | None = None
 
 
+class AgentAuthoredVisualFinding(VersionedModel):
+    """A non-human review observation; never an approval or ground-truth claim."""
+
+    analysis_frame_index: int = Field(ge=0, lt=600)
+    subject: str = Field(min_length=1)
+    finding: str = Field(min_length=1)
+    evidence_kind: Literal["audit", "generated_contact_sheet", "derived_metric"]
+    disposition: Literal["agent_authored_visual_review"]
+
+
+class SegmentationCorrectionCandidate(VersionedModel):
+    """A correction triage row that retains human and agent provenance separately."""
+
+    analysis_frame_index: int = Field(ge=0, lt=600)
+    target_id: Literal["chassis", "interior", "rear_body", "cabin"]
+    source_method: str = Field(min_length=1)
+    provenance: Literal["human_verified_correction", "agent_authored_visual_review"]
+    state: Literal["retained", "agent_proposed", "not_selected"]
+    rationale_fingerprint: str = Field(min_length=1)
+    semantic_claim: str = Field(min_length=1)
+
+
+class OvernightReviewRecord(VersionedModel):
+    """Structured mixed-provenance review record for the overnight rebuild."""
+
+    manifest_kind: Literal["overnight_interaction_review_record"]
+    provenance_tag: Literal["agent_authored_visual_review"]
+    human_feedback: tuple[str, ...] = Field(min_length=1)
+    agent_findings: tuple[AgentAuthoredVisualFinding, ...] = ()
+    correction_candidates: tuple[SegmentationCorrectionCandidate, ...] = ()
+    human_decisions_pending: Literal[True] = True
+    ground_truth_accuracy_claim: Literal[False] = False
+
+
 class HumanQAEvidence(VersionedModel):
     """One portable, content-addressed visual artifact presented to a reviewer."""
 

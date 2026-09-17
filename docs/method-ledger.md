@@ -1293,3 +1293,46 @@ this comparison makes no accuracy or cross-method identity claim.
   Human dispositions are all pending. Fixture coverage includes contact distance/inside behavior,
   debounce/missing propagation, nearest-wrist pairing, deterministic pins, timestamp rejection,
   output paths, and Rerun clear behavior. Full suite count after this addition: 222 passing tests.
+
+### Sep 16–17: overnight interaction-review v2 rebuild
+
+- Human feedback is preserved verbatim in
+  `docs/qa/overnight-interaction-review-v2.agent-review.json`; it is explicitly separate from
+  agent-authored review and from ground truth. No feedback is represented as an approval.
+- WiLoR stabilization: `runs/wilor-hands-stabilized-20s-overnight-v2-r3/` preserves raw WiLoR
+  inputs and adds a deterministic review layer: WiLoR confidence ≥0.55, duplicate suppression,
+  evidence-defined part-workspace filtering for multi-detection phantoms, and One-Euro
+  wrist/palm rigid smoothing (min cutoff 1.5, beta .007, derivative cutoff 1.0). MediaPipe is
+  only a confidence ≥0.85 shape/workspace-gated fallback across future-confirmed WiLoR gaps of
+  five frames or fewer. No long gap is interpolated. Output-stability diagnostics changed median
+  normalized wrist jitter from 0.003228 to 0.002775 (14.0% reduction); 523 frames are WiLoR
+  primary, 32 use the guarded MediaPipe fallback, and 45 remain missing. These are not pose
+  accuracy values.
+- WiLoR full-minute rerun: `runs/wilor-hands-static-60s-overnight-v2/` completed serially in
+  128.438 seconds wall time. Its raw/native evidence is retained for the apples-to-apples
+  MediaPipe comparison; the v2 interaction package stays bounded to the validated first 20 s.
+- Kineo: the Battle wrapper now writes a generated, hashed config override rather than modifying
+  the dirty external checkout. Per-frame RTMLib detection (`frame_step=1`) yielded 478/600
+  bbox/NLF frames, versus the prior 456/600 baseline. Measured wall inference was 40.577 s:
+  bbox detection 4.921 s, MoGe 0.768 s, NLF 28.726 s. The remaining 122 gaps show that eyes/HMD
+  visibility is not the control point; person detector boxes are. No bbox/keypoint hold or
+  interpolation was introduced because the residual gaps remain material.
+- Segmentation/reference: corrected focused static SAM3 is now the interaction default; the
+  reviewed-seed SAM2 arm remains a selectable control. The structured agent record retains the
+  verified human frame-327 chassis/interior correction separately and offers DAM4SAM
+  chassis/interior experiment candidates at frames 480/520. They are proposals, not accepted
+  human masks or semantic accuracy claims; no tracker correction API was used to avoid
+  relabelling that method.
+- Fine substeps: a 6 FPS phase-conditioned crop-CLIP experiment at
+  `runs/fine-substep-static-20s-phase-conditioned-overnight-v2/` soft-penalized screwdriver
+  language before independently documented tool onset frame 345 and used a measured yellow-pixel
+  crop cue after it. It does not encode agent substep boundaries. Drop-DTW reached 4/9 checkpoint
+  matches but mean absolute boundary error worsened to 168.6 frames; monotonic DP was 3/9 and
+  80.0 frames. It is not promoted. The original 3/9, 158-frame run remains preserved failure
+  evidence, while the 11-step `agent_authored_visual_review` timeline is primary navigation.
+- Integrated package:
+  `runs/interaction-review-overnight-v2/interaction_review.rrd`, generated guide, contact
+  sheet, and typed index. It embeds one 600-frame video; its default is corrected SAM3 plus
+  stabilized WiLoR, with raw WiLoR/MediaPipe evidence, per-frame Kineo context, agent substep
+  timeline, coarse GT context, and deterministic correction/action/occlusion pins. `uv run rerun
+  rrd print` completed successfully; no Rerun viewer was opened.

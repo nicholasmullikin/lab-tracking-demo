@@ -42,6 +42,7 @@ from .fine_substep_pipeline import (
     labels_to_intervals,
     load_observations,
     monotonic_substep_dp,
+    phase_condition_scores,
     predicted_substep_at_frame,
     sample_frame_indices,
     temporal_delta_features,
@@ -186,8 +187,7 @@ def _build_evaluation_bundle(
             (
                 interval["action"]
                 for interval in baseline_alignment["intervals"]
-                if checkpoint.analysis_frame_index
-                in interval["matched_analysis_frames"]
+                if checkpoint.analysis_frame_index in interval["matched_analysis_frames"]
             ),
             None,
         )
@@ -226,11 +226,7 @@ def _contact_sheet(
     sample_frames: list[int],
 ) -> None:
     evidence_frames = sorted(
-        {
-            frame
-            for substep in contract.substeps
-            for frame in substep.evidence_frames
-        }
+        {frame for substep in contract.substeps for frame in substep.evidence_frames}
         | {checkpoint.analysis_frame_index for checkpoint in contract.checkpoints}
         | set(contract.substeps[index].start_frame for index in range(1, len(contract.substeps)))
     )
@@ -455,6 +451,7 @@ def run_iteration(
         cache_dir=cache_dir,
     )
     clip_scores = np.asarray(worker_scores["clip_score_matrix"], dtype=np.float32)
+    tool_cues = np.asarray(worker_scores["yellow_tool_cues"], dtype=np.float32)
     embeddings = np.asarray(worker_scores["frame_embeddings"], dtype=np.float32)
     motion = temporal_delta_features(embeddings)
     contact = np.asarray(
@@ -466,6 +463,9 @@ def run_iteration(
         motion=motion,
         contact=contact,
         weights=weights,
+    )
+    fused_scores = phase_condition_scores(
+        fused_scores, sample_frames=sample_frames, tool_cues=tool_cues
     )
     monotonic_indices, monotonic_cost = monotonic_substep_dp(fused_scores, len(contract.substeps))
     drop_indices = _alignment_from_drop_dtw(
@@ -486,12 +486,17 @@ def run_iteration(
     evaluation["sample_count"] = len(sample_frames)
     evaluation["monotonic_cost"] = monotonic_cost
     evaluation["drop_dtw_cost"] = worker_scores["drop_dtw_cost"]
+    evaluation["phase_conditioning"] = (
+        "Frame <345 applies a soft screwdriver-language penalty; frame >=345 uses "
+        "a measured crop yellow-pixel cue. It does not encode agent substep boundaries."
+    )
     scores_payload = {
         "sample_frames": sample_frames,
         "clip_score_matrix": clip_scores.tolist(),
         "fused_score_matrix": fused_scores.tolist(),
         "motion_features": motion.tolist(),
         "contact_features": contact.tolist(),
+        "yellow_tool_cues": tool_cues.tolist(),
         "monotonic_indices": monotonic_indices,
         "drop_dtw_indices": drop_indices,
         "monotonic_intervals": monotonic_intervals,
@@ -665,9 +670,7 @@ def run(args: argparse.Namespace) -> Path:
             source="measured",
         ),
         openclip_checkpoint_fingerprint=ArtifactFingerprint(
-            uri=(
-                f"hf://{OPENCLIP_REPOSITORY}@{OPENCLIP_REVISION}/open_clip_model.safetensors"
-            ),
+            uri=(f"hf://{OPENCLIP_REPOSITORY}@{OPENCLIP_REVISION}/open_clip_model.safetensors"),
             sha256=sha256_file(checkpoint_path),
             source="measured",
         ),

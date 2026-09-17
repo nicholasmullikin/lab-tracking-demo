@@ -68,6 +68,7 @@ def main() -> None:
 
         frame_embeddings: list[list[float]] = []
         frame_indices: list[int] = []
+        tool_cues: list[float] = []
         for row in crop_rows:
             frame_index = int(row["analysis_frame_index"])
             capture.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
@@ -79,6 +80,9 @@ def main() -> None:
             if crop.size == 0:
                 raise RuntimeError(f"empty crop at frame {frame_index}")
             rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
+            hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+            yellow = cv2.inRange(hsv, (15, 80, 80), (45, 255, 255))
+            tool_cues.append(float(np.count_nonzero(yellow) / yellow.size))
             image_tensor = preprocess(Image.fromarray(rgb)).unsqueeze(0).to(device)
             with torch.no_grad():
                 embedding = model.encode_image(image_tensor)
@@ -135,6 +139,7 @@ def main() -> None:
             "openclip_checkpoint": str(args.openclip_checkpoint),
             "frame_indices": frame_indices,
             "frame_embeddings": frame_embeddings,
+            "yellow_tool_cues": tool_cues,
             "clip_score_matrix": score_matrix.tolist(),
             "drop_dtw_cost": float(drop_cost),
             "drop_dtw_labels": [int(label) for label in drop_labels],

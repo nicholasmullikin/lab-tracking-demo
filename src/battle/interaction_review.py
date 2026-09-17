@@ -29,6 +29,8 @@ from .exploratory_comparison import (
     validate_artifact_fingerprint,
 )
 from .exporter import _rgba_mask_png
+from .fine_substep_contract import load_contract as load_fine_substep_contract
+from .fine_substep_contract import substep_for_frame
 from .four_part_contract import ANALYSIS_FPS, FRAME_COUNT, TARGETS, load_contract
 from .schemas import (
     ArtifactFingerprint,
@@ -76,8 +78,11 @@ DEFAULT_SOURCES = {
         "mediapipe", Path("runs/mediapipe-hands-static-20s-fused-dedup-th035-20260916t0428z")
     ),
     "wilor": SourceSpec("wilor", Path("runs/wilor-hands-static-20s-audited-source-state")),
+    "stabilized_wilor": SourceSpec(
+        "stabilized_wilor", Path("runs/wilor-hands-stabilized-20s-overnight-v2-r3")
+    ),
     "boxmot": SourceSpec("boxmot", Path("runs/boxmot-yolo-static-20s-20260916t0445z")),
-    "kineo": SourceSpec("kineo", Path("runs/kineo-nlf-headless-20s-20260916t0540z")),
+    "kineo": SourceSpec("kineo", Path("runs/kineo-nlf-headless-20s-frame-step-1-overnight-v2")),
     "drop_dtw": SourceSpec("drop_dtw", Path("runs/drop-dtw-static-20s-pinned-openclip-rerun")),
 }
 REFERENCE_SEGMENTATIONS = {
@@ -523,6 +528,19 @@ def deterministic_pinned_moments(
         300: ["Required midpoint frame."],
         599: ["Required final frame."],
     }
+    for frame, category, note in (
+        (88, "hand_transition_review", "Requested hand-transition review range begins."),
+        (194, "segmentation_reference_review", "Requested early part-reference review range."),
+        (224, "segmentation_reference_review", "Requested part-reference review range."),
+        (250, "interaction_review", "Requested insertion/hand review range."),
+        (380, "action_transition_review", "Requested pre-tool action review range."),
+        (413, "action_transition_review", "Requested tool-onset action review range."),
+        (500, "action_transition_review", "Requested fastening action review range."),
+        (548, "segmentation_correction_review", "Requested correction-candidate review range."),
+        (597, "late_occlusion_review", "Requested final occlusion review range."),
+    ):
+        categories.setdefault(frame, []).append(category)
+        rationale.setdefault(frame, []).append(note)
     matched = [item for item in disagreements if item.assignment_state == "matched"]
     if matched:
         selected = min(
@@ -691,27 +709,27 @@ def _log_diagnostics_frame(
 def _blueprint(root: str, dimensions: tuple[int, int]) -> rrb.Blueprint:
     primary = rrb.Spatial2DView(
         origin=root,
-        name="Primary interaction: reference parts + MediaPipe",
+        name="Primary interaction: corrected SAM3 + stabilized WiLoR",
         contents=(
             "$origin/source/video",
             "$origin/primary/reference_four_part_segmentation/**",
-            "$origin/primary/mediapipe/render/hands/**",
+            "$origin/primary/stabilized_wilor/render/hands/**",
         ),
         visual_bounds=rrb.VisualBounds2D(x_range=[0, dimensions[0]], y_range=[0, dimensions[1]]),
     )
     comparison = rrb.Horizontal(
         rrb.Spatial2DView(
             origin=root,
-            name="MediaPipe 2D (blue)",
-            contents=("$origin/source/video", "$origin/primary/mediapipe/render/hands/**"),
+            name="Raw WiLoR 2D (orange; toggleable)",
+            contents=("$origin/source/video", "$origin/comparison/wilor_2d/render/hands/**"),
             visual_bounds=rrb.VisualBounds2D(
                 x_range=[0, dimensions[0]], y_range=[0, dimensions[1]]
             ),
         ),
         rrb.Spatial2DView(
             origin=root,
-            name="WiLoR 2D (orange; toggleable)",
-            contents=("$origin/source/video", "$origin/comparison/wilor_2d/render/hands/**"),
+            name="MediaPipe 2D (blue; fallback evidence)",
+            contents=("$origin/source/video", "$origin/comparison/mediapipe_2d/render/hands/**"),
             visual_bounds=rrb.VisualBounds2D(
                 x_range=[0, dimensions[0]], y_range=[0, dimensions[1]]
             ),
@@ -757,6 +775,9 @@ def _blueprint(root: str, dimensions: tuple[int, int]) -> rrb.Blueprint:
                 rrb.TextDocumentView(
                     origin=f"{root}/metadata/drop_dtw", name="Drop-DTW weak supervision"
                 ),
+                rrb.TextDocumentView(
+                    origin=f"{root}/metadata/agent_substeps", name="Agent-authored substeps"
+                ),
                 column_shares=[2, 2, 2, 2],
             ),
             row_shares=[4, 3, 2],
@@ -772,7 +793,7 @@ def _make_contact_sheet(
     output_path: Path,
     moments: tuple[InteractionReviewPinnedMoment, ...],
     reference: LoadedSource,
-    mediapipe: LoadedSource,
+    stabilized_wilor: LoadedSource,
 ) -> None:
     """Compact labels-only contact sheet; it is a navigation aid, not visual validation."""
     capture = cv2.VideoCapture(str(video_path))
@@ -803,7 +824,7 @@ def _make_contact_sheet(
                     outline=(255, 230, 50),
                     width=1,
                 )
-        for hand in mediapipe.observations[moment.analysis_frame_index].hands:
+        for hand in stabilized_wilor.observations[moment.analysis_frame_index].hands:
             x, y = _pixel(hand.landmarks[0], DIMENSIONS)
             draw.ellipse(
                 (x * 400 / 1280 - 3, y * 225 / 720 - 3, x * 400 / 1280 + 3, y * 225 / 720 + 3),
@@ -846,8 +867,9 @@ rerun {rrd_path.as_posix()}
 ```
 
 The one embedded RGB asset covers analysis frames `[0,600)` / source 294.000–314.000 s at
-30 FPS. Start with **Primary interaction: reference parts + MediaPipe**, then compare the
-blue MediaPipe and orange WiLoR panels. Use the hand-to-part time series to navigate
+30 FPS. Start with **Primary interaction: corrected SAM3 + stabilized WiLoR**, then compare the
+stabilized default with raw WiLoR and blue MediaPipe evidence panels. Use the hand-to-part
+time series to navigate
 geometry-only contact candidates. The BoxMOT worker context is intentionally absent from
 the default blueprint; enable `contexts/boxmot_worker_context` from the entity tree only
 when person/occlusion context is useful. Kineo is a separate body-context panel and covers
@@ -857,6 +879,9 @@ when person/occlusion context is useful. Kineo is a separate body-context panel 
 
 - **Reference parts:** `{index.reference_segmentation_method}` four-part masks. This is a
   comparison-control/reference layer, not ground truth or validated physical attachment.
+- **Stabilized WiLoR:** the default layer preserves raw WiLoR gaps and records a separate
+  raw/smoothed/fallback/missing provenance artifact. MediaPipe is used only for
+  confidence/shape/workspace-gated gaps of at most five frames.
 - **MediaPipe/WiLoR:** same-frame spatial comparisons use nearest wrists only. IDs are
   frame-local method labels, never cross-method or persistent identity equivalence.
 - **Contact candidates:** minimum of palm/wrist and five fingertips is inside a reference
@@ -871,6 +896,9 @@ when person/occlusion context is useful. Kineo is a separate body-context panel 
   Assembly-world aligned.
 - **Drop-DTW:** Assembly101 coarse GT transcript weak supervision/navigation only, not an
   action prediction. ATHENA is metadata-only because real intrinsics are absent.
+- **Agent substeps:** the checked-in 11-step `agent_authored_visual_review` timeline is the
+  primary action-navigation layer. Crop-CLIP/Drop-DTW model arms stay exploratory secondary
+  evidence because their checkpoints/boundaries do not establish a material improvement.
 
 ## Deterministic review bookmarks
 
@@ -908,7 +936,7 @@ def build_interaction_review(
     *,
     repository_root: Path,
     output_root: Path = OUTPUT_ROOT,
-    reference_segmentation_method: str = "reviewed_seed_sam2_control",
+    reference_segmentation_method: str = "baseline_sam3",
 ) -> Path:
     """Build and validate the review package without model inference."""
     if reference_segmentation_method not in REFERENCE_SEGMENTATIONS:
@@ -932,7 +960,9 @@ def build_interaction_review(
     _validate_shared_sources([*sources.values(), reference])
     if tuple(item.label for item in reference.observations[0].objects) != TARGETS:
         raise ValueError("reference segmentation must preserve the four-part target order")
-    video_path = reference.run_directory / "input.mp4"
+    # The corrected SAM3 reference preserves external masks but not a duplicated bounded
+    # video. The stabilized WiLoR derivative retains the exact common approved proxy.
+    video_path = sources["wilor"].run_directory / "input.mp4"
     if not video_path.is_file():
         raise FileNotFoundError("reference segmentation must include the bounded input video")
     frames, fps, dimensions = _video_info(video_path)
@@ -940,7 +970,7 @@ def build_interaction_review(
         raise ValueError(
             f"expected one 1280x720 600-frame 30-fps video, got {(frames, fps, dimensions)}"
         )
-    contacts, events = _contacts(sources["mediapipe"], reference, dimensions)
+    contacts, events = _contacts(sources["stabilized_wilor"], reference, dimensions)
     disagreements = _disagreements(sources["mediapipe"], sources["wilor"], dimensions)
     moments = deterministic_pinned_moments(disagreements, contacts, events, sources["kineo"])
     rrd_path, index_path, guide_path, sheet_path = output_paths(repository_root, output_root)
@@ -1000,6 +1030,9 @@ def build_interaction_review(
             "wilor_hand_frames": sum(
                 bool(source.hands) for source in sources["wilor"].observations.values()
             ),
+            "stabilized_wilor_hand_frames": sum(
+                bool(source.hands) for source in sources["stabilized_wilor"].observations.values()
+            ),
             "boxmot_person_frames": sum(
                 bool(source.objects) for source in sources["boxmot"].observations.values()
             ),
@@ -1027,6 +1060,17 @@ def build_interaction_review(
     rr.log(
         f"{root}/metadata/drop_dtw",
         rr.TextDocument(drop_text, media_type="text/markdown"),
+        static=True,
+    )
+    fine_contract = load_fine_substep_contract(
+        repository_root
+        / "configs/fine_substeps/assembly101_focused_static_first_20s_agent_labels.json"
+    )
+    rr.log(
+        f"{root}/metadata/agent_substeps",
+        rr.TextDocument(
+            fine_contract.model_dump_json(indent=2), media_type="application/json"
+        ),
         static=True,
     )
     rr.log(
@@ -1060,10 +1104,10 @@ def build_interaction_review(
             root, reference.observations[frame], reference.run_directory, dimensions
         )
         _log_hands(
-            f"{root}/primary/mediapipe/render",
-            sources["mediapipe"].observations[frame],
+            f"{root}/primary/stabilized_wilor/render",
+            sources["stabilized_wilor"].observations[frame],
             dimensions=dimensions,
-            color=METHOD_COLORS["mediapipe"],
+            color=METHOD_COLORS["wilor"],
             include_3d=False,
         )
         _log_hands(
@@ -1071,6 +1115,13 @@ def build_interaction_review(
             sources["wilor"].observations[frame],
             dimensions=dimensions,
             color=METHOD_COLORS["wilor"],
+            include_3d=False,
+        )
+        _log_hands(
+            f"{root}/comparison/mediapipe_2d/render",
+            sources["mediapipe"].observations[frame],
+            dimensions=dimensions,
+            color=METHOD_COLORS["mediapipe"],
             include_3d=False,
         )
         _log_hands(
@@ -1099,11 +1150,19 @@ def build_interaction_review(
                 f"{root}/metadata/drop_dtw_bookmarks",
                 rr.TextLog(f"GT coarse transcript weak-supervision bookmark: {action}"),
             )
+        agent_substep = substep_for_frame(fine_contract, frame)
+        rr.log(
+            f"{root}/metadata/agent_substeps/timeline",
+            rr.TextLog(
+                f"{agent_substep.substep_id}: {agent_substep.label} "
+                "(agent_authored_visual_review)"
+            ),
+        )
         if frame == 0:
             rr.log(f"{root}/metadata/drop_dtw_alignment_cost", rr.Scalars([drop_cost]))
     rr.send_blueprint(_blueprint(root, dimensions))
     rr.disconnect()
-    _make_contact_sheet(video_path, sheet_path, moments, reference, sources["mediapipe"])
+    _make_contact_sheet(video_path, sheet_path, moments, reference, sources["stabilized_wilor"])
     guide = _review_guide(rrd_path, index, moments)
     guide_path.write_text(guide, encoding="utf-8")
     final = index.model_copy(
@@ -1124,8 +1183,8 @@ def main() -> None:
     parser.add_argument(
         "--reference-segmentation",
         choices=tuple(REFERENCE_SEGMENTATIONS),
-        default="reviewed_seed_sam2_control",
-        help="Reference part source; default is the complete reviewed-seed SAM2 control.",
+        default="baseline_sam3",
+        help="Reference part source; default is the corrected focused static SAM3 run.",
     )
     args = parser.parse_args()
     print(

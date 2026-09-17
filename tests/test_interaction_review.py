@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -23,6 +25,7 @@ from battle.schemas import (
     InteractionContactDiagnostic,
     InteractionContactEvent,
     InteractionHandDisagreement,
+    OvernightReviewRecord,
 )
 
 
@@ -165,3 +168,13 @@ def test_output_paths_stay_in_ignored_run_directory(tmp_path) -> None:
 
     assert paths[0] == tmp_path / "runs/interaction-review-first-20s/interaction_review.rrd"
     assert all(path.parent == paths[0].parent for path in paths)
+
+
+def test_overnight_agent_review_keeps_human_feedback_distinct() -> None:
+    record = OvernightReviewRecord.model_validate(
+        json.loads(Path("docs/qa/overnight-interaction-review-v2.agent-review.json").read_text())
+    )
+
+    assert record.provenance_tag == "agent_authored_visual_review"
+    assert record.human_decisions_pending is True
+    assert all("WiLoR" not in item.finding or item.disposition for item in record.agent_findings)

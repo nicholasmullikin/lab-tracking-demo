@@ -1,0 +1,74 @@
+{
+  "schema_version": "1.0",
+  "manifest_kind": "overnight_interaction_review_record",
+  "provenance_tag": "agent_authored_visual_review",
+  "human_feedback": [
+    "WiLoR 2D is definitely better overall than MediaPipe; handles hands entering/leaving occlusion. MediaPipe bounces even when visible.",
+    "Primary interaction part masks looked worse than original.",
+    "Kineo works when present but randomly disappears; user suspected eyes not visible.",
+    "CLIP + Drop-DTW is only okay and misses many substeps."
+  ],
+  "agent_findings": [
+    {
+      "analysis_frame_index": 327,
+      "subject": "four-part reference",
+      "finding": "The corrected focused static SAM3 reference retains the verified human frame-327 correction; the reviewed-seed SAM2 control is no longer the default interaction mask layer.",
+      "evidence_kind": "audit",
+      "disposition": "agent_authored_visual_review"
+    },
+    {
+      "analysis_frame_index": 91,
+      "subject": "Kineo NLF continuity",
+      "finding": "Kineo gaps are attributed to sparse person-box detection and one-pass interpolation behavior, not to eye or HMD visibility; per-frame detection is tested separately.",
+      "evidence_kind": "audit",
+      "disposition": "agent_authored_visual_review"
+    },
+    {
+      "analysis_frame_index": 405,
+      "subject": "fine substep alignment",
+      "finding": "The preserved 11-label Drop-DTW arm remains exploratory failure evidence: 3 of 9 checkpoint matches and 158-frame mean boundary error.",
+      "evidence_kind": "audit",
+      "disposition": "agent_authored_visual_review"
+    }
+  ],
+  "correction_candidates": [
+    {
+      "analysis_frame_index": 327,
+      "target_id": "chassis",
+      "source_method": "corrected_focused_static_sam3",
+      "provenance": "human_verified_correction",
+      "state": "retained",
+      "rationale_fingerprint": "frame327-human-correction-retained-sam3-reference",
+      "semantic_claim": "A retained human correction seed, not an agent or ground-truth selection."
+    },
+    {
+      "analysis_frame_index": 327,
+      "target_id": "interior",
+      "source_method": "corrected_focused_static_sam3",
+      "provenance": "human_verified_correction",
+      "state": "retained",
+      "rationale_fingerprint": "frame327-human-correction-retained-sam3-reference",
+      "semantic_claim": "A retained human correction seed, not an agent or ground-truth selection."
+    },
+    {
+      "analysis_frame_index": 480,
+      "target_id": "chassis",
+      "source_method": "dam4sam",
+      "provenance": "agent_authored_visual_review",
+      "state": "agent_proposed",
+      "rationale_fingerprint": "dam4sam-automatic-fallback-chassis-interior-audit-priority",
+      "semantic_claim": "Candidate for an explicitly separate automatic-tracker experiment; no human approval or semantic accuracy is asserted."
+    },
+    {
+      "analysis_frame_index": 520,
+      "target_id": "interior",
+      "source_method": "dam4sam",
+      "provenance": "agent_authored_visual_review",
+      "state": "agent_proposed",
+      "rationale_fingerprint": "dam4sam-automatic-fallback-chassis-interior-audit-priority",
+      "semantic_claim": "Candidate for an explicitly separate automatic-tracker experiment; no human approval or semantic accuracy is asserted."
+    }
+  ],
+  "human_decisions_pending": true,
+  "ground_truth_accuracy_claim": false
+}

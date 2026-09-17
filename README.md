@@ -1034,6 +1034,27 @@ ground truth. The guide records deterministic required frames 0/300/599 plus hig
 missing-hand, transition, Kineo-gap, and late-occlusion bookmarks; every human disposition stays
 pending.
 
+### Overnight v2 rebuild
+
+The v2 review defaults to corrected focused static SAM3 masks and a deterministic WiLoR-primary
+stabilized layer. Raw WiLoR and MediaPipe remain separately toggleable evidence; no raw gap is
+silently interpolated. Build the layer and package without opening a viewer:
+
+```bash
+uv run battle-stabilize-wilor --output-root runs/wilor-hands-stabilized-20s-overnight-v2-r3
+uv run battle-kineo-nlf --seconds 20 --rtmlib-bbox-detection-frame-step 1 \
+  --run-id kineo-nlf-headless-20s-frame-step-1-overnight-v2 \
+  --sequence-name assembly101_focused_static_20s_step1_overnight_v2
+uv run battle-build-interaction-review --output-root runs/interaction-review-overnight-v2
+uv run rerun rrd print runs/interaction-review-overnight-v2/interaction_review.rrd
+```
+
+`docs/qa/overnight-interaction-review-v2.agent-review.json` is the structured mixed-provenance
+record. It preserves supplied human feedback verbatim, keeps all human decisions pending, and
+labels agent findings/correction proposals as `agent_authored_visual_review`. The 11-step
+agent-authored substep timeline is primary navigation; crop-CLIP model arms remain secondary
+exploratory evidence unless they materially improve both checkpoint and boundary diagnostics.
+
 ### Four-part segmentation comparison
 
 `configs/four_part_segmentation_comparison.json` is the checked-in fair-comparison

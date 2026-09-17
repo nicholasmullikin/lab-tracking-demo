@@ -257,6 +257,28 @@ def fuse_scores(
     return fused + motion_term + contact_term
 
 
+def phase_condition_scores(
+    scores: np.ndarray, *, sample_frames: list[int], tool_cues: np.ndarray
+) -> np.ndarray:
+    """Apply a documented coarse tool phase prior, not agent substep boundaries.
+
+    Before the independently noted visual tool-onset region (frame 345), screwdriver
+    language receives a small penalty. Afterwards, a measured yellow-tool cue adjusts
+    only tool-related prompts; it cannot force a frame's label or encode the remaining
+    agent-authored boundaries.
+    """
+
+    conditioned = scores.copy()
+    for index, frame in enumerate(sample_frames):
+        if frame < 345:
+            conditioned[index, 6:10] -= 0.12
+        elif tool_cues[index] >= 0.01:
+            conditioned[index, 6:10] += 0.08
+        else:
+            conditioned[index, 6:10] -= 0.05
+    return conditioned
+
+
 def contact_bonus(contact_proximity: float | None, *, threshold_px: float = 24.0) -> float:
     if contact_proximity is None:
         return 0.0
@@ -389,9 +411,10 @@ def evaluate_against_agent_labels(
             }
         )
     recovered = sum(1 for row in checkpoint_rows if row["match"])
-    collapsed = len({substep_indices[index] for index in range(len(substep_indices))}) < len(
-        contract.substeps
-    ) // 2
+    collapsed = (
+        len({substep_indices[index] for index in range(len(substep_indices))})
+        < len(contract.substeps) // 2
+    )
     return {
         "alignment_name": alignment_name,
         "predicted_boundaries": predicted_boundaries,

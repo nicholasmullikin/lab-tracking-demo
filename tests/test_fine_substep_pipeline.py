@@ -13,6 +13,7 @@ from battle.fine_substep_pipeline import (
     fuse_scores,
     load_observations,
     monotonic_substep_dp,
+    phase_condition_scores,
     sample_frame_indices,
     temporal_delta_features,
 )
@@ -40,14 +41,14 @@ def test_sample_frame_indices_default_three_fps() -> None:
 
 def test_build_crop_sample_prefers_wilor_over_mediapipe() -> None:
     wilor = FrameObservations.model_validate_json(
-        Path(
-            "runs/wilor-hands-static-20s-audited-source-state/observations.jsonl"
-        ).read_text().splitlines()[0]
+        Path("runs/wilor-hands-static-20s-audited-source-state/observations.jsonl")
+        .read_text()
+        .splitlines()[0]
     )
     mediapipe = FrameObservations.model_validate_json(
-        Path(
-            "runs/mediapipe-hands-static-20s-fused-dedup-th035-20260916t0428z/observations.jsonl"
-        ).read_text().splitlines()[0]
+        Path("runs/mediapipe-hands-static-20s-fused-dedup-th035-20260916t0428z/observations.jsonl")
+        .read_text()
+        .splitlines()[0]
     )
     sample = build_crop_sample(0, wilor=wilor, mediapipe=mediapipe, parts=_empty_obs(0))
     assert sample.hand_cue_source == "wilor"
@@ -56,9 +57,9 @@ def test_build_crop_sample_prefers_wilor_over_mediapipe() -> None:
 
 def test_build_crop_sample_falls_back_to_mediapipe() -> None:
     mediapipe = FrameObservations.model_validate_json(
-        Path(
-            "runs/mediapipe-hands-static-20s-fused-dedup-th035-20260916t0428z/observations.jsonl"
-        ).read_text().splitlines()[0]
+        Path("runs/mediapipe-hands-static-20s-fused-dedup-th035-20260916t0428z/observations.jsonl")
+        .read_text()
+        .splitlines()[0]
     )
     sample = build_crop_sample(0, wilor=_empty_obs(0), mediapipe=mediapipe, parts=_empty_obs(0))
     assert sample.hand_cue_source == "mediapipe"
@@ -98,6 +99,17 @@ def test_contact_bonus_missing_is_zero() -> None:
     assert contact_bonus(0.0) == 1.0
 
 
+def test_phase_conditioning_is_soft_and_only_gates_tool_language() -> None:
+    scores = np.zeros((2, 11), dtype=np.float32)
+    conditioned = phase_condition_scores(
+        scores, sample_frames=[300, 400], tool_cues=np.asarray([0.0, 0.02])
+    )
+
+    assert conditioned[0, 6] == np.float32(-0.12)
+    assert conditioned[0, 5] == 0
+    assert conditioned[1, 6] == np.float32(0.08)
+
+
 def test_evaluate_against_agent_labels_reports_checkpoints() -> None:
     contract = load_contract(
         Path("configs/fine_substeps/assembly101_focused_static_first_20s_agent_labels.json")
@@ -121,8 +133,7 @@ def test_build_crop_manifest_from_real_runs() -> None:
         repo / "runs/wilor-hands-static-20s-audited-source-state/observations.jsonl"
     )
     mediapipe = load_observations(
-        repo
-        / "runs/mediapipe-hands-static-20s-fused-dedup-th035-20260916t0428z/observations.jsonl"
+        repo / "runs/mediapipe-hands-static-20s-fused-dedup-th035-20260916t0428z/observations.jsonl"
     )
     parts = load_observations(
         repo
