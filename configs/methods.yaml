@@ -39,6 +39,15 @@ methods:
     external_source: https://github.com/SamsungLabs/Drop-DTW
     external_revision: 32ce9c82c6a0d717a94f4139b1902ad146923444
     supervision: assembly101_gt_transcript_weak_supervision; OpenCLIP ViT-B-32/openai checkpoint pinned
+  fine_substep_crop_clip:
+    state: integrated_smoke
+    environment: "~/.pyenv/versions/wilor"
+    adapter: battle.fine_substep_align
+    external_source: https://github.com/SamsungLabs/Drop-DTW
+    external_revision: 32ce9c82c6a0d717a94f4139b1902ad146923444
+    supervision: agent_authored_visual_review labels only; WiLoR-primary crops; baseline SAM3 part boxes
+    sample_fps: 3
+    claim_boundary: not benchmark accuracy against Assembly101 GT
   grounded_sam2:
     state: smoke_only
     adapter: battle.grounding_dino_sam2_video

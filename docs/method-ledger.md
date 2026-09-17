@@ -1068,6 +1068,26 @@ by a worker, manifest, or native log appear below. Human gates G1–G5 remain de
   `e6d1bd7789aa45192b3bf90570a789b478bae1b74ebcce7eddd908e83a2b7c31`; the runner is
   offline and fails rather than silently downloading a different weight.
 
+#### Fine substep crop CLIP (`fine_substep_crop_clip`)
+
+- Classification: `integrated smoke` / agent-review experiment. Eleven substeps are checked in
+  at `configs/fine_substeps/assembly101_focused_static_first_20s_agent_labels.json` with
+  provenance tag `agent_authored_visual_review` (not Assembly101 GT). WiLoR 2D boxes/landmarks
+  are primary hand cues; MediaPipe is fallback only on WiLoR gaps. Part boxes come from baseline
+  SAM3 masks (`--parts-reference baseline_sam3` default; reviewed-seed SAM2 control is
+  CLI-selectable for later audit).
+- Pipeline: 3 FPS crop sampling (60 samples / 20 s), multi-prompt OpenCLIP ViT-B-32 scoring,
+  weak motion/contact fusion, monotonic DP arm plus Drop-DTW over eleven prototypes; baseline
+  coarse 2-step Drop-DTW retained for comparison.
+- Preserved run `runs/fine-substep-static-20s-20260916t2255z/`: pass1 weights
+  motion=0.12/contact=0.08 collapsed monotonic DP to 3 substeps (checkpoint match 1/9); pass2
+  weights motion=0.18/contact=0.14 selected with same monotonic collapse but Drop-DTW(11)
+  recovered all 11 labels (checkpoint match 3/9). Only f405 matched both arms; screwdriver
+  prompts dominate fused argmax (S07–S09). Artifacts: `scores.json`, `evaluation.json`,
+  `boundary_contact_sheet.png`, `review_guide.md`, inference-free `fine_substep.rrd`.
+- Measured worker runtime: 14.6 s (pass2). Command: `uv run battle-fine-substep-align --seconds 20`.
+  Claim boundary: agent-review diagnostic only, not benchmark accuracy.
+
 #### Grounded-SAM-2 (`transformers_grounding_dino_plus_sam2_video_smoke`)
 
 - Classification: `smoke_only` bounded video propagation. Frame 0 uses pinned HF

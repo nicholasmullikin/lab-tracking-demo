@@ -146,6 +146,24 @@ two Assembly101 coarse-label steps as declared weak supervision, and wrote cost 
 uv run battle-drop-dtw-align --seconds 20
 ```
 
+### Fine substep crop CLIP — agent-review experiment
+
+Bounded follow-on for the focused static 20 s prefix: eleven substeps are checked in under
+`configs/fine_substeps/assembly101_focused_static_first_20s_agent_labels.json` with provenance
+tag `agent_authored_visual_review` (not Assembly101 GT). The runner samples 3 FPS, builds
+WiLoR-primary hand/workspace crops with baseline SAM3 part boxes (MediaPipe fallback only on
+WiLoR gaps), scores multi-prompt OpenCLIP ViT-B-32 crops, fuses weak motion/contact terms, and
+aligns with both monotonic DP and Drop-DTW over eleven prototypes. Diagnostics compare against
+agent labels only; coarse GT remains a separate weak anchor.
+
+```bash
+uv run battle-fine-substep-align --seconds 20
+```
+
+Preserved run `runs/fine-substep-static-20s-20260916t2255z/` writes `scores.json`,
+`evaluation.json`, `boundary_contact_sheet.png`, `review_guide.md`, and inference-free
+`fine_substep.rrd` with one embedded bounded video.
+
 ### Grounded-SAM-2 — bounded video smoke (`transformers_grounding_dino_plus_sam2_video_smoke`)
 
 Battle now runs a checked-in bounded video smoke on the approved focused static proxy: frame 0
