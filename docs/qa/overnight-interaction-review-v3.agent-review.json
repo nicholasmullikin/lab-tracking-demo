@@ -1,0 +1,88 @@
+{
+  "schema_version": "1.0",
+  "manifest_kind": "overnight_interaction_review_record",
+  "provenance_tag": "agent_authored_visual_review",
+  "human_feedback": [
+    "WiLoR 2D is definitely better overall than MediaPipe; handles hands entering/leaving occlusion. MediaPipe bounces even when visible.",
+    "Primary interaction part masks looked worse than original.",
+    "Kineo works when present but randomly disappears; user suspected eyes not visible.",
+    "CLIP + Drop-DTW is only okay and misses many substeps."
+  ],
+  "agent_findings": [
+    {
+      "analysis_frame_index": 246,
+      "subject": "Kineo NLF continuity",
+      "finding": "Fused person crops increased NLF output from v2's 478/600 frames to 581/600: 478 native detections, 94 source-aligned and consistency-gated BoxMOT fallbacks, and 9 bounded box interpolations. The remaining 19 frames are explicitly missing in two BoxMOT/native outage intervals; no body keypoints are forward-filled.",
+      "evidence_kind": "derived_metric",
+      "disposition": "agent_authored_visual_review"
+    },
+    {
+      "analysis_frame_index": 250,
+      "subject": "WiLoR temporal stabilization",
+      "finding": "Dense raw/stabilized/fallback sheets over the requested audit ranges show the stabilized wrist/palm layer retains visible contact/re-entry alignment without a visually evident One-Euro smear. The measured wrist-step jitter reduction remains 14.0%; no additional smoothing was applied because the sheets do not establish an improvement.",
+      "evidence_kind": "generated_contact_sheet",
+      "disposition": "agent_authored_visual_review"
+    },
+    {
+      "analysis_frame_index": 323,
+      "subject": "corrected SAM3 primary and contact diagnostics",
+      "finding": "Audit sheets at the requested segmentation ranges render corrected SAM3 as the primary mask layer and retain raw geometry-only contact candidates separately. The 359 raw triggers are retained in data and condensed into 15 same-part review episodes/bookmarks.",
+      "evidence_kind": "generated_contact_sheet",
+      "disposition": "agent_authored_visual_review"
+    },
+    {
+      "analysis_frame_index": 414,
+      "subject": "face-gating check",
+      "finding": "The Kineo fusion path uses only source-aligned person boxes and NLF crop inference; it contains no face, eye, HMD, or visibility gate. The continuity change therefore does not support or depend on the eye-visibility hypothesis.",
+      "evidence_kind": "audit",
+      "disposition": "agent_authored_visual_review"
+    },
+    {
+      "analysis_frame_index": 405,
+      "subject": "fine substep alignment",
+      "finding": "The checked-in 11-step agent-authored visual timeline remains the primary navigation layer. The preserved Crop-CLIP/Drop-DTW arm remains visibly labeled exploratory failure evidence (3 of 9 checkpoint matches and 158-frame mean boundary error), with no cosmetic retuning applied.",
+      "evidence_kind": "audit",
+      "disposition": "agent_authored_visual_review"
+    }
+  ],
+  "correction_candidates": [
+    {
+      "analysis_frame_index": 327,
+      "target_id": "chassis",
+      "source_method": "corrected_focused_static_sam3",
+      "provenance": "human_verified_correction",
+      "state": "retained",
+      "rationale_fingerprint": "frame327-human-correction-retained-sam3-reference",
+      "semantic_claim": "A retained human correction seed, not an agent or ground-truth selection."
+    },
+    {
+      "analysis_frame_index": 327,
+      "target_id": "interior",
+      "source_method": "corrected_focused_static_sam3",
+      "provenance": "human_verified_correction",
+      "state": "retained",
+      "rationale_fingerprint": "frame327-human-correction-retained-sam3-reference",
+      "semantic_claim": "A retained human correction seed, not an agent or ground-truth selection."
+    },
+    {
+      "analysis_frame_index": 480,
+      "target_id": "chassis",
+      "source_method": "dam4sam",
+      "provenance": "agent_authored_visual_review",
+      "state": "agent_proposed",
+      "rationale_fingerprint": "dam4sam-automatic-fallback-chassis-interior-audit-priority",
+      "semantic_claim": "Candidate for an explicitly separate automatic-tracker experiment; no human approval or semantic accuracy is asserted."
+    },
+    {
+      "analysis_frame_index": 520,
+      "target_id": "interior",
+      "source_method": "dam4sam",
+      "provenance": "agent_authored_visual_review",
+      "state": "agent_proposed",
+      "rationale_fingerprint": "dam4sam-automatic-fallback-chassis-interior-audit-priority",
+      "semantic_claim": "Candidate for an explicitly separate automatic-tracker experiment; no human approval or semantic accuracy is asserted."
+    }
+  ],
+  "human_decisions_pending": true,
+  "ground_truth_accuracy_claim": false
+}

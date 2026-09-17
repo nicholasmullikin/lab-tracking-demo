@@ -11,8 +11,11 @@ from battle.fixtures import synthetic_run_manifest
 from battle.interaction_review import (
     CONTACT_END_FRAMES,
     CONTACT_START_FRAMES,
+    DEFAULT_SOURCES,
     _drop_dtw_bookmarks,
     _log_diagnostics_frame,
+    build_interaction_review,
+    cluster_segmentation_triggers,
     contact_measurement,
     debounce_contact,
     deterministic_pinned_moments,
@@ -26,6 +29,7 @@ from battle.schemas import (
     InteractionContactEvent,
     InteractionHandDisagreement,
     OvernightReviewRecord,
+    SegmentationReviewTrigger,
 )
 
 
@@ -163,6 +167,31 @@ def test_drop_dtw_bookmarks_use_only_declared_matched_frames(tmp_path) -> None:
     assert _drop_dtw_bookmarks(alignment) == {0: "attach interior", 30: "attach interior"}
 
 
+def test_segmentation_triggers_cluster_without_discarding_raw_rows() -> None:
+    triggers = (
+        SegmentationReviewTrigger(
+            analysis_frame_index=10, target_id="cabin", trigger_type="area_ratio_gt_2", value=3
+        ),
+        SegmentationReviewTrigger(
+            analysis_frame_index=14,
+            target_id="cabin",
+            trigger_type="centroid_jump_gt_25px",
+            value=30,
+        ),
+        SegmentationReviewTrigger(
+            analysis_frame_index=30, target_id="cabin", trigger_type="area_ratio_gt_2", value=3
+        ),
+    )
+
+    episodes = cluster_segmentation_triggers(triggers, max_frame_gap=6)
+
+    assert [(item.start_frame, item.end_frame, item.trigger_count) for item in episodes] == [
+        (10, 14, 2),
+        (30, 30, 1),
+    ]
+    assert len(triggers) == 3
+
+
 def test_output_paths_stay_in_ignored_run_directory(tmp_path) -> None:
     paths = output_paths(tmp_path)
 
@@ -170,11 +199,24 @@ def test_output_paths_stay_in_ignored_run_directory(tmp_path) -> None:
     assert all(path.parent == paths[0].parent for path in paths)
 
 
-def test_overnight_agent_review_keeps_human_feedback_distinct() -> None:
-    record = OvernightReviewRecord.model_validate(
-        json.loads(Path("docs/qa/overnight-interaction-review-v2.agent-review.json").read_text())
+def test_v3_defaults_use_corrected_sam3_and_fused_kineo_context() -> None:
+    import inspect
+
+    assert DEFAULT_SOURCES["kineo"].run_directory.name == "kineo-nlf-fused-20s-overnight-v3"
+    assert (
+        inspect.signature(build_interaction_review).parameters["reference_segmentation_method"].default
+        == "baseline_sam3"
     )
 
-    assert record.provenance_tag == "agent_authored_visual_review"
-    assert record.human_decisions_pending is True
-    assert all("WiLoR" not in item.finding or item.disposition for item in record.agent_findings)
+
+def test_overnight_agent_review_keeps_human_feedback_distinct() -> None:
+    for version in ("v2", "v3"):
+        record = OvernightReviewRecord.model_validate(
+            json.loads(Path(f"docs/qa/overnight-interaction-review-{version}.agent-review.json").read_text())
+        )
+
+        assert record.provenance_tag == "agent_authored_visual_review"
+        assert record.human_decisions_pending is True
+        assert all(
+            "WiLoR" not in item.finding or item.disposition for item in record.agent_findings
+        )

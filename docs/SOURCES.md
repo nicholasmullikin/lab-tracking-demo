@@ -186,8 +186,12 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
 - Checkout: `/home/nick/src/kineo` @ `03b36e31…` (dirty working tree during smokes).
 - Checked-in Battle config: `configs/kineo_nlf_headless_only.yaml`.
 - Wrapper: `uv run battle-kineo-nlf --seconds 20`.
+- Fused-crop wrapper: `CUDA_VISIBLE_DEVICES=0 uv run battle-kineo-fusion`. It consumes only the
+  approved static-view, source/time-aligned native Kineo and BoxMOT runs; its per-frame source,
+  gate measurements, and bounded residual inference are recorded in `box_fusion.json`.
 - Native PKLs under ignored `runs/kineo/infer_nlf_headless_only/`; normalized runs under
-  `runs/kineo-nlf-headless-*`.
+  `runs/kineo-nlf-headless-*` and `runs/kineo-nlf-fused-*`. Both remain NLF-only partial evidence,
+  not a full Kineo integration.
 
 ## Candidate source: FineBio
 

@@ -430,6 +430,56 @@ class PerFrameNlfBody2D(VersionedModel):
     landmarks: tuple[ImageLandmark2D, ...] = Field(min_length=1)
 
 
+class KineoBoxProvenance(VersionedModel):
+    """One fused person crop input, retained separately from NLF pose output."""
+
+    analysis_frame_index: int = Field(ge=0, lt=600)
+    source: Literal[
+        "detected_native", "boxmot_fallback", "interpolated", "held", "missing"
+    ]
+    box: NormalizedBox | None = None
+    native_box: NormalizedBox | None = None
+    boxmot_box: NormalizedBox | None = None
+    boxmot_object_id: str | None = None
+    source_mapping_verified: bool
+    nearest_native_iou: float | None = Field(default=None, ge=0, le=1)
+    nearest_native_center_distance: float | None = Field(default=None, ge=0)
+    residual_gap_length: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def require_source_evidence(self) -> KineoBoxProvenance:
+        if self.source == "missing":
+            if self.box is not None:
+                raise ValueError("missing Kineo box provenance cannot contain a box")
+        elif self.box is None:
+            raise ValueError("non-missing Kineo box provenance requires a fused box")
+        if self.source == "detected_native" and self.native_box is None:
+            raise ValueError("native Kineo provenance requires its native box")
+        if self.source == "boxmot_fallback" and (
+            self.boxmot_box is None or not self.source_mapping_verified
+        ):
+            raise ValueError("BoxMOT fallback requires a verified BoxMOT source box")
+        if self.source in ("interpolated", "held") and self.residual_gap_length is None:
+            raise ValueError("inferred Kineo box provenance requires residual gap length")
+        return self
+
+
+class SegmentationReviewEpisode(VersionedModel):
+    """A compact bookmark over adjacent raw geometry review triggers."""
+
+    target_id: Literal["chassis", "interior", "rear_body", "cabin"]
+    start_frame: int = Field(ge=0, lt=600)
+    end_frame: int = Field(ge=0, lt=600)
+    trigger_count: int = Field(ge=1)
+    trigger_types: tuple[str, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def require_ordered_range(self) -> SegmentationReviewEpisode:
+        if self.end_frame < self.start_frame:
+            raise ValueError("segmentation review episode must have an ordered frame range")
+        return self
+
+
 class PerFrameHand(VersionedModel):
     hand_id: str = Field(min_length=1)
     side: HandSide
@@ -2328,6 +2378,7 @@ class InteractionReviewIndexManifest(VersionedModel):
     hand_disagreements: tuple[InteractionHandDisagreement, ...] = ()
     contact_events: tuple[InteractionContactEvent, ...] = ()
     segmentation_review_triggers: tuple[SegmentationReviewTrigger, ...] = ()
+    segmentation_review_episodes: tuple[SegmentationReviewEpisode, ...] = ()
     pinned_moments: tuple[InteractionReviewPinnedMoment, ...] = Field(min_length=3)
     output_rrd: ArtifactFingerprint | None = None
     review_guide: ArtifactFingerprint | None = None

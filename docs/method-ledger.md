@@ -1336,3 +1336,32 @@ this comparison makes no accuracy or cross-method identity claim.
   stabilized WiLoR, with raw WiLoR/MediaPipe evidence, per-frame Kineo context, agent substep
   timeline, coarse GT context, and deterministic correction/action/occlusion pins. `uv run rerun
   rrd print` completed successfully; no Rerun viewer was opened.
+
+### Sep 16–17: overnight interaction-review v3 continuity rebuild
+
+- Kineo fusion: `battle-kineo-fusion` verifies the Kineo and BoxMOT source asset, approved static
+  view, 30-FPS clock mappings, and every retained source timestamp before it can use BoxMOT. It
+  keeps all 478 native RTMLib/YOLOX boxes primary. A missing native box may use an independent
+  YOLO/BotSort person box only when a nearby native box passes a deterministic IoU/center/size
+  consistency gate; 94 did. Nine residual boxes were linearly interpolated through gaps of at
+  most five frames (target three); no held boxes were needed. The 13-frame 246–258 and 6-frame
+  266–271 dual-detector outages remain explicit missing state.
+- NLF was run on each of the 581 actual fused crops, not by interpolating output keypoints. The
+  resulting `runs/kineo-nlf-fused-20s-overnight-v3/` has 581/600 valid bbox/keypoint rows:
+  478 `detected_native`, 94 `boxmot_fallback`, 9 `interpolated`, 0 `held`, and 19 `missing`.
+  Native Pkl structural validation reports 55 finite body joints per output row. NLF wall time
+  was 21.064 s in the dedicated fused-crop worker. This remains `kineo_nlf_only_partial`, without
+  face, eye, HMD, SfM, metric-3D, BVH, or multi-view claims.
+- Hand and mask audit: deterministic sheets under
+  `runs/interaction-review-overnight-v3/audits/` cover every requested WiLoR and corrected-SAM3
+  review frame. The visible evidence did not establish that more One-Euro smoothing would improve
+  hand contact/re-entry behavior, so v2's 14.0% wrist-jitter reduction and explicit missing
+  state were retained. Corrected SAM3 remains the default mask source; contact diagnostics remain
+  geometry-only candidates.
+- Review package: `runs/interaction-review-overnight-v3/interaction_review.rrd` retains the
+  single video asset and uses fused Kineo context. It preserves all 359 raw segmentation triggers
+  in the typed index while reducing navigation to 15 same-part trigger episodes and 29 total
+  bookmarks. Raw WiLoR, MediaPipe fallback, BoxMOT, and the exploratory substep arm remain
+  separately labeled; the 11 agent-authored substeps are primary. `rerun rrd print` completed
+  without a viewer popup. The v3 QA record preserves user feedback as human-authored text and
+  leaves human pass/fail pending.

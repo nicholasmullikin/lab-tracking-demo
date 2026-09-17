@@ -42,6 +42,7 @@ from .schemas import (
     InteractionReviewIndexManifest,
     InteractionReviewPinnedMoment,
     RunManifest,
+    SegmentationReviewEpisode,
     SegmentationReviewTrigger,
     TimeInterval,
 )
@@ -83,7 +84,7 @@ DEFAULT_SOURCES = {
         "stabilized_wilor", Path("runs/wilor-hands-stabilized-20s-overnight-v2-r3")
     ),
     "boxmot": SourceSpec("boxmot", Path("runs/boxmot-yolo-static-20s-20260916t0445z")),
-    "kineo": SourceSpec("kineo", Path("runs/kineo-nlf-headless-20s-frame-step-1-overnight-v2")),
+    "kineo": SourceSpec("kineo", Path("runs/kineo-nlf-fused-20s-overnight-v3")),
     "drop_dtw": SourceSpec("drop_dtw", Path("runs/drop-dtw-static-20s-pinned-openclip-rerun")),
 }
 REFERENCE_SEGMENTATIONS = {
@@ -355,6 +356,50 @@ def segmentation_review_triggers(
     return tuple(triggers)
 
 
+def cluster_segmentation_triggers(
+    triggers: tuple[SegmentationReviewTrigger, ...], max_frame_gap: int = 6
+) -> tuple[SegmentationReviewEpisode, ...]:
+    """Compact nearby same-part geometry triggers without discarding raw trigger rows."""
+
+    if max_frame_gap < 0:
+        raise ValueError("max_frame_gap must be non-negative")
+    episodes: list[SegmentationReviewEpisode] = []
+    by_target: dict[str, list[SegmentationReviewTrigger]] = defaultdict(list)
+    for trigger in triggers:
+        by_target[trigger.target_id].append(trigger)
+    for target in TARGETS:
+        group: list[SegmentationReviewTrigger] = []
+        for trigger in sorted(
+            by_target[target], key=lambda item: (item.analysis_frame_index, item.trigger_type)
+        ):
+            starts_new_episode = group and (
+                trigger.analysis_frame_index > group[-1].analysis_frame_index + max_frame_gap
+            )
+            if starts_new_episode:
+                episodes.append(
+                    SegmentationReviewEpisode(
+                        target_id=target,
+                        start_frame=group[0].analysis_frame_index,
+                        end_frame=group[-1].analysis_frame_index,
+                        trigger_count=len(group),
+                        trigger_types=tuple(sorted({item.trigger_type for item in group})),
+                    )
+                )
+                group = []
+            group.append(trigger)
+        if group:
+            episodes.append(
+                SegmentationReviewEpisode(
+                    target_id=target,
+                    start_frame=group[0].analysis_frame_index,
+                    end_frame=group[-1].analysis_frame_index,
+                    trigger_count=len(group),
+                    trigger_types=tuple(sorted({item.trigger_type for item in group})),
+                )
+            )
+    return tuple(sorted(episodes, key=lambda item: (item.start_frame, item.target_id)))
+
+
 def _spatial_lanes(
     observations: dict[int, FrameObservations], dimensions: tuple[int, int]
 ) -> dict[tuple[int, int], str]:
@@ -592,6 +637,7 @@ def deterministic_pinned_moments(
     events: tuple[InteractionContactEvent, ...],
     kineo: LoadedSource,
     segmentation_triggers: tuple[SegmentationReviewTrigger, ...] = (),
+    segmentation_episodes: tuple[SegmentationReviewEpisode, ...] = (),
 ) -> tuple[InteractionReviewPinnedMoment, ...]:
     """Select stable review bookmarks, with frame number as every tie-breaker."""
     categories: dict[int, list[str]] = {
@@ -688,6 +734,12 @@ def deterministic_pinned_moments(
         )
         rationale.setdefault(selected.analysis_frame_index, []).append(
             f"First automatic {selected.trigger_type} trigger for {selected.target_id}."
+        )
+    for episode in segmentation_episodes:
+        categories.setdefault(episode.start_frame, []).append("segmentation_review_episode")
+        rationale.setdefault(episode.start_frame, []).append(
+            f"{episode.target_id} trigger episode f{episode.start_frame}–f{episode.end_frame} "
+            f"({episode.trigger_count} raw triggers; {', '.join(episode.trigger_types)})."
         )
     return tuple(
         InteractionReviewPinnedMoment(
@@ -967,7 +1019,9 @@ when person/occlusion context is useful. Kineo is a separate body-context panel 
 - **Reference parts:** `{index.reference_segmentation_method}` four-part masks. This is a
   comparison-control/reference layer, not ground truth or validated physical attachment.
 - **Segmentation triggers:** {len(index.segmentation_review_triggers)} automatic geometry
-  triggers compare adjacent corrected-SAM3 masks and the reviewed-seed SAM2 control. They use
+  triggers are retained in the index and clustered into {len(index.segmentation_review_episodes)}
+  same-part review episodes/bookmarks. They compare adjacent corrected-SAM3 masks and the
+  reviewed-seed SAM2 control, using
   temporal IoU <0.5, area ratio >2, centroid jump >25 px, or cross-method IoU <0.5 while a
   stabilized hand is present; none decides target semantics.
 - **Stabilized WiLoR:** the default layer preserves raw WiLoR gaps and records a separate
@@ -1073,8 +1127,9 @@ def build_interaction_review(
     triggers = segmentation_review_triggers(
         reference, control, sources["stabilized_wilor"], dimensions
     )
+    episodes = cluster_segmentation_triggers(triggers)
     moments = deterministic_pinned_moments(
-        disagreements, contacts, events, sources["kineo"], triggers
+        disagreements, contacts, events, sources["kineo"], triggers, episodes
     )
     rrd_path, index_path, guide_path, sheet_path = output_paths(repository_root, output_root)
     rrd_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1147,6 +1202,7 @@ def build_interaction_review(
         hand_disagreements=disagreements,
         contact_events=events,
         segmentation_review_triggers=triggers,
+        segmentation_review_episodes=episodes,
         pinned_moments=moments,
     )
     rr.init("battle-interaction-review", recording_id=COMPARISON_ID)

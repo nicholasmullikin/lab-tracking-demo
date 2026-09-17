@@ -1014,15 +1014,13 @@ contract, reference-mask dimensions, and the single 1280×720 embedded RGB asset
 writing `interaction_review.rrd`, `interaction_review_index.json`, `review_guide.md`, and a
 labeled contact sheet under `runs/interaction-review-first-20s/`.
 
-The default primary panel is deliberately focused: it shows the selected
-`reviewed_seed_sam2_control` four-part reference masks with blue MediaPipe skeletons. The
-reviewer may substitute the coherent focused SAM3 baseline with
-`--reference-segmentation baseline_sam3`, but the default control is preferred because all four
-of its reviewed-mask-seeded parts have complete 600-frame output. Orange WiLoR 2D is shown in its
-own comparison panel; matching is same-frame nearest-wrist spatial assignment only, never a
-cross-method or persistent-ID assertion. WiLoR's camera-relative non-metric 3D has a separate
-3D panel. BoxMOT is hidden from the default composition as an optional person/occlusion context,
-not part tracking or segmentation. Kineo exposes only its partial 2D NLF body context.
+The default primary panel is deliberately focused: corrected focused SAM3 four-part masks with
+the stabilized WiLoR 2D layer. Raw WiLoR and blue MediaPipe remain separately toggleable
+comparison/fallback evidence; matching is same-frame nearest-wrist spatial assignment only,
+never a cross-method or persistent-ID assertion. WiLoR's camera-relative non-metric 3D has a
+separate 3D panel. BoxMOT is hidden from the default composition as optional
+person/occlusion context, not part tracking or segmentation. Kineo exposes only partial 2D NLF
+body context.
 
 The contact time series is a review navigation aid: for each MediaPipe spatial proximity lane and
 each named reference part, it retains palm/wrist, nearest-fingertip, and minimum source-pixel
@@ -1054,6 +1052,28 @@ record. It preserves supplied human feedback verbatim, keeps all human decisions
 labels agent findings/correction proposals as `agent_authored_visual_review`. The 11-step
 agent-authored substep timeline is primary navigation; crop-CLIP model arms remain secondary
 exploratory evidence unless they materially improve both checkpoint and boundary diagnostics.
+
+### Overnight v3 continuity rebuild
+
+v3 preserves v2 and replaces only Kineo context with a deterministic fusion stream:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 uv run battle-kineo-fusion \
+  --output-root runs/kineo-nlf-fused-20s-overnight-v3
+uv run battle-build-interaction-review --output-root runs/interaction-review-overnight-v3
+uv run python scripts/render_overnight_v3_audits.py
+uv run rerun rrd print runs/interaction-review-overnight-v3/interaction_review.rrd
+```
+
+It validates identical source/clock mapping before using independent BoxMOT person boxes, keeps
+native Kineo/YOLOX boxes primary, accepts only nearby native-consistent BoxMOT fallbacks, and
+runs NLF on every actual fused crop. Residual boxes may be interpolated only through a gap of at
+most five frames (target three); longer outages remain explicit `missing` rows. The generated
+`box_fusion.json` records one of `detected_native`, `boxmot_fallback`, `interpolated`, `held`, or
+`missing` per frame. The review index retains all raw segmentation triggers while clustering
+same-part neighboring triggers into compact episode bookmarks. The agent-authored v3 QA record
+and dense raw/stabilized/fallback plus corrected-SAM3/contact sheets remain evidence only; human
+pass/fail is still pending.
 
 ### Four-part segmentation comparison
 
