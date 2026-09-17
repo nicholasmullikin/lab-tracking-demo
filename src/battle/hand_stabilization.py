@@ -15,7 +15,7 @@ import numpy as np
 
 from .schemas import FrameObservations, NormalizedBox, NormalizedPoint, PerFrameHand
 
-FRAME_COUNT = 600
+DEFAULT_FRAME_COUNT = 600
 WILOR_MIN_CONFIDENCE = 0.55
 MEDIAPIPE_MIN_CONFIDENCE = 0.85
 MAX_FALLBACK_GAP = 5
@@ -160,14 +160,20 @@ def stabilize(
     wilor: dict[int, FrameObservations],
     mediapipe: dict[int, FrameObservations],
     parts: dict[int, FrameObservations],
+    *,
+    frame_count: int = DEFAULT_FRAME_COUNT,
 ) -> StabilizationResult:
     """Apply WiLoR-primary filtering, limited MP fallback, and short-lane smoothing."""
 
+    expected = set(range(frame_count))
+    for name, rows in (("WiLoR", wilor), ("MediaPipe", mediapipe), ("parts", parts)):
+        if not expected.issubset(rows):
+            raise ValueError(f"{name} rows must contain every frame [0,{frame_count})")
     output: list[FrameObservations] = []
     provenance: list[HandProvenance] = []
     active: dict[str, tuple[PerFrameHand, np.ndarray, int]] = {}
     fallback_frames = raw_frames = smoothed_frames = missing_frames = 0
-    for frame in range(FRAME_COUNT):
+    for frame in range(frame_count):
         raw = wilor[frame]
         candidates = _deduplicate(raw.hands)
         # A far candidate is only evidence of a camera-rig phantom when another hand on
@@ -181,7 +187,7 @@ def stabilize(
             forward = next(
                 (
                     index
-                    for index in range(frame + 1, min(FRAME_COUNT, frame + MAX_FALLBACK_GAP + 1))
+                    for index in range(frame + 1, min(frame_count, frame + MAX_FALLBACK_GAP + 1))
                     if _deduplicate(wilor[index].hands)
                 ),
                 None,
@@ -246,7 +252,7 @@ def stabilize(
             )
         output.append(raw.model_copy(update={"hands": tuple(rendered)}))
     metrics: dict[str, float | int] = {
-        "raw_wilor_hand_frames": sum(bool(wilor[frame].hands) for frame in range(FRAME_COUNT)),
+        "raw_wilor_hand_frames": sum(bool(wilor[frame].hands) for frame in range(frame_count)),
         "stabilized_hand_frames": sum(bool(item.hands) for item in output),
         "wilor_primary_frames": raw_frames,
         "mediapipe_fallback_frames": fallback_frames,
@@ -287,12 +293,15 @@ def wrist_jitter(observations: tuple[FrameObservations, ...]) -> float:
 
 
 def enrich_metrics(
-    result: StabilizationResult, wilor: dict[int, FrameObservations]
+    result: StabilizationResult,
+    wilor: dict[int, FrameObservations],
+    *,
+    frame_count: int = DEFAULT_FRAME_COUNT,
 ) -> dict[str, float | int]:
     """Add transparent output-stability diagnostics, never pose accuracy."""
 
     metrics = dict(result.metrics)
-    raw = tuple(wilor[index] for index in range(FRAME_COUNT))
+    raw = tuple(wilor[index] for index in range(frame_count))
     stabilized = result.observations
     raw_jitter = wrist_jitter(raw)
     stabilized_jitter = wrist_jitter(stabilized)

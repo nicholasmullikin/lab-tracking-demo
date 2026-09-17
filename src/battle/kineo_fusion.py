@@ -21,7 +21,9 @@ from .schemas import (
     RunManifest,
 )
 
-FRAME_COUNT = 600
+DEFAULT_FRAME_COUNT = 600
+# Backwards-compatible default for the established 20-second fusion API.
+FRAME_COUNT = DEFAULT_FRAME_COUNT
 WIDTH = 1280
 HEIGHT = 720
 CONSISTENCY_WINDOW = 15
@@ -64,15 +66,15 @@ def _interpolate(left: NormalizedBox, right: NormalizedBox, weight: float) -> No
     )
 
 
-def _read_rows(path: Path) -> dict[int, FrameObservations]:
+def _read_rows(path: Path, *, frame_count: int) -> dict[int, FrameObservations]:
     rows = [
         FrameObservations.model_validate_json(line)
         for line in path.read_text(encoding="utf-8").splitlines()
         if line
     ]
     result = {row.analysis_frame_index: row for row in rows}
-    if set(result) != set(range(FRAME_COUNT)):
-        raise ValueError(f"{path} must retain exactly analysis frames [0,{FRAME_COUNT})")
+    if set(result) != set(range(frame_count)):
+        raise ValueError(f"{path} must retain exactly analysis frames [0,{frame_count})")
     return result
 
 
@@ -128,15 +130,19 @@ def _consistent_with_native(
 
 
 def fuse_person_boxes(
-    native_rows: dict[int, FrameObservations], boxmot_rows: dict[int, FrameObservations]
+    native_rows: dict[int, FrameObservations],
+    boxmot_rows: dict[int, FrameObservations],
+    *,
+    frame_count: int = DEFAULT_FRAME_COUNT,
 ) -> FusionResult:
     """Select native boxes, verified BoxMOT fallbacks, then bounded inferred residuals."""
 
-    native_boxes = {
-        frame: row.objects[0].box for frame, row in native_rows.items() if row.objects
-    }
+    expected = set(range(frame_count))
+    if set(native_rows) != expected or set(boxmot_rows) != expected:
+        raise ValueError(f"fusion inputs must retain exactly frames [0,{frame_count})")
+    native_boxes = {frame: row.objects[0].box for frame, row in native_rows.items() if row.objects}
     raw: list[KineoBoxProvenance] = []
-    for frame in range(FRAME_COUNT):
+    for frame in range(frame_count):
         native_box = native_boxes.get(frame)
         boxmot = boxmot_rows[frame].objects[0] if boxmot_rows[frame].objects else None
         if native_box is not None:
@@ -178,17 +184,17 @@ def fuse_person_boxes(
 
     fused = list(raw)
     cursor = 0
-    while cursor < FRAME_COUNT:
+    while cursor < frame_count:
         if fused[cursor].source != "missing":
             cursor += 1
             continue
         start = cursor
-        while cursor < FRAME_COUNT and fused[cursor].source == "missing":
+        while cursor < frame_count and fused[cursor].source == "missing":
             cursor += 1
         end = cursor
         length = end - start
         left = fused[start - 1].box if start else None
-        right = fused[end].box if end < FRAME_COUNT else None
+        right = fused[end].box if end < frame_count else None
         if length > HARD_INFERENCE_GAP or (left is None and right is None):
             continue
         if left is not None and right is not None:
@@ -286,16 +292,15 @@ def run(args: argparse.Namespace) -> Path:
     native_manifest = RunManifest.model_validate_json((native_run / "manifest.json").read_text())
     boxmot_manifest = RunManifest.model_validate_json((boxmot_run / "manifest.json").read_text())
     verify_source_alignment(native_manifest, boxmot_manifest)
-    native_rows = _read_rows(native_run / "observations.jsonl")
-    boxmot_rows = _read_rows(boxmot_run / "observations.jsonl")
-    fusion = fuse_person_boxes(native_rows, boxmot_rows)
-    native_pkl_root = (
-        root / "runs/kineo/fused_native_inputs" / f"{output.name}-native"
-    ).resolve()
+    frame_count = len(native_manifest.observations)
+    if frame_count not in (600, 1800) or len(boxmot_manifest.observations) != frame_count:
+        raise ValueError("Kineo fusion requires matching 600- or 1800-frame source runs")
+    native_rows = _read_rows(native_run / "observations.jsonl", frame_count=frame_count)
+    boxmot_rows = _read_rows(boxmot_run / "observations.jsonl", frame_count=frame_count)
+    fusion = fuse_person_boxes(native_rows, boxmot_rows, frame_count=frame_count)
+    native_pkl_root = (root / "runs/kineo/fused_native_inputs" / f"{output.name}-native").resolve()
     source_native = (
-        root
-        / "runs/kineo/infer_nlf_headless_only/offline_demo/annotations/"
-        / args.native_sequence
+        root / "runs/kineo/infer_nlf_headless_only/offline_demo/annotations/" / args.native_sequence
     ).resolve()
     if not (source_native / "keypoints_2d.pkl").is_file():
         raise FileNotFoundError(source_native / "keypoints_2d.pkl")

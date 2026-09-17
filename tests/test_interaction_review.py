@@ -12,6 +12,7 @@ from battle.interaction_review import (
     CONTACT_END_FRAMES,
     CONTACT_START_FRAMES,
     DEFAULT_SOURCES,
+    _contacts,
     _drop_dtw_bookmarks,
     _log_diagnostics_frame,
     build_interaction_review,
@@ -22,6 +23,12 @@ from battle.interaction_review import (
     nearest_wrist_matches,
     output_paths,
     validate_review_observations,
+)
+from battle.interaction_review_v4 import (
+    FRAME_COUNT as FIRST_MINUTE_FRAME_COUNT,
+)
+from battle.interaction_review_v4 import (
+    SEGMENTATION_CONTACT_ELIGIBLE_THROUGH,
 )
 from battle.schemas import (
     FrameObservations,
@@ -158,6 +165,46 @@ def test_missing_diagnostics_clear_rrd_paths(monkeypatch: pytest.MonkeyPatch) ->
     assert "world/fixture/diagnostics/hand_disagreement/mean_pixels" in cleared
 
 
+def test_invalid_mask_diagnostics_carry_no_stale_contact_candidate() -> None:
+    invalid = InteractionContactDiagnostic(
+        analysis_frame_index=1584,
+        hand_source_id="spatial-lane-1",
+        part_id="cabin",
+        observation_state="invalid_mask",
+    )
+
+    assert invalid.raw_contact_candidate is None
+    with pytest.raises(ValueError, match="cannot retain stale"):
+        InteractionContactDiagnostic.model_validate(
+            invalid.model_copy(update={"minimum_distance_pixels": 1}).model_dump()
+        )
+
+
+def test_late_invalid_masks_clear_every_previously_seen_lane() -> None:
+    rows = {
+        frame: SimpleNamespace(hands=(_hand(0.5, 0.5),) if frame == 0 else (), objects=())
+        for frame in range(1800)
+    }
+    source = SimpleNamespace(observations=rows, run_directory=Path("."))
+
+    diagnostics, _ = _contacts(
+        source,
+        source,
+        (1280, 720),
+        frame_count=1800,
+        segmentation_contact_eligible_through=1200,
+    )
+
+    assert [
+        item.observation_state for item in diagnostics if item.analysis_frame_index == 1200
+    ] == ["invalid_mask"] * 4
+
+
+def test_v4_declares_first_minute_alignment_and_late_contact_cutoff() -> None:
+    assert FIRST_MINUTE_FRAME_COUNT == 1800
+    assert SEGMENTATION_CONTACT_ELIGIBLE_THROUGH == 1200
+
+
 def test_drop_dtw_bookmarks_use_only_declared_matched_frames(tmp_path) -> None:
     alignment = tmp_path / "alignment.json"
     alignment.write_text(
@@ -204,15 +251,21 @@ def test_v3_defaults_use_corrected_sam3_and_fused_kineo_context() -> None:
 
     assert DEFAULT_SOURCES["kineo"].run_directory.name == "kineo-nlf-fused-20s-overnight-v3"
     assert (
-        inspect.signature(build_interaction_review).parameters["reference_segmentation_method"].default
+        inspect.signature(build_interaction_review)
+        .parameters["reference_segmentation_method"]
+        .default
         == "baseline_sam3"
     )
 
 
 def test_overnight_agent_review_keeps_human_feedback_distinct() -> None:
-    for version in ("v2", "v3"):
+    for filename in (
+        "overnight-interaction-review-v2.agent-review.json",
+        "overnight-interaction-review-v3.agent-review.json",
+        "interaction-review-first-minute-v4.agent-review.json",
+    ):
         record = OvernightReviewRecord.model_validate(
-            json.loads(Path(f"docs/qa/overnight-interaction-review-{version}.agent-review.json").read_text())
+            json.loads((Path("docs/qa") / filename).read_text())
         )
 
         assert record.provenance_tag == "agent_authored_visual_review"

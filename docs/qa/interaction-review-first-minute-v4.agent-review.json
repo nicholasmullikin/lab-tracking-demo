@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0",
+  "manifest_kind": "overnight_interaction_review_record",
+  "provenance_tag": "agent_authored_visual_review",
+  "human_feedback": [
+    "WiLoR 2D is definitely better overall than MediaPipe; handles hands entering/leaving occlusion. MediaPipe bounces even when visible.",
+    "Primary interaction part masks looked worse than original.",
+    "Kineo works when present but randomly disappears; user suspected eyes not visible.",
+    "CLIP + Drop-DTW is only okay and misses many substeps."
+  ],
+  "agent_findings": [
+    {
+      "analysis_frame_index": 1200,
+      "subject": "late corrected-SAM3 validity",
+      "finding": "Dense source/mask overlays at f1200, f1250, f1303, f1400, f1500, f1584, f1600, f1637, f1700, and f1799 show the colored mask regions no longer preserve stable part semantics while the black body is handled. v4 keeps them visible as comparison evidence, but marks [1200,1800) not_contact_eligible and emits invalid_mask rather than geometry contact candidates.",
+      "evidence_kind": "generated_contact_sheet",
+      "disposition": "agent_authored_visual_review"
+    },
+    {
+      "analysis_frame_index": 1584,
+      "subject": "WiLoR first-minute stabilization reassessment",
+      "finding": "The unchanged WiLoR-primary One-Euro settings reduced median nearest-wrist step jitter from 0.0032280 to 0.0027751 in frames 0-599, 0.0027975 to 0.0023620 in 600-1199, and 0.0034532 to 0.0030629 in 1200-1799. The requested f1584-1637 audit retained hand output in all 54 frames (105 raw versus 71 stabilized instances); no parameter retune was justified by this output-stability evidence.",
+      "evidence_kind": "derived_metric",
+      "disposition": "agent_authored_visual_review"
+    },
+    {
+      "analysis_frame_index": 246,
+      "subject": "Kineo NLF first-minute continuity",
+      "finding": "Native frame-step-1 Kineo supplied 1619 NLF body rows. The source-aligned fusion reran NLF on 1783 actual crops: 1619 detected_native, 150 consistency-gated BoxMOT fallback, and 14 <=5-frame interpolated boxes. The only residual outage is f246-262 (17 frames), explicitly missing; no pose/body keypoints were carried forward.",
+      "evidence_kind": "derived_metric",
+      "disposition": "agent_authored_visual_review"
+    },
+    {
+      "analysis_frame_index": 1031,
+      "subject": "action navigation scope",
+      "finding": "Assembly101 coarse GT overlaps the first minute as attach interior, screw chassis, attach body, then screw chassis. The 11 checked-in fine labels remain the only agent-authored visible substeps and cover frames 0-599; sampled late source evidence did not justify promoting additional fine-grained action labels or Crop-CLIP/Drop-DTW output.",
+      "evidence_kind": "audit",
+      "disposition": "agent_authored_visual_review"
+    }
+  ],
+  "correction_candidates": [],
+  "human_decisions_pending": true,
+  "ground_truth_accuracy_claim": false
+}

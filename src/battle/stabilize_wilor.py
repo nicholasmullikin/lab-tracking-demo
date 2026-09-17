@@ -17,16 +17,16 @@ DEFAULT_PARTS = Path(
 DEFAULT_OUTPUT = Path("runs/wilor-hands-stabilized-20s-overnight-v2")
 
 
-def _observations(path: Path) -> dict[int, FrameObservations]:
+def _observations(path: Path, *, frame_count: int) -> dict[int, FrameObservations]:
     rows = [
         FrameObservations.model_validate_json(line)
         for line in path.read_text(encoding="utf-8").splitlines()
         if line
     ]
     result = {item.analysis_frame_index: item for item in rows}
-    if not set(range(600)).issubset(result):
-        raise ValueError(f"{path} must contain all frames [0,600)")
-    return {index: result[index] for index in range(600)}
+    if not set(range(frame_count)).issubset(result):
+        raise ValueError(f"{path} must contain all frames [0,{frame_count})")
+    return {index: result[index] for index in range(frame_count)}
 
 
 def run(args: argparse.Namespace) -> Path:
@@ -38,12 +38,20 @@ def run(args: argparse.Namespace) -> Path:
     if output_dir.exists():
         raise FileExistsError(output_dir)
     source_manifest = RunManifest.model_validate_json((source_dir / "manifest.json").read_text())
+    frame_count = len(source_manifest.observations)
+    if frame_count not in (600, 1800):
+        raise ValueError(f"WiLoR review supports 600 or 1800 rows, got {frame_count}")
     result = stabilize(
-        _observations(source_dir / "observations.jsonl"),
-        _observations(mp_dir / "observations.jsonl"),
-        _observations(parts_dir / "observations.jsonl"),
+        _observations(source_dir / "observations.jsonl", frame_count=frame_count),
+        _observations(mp_dir / "observations.jsonl", frame_count=frame_count),
+        _observations(parts_dir / "observations.jsonl", frame_count=frame_count),
+        frame_count=frame_count,
     )
-    metrics = enrich_metrics(result, _observations(source_dir / "observations.jsonl"))
+    metrics = enrich_metrics(
+        result,
+        _observations(source_dir / "observations.jsonl", frame_count=frame_count),
+        frame_count=frame_count,
+    )
     result = result.__class__(result.observations, result.provenance, metrics)
     write_result(result, output_dir)
     video = source_dir / "input.mp4"
@@ -65,7 +73,8 @@ def run(args: argparse.Namespace) -> Path:
             "postprocessor_policy": (
                 "WiLoR confidence>=0.55, deduplicate; evidence-defined part-workspace "
                 "gate; MediaPipe confidence>=0.85 fallback only for <=5-frame WiLoR gaps; "
-                "One-Euro wrist/palm smoothing (min_cutoff=1.5,beta=0.007,d_cutoff=1.0)."
+                "One-Euro wrist/palm smoothing (min_cutoff=1.5,beta=0.007,d_cutoff=1.0). "
+                f"Applied independently across exactly {frame_count} source-aligned rows."
             ),
         }
     )

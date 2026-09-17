@@ -11,7 +11,10 @@ from pydantic import Field, model_validator
 from .schemas import TimeInterval, VersionedModel
 
 PROVENANCE_TAG = "agent_authored_visual_review"
-FRAME_COUNT = 600
+DEFAULT_FRAME_COUNT = 600
+MAX_FRAME_COUNT = 1800
+# Backwards-compatible first-20-second constant for fine-substep model experiments.
+FRAME_COUNT = DEFAULT_FRAME_COUNT
 ANALYSIS_FPS = 30
 
 
@@ -19,12 +22,12 @@ class FineSubstepCoarseGtAnchor(VersionedModel):
     action: str = Field(min_length=1)
     annotation_start_frame: int = Field(ge=0)
     annotation_end_frame: int = Field(gt=0)
-    proxy_start_frame: int = Field(ge=0, lt=FRAME_COUNT)
-    proxy_end_frame_exclusive: int = Field(gt=0, le=FRAME_COUNT)
+    proxy_start_frame: int = Field(ge=0, lt=MAX_FRAME_COUNT)
+    proxy_end_frame_exclusive: int = Field(gt=0, le=MAX_FRAME_COUNT)
 
 
 class FineSubstepCheckpoint(VersionedModel):
-    analysis_frame_index: int = Field(ge=0, lt=FRAME_COUNT)
+    analysis_frame_index: int = Field(ge=0, lt=MAX_FRAME_COUNT)
     source_seconds: float = Field(ge=0)
     note: str = Field(min_length=1)
 
@@ -32,8 +35,8 @@ class FineSubstepCheckpoint(VersionedModel):
 class FineSubstepDefinition(VersionedModel):
     substep_id: str = Field(pattern=r"^S\d{2}$")
     label: str = Field(min_length=1)
-    start_frame: int = Field(ge=0, lt=FRAME_COUNT)
-    end_frame_exclusive: int = Field(gt=0, le=FRAME_COUNT)
+    start_frame: int = Field(ge=0, lt=MAX_FRAME_COUNT)
+    end_frame_exclusive: int = Field(gt=0, le=MAX_FRAME_COUNT)
     source_start_seconds: float = Field(ge=0)
     source_end_seconds_exclusive: float = Field(gt=0)
     confidence: Literal["high", "medium", "low"]
@@ -58,7 +61,7 @@ class FineSubstepAgentLabelContract(VersionedModel):
     provenance_tag: Literal["agent_authored_visual_review"]
     author_type: Literal["agent"]
     analysis_fps: Literal[30]
-    frame_count: Literal[600]
+    frame_count: Literal[600, 1800]
     source_interval: TimeInterval
     claim_boundaries: tuple[str, ...] = Field(min_length=1)
     coarse_gt_anchors: tuple[FineSubstepCoarseGtAnchor, ...] = Field(min_length=1)
@@ -72,11 +75,13 @@ class FineSubstepAgentLabelContract(VersionedModel):
         ordered = sorted(self.substeps, key=lambda item: item.start_frame)
         if ordered[0].start_frame != 0:
             raise ValueError("substeps must start at frame 0")
-        if ordered[-1].end_frame_exclusive != FRAME_COUNT:
-            raise ValueError("substeps must end at frame 600")
+        if ordered[-1].end_frame_exclusive != self.frame_count:
+            raise ValueError(f"substeps must end at frame {self.frame_count}")
         for left, right in zip(ordered, ordered[1:], strict=False):
             if left.end_frame_exclusive != right.start_frame:
-                raise ValueError("substeps must partition [0,600) without gaps or overlap")
+                raise ValueError(
+                    f"substeps must partition [0,{self.frame_count}) without gaps or overlap"
+                )
         return self.model_copy(update={"substeps": tuple(ordered)})
 
 

@@ -54,6 +54,7 @@ GUIDE_NAME = "review_guide.md"
 CONTACT_SHEET_NAME = "pinned_moments_contact_sheet.png"
 COMPARISON_ID = "interaction_review_first_20s"
 DIMENSIONS = (1280, 720)
+FIRST_MINUTE_FRAME_COUNT = 1800
 CONTACT_THRESHOLD_PIXELS = 12.0
 CONTACT_START_FRAMES = 2
 CONTACT_END_FRAMES = 3
@@ -87,6 +88,15 @@ DEFAULT_SOURCES = {
     "kineo": SourceSpec("kineo", Path("runs/kineo-nlf-fused-20s-overnight-v3")),
     "drop_dtw": SourceSpec("drop_dtw", Path("runs/drop-dtw-static-20s-pinned-openclip-rerun")),
 }
+FIRST_MINUTE_SOURCES = {
+    "mediapipe": SourceSpec(
+        "mediapipe", Path("runs/mediapipe-hands-static-60s-fused-dedup-th035-20260916t0430z")
+    ),
+    "wilor": SourceSpec("wilor", Path("runs/wilor-hands-static-60s-overnight-v2")),
+    "stabilized_wilor": SourceSpec("stabilized_wilor", Path("runs/wilor-hands-stabilized-60s-v4")),
+    "boxmot": SourceSpec("boxmot", Path("runs/boxmot-yolo-static-60s-v4-postreboot")),
+    "kineo": SourceSpec("kineo", Path("runs/kineo-nlf-fused-60s-v4")),
+}
 REFERENCE_SEGMENTATIONS = {
     "reviewed_seed_sam2_control": Path(
         "runs/reviewed-seed-sam2-control-four-part-20s-20260916t1005z"
@@ -113,7 +123,11 @@ def _metadata(manifest: RunManifest) -> object | None:
 
 
 def _validate_run(
-    spec: SourceSpec, repository_root: Path, *, require_every_frame: bool = True
+    spec: SourceSpec,
+    repository_root: Path,
+    *,
+    frame_count: int = FRAME_COUNT,
+    require_every_frame: bool = True,
 ) -> LoadedSource:
     """Validate source/proxy fingerprints and exact source-time mapping before use."""
     run_directory = (repository_root / spec.run_directory).resolve()
@@ -160,14 +174,16 @@ def _validate_run(
     observations: dict[int, FrameObservations] = {}
     for observation in manifest.observations:
         index = observation.analysis_frame_index
-        if index >= FRAME_COUNT:
+        if index >= frame_count:
             continue
         if index in observations:
             raise ValueError(f"{spec.method_id} has a duplicate frame {index}")
         observations[index] = observation
     validate_review_observations(manifest, observations)
-    if require_every_frame and set(observations) != set(range(FRAME_COUNT)):
-        raise ValueError(f"{spec.method_id} must retain one normalized row for every frame [0,600)")
+    if require_every_frame and set(observations) != set(range(frame_count)):
+        raise ValueError(
+            f"{spec.method_id} must retain one normalized row for every frame [0,{frame_count})"
+        )
     observations_path = run_directory / "observations.jsonl"
     if observations_path.is_file():
         artifacts.append(_file_fingerprint(observations_path, repository_root))
@@ -289,21 +305,25 @@ def _mask_iou(left: np.ndarray, right: np.ndarray) -> float:
 
 def segmentation_review_triggers(
     reference: LoadedSource,
-    control: LoadedSource,
+    control: LoadedSource | None,
     hands: LoadedSource,
     dimensions: tuple[int, int],
+    *,
+    frame_count: int = FRAME_COUNT,
 ) -> tuple[SegmentationReviewTrigger, ...]:
     """Emit auditable geometry triggers without deciding target semantics."""
 
     triggers: list[SegmentationReviewTrigger] = []
     previous: dict[str, np.ndarray] = {}
-    for frame in range(FRAME_COUNT):
+    for frame in range(frame_count):
         for part in TARGETS:
             current = _mask_for_part(
                 reference.observations[frame], part, reference.run_directory, dimensions
             )
-            other = _mask_for_part(
-                control.observations[frame], part, control.run_directory, dimensions
+            other = (
+                _mask_for_part(control.observations[frame], part, control.run_directory, dimensions)
+                if control is not None
+                else None
             )
             if current is None:
                 continue
@@ -401,13 +421,16 @@ def cluster_segmentation_triggers(
 
 
 def _spatial_lanes(
-    observations: dict[int, FrameObservations], dimensions: tuple[int, int]
+    observations: dict[int, FrameObservations],
+    dimensions: tuple[int, int],
+    *,
+    frame_count: int = FRAME_COUNT,
 ) -> dict[tuple[int, int], str]:
     """Assign short-lived proximity lanes by adjacent-frame nearest wrist, never as identity."""
     result: dict[tuple[int, int], str] = {}
     active: dict[str, tuple[int, int]] = {}
     next_lane = 1
-    for frame in range(FRAME_COUNT):
+    for frame in range(frame_count):
         hands = observations[frame].hands
         available = dict(active)
         assignments: dict[int, str] = {}
@@ -501,11 +524,15 @@ def nearest_wrist_matches(
 
 
 def _disagreements(
-    mediapipe: LoadedSource, wilor: LoadedSource, dimensions: tuple[int, int]
+    mediapipe: LoadedSource,
+    wilor: LoadedSource,
+    dimensions: tuple[int, int],
+    *,
+    frame_count: int = FRAME_COUNT,
 ) -> tuple[InteractionHandDisagreement, ...]:
     records: list[InteractionHandDisagreement] = []
     scale = np.asarray(dimensions, dtype=float)
-    for frame in range(FRAME_COUNT):
+    for frame in range(frame_count):
         mp_hands = mediapipe.observations[frame].hands
         wi_hands = wilor.observations[frame].hands
         for mp_index, wi_index in nearest_wrist_matches(mp_hands, wi_hands, dimensions):
@@ -544,12 +571,33 @@ def _disagreements(
 
 
 def _contacts(
-    mediapipe: LoadedSource, segmentation: LoadedSource, dimensions: tuple[int, int]
+    mediapipe: LoadedSource,
+    segmentation: LoadedSource,
+    dimensions: tuple[int, int],
+    *,
+    frame_count: int = FRAME_COUNT,
+    segmentation_contact_eligible_through: int | None = None,
 ) -> tuple[tuple[InteractionContactDiagnostic, ...], tuple[InteractionContactEvent, ...]]:
-    lanes = _spatial_lanes(mediapipe.observations, dimensions)
-    raw: dict[tuple[str, str], list[bool | None]] = defaultdict(lambda: [None] * FRAME_COUNT)
+    lanes = _spatial_lanes(mediapipe.observations, dimensions, frame_count=frame_count)
+    lanes_seen = sorted(set(lanes.values()))
+    raw: dict[tuple[str, str], list[bool | None]] = defaultdict(lambda: [None] * frame_count)
     draft: list[InteractionContactDiagnostic] = []
-    for frame in range(FRAME_COUNT):
+    for frame in range(frame_count):
+        if (
+            segmentation_contact_eligible_through is not None
+            and frame >= segmentation_contact_eligible_through
+        ):
+            for lane in lanes_seen:
+                for part in TARGETS:
+                    draft.append(
+                        InteractionContactDiagnostic(
+                            analysis_frame_index=frame,
+                            hand_source_id=lane,
+                            part_id=part,
+                            observation_state="invalid_mask",
+                        )
+                    )
+            continue
         masks = {
             part: _mask_for_part(
                 segmentation.observations[frame], part, segmentation.run_directory, dimensions
@@ -588,8 +636,12 @@ def _contacts(
                     )
                 )
     # Absence is separately represented for every lane that exists anywhere, never carried forward.
-    lanes_seen = sorted({key[0] for key in raw})
-    for frame in range(FRAME_COUNT):
+    for frame in range(frame_count):
+        if (
+            segmentation_contact_eligible_through is not None
+            and frame >= segmentation_contact_eligible_through
+        ):
+            continue
         present = {
             lanes[(frame, index)] for index in range(len(mediapipe.observations[frame].hands))
         }
@@ -638,19 +690,22 @@ def deterministic_pinned_moments(
     kineo: LoadedSource,
     segmentation_triggers: tuple[SegmentationReviewTrigger, ...] = (),
     segmentation_episodes: tuple[SegmentationReviewEpisode, ...] = (),
+    *,
+    frame_count: int = FRAME_COUNT,
+    source_start_seconds: float = 294.0,
 ) -> tuple[InteractionReviewPinnedMoment, ...]:
     """Select stable review bookmarks, with frame number as every tie-breaker."""
     categories: dict[int, list[str]] = {
         0: ["required_frame_0"],
-        300: ["required_frame_300"],
-        599: ["required_frame_599"],
+        frame_count // 2: [f"required_frame_{frame_count // 2}"],
+        frame_count - 1: [f"required_frame_{frame_count - 1}"],
     }
     rationale: dict[int, list[str]] = {
         0: ["Required boundary frame."],
-        300: ["Required midpoint frame."],
-        599: ["Required final frame."],
+        frame_count // 2: ["Required midpoint frame."],
+        frame_count - 1: ["Required final frame."],
     }
-    for frame, category, note in (
+    requested = [
         (88, "hand_transition_review", "Requested hand-transition review range begins."),
         (194, "segmentation_reference_review", "Requested early part-reference review range."),
         (224, "segmentation_reference_review", "Requested part-reference review range."),
@@ -660,7 +715,19 @@ def deterministic_pinned_moments(
         (500, "action_transition_review", "Requested fastening action review range."),
         (548, "segmentation_correction_review", "Requested correction-candidate review range."),
         (597, "late_occlusion_review", "Requested final occlusion review range."),
-    ):
+    ]
+    if frame_count == FIRST_MINUTE_FRAME_COUNT:
+        requested.extend(
+            (
+                (900, "mid_minute_review", "First-minute midpoint review."),
+                (1200, "late_segmentation_review", "Known later segmentation degradation review."),
+                (1584, "late_hand_review", "Requested late WiLoR audit interval begins."),
+                (1637, "late_hand_review", "Requested late WiLoR audit interval ends."),
+            )
+        )
+    for frame, category, note in requested:
+        if frame >= frame_count:
+            continue
         categories.setdefault(frame, []).append(category)
         rationale.setdefault(frame, []).append(note)
     matched = [item for item in disagreements if item.assignment_state == "matched"]
@@ -708,7 +775,7 @@ def deterministic_pinned_moments(
             rationale.setdefault(selected.analysis_frame_index, []).append(
                 "No debounced transition; nearest observed hand-to-part geometry."
             )
-    gaps = [frame for frame in range(FRAME_COUNT) if not kineo.observations[frame].nlf_body_2d]
+    gaps = [frame for frame in range(frame_count) if not kineo.observations[frame].nlf_body_2d]
     if gaps:
         frame = gaps[0]
         categories.setdefault(frame, []).append("kineo_gap")
@@ -716,7 +783,7 @@ def deterministic_pinned_moments(
     late_missing = [
         item.analysis_frame_index
         for item in disagreements
-        if item.analysis_frame_index >= 450 and item.assignment_state != "matched"
+        if item.analysis_frame_index >= frame_count * 3 // 4 and item.assignment_state != "matched"
     ]
     if late_missing:
         frame = max(late_missing)
@@ -744,7 +811,7 @@ def deterministic_pinned_moments(
     return tuple(
         InteractionReviewPinnedMoment(
             analysis_frame_index=frame,
-            source_seconds=294.0 + frame / ANALYSIS_FPS,
+            source_seconds=source_start_seconds + frame / ANALYSIS_FPS,
             categories=tuple(categories[frame]),
             rationale=" ".join(rationale[frame]),
         )

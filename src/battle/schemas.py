@@ -433,10 +433,8 @@ class PerFrameNlfBody2D(VersionedModel):
 class KineoBoxProvenance(VersionedModel):
     """One fused person crop input, retained separately from NLF pose output."""
 
-    analysis_frame_index: int = Field(ge=0, lt=600)
-    source: Literal[
-        "detected_native", "boxmot_fallback", "interpolated", "held", "missing"
-    ]
+    analysis_frame_index: int = Field(ge=0, lt=1800)
+    source: Literal["detected_native", "boxmot_fallback", "interpolated", "held", "missing"]
     box: NormalizedBox | None = None
     native_box: NormalizedBox | None = None
     boxmot_box: NormalizedBox | None = None
@@ -468,8 +466,8 @@ class SegmentationReviewEpisode(VersionedModel):
     """A compact bookmark over adjacent raw geometry review triggers."""
 
     target_id: Literal["chassis", "interior", "rear_body", "cabin"]
-    start_frame: int = Field(ge=0, lt=600)
-    end_frame: int = Field(ge=0, lt=600)
+    start_frame: int = Field(ge=0, lt=1800)
+    end_frame: int = Field(ge=0, lt=1800)
     trigger_count: int = Field(ge=1)
     trigger_types: tuple[str, ...] = Field(min_length=1)
 
@@ -2264,10 +2262,10 @@ class FourPartSegmentationComparisonIndex(VersionedModel):
 class InteractionContactDiagnostic(VersionedModel):
     """One source-pixel hand-to-part proximity measurement for review only."""
 
-    analysis_frame_index: int = Field(ge=0, lt=600)
+    analysis_frame_index: int = Field(ge=0, lt=1800)
     hand_source_id: str = Field(min_length=1)
     part_id: Literal["chassis", "interior", "rear_body", "cabin"]
-    observation_state: Literal["observed", "missing_hand", "missing_mask"]
+    observation_state: Literal["observed", "missing_hand", "missing_mask", "invalid_mask"]
     palm_distance_pixels: float | None = Field(default=None, ge=0)
     fingertip_distance_pixels: float | None = Field(default=None, ge=0)
     minimum_distance_pixels: float | None = Field(default=None, ge=0)
@@ -2289,14 +2287,14 @@ class InteractionContactDiagnostic(VersionedModel):
             if any(value is None for value in values):
                 raise ValueError("observed contact diagnostics require every derived value")
         elif any(value is not None for value in values):
-            raise ValueError("missing hand or mask diagnostics cannot retain stale contact values")
+            raise ValueError("missing or invalid masks cannot retain stale contact values")
         return self
 
 
 class InteractionContactEvent(VersionedModel):
     """A debounced geometry transition, never a ground-truth interaction label."""
 
-    analysis_frame_index: int = Field(ge=0, lt=600)
+    analysis_frame_index: int = Field(ge=0, lt=1800)
     hand_source_id: str = Field(min_length=1)
     part_id: Literal["chassis", "interior", "rear_body", "cabin"]
     event_type: Literal["contact_candidate_start", "contact_candidate_end"]
@@ -2305,7 +2303,7 @@ class InteractionContactEvent(VersionedModel):
 class InteractionHandDisagreement(VersionedModel):
     """Same-frame spatial assignment between two frame-local hand detections."""
 
-    analysis_frame_index: int = Field(ge=0, lt=600)
+    analysis_frame_index: int = Field(ge=0, lt=1800)
     assignment_state: Literal["matched", "mediapipe_only", "wilor_only"]
     mediapipe_hand_id: str | None = None
     wilor_hand_id: str | None = None
@@ -2335,7 +2333,7 @@ class InteractionHandDisagreement(VersionedModel):
 class InteractionReviewPinnedMoment(VersionedModel):
     """A deterministic review bookmark; human disposition intentionally remains pending."""
 
-    analysis_frame_index: int = Field(ge=0, lt=600)
+    analysis_frame_index: int = Field(ge=0, lt=1800)
     source_seconds: float = Field(ge=0)
     categories: tuple[str, ...] = Field(min_length=1)
     rationale: str = Field(min_length=1)
@@ -2345,7 +2343,7 @@ class InteractionReviewPinnedMoment(VersionedModel):
 class SegmentationReviewTrigger(VersionedModel):
     """A geometry review trigger, not a semantic correctness decision."""
 
-    analysis_frame_index: int = Field(ge=0, lt=600)
+    analysis_frame_index: int = Field(ge=0, lt=1800)
     target_id: Literal["chassis", "interior", "rear_body", "cabin"]
     trigger_type: Literal[
         "temporal_iou_lt_0_5",
@@ -2356,14 +2354,30 @@ class SegmentationReviewTrigger(VersionedModel):
     value: float = Field(ge=0)
 
 
+class SegmentationValidityInterval(VersionedModel):
+    """Explicit review eligibility for a bounded segmentation interval."""
+
+    start_frame: int = Field(ge=0, lt=1800)
+    end_frame_exclusive: int = Field(gt=0, le=1800)
+    state: Literal["contact_eligible", "not_contact_eligible"]
+    rationale: str = Field(min_length=1)
+    provenance: Literal["agent_authored_visual_review", "human_feedback_report"]
+
+    @model_validator(mode="after")
+    def require_ordered_range(self) -> SegmentationValidityInterval:
+        if self.end_frame_exclusive <= self.start_frame:
+            raise ValueError("segmentation validity interval must be positive")
+        return self
+
+
 class InteractionReviewIndexManifest(VersionedModel):
     """Complete reproducibility index for the focused interaction review package."""
 
-    manifest_kind: Literal["interaction_review_first_20s"]
-    comparison_id: Literal["interaction_review_first_20s"]
+    manifest_kind: Literal["interaction_review_first_20s", "interaction_review_first_minute_v4"]
+    comparison_id: Literal["interaction_review_first_20s", "interaction_review_first_minute_v4"]
     source_video: ArtifactFingerprint
     bounded_video: ArtifactFingerprint
-    frame_count: Literal[600]
+    frame_count: Literal[600, 1800]
     analysis_fps: Literal[30]
     source_interval: TimeInterval
     reference_segmentation_method: Literal["reviewed_seed_sam2_control", "baseline_sam3"]
@@ -2379,6 +2393,7 @@ class InteractionReviewIndexManifest(VersionedModel):
     contact_events: tuple[InteractionContactEvent, ...] = ()
     segmentation_review_triggers: tuple[SegmentationReviewTrigger, ...] = ()
     segmentation_review_episodes: tuple[SegmentationReviewEpisode, ...] = ()
+    segmentation_validity_intervals: tuple[SegmentationValidityInterval, ...] = ()
     pinned_moments: tuple[InteractionReviewPinnedMoment, ...] = Field(min_length=3)
     output_rrd: ArtifactFingerprint | None = None
     review_guide: ArtifactFingerprint | None = None
@@ -2388,7 +2403,7 @@ class InteractionReviewIndexManifest(VersionedModel):
 class AgentAuthoredVisualFinding(VersionedModel):
     """A non-human review observation; never an approval or ground-truth claim."""
 
-    analysis_frame_index: int = Field(ge=0, lt=600)
+    analysis_frame_index: int = Field(ge=0, lt=1800)
     subject: str = Field(min_length=1)
     finding: str = Field(min_length=1)
     evidence_kind: Literal["audit", "generated_contact_sheet", "derived_metric"]
@@ -2398,7 +2413,7 @@ class AgentAuthoredVisualFinding(VersionedModel):
 class SegmentationCorrectionCandidate(VersionedModel):
     """A correction triage row that retains human and agent provenance separately."""
 
-    analysis_frame_index: int = Field(ge=0, lt=600)
+    analysis_frame_index: int = Field(ge=0, lt=1800)
     target_id: Literal["chassis", "interior", "rear_body", "cabin"]
     source_method: str = Field(min_length=1)
     provenance: Literal["human_verified_correction", "agent_authored_visual_review"]

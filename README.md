@@ -1075,6 +1075,32 @@ same-part neighboring triggers into compact episode bookmarks. The agent-authore
 and dense raw/stabilized/fallback plus corrected-SAM3/contact sheets remain evidence only; human
 pass/fail is still pending.
 
+### First-minute v4 review
+
+v4 extends the review to the retained first 60 seconds / frames `[0,1800)` while keeping the
+same source-aligned static proxy and exactly one embedded RGB asset. Build the already-generated
+inference-free package with:
+
+```bash
+uv run battle-build-interaction-review-v4
+uv run rerun rrd print \
+  runs/interaction-review-first-minute-v4/interaction_review_first_minute_v4.rrd
+```
+
+Its default layer is corrected SAM3 plus the deterministic WiLoR-primary stabilized 2D hands;
+raw WiLoR, MediaPipe, BoxMOT person context, and partial Kineo NLF body context remain separately
+toggleable. `interaction_review_index.json` retains source fingerprints, all 1,800 normalized
+rows, hand/box provenance, geometry trigger episodes, and explicit segmentation validity
+intervals. The late SAM3 display remains visible for comparison, but frames `[1200,1800)` are
+`not_contact_eligible`: late contact diagnostics use `invalid_mask`, are cleared, and cannot
+generate candidate events.
+
+The first-20-second 11-step agent-authored navigation timeline remains the only fine action
+timeline. Assembly101 coarse GT is logged separately as weak navigation context over the full
+minute (`attach interior`, `screw chassis`, `attach body`, `screw chassis`); it is never a model
+prediction or a replacement for visual review. The v4 guide and index make the retained coverage
+and every human/agent claim boundary explicit.
+
 ### Four-part segmentation comparison
 
 `configs/four_part_segmentation_comparison.json` is the checked-in fair-comparison

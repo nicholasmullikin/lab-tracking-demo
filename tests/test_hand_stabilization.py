@@ -24,7 +24,7 @@ def _hand(x: float, *, confidence: float = 0.9) -> PerFrameHand:
     )
 
 
-def _rows(hands: tuple[PerFrameHand, ...]) -> dict[int, FrameObservations]:
+def _rows(hands: tuple[PerFrameHand, ...], frame_count: int = 600) -> dict[int, FrameObservations]:
     return {
         frame: FrameObservations(
             view_id="static-c10379",
@@ -32,7 +32,7 @@ def _rows(hands: tuple[PerFrameHand, ...]) -> dict[int, FrameObservations]:
             source_seconds=294 + frame / 30,
             hands=hands,
         )
-        for frame in range(600)
+        for frame in range(frame_count)
     }
 
 
@@ -62,3 +62,18 @@ def test_mediapipe_fallback_requires_short_future_wilor_gap() -> None:
 def test_wrist_jitter_is_zero_without_consecutive_hands() -> None:
     observations = tuple(_rows(()).values())
     assert wrist_jitter(observations) == 0.0
+
+
+def test_stabilization_preserves_every_first_minute_row_and_provenance() -> None:
+    frame_count = 1800
+    wilor = _rows((), frame_count)
+    wilor[1200] = wilor[1200].model_copy(update={"hands": (_hand(0.5),)})
+    result = stabilize(
+        wilor, _rows((_hand(0.6),), frame_count), _rows((), frame_count), frame_count=frame_count
+    )
+
+    assert len(result.observations) == frame_count
+    assert result.observations[1200].hands
+    assert {item.analysis_frame_index for item in result.provenance} == set(range(frame_count))
+    assert result.metrics["missing_frames"] == frame_count - 6
+    assert result.metrics["mediapipe_fallback_frames"] == 5
