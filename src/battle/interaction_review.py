@@ -42,6 +42,7 @@ from .schemas import (
     InteractionReviewIndexManifest,
     InteractionReviewPinnedMoment,
     RunManifest,
+    SegmentationReviewTrigger,
     TimeInterval,
 )
 
@@ -280,6 +281,80 @@ def contact_measurement(
     return palm, fingertip, minimum, minimum == 0.0
 
 
+def _mask_iou(left: np.ndarray, right: np.ndarray) -> float:
+    union = np.logical_or(left, right).sum()
+    return float(np.logical_and(left, right).sum() / union) if union else 0.0
+
+
+def segmentation_review_triggers(
+    reference: LoadedSource,
+    control: LoadedSource,
+    hands: LoadedSource,
+    dimensions: tuple[int, int],
+) -> tuple[SegmentationReviewTrigger, ...]:
+    """Emit auditable geometry triggers without deciding target semantics."""
+
+    triggers: list[SegmentationReviewTrigger] = []
+    previous: dict[str, np.ndarray] = {}
+    for frame in range(FRAME_COUNT):
+        for part in TARGETS:
+            current = _mask_for_part(
+                reference.observations[frame], part, reference.run_directory, dimensions
+            )
+            other = _mask_for_part(
+                control.observations[frame], part, control.run_directory, dimensions
+            )
+            if current is None:
+                continue
+            prior = previous.get(part)
+            if prior is not None:
+                temporal_iou = _mask_iou(prior, current)
+                if temporal_iou < 0.5:
+                    triggers.append(
+                        SegmentationReviewTrigger(
+                            analysis_frame_index=frame,
+                            target_id=part,
+                            trigger_type="temporal_iou_lt_0_5",
+                            value=temporal_iou,
+                        )
+                    )
+                ratio = max(prior.sum(), current.sum()) / max(1, min(prior.sum(), current.sum()))
+                if ratio > 2:
+                    triggers.append(
+                        SegmentationReviewTrigger(
+                            analysis_frame_index=frame,
+                            target_id=part,
+                            trigger_type="area_ratio_gt_2",
+                            value=float(ratio),
+                        )
+                    )
+                old_y, old_x = np.nonzero(prior)
+                new_y, new_x = np.nonzero(current)
+                jump = float(np.hypot(new_x.mean() - old_x.mean(), new_y.mean() - old_y.mean()))
+                if jump > 25:
+                    triggers.append(
+                        SegmentationReviewTrigger(
+                            analysis_frame_index=frame,
+                            target_id=part,
+                            trigger_type="centroid_jump_gt_25px",
+                            value=jump,
+                        )
+                    )
+            if other is not None and hands.observations[frame].hands:
+                cross_iou = _mask_iou(current, other)
+                if cross_iou < 0.5:
+                    triggers.append(
+                        SegmentationReviewTrigger(
+                            analysis_frame_index=frame,
+                            target_id=part,
+                            trigger_type="cross_method_iou_lt_0_5_during_hand_presence",
+                            value=cross_iou,
+                        )
+                    )
+            previous[part] = current
+    return tuple(triggers)
+
+
 def _spatial_lanes(
     observations: dict[int, FrameObservations], dimensions: tuple[int, int]
 ) -> dict[tuple[int, int], str]:
@@ -516,6 +591,7 @@ def deterministic_pinned_moments(
     contacts: tuple[InteractionContactDiagnostic, ...],
     events: tuple[InteractionContactEvent, ...],
     kineo: LoadedSource,
+    segmentation_triggers: tuple[SegmentationReviewTrigger, ...] = (),
 ) -> tuple[InteractionReviewPinnedMoment, ...]:
     """Select stable review bookmarks, with frame number as every tie-breaker."""
     categories: dict[int, list[str]] = {
@@ -601,6 +677,17 @@ def deterministic_pinned_moments(
         categories.setdefault(frame, []).append("late_occlusion_or_missing")
         rationale.setdefault(frame, []).append(
             "Latest second-half one-method-only hand detection; inspect for occlusion."
+        )
+    if segmentation_triggers:
+        selected = min(
+            segmentation_triggers,
+            key=lambda item: (item.analysis_frame_index, item.target_id, item.trigger_type),
+        )
+        categories.setdefault(selected.analysis_frame_index, []).append(
+            "segmentation_review_trigger"
+        )
+        rationale.setdefault(selected.analysis_frame_index, []).append(
+            f"First automatic {selected.trigger_type} trigger for {selected.target_id}."
         )
     return tuple(
         InteractionReviewPinnedMoment(
@@ -879,6 +966,10 @@ when person/occlusion context is useful. Kineo is a separate body-context panel 
 
 - **Reference parts:** `{index.reference_segmentation_method}` four-part masks. This is a
   comparison-control/reference layer, not ground truth or validated physical attachment.
+- **Segmentation triggers:** {len(index.segmentation_review_triggers)} automatic geometry
+  triggers compare adjacent corrected-SAM3 masks and the reviewed-seed SAM2 control. They use
+  temporal IoU <0.5, area ratio >2, centroid jump >25 px, or cross-method IoU <0.5 while a
+  stabilized hand is present; none decides target semantics.
 - **Stabilized WiLoR:** the default layer preserves raw WiLoR gaps and records a separate
   raw/smoothed/fallback/missing provenance artifact. MediaPipe is used only for
   confidence/shape/workspace-gated gaps of at most five frames.
@@ -957,7 +1048,14 @@ def build_interaction_review(
         ),
         repository_root,
     )
-    _validate_shared_sources([*sources.values(), reference])
+    control = _validate_run(
+        SourceSpec(
+            "reviewed_seed_sam2_control",
+            REFERENCE_SEGMENTATIONS["reviewed_seed_sam2_control"],
+        ),
+        repository_root,
+    )
+    _validate_shared_sources([*sources.values(), reference, control])
     if tuple(item.label for item in reference.observations[0].objects) != TARGETS:
         raise ValueError("reference segmentation must preserve the four-part target order")
     # The corrected SAM3 reference preserves external masks but not a duplicated bounded
@@ -972,13 +1070,18 @@ def build_interaction_review(
         )
     contacts, events = _contacts(sources["stabilized_wilor"], reference, dimensions)
     disagreements = _disagreements(sources["mediapipe"], sources["wilor"], dimensions)
-    moments = deterministic_pinned_moments(disagreements, contacts, events, sources["kineo"])
+    triggers = segmentation_review_triggers(
+        reference, control, sources["stabilized_wilor"], dimensions
+    )
+    moments = deterministic_pinned_moments(
+        disagreements, contacts, events, sources["kineo"], triggers
+    )
     rrd_path, index_path, guide_path, sheet_path = output_paths(repository_root, output_root)
     rrd_path.parent.mkdir(parents=True, exist_ok=True)
     artifacts = [
         _file_fingerprint(contract.path, repository_root),
         _file_fingerprint(video_path, repository_root),
-        *[item for source in [*sources.values(), reference] for item in source.artifacts],
+        *[item for source in [*sources.values(), reference, control] for item in source.artifacts],
     ]
     unique_artifacts = tuple({(item.uri, item.sha256): item for item in artifacts}.values())
     source_fingerprint = getattr(_metadata(reference.manifest), "source_fingerprint")
@@ -1043,6 +1146,7 @@ def build_interaction_review(
         contact_diagnostics=contacts,
         hand_disagreements=disagreements,
         contact_events=events,
+        segmentation_review_triggers=triggers,
         pinned_moments=moments,
     )
     rr.init("battle-interaction-review", recording_id=COMPARISON_ID)
@@ -1054,6 +1158,10 @@ def build_interaction_review(
         rr.TextDocument(index.model_dump_json(indent=2), media_type="application/json"),
         static=True,
     )
+    trigger_counts = {
+        frame: sum(item.analysis_frame_index == frame for item in triggers)
+        for frame in range(FRAME_COUNT)
+    }
     drop_path = sources["drop_dtw"].run_directory / "alignment.json"
     drop_text, drop_cost = _drop_dtw_text(drop_path)
     drop_bookmarks = _drop_dtw_bookmarks(drop_path)
@@ -1068,9 +1176,7 @@ def build_interaction_review(
     )
     rr.log(
         f"{root}/metadata/agent_substeps",
-        rr.TextDocument(
-            fine_contract.model_dump_json(indent=2), media_type="application/json"
-        ),
+        rr.TextDocument(fine_contract.model_dump_json(indent=2), media_type="application/json"),
         static=True,
     )
     rr.log(
@@ -1145,6 +1251,10 @@ def build_interaction_review(
             color=METHOD_COLORS["kineo_nlf"],
         )
         _log_diagnostics_frame(root, frame, contacts, disagreements)
+        rr.log(
+            f"{root}/diagnostics/segmentation_review_trigger/count",
+            rr.Scalars([trigger_counts[frame]]),
+        )
         if (action := drop_bookmarks.get(frame)) is not None:
             rr.log(
                 f"{root}/metadata/drop_dtw_bookmarks",
@@ -1154,8 +1264,7 @@ def build_interaction_review(
         rr.log(
             f"{root}/metadata/agent_substeps/timeline",
             rr.TextLog(
-                f"{agent_substep.substep_id}: {agent_substep.label} "
-                "(agent_authored_visual_review)"
+                f"{agent_substep.substep_id}: {agent_substep.label} (agent_authored_visual_review)"
             ),
         )
         if frame == 0:

@@ -2292,6 +2292,20 @@ class InteractionReviewPinnedMoment(VersionedModel):
     disposition: Literal["pending"] = "pending"
 
 
+class SegmentationReviewTrigger(VersionedModel):
+    """A geometry review trigger, not a semantic correctness decision."""
+
+    analysis_frame_index: int = Field(ge=0, lt=600)
+    target_id: Literal["chassis", "interior", "rear_body", "cabin"]
+    trigger_type: Literal[
+        "temporal_iou_lt_0_5",
+        "area_ratio_gt_2",
+        "centroid_jump_gt_25px",
+        "cross_method_iou_lt_0_5_during_hand_presence",
+    ]
+    value: float = Field(ge=0)
+
+
 class InteractionReviewIndexManifest(VersionedModel):
     """Complete reproducibility index for the focused interaction review package."""
 
@@ -2313,6 +2327,7 @@ class InteractionReviewIndexManifest(VersionedModel):
     contact_diagnostics: tuple[InteractionContactDiagnostic, ...] = ()
     hand_disagreements: tuple[InteractionHandDisagreement, ...] = ()
     contact_events: tuple[InteractionContactEvent, ...] = ()
+    segmentation_review_triggers: tuple[SegmentationReviewTrigger, ...] = ()
     pinned_moments: tuple[InteractionReviewPinnedMoment, ...] = Field(min_length=3)
     output_rrd: ArtifactFingerprint | None = None
     review_guide: ArtifactFingerprint | None = None
