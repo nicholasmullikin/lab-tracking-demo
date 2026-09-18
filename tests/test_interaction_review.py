@@ -666,6 +666,7 @@ def test_overnight_agent_review_keeps_human_feedback_distinct() -> None:
         "interaction-review-first-minute-v4.agent-review.json",
         "interaction-review-first-minute-v4r2.agent-review.json",
         "interaction-review-first-minute-v4r3.agent-review.json",
+        "interaction-review-first-minute-v4r4.agent-review.json",
     ):
         record = OvernightReviewRecord.model_validate(
             json.loads((Path("docs/qa") / filename).read_text())

@@ -1245,6 +1245,63 @@ interleaves types (round *k* holds the *k*-th strongest episode of every type). 
 applied uniformly to the whole minute. The report ends with a clearly marked GPU follow-up (60 s
 DAM4SAM disagreement) that this CPU-only pass does not run.
 
+`runs/review-metrics-first-minute-v2/` is the rerun against the current v4 index (reference
+`...20260918t001210z` with the frame-1172 agent correction); v1 measured the superseded
+`-v4-local` index. The v2 top episodes move accordingly: the chassis collapse anomaly stays at
+f1089–f1171 (25.2x), the frame-1235 label exchange disappears and the frame-1172 correction now
+registers as the single-frame chassis/interior exchange it is, and a chassis growth event at
+f1172–f1186 marks the correction restoring the label.
+
+### Per-target ensemble review reference (provenance-tracked fallback)
+
+`battle-build-ensemble-reference` assembles a new reference run (`runs/ensemble-reference-
+first-minute-v1/`, ignored) in exactly the observation/mask schema the review builders consume,
+from retained runs only (no model, no GPU):
+
+```bash
+uv run battle-build-ensemble-reference            # --policy, --output-root, --overwrite
+uv run battle-build-interaction-review-v4 --overwrite   # default reference is the ensemble
+uv run battle-build-interaction-review-v4 --overwrite \
+  --reference runs/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260918t001210z
+```
+
+The checked-in typed policy `configs/ensemble_reference/first_minute_v1.json`
+(`EnsembleReferencePolicy`, tagged `agent_authored_assumption`) decides every frame x target:
+
+- **Default** is the corrected SAM3 reference. Masks are copied whole from exactly one source;
+  nothing is blended, morphed or interpolated (`no_blend` is a schema literal).
+- **Fallback** to the DAM4SAM 60 s arm happens for one target only inside explicit frame
+  intervals (chassis `[1055,1172)`, the disagreement episode), only when a rule fires on the
+  SAM3 mask (area below 0.5x the rolling median of accepted areas, IoU with another SAM3 target
+  above 0.3, discontinuity with the last sane accepted mask, or a missing mask), and only when
+  the DAM4SAM mask passes sanity (area within 0.4–2.0x the rolling median, and IoU >= 0.5 with
+  the last sane accepted mask or a centroid jump within 30 px + 5 px per elapsed frame, capped
+  at 90 px). Rules are evaluated everywhere for diagnostics but only act inside the intervals;
+  outside them the human/agent-reviewed SAM3 masks stay authoritative.
+- **Hidden** intervals are agent-authored visibility labels written as explicit empty masks
+  (`hidden_agent_label`): interior `[1024,1172)`, re-verified on zoomed source crops before
+  adoption and pending human confirmation. Hidden frames carry no object row, so consumers see
+  `missing_mask`/`invalid_mask`, never a guessed interior.
+- Every frame x target record (`ensemble_provenance.json`) carries `provenance`
+  (`sam3_corrected | dam4sam_fallback | hidden_agent_label | missing`), the rules that fired,
+  sanity/eligibility flags and the measured areas/IoU/centroid jump; every substitution and
+  every **declined** attempt is listed with its rationale. `segmentation_episode_check.json`
+  reruns the review-metrics swap/crossing/area-anomaly detectors on the SAM3 reference and on
+  the ensemble; `sheets/before_after_1000_1250.png` shows both side by side.
+
+First run: chassis 111 DAM4SAM frames over `[1055,1056)` and `[1062,1172)`, 6 declined at
+1056–1061 (DAM4SAM's chassis is equally undersized there); interior 148 hidden frames; rear_body
+and cabin untouched. The 1089–1173 swap/collapse episodes vanish on the ensemble with no new
+episode elsewhere (34 -> 29 episodes). The v4 builder now defaults to the ensemble, records
+`reference_segmentation_method: ensemble_reference`, computes `contact_eligible` **per target**
+(chassis `[0,1020)`, `[1055,1056)`, `[1062,1200)`; interior `[0,1024)`, `[1172,1200)`;
+rear_body/cabin `[0,1200)`; the late `[1200,1800)` boundary is unchanged), and logs a toggleable
+provenance layer: `diagnostics/reference_provenance/<part>` scalar series (0 missing, 1 sam3,
+2 dam4sam, 3 hidden) in their own time panel, `diagnostics/segmentation_contact_eligible/<part>`,
+and `primary/reference_provenance_overlay/<part>` magenta boxes around every DAM4SAM-sourced
+mask in the primary view. Claim boundary: the ensemble is a review reference; cross-method
+fallback is not accuracy and neither source run is ground truth.
+
 ### Four-part segmentation comparison
 
 `configs/four_part_segmentation_comparison.json` is the checked-in fair-comparison

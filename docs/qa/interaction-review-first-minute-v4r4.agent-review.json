@@ -1,0 +1,61 @@
+{
+  "schema_version": "1.0",
+  "manifest_kind": "overnight_interaction_review_record",
+  "provenance_tag": "agent_authored_visual_review",
+  "human_feedback": [
+    "Around frames 1100 - 1200 we swap identities of chassis and interior as a hand sweeps across the view of the part",
+    "The WiLoR camera-relative non-metric 3D view shows '2D visualizers require a pinhole ancestor to be shown in a 3D view' errors for contexts/wilor_camera_relative_non_metric_3d/hands/{boxes,landmarks,skeletons}"
+  ],
+  "agent_findings": [
+    {
+      "analysis_frame_index": 1024,
+      "subject": "hidden interior label [1024,1172) adopted in the ensemble policy",
+      "finding": "Re-verified on freshly rendered zoomed source crops (1016-1034 every 2 frames at 3x, 1020-1028 every frame at 5x with gamma 2.2, SAM3 chassis/interior and DAM4SAM chassis outlines): the matte interior block protrudes below the chassis plate at 1016-1022 (a distinct dark lump inside the tracked interior mask, the same surface the human accepted at 900); at 1023 it is faint; from 1024 the region under the tracked interior mask is grey plate/finger with no separate block, and the SAM3 interior mask thereafter grows onto the chassis's own lower body (area 1119 px at 1020 -> 5245 px at 1059 -> ~11k px 1128-1164 while the chassis mask collapses). The onset is ambiguous by about two frames (1022-1024). DAM4SAM's interior stream is not a substitute: it merged onto the chassis body over [707,1072) and never separates the block. The policy therefore writes explicit empty interior masks over [1024,1172) tagged hidden_agent_label; the SAM3 agent-selected correction restores the interior at 1172. This is an agent visibility label pending human confirmation, not tracker output.",
+      "evidence_kind": "generated_contact_sheet",
+      "disposition": "agent_authored_visual_review"
+    },
+    {
+      "analysis_frame_index": 1055,
+      "subject": "chassis DAM4SAM fallback inside [1055,1172)",
+      "finding": "runs/ensemble-reference-first-minute-v1 (policy configs/ensemble_reference/first_minute_v1.json): 111 chassis frames copied whole from DAM4SAM over [1055,1056) and [1062,1172); 6 frames declined at 1056-1061 because the DAM4SAM chassis (1807-2595 px) fell below 0.4x the rolling median (~6.7k px) - both trackers are undersized there and the SAM3 mask is kept but flagged unsane. Rules that fired: area below 0.5x the rolling median on every substituted frame, plus discontinuity with the last sane accepted mask from 1063 (the SAM3 chassis label sits on the yellow body piece 1074-1088 and 1089-1171). Before/after sheets: sheets/before_after_1000_1250.png in the run. Visual check at 1060/1095/1160: DAM4SAM outlines the black chassis assembly where SAM3's interior label had leaked and its chassis label sat on the yellow body.",
+      "evidence_kind": "generated_contact_sheet",
+      "disposition": "agent_authored_visual_review"
+    },
+    {
+      "analysis_frame_index": 1089,
+      "subject": "review-metrics swap and area-anomaly detectors on the ensemble",
+      "finding": "segmentation_episode_check.json: on the corrected SAM3 reference the check window 1089-1173 held the chassis collapse anomaly f1089-1171 (25.2x), chassis/interior identity swaps f1091-1164 and f1172, and the interior enlargement f1049-1171; on the ensemble no swap, crossing or area-anomaly episode overlaps the window and no episode appears that was absent before (34 -> 29 episodes overall). The only remaining chassis anomaly near the window is a 1.95x collapse over f1050-1061, exactly the undersized frames the policy declines to substitute; those frames are not contact-eligible.",
+      "evidence_kind": "derived_metric",
+      "disposition": "agent_authored_visual_review"
+    },
+    {
+      "analysis_frame_index": 0,
+      "subject": "WiLoR 3D context view errors",
+      "finding": "_log_hands logged Boxes2D/Points2D/LineStrips2D under the Spatial3DView root alongside the Points3D/LineStrips3D pose. Both review builders now pass include_2d=False for the 3D root, the 3D view sweeps only camera_relative_3d/**, and rerun rrd print on the rebuilt v4 and 20 s v3 recordings shows no 2D archetype under the 3D root and no 3D archetype under the 2D roots (test_exported_rrd_spatial_roots_do_not_mix_2d_and_3d_archetypes).",
+      "evidence_kind": "derived_metric",
+      "disposition": "agent_authored_visual_review"
+    }
+  ],
+  "correction_candidates": [
+    {
+      "analysis_frame_index": 1024,
+      "target_id": "interior",
+      "source_method": "ensemble_reference",
+      "provenance": "agent_authored_visual_review",
+      "state": "agent_proposed",
+      "rationale_fingerprint": "configs/ensemble_reference/first_minute_v1.json#targets.interior.hidden_intervals[0]",
+      "semantic_claim": "Explicit empty interior mask over [1024,1172) because the block is hidden by the chassis rotation; a human should confirm the onset (1022-1024) and that no interior surface is visible before 1172."
+    },
+    {
+      "analysis_frame_index": 1055,
+      "target_id": "chassis",
+      "source_method": "ensemble_reference",
+      "provenance": "agent_authored_visual_review",
+      "state": "agent_proposed",
+      "rationale_fingerprint": "runs/ensemble-reference-first-minute-v1/ensemble_provenance.json#substitutions",
+      "semantic_claim": "DAM4SAM chassis masks copied whole over [1055,1056) and [1062,1172) restore a chassis label on the black assembly; cross-method fallback, not accuracy, and the ~10-11k px masks from 1085 include the whole rotated assembly."
+    }
+  ],
+  "human_decisions_pending": true,
+  "ground_truth_accuracy_claim": false
+}

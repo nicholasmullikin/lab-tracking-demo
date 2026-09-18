@@ -1544,3 +1544,87 @@ this comparison makes no accuracy or cross-method identity claim.
   and the checked-in config. They need no real data or models.
 - **TODO (GPU, not run):** DAM4SAM over the 60 s window and its cross-method disagreement against
   corrected SAM3 as an additional swap/leakage trigger.
+
+### Sep 17–18: metrics branch merged, 3D-view defect, per-target ensemble reference
+
+- **Claim boundary first.** The ensemble reference is a *review* reference assembled from
+  retained runs; cross-method fallback is not accuracy, neither the corrected SAM3 run nor the
+  DAM4SAM arm is ground truth, and the hidden interior interval is an agent visibility label
+  pending human confirmation (`docs/qa/interaction-review-first-minute-v4r4.agent-review.json`).
+  No model ran and no viewer was opened; every step was CPU-only.
+- **Metrics branch merged** (`review-metrics-first-minute`, d0fb900) with a non-fast-forward
+  merge commit; the three expected conflicts (`pyproject.toml`, README, this ledger) were
+  resolved keeping both sides. Follow-up fixes: the module hardcoded the 20 s SAM3 reference and
+  rejected the v5 layer's `low_confidence_continuation` state; it now reads the reference run
+  from the v4 index (accepting `baseline_sam3` or `ensemble_reference`), describes contact
+  eligibility from the index's validity intervals, and defaults to
+  `runs/review-metrics-first-minute-v2/`. v2 against the current index (reference 001210z):
+  198 episodes (v1: 220 on the superseded `-v4-local` index). Top of the interleaved rank: chassis
+  growth f1172–1186 (40.2x, the correction restoring the label), chassis collapse anomaly
+  f1089–1171 (25.2x), chassis appearance drift f1089–1171 (4.6x), interior growth f1220–1234,
+  chassis/interior identity swap at f1172 (2.1x, the correction's single-frame exchange), then
+  the same contact/hand detectors as v1; the v1 frame-1235 exchange no longer exists because the
+  1172 correction removed the swap it undid. Part-area medians moved by <1.2 %.
+- **3D-view defect (user screenshot).** The "WiLoR camera-relative non-metric 3D" view reported
+  "2D visualizers require a pinhole ancestor" for `.../hands/{boxes,landmarks,skeletons}`:
+  `_log_hands` logged the 2D archetypes under the Spatial3DView root together with the 3D pose.
+  Hand logging gained `include_2d`; both builders pass `include_2d=False` for the 3D root, the
+  3D view sweeps only `camera_relative_3d/**`, and two tests (a fixture RRD plus `rerun rrd
+  print` of the built v4 and 20 s v3 recordings) assert no 2D archetype under the 3D root and no
+  3D archetype under any 2D root. Both packages were rebuilt (v3 in place, v4 with
+  `--overwrite`).
+- **Hidden interior verification.** Before adopting the label, zoomed source crops were
+  re-rendered (1016–1034 every 2 frames at 3x; 1020–1028 every frame at 5x, gamma 2.2, with
+  SAM3 chassis/interior and DAM4SAM chassis outlines). The matte block protrudes below the
+  chassis plate through 1022, is faint at 1023, and from 1024 the region under the tracked
+  interior mask is plate/finger with no separate block while the mask grows onto the chassis
+  body (1,119 px at 1020, 5,245 at 1059, ~11k over 1128–1164). Onset ambiguity about two frames.
+  DAM4SAM's interior stream merged onto the chassis over [707,1072) and is not a substitute.
+  Adopted: interior `hidden_agent_label` over `[1024,1172)` as explicit empty masks.
+- **Ensemble builder.** `battle-build-ensemble-reference` + typed policy
+  `configs/ensemble_reference/first_minute_v1.json` (`EnsembleReferencePolicy`,
+  `agent_authored_assumption`): default SAM3; per-target fallback only inside explicit intervals
+  (chassis `[1055,1172)` = the disagreement episode) when a rule fires (area < 0.5x rolling
+  median of sane accepted areas over 300 frames, IoU with another SAM3 target > 0.3,
+  discontinuity with the last sane accepted mask, or primary missing) and the DAM4SAM mask passes
+  sanity (area within 0.4–2.0x the rolling median; IoU >= 0.5 with the last sane accepted mask or
+  centroid jump within 30 px + 5 px/frame, capped at 90 px). Rules run everywhere for
+  diagnostics (out-of-interval firings: chassis 174, interior 317, rear_body 174, cabin 0 –
+  mostly legitimate occlusion shrinkage, which is why they do not act outside the intervals).
+  Masks are copied whole; hidden frames are zero PNGs referenced from the sidecar and carry no
+  object row. Outputs: `manifest.json` (`RunManifest.ensemble_reference` metadata),
+  `observations.jsonl`, `masks/`, `ensemble_provenance.json` (7,200 frame x target records,
+  substitutions, declined attempts, per-target summaries), `segmentation_episode_check.json`,
+  `sheets/before_after_1000_1250.png`.
+- **Result.** Chassis: 111 DAM4SAM frames over `[1055,1056)` and `[1062,1172)`; declined
+  1056–1061 (DAM4SAM chassis 1,807–2,595 px < 0.4 x ~6.7k; SAM3 kept, flagged unsane). One
+  policy iteration: the first pass returned to the SAM3 chassis at 1086–1088 although it sat on
+  the yellow body piece (IoU 0.31 with the accepted mask just missed a separate 0.3
+  discontinuity threshold), so the discontinuity rule now reuses the sanity continuity test
+  (IoU < 0.5 and jump beyond the allowance). Interior: 148 hidden frames; rear_body and cabin
+  1,800 SAM3 frames each. Review-metrics swap/crossing/area detectors on the ensemble: the
+  check window 1089–1173 goes from four episodes (chassis collapse 25.2x, swaps f1091–1164 and
+  f1172, interior enlargement f1049–1171) to none, with no new episode anywhere (34 -> 29). The
+  remaining chassis collapse anomaly f1050–1061 (1.95x) is exactly the declined/undersized run.
+  The DAM4SAM chassis grows to ~10–11k px from 1085 as the assembly rotates; whether the attached
+  body counts as chassis is a semantic question left to the human.
+- **v4 on the ensemble.** `battle-build-interaction-review-v4` defaults to the ensemble
+  (`--reference <run>` keeps a SAM3-only build with the old frame-level eligibility), verifies the
+  policy/primary/fallback/sidecar fingerprints, records `reference_segmentation_method:
+  ensemble_reference` plus provenance counts and the sidecar fingerprint, computes
+  `contact_eligible` **per target** from the sidecar (chassis `[0,1020)`, `[1055,1056)`,
+  `[1062,1200)`; interior `[0,1024)`, `[1172,1200)`; rear_body/cabin `[0,1200)`; late boundary
+  1200 unchanged; chassis `[1020,1055)` stays ineligible because both trackers are undersized
+  there), writes per-target `segmentation_validity_intervals` with the policy rationales, and
+  logs the provenance layer (`diagnostics/reference_provenance/<part>` series in a new time
+  panel, `diagnostics/segmentation_contact_eligible/<part>`, and magenta
+  `primary/reference_provenance_overlay/<part>` boxes on DAM4SAM frames; per-frame navigation
+  lists each part's provenance). Contact rows: 7,598 observed, 5,178 `invalid_mask`, 1,624
+  `missing_hand`; 168 events. `rerun rrd print` completed on the rebuilt RRD (14 blueprint views).
+- **Tests.** 297 passing: policy typing and interval-overlap rejection, primary standing when no
+  rule fires, area rule inside vs. diagnostic outside, sanity declines (area and continuity),
+  discontinuity catching a label jump, other-target overlap and missing-primary rules, hidden
+  explicit empty masks, whole-mask copy (no blend) with a schema guard against out-of-interval
+  fallback, ineligible/late intervals, summary + validity rationales, provenance RRD entities,
+  per-part contact eligibility, the spatial-root archetype checks, and an integration check of
+  the built ensemble run.
