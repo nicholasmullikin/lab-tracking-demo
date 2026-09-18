@@ -2066,7 +2066,7 @@ class FourPartTargetInitialization(VersionedModel):
 
 
 class FourPartSegmentationRunMetadata(VersionedModel):
-    """Provenance for one exact 20-second arm in the four-part comparison."""
+    """Provenance for one exact 20 s (or 60 s extension) arm in the four-part comparison."""
 
     method_arm: Literal[
         "grounding_dino_sam2_open_vocabulary",
@@ -2075,7 +2075,7 @@ class FourPartSegmentationRunMetadata(VersionedModel):
         "dam4sam",
     ]
     requested_analysis_frame_range: FrameRange
-    requested_seconds: Literal[20.0]
+    requested_seconds: Literal[20.0, 60.0]
     target_order: tuple[
         Literal["chassis"], Literal["interior"], Literal["rear_body"], Literal["cabin"]
     ]
@@ -2097,10 +2097,12 @@ class FourPartSegmentationRunMetadata(VersionedModel):
     def require_exact_ordered_comparison_contract(self) -> FourPartSegmentationRunMetadata:
         if (
             self.requested_analysis_frame_range.start_frame != 0
-            or self.requested_analysis_frame_range.frame_count != 600
+            or self.requested_analysis_frame_range.frame_count != round(self.requested_seconds * 30)
             or self.target_order != ("chassis", "interior", "rear_body", "cabin")
         ):
-            raise ValueError("four-part segmentation arms require ordered frames [0, 600)")
+            raise ValueError(
+                "four-part segmentation arms require ordered frames [0, 600) or [0, 1800)"
+            )
         received = tuple(item.target_id for item in self.target_initializations)
         if received != self.target_order:
             raise ValueError("initialization records must cover every ordered target")

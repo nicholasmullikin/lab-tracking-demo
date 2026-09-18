@@ -316,8 +316,8 @@ def main() -> None:
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
         contract = json.loads(args.contract.read_text(encoding="utf-8"))
-        if tuple(contract["targets"]) != TARGETS or args.frame_count != 600:
-            raise ValueError("worker only supports the fixed 600-frame ordered-target contract")
+        if tuple(contract["targets"]) != TARGETS or args.frame_count not in (600, 1800):
+            raise ValueError("worker only supports the 600- or 1800-frame ordered-target contract")
         frames = _extract_frames(
             args.video, args.run_directory / "native" / "frames", args.frame_count
         )

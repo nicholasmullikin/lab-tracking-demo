@@ -102,7 +102,7 @@ def _load_observations(path: Path) -> tuple[FrameObservations, ...]:
     return tuple(output)
 
 
-def _bounded_video(proxy: Path, destination: Path) -> None:
+def _bounded_video(proxy: Path, destination: Path, frame_count: int = FRAME_COUNT) -> None:
     subprocess.run(
         [
             "ffmpeg",
@@ -113,7 +113,7 @@ def _bounded_video(proxy: Path, destination: Path) -> None:
             "-i",
             str(proxy),
             "-frames:v",
-            str(FRAME_COUNT),
+            str(frame_count),
             "-an",
             "-c:v",
             "libx264",
@@ -137,7 +137,8 @@ def _contact_sheet(
         for observation in observations
         if len(observation.objects) < len(TARGETS)
     ]
-    selected = sorted({0, FRAME_COUNT // 2, FRAME_COUNT - 1, *losses[:3]})
+    frame_count = len(observations)
+    selected = sorted({0, frame_count // 2, frame_count - 1, *losses[:3]})
     capture = cv2.VideoCapture(str(video))
     panels: list[Any] = []
     colors = {
@@ -246,11 +247,15 @@ def run(args: argparse.Namespace) -> Path:
         ).read_text()
     )
     proxy = config.proxies[0]
+    frame_count = int(args.frame_count)
+    if frame_count not in (FRAME_COUNT, 3 * FRAME_COUNT):
+        raise ValueError("four-part arms run over exactly 600 (20 s) or 1800 (60 s) frames")
+    requested_seconds = frame_count / ANALYSIS_FPS
     run_id = args.run_id or f"{args.method}-{datetime.now(UTC):%Y%m%dt%H%M%Sz}"
     run_directory = repository_root / args.output_root / run_id
     run_directory.mkdir(parents=True, exist_ok=False)
     input_video = run_directory / "input.mp4"
-    _bounded_video(contract.proxy_path, input_video)
+    _bounded_video(contract.proxy_path, input_video, frame_count)
     worker_contract = seed_manifest(contract, repository_root)
     worker_contract["open_vocabulary_prompts"] = contract.open_vocabulary_prompts
     for seed in worker_contract["reviewed_frame_zero_seeds"]:
@@ -274,7 +279,7 @@ def run(args: argparse.Namespace) -> Path:
         "--analysis-fps",
         str(ANALYSIS_FPS),
         "--frame-count",
-        str(FRAME_COUNT),
+        str(frame_count),
         "--sam2-root",
         str(spec["root"] / "sam2" if args.method == "samurai" else spec["root"]),
         "--sam2-config",
@@ -295,16 +300,16 @@ def run(args: argparse.Namespace) -> Path:
     if not observations_path.is_file():
         raise RuntimeError(result.get("reason", f"worker exited {completed.returncode}"))
     observations = _load_observations(observations_path)
-    if len(observations) != FRAME_COUNT or [
+    if len(observations) != frame_count or [
         item.analysis_frame_index for item in observations
-    ] != list(range(FRAME_COUNT)):
-        raise RuntimeError("worker did not write exactly 600 ordered observations")
+    ] != list(range(frame_count)):
+        raise RuntimeError(f"worker did not write exactly {frame_count} ordered observations")
     contact_sheet = run_directory / "contact_sheet.png"
     _contact_sheet(input_video, observations, contact_sheet)
     metadata = FourPartSegmentationRunMetadata(
         method_arm=args.method,
-        requested_analysis_frame_range=FrameRange(start_frame=0, end_frame_exclusive=FRAME_COUNT),
-        requested_seconds=20.0,
+        requested_analysis_frame_range=FrameRange(start_frame=0, end_frame_exclusive=frame_count),
+        requested_seconds=requested_seconds,
         target_order=TARGETS,
         source_fingerprint=ArtifactFingerprint(
             uri=proxy.raw_source.raw_uri,
@@ -333,7 +338,7 @@ def run(args: argparse.Namespace) -> Path:
         ),
         runtime_settings={
             "analysis_fps": ANALYSIS_FPS,
-            "frame_count": FRAME_COUNT,
+            "frame_count": frame_count,
             "sam2_config": str(spec["config"]),
             "samurai_mode": args.method == "samurai",
             "initialization": "independent_detection"
@@ -356,10 +361,10 @@ def run(args: argparse.Namespace) -> Path:
     state = MethodState.SUCCEEDED if result["state"] == "succeeded" else MethodState.FAILED
     manifest = RunManifest(
         run_id=run_id,
-        clip=config.clip.model_copy(update={"source_duration_seconds": 20.0}),
+        clip=config.clip.model_copy(update={"source_duration_seconds": requested_seconds}),
         coverage=FullDurationCoverage(
-            source_duration_seconds=20.0,
-            covered_intervals=(TimeInterval(start_seconds=0.0, end_seconds=20.0),),
+            source_duration_seconds=requested_seconds,
+            covered_intervals=(TimeInterval(start_seconds=0.0, end_seconds=requested_seconds),),
         ),
         chunk_policy=ChunkContinuityPolicy(
             overlap_seconds=0.0,
@@ -373,7 +378,7 @@ def run(args: argparse.Namespace) -> Path:
                 stage="objects",
                 state=state,
                 artifact_uri=relative_uri(observations_path, repository_root),
-                measured_on="focused static RGB frames [0,600)",
+                measured_on=f"focused static RGB frames [0,{frame_count})",
             ),
         ),
         observations=observations,
@@ -391,6 +396,13 @@ def main() -> None:
     parser.add_argument("--contract", type=Path, default=DEFAULT_CONTRACT)
     parser.add_argument("--output-root", type=Path, default=Path("runs"))
     parser.add_argument("--run-id")
+    parser.add_argument(
+        "--frame-count",
+        type=int,
+        default=FRAME_COUNT,
+        choices=(FRAME_COUNT, 3 * FRAME_COUNT),
+        help="600 keeps the 20 s comparison contract; 1800 extends the same seeds to 60 s.",
+    )
     print(run(parser.parse_args()))
 
 
