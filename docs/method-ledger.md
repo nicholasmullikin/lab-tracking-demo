@@ -2287,3 +2287,237 @@ this comparison makes no accuracy or cross-method identity claim.
   (the Sep 17 NLF smoke used the same id); the 8-view SfM/BA on 1,800 frames is the part most
   likely to approach the 3600 s box; `background_subtraction`/`moge_scene_reconstruction` are
   kept for the stock stage list and could be dropped from the YAML if the box is tight.
+
+### Sep 18: Track 2 of the overnight multicam pass, cross-view SAM3 with a geometric combiner
+
+- **Claim boundary first.** Every seed on a view other than C10379 was chosen by an agent from
+  geometry (`selected_by: agent`, provenance `geometric_seed_transfer`); no human reviewed a mask
+  on the seven new static views or on e4. The consensus, agreement scores and disagreement
+  episodes below measure how far runs of one tracker disagree with each other across calibrated
+  views; they are not accuracy. The human-corrected C10379 masks stay the reference and were not
+  modified; the `not_contact_eligible` intervals emitted here are *proposals* for human review.
+  GPU work ran only through `scripts/overnight_queue.py` (five queue starts tonight, 16 jobs,
+  16 succeeded, no timeout, no `NVRM`/`Xid` line). CC BY-NC 4.0 applies to the dataset assets.
+- **Seed transfer: the table plane does not work from C10379, so the seeds are triangulated.**
+  The plan lifted the human C10379 frame-0 mask centroids onto the fitted table plane. Rendering
+  frame 0 of all eight views showed why that cannot work here: C10379 (and C10395) sit at table
+  height (`y` = -1 mm and +1 mm in a world whose table plane is `y` ~ 0, normal
+  (-0.17, 0.985, 0.01)) and see the parts at a grazing angle, so a mask centroid a few
+  centimetres above the table sends its ray upward past the plane (the chassis ray hit the plane
+  63 mm from the camera; the interior, held at the face, never does). `battle-multiview-seed-transfer`
+  (new module `multiview_seed_transfer.py`, typed in `multiview_schemas.py`) therefore
+  *triangulates* each part's frame-0 centroid from the two views that carry human frame-0
+  masks, C10379 and the ego e3 run of Sep 16 (`HMC_21110305`, its own pose frame 17640; the two
+  views are 9 pose frames = 0.15 s apart, irrelevant for parts resting on the table): chassis
+  (-79, 66, -84) mm, 74 mm above the table, C10379/e3 reprojection 6.5/2.9 px; rear_body
+  (-28, -8, 44), -6 mm, 9.2/3.3 px; cabin (-172, 6, -296), 30 mm, 0.1/0.0 px; interior
+  (-121, 273, -20), 286 mm above the table, 28/39 px (hand-held and moving between the two
+  clocks). Each part becomes a sphere of the masks' equivalent-circle radius at depth (57, 31,
+  41, 29 mm), projected into every view as two box prompts (margins 0.25 and 0.60) plus
+  background points at the other parts' projected centroids; hands get one box from the 21
+  projected dataset joints with the wrist as a foreground point. Decoding reuses the calibration
+  workspace's isolated image-decoder worker (`batch_decode`, 9 prompts x 4 masks per static
+  view) rather than `decode-batch`, because that tool and the calibration schema deliberately
+  forbid agent-selected frame-0 seeds and only know three view ids; both invariants were kept.
+- **Acceptance.** A candidate passes when its area is within [0.3, 3.0] x the e3 human mask
+  area carried by the squared focal/depth ratio, and either its warp through a table-parallel
+  plane at the part's height into e3 reaches IoU >= 0.25 with the e3 human mask, or the ray
+  through its own centroid passes within 1.5 radii of the triangulated point. The second rule
+  was added after the first pass: for the two low cameras (C10118, C10395) the plane warp is as
+  ill-conditioned as it is for C10379 and every candidate scored IoU 0.10-0.17 while its
+  centroid ray passed 2-11 mm from the triangulated point and its area ratio was 0.8-1.3.
+  Result, all agent decisions, in `runs/multiview-seed-transfer-20260918/<view>/seed_manifest.json`
+  with every rejected alternative: chassis/rear_body/cabin accepted on all 7 new static views
+  (plane-warp IoU 0.45-0.80 and centroid ray 1-11 mm on C10095, C10115, C10119, C10390,
+  C10404; centroid-ray basis on C10118 and C10395); **interior blocked on every view**
+  (`seed_transfer_failed`: its two-clock triangulation is invalid because it is in the hand and
+  moving, so the expected area is off by 20-190x); left hand accepted everywhere (>= 60 % of
+  projected joints inside), right hand below the 0.5 confidence floor at frame 0. Decode 5-6 s
+  per view after a ~4 s model load (queue duration 9-10 s per view), CPU acceptance 3-4 s. Seven
+  views run with three parts each; none skipped.
+- **Runs.** `battle-muggled-smoke --four-part-multiview-first-minute --geometric-seed-manifest`
+  is a new profile: any non-C10379 static view of the all-static config (or e4), analysis frames
+  `[0, 1800)` only, the accepted seeds as `manual_seeds` with `selected_by: agent`, no later
+  corrections, `FourPartMultiviewRunMetadata` in the manifest (seed fingerprints, IoU, blocked
+  targets), the worker's confidence sentinel reworded to say the seed is agent-selected. Seven
+  runs (`runs/muggledsam-sam3-four-part-multiview-first-minute-static-<view>-20260918t05*`),
+  720 px, checkpoints every 300 frames, 3 concepts each. Measures per view: coverage 1800/1800
+  frames with 5,394 masks (3 x 1,798); runtime 117-120 s worker (queue duration 158-163 s with
+  export and QA); time to first usable output 4.0-4.2 s; peak VRAM 2.10 GB on every view;
+  part presence 0.98-1.00, first frame where a part is missing: C10095 chassis 1537 / rear_body
+  1526, C10115 chassis 234 / rear_body 1739, C10390 chassis 1642 / rear_body 1525, C10395
+  chassis 594 / cabin 228, none on C10118, C10119, C10404 (a missing frame is a dropped slot,
+  not a judged failure).
+- **Combiner** (`battle-build-multiview-part-consensus`, `multiview_consensus.py`,
+  `runs/multiview-part-consensus-first-minute/`, 79 s, static views only). Per frame and part
+  the mask centroids (raw px) of every static view with the part are triangulated on the rig
+  (DLT, drop-worst filter at 30 raw px, >= 2 views); a view's error is 0 inside its mask, else
+  the pixel distance to the mask; agreement = share of frames with error <= 40 raw px; an
+  episode is >= 5 consecutive frames over 40 px; it contradicts the majority when the view was
+  dropped from a consensus formed by >= 2 other views. Consensus exists on 1800/1800 frames for
+  chassis (mean 6.45 views), rear_body (7.07) and cabin (7.14), never for interior (blocked
+  everywhere but C10379). Agreement: C10379 0.88 / 0.93 / 1.00 (chassis / rear_body / cabin);
+  C10095 0.96 / 0.92 / 1.00; C10115 0.98 / 0.97 / 1.00; C10118 0.99 / 0.92 / 1.00; C10119
+  0.99 / 0.94 / 1.00; C10390 0.87 / 0.91 / 0.98; C10395 0.73 / 0.81 / 0.73 (the other
+  grazing camera; 30 of the 83 episodes are its); C10404 0.99 / 0.94 / 1.00. **C10379 is
+  contradicted by the majority** on chassis `[585,604)`, `[643,658)`, `[665,689)`, `[697,702)`
+  (inside the human-reported 573-722 failure), `[1089,1163)` and `[1167,1172)` (the human-reported
+  1020-1172 chassis/interior swap, ending exactly at the agent correction frame 1172), and
+  `[1464,1471)`; on rear_body `[1525,1530)`, `[1677,1751)`, `[1759,1781)`, `[1786,1800)` (the
+  retained late-degradation note: the rear-body label stays on the table piece). The
+  human-reported 279-408 window is *not* contradicted: the other views agree with C10379 there,
+  so whatever the human saw in that window is not a centroid displacement the static cameras
+  can resolve. Thirteen typed `multiview_disagreement` proposals (`not_contact_eligible`,
+  `applied: false`) sit in the manifest; nothing was substituted. Dataset-wrist anchor: the
+  shipped per-view 2D triangulated at one pose frame recovers the shipped 3D to median 0.0004
+  mm (p95 0.0004, 656 points, rig check); with every view read on its own clock rule the median
+  is 2.9 mm, p95 13 mm, max 350 mm, which is hand motion over the up-to-4-pose-frame (67 ms)
+  inter-camera spread, not rig error, and is the size of the clock-skew effect the mask consensus
+  lives with.
+- **Review surfaces.** (a) `battle-build-multiview-static-comparison` (`multiview_review.py`)
+  writes `runs/multiview-static-comparison-first-minute/multiview_static_comparison.rrd`: eight
+  2D views (one per static proxy, part masks as RGBA cut-outs, the consensus point reprojected
+  as a marker labelled with that view's pixel error), the world-mm 3D view with consensus
+  centroids, dataset hands, all eight frusta and, when the Track 5 run exists, the hull voxels
+  at 1 fps and hull projections as a toggleable overlay per view, a per-part time panel of
+  every view's error, and the episode document. 282 MB with masks on every frame (43 s);
+  rebuilt with `--mask-every 2`. (b) v4 layer `assembly101_multiview` (on by default, gated on
+  the consensus run existing): consensus centroids in the existing `contexts/assembly101_world_mm_3d`
+  view, `diagnostics/multiview/<part>/{views_used,c10379_error_px}` on a new time panel, the
+  episode document as a static tab, per-frame consensus lines and active episodes in the
+  navigation document, `InteractionReviewIndexManifest.multiview_consensus` and coverage keys;
+  rebuilt with `--overwrite` (23.5 s, 67.4 MB). No viewer opened.
+- **Tests.** `tests/test_multiview_pass.py`: plane lift/warp round trip on the synthetic rig,
+  behind-camera projection, box clamping, decode-request normalisation, seed status validators,
+  the new run range guard, ordered-seed metadata validators, episode/majority/merge logic on a
+  fixture, mask distance and centroid; `real_data`: every seed manifest is agent-authored with
+  verified mask fingerprints and in-band area ratios (or skipped with a reason), every multiview
+  run declares agent seeds and the first minute, the consensus has >= 6 static sources and a
+  sub-0.01 mm wrist anchor, and the v4 RRD carries the multiview entities. 403 default-tier
+  tests pass (+9), `real_data` 34.
+- **Open.** Interior is unseeded on every new view; a same-clock second human view, or seeding
+  at the first frame the interior rests on the table, would fix it. The ego pose gate used by
+  Track 6 is a data-consistency check (shipped 2D vs our projection), not a video check, and
+  passes on all 1800 frames.
+
+### Sep 18: Track 5 of the overnight multicam pass, per-part visual hulls from eight silhouettes
+
+- **Claim boundary first.** A visual hull is the intersection of the views' silhouette cones. It
+  is an upper bound on the object's volume only when every silhouette is a superset of the
+  object; with SAM3 masks that miss a part's occluded half, the intersection is *over-carved*
+  and the hull shrinks or collapses. Hull counts, centroids, hull-vs-mask IoU and the
+  `hull_disagreement` episodes are therefore geometry-only comparison evidence and never a
+  reconstruction or accuracy claim. Nothing is substituted into any reference. CPU only; no
+  model ran; no viewer opened. CC BY-NC 4.0 applies.
+- **Builder** (`battle-build-visual-hull`, `multiview_visual_hull.py`,
+  `runs/multiview-visual-hull-first-minute/`). A 5 mm axis-aligned world grid over the dataset
+  hand joints (confidence >= 0.5) of the minute plus 150 mm, cut at the fitted table plane:
+  140 x 133 x 149 cells from (-505, -210, -380) mm, 2.02 M of 2.77 M cells above the plane. Every static
+  camera is constant, so each voxel's proxy pixel in each of the eight views is computed once
+  (distortion on, out-of-frame and behind-camera voxels marked). Per frame and part the grid is
+  carved by the static views that have a mask for the part and are not inside an active
+  `multiview_disagreement` episode for it (>= 2 views); the survivors give the voxel count,
+  centroid, bounding box and height above the table (`per_frame.jsonl`), the occupied indices at
+  1 fps (`hull_voxels_1fps.npz`, `<target>/<frame:06d>` -> (N, 3) int16; centre = origin +
+  (index + 0.5) x 5 mm), and a `hull_projection` mask per view (voxel centres rasterised, then
+  closed and dilated by the voxel footprint f x 5 mm / depth) compared with the view's own SAM3
+  mask: IoU, mask/hull area ratio, "mask larger than hull" (> 1.25 x). Hull projection PNGs are
+  kept at 1 fps under `hull_projection_masks/<view>/`; the per-frame series are in
+  `hull_series.npz`. Runtime 184 s for 1,800 frames x 3 parts x 8 views, one frame in memory
+  at a time.
+- **Measures.** Hull exists (>= 2 views, > 0 voxels) on 1514 / 1496 / 1592 frames for chassis /
+  rear_body / cabin (median 8 views); median voxel count 843 / 214 / 440 (p10 98 / 86 / 29, p90
+  2771 / 250 / 1741), i.e. 105 / 27 / 55 cm3 at 0.125 cm3 per voxel; the frame-0 cabin hull
+  centroid (-167, 12, -304) mm sits 8 mm from the triangulated seed centroid. Hull-vs-mask
+  median IoU per view: chassis 0.30-0.56 (C10395 0.30, C10118 0.37, the rest 0.45-0.56),
+  rear_body 0.37-0.80 (C10115 0.80, C10395 0.37), cabin 0.15-0.68 (C10395 0.15, C10390 0.68);
+  the median mask/hull area ratio is 1.1-2.9 and the "mask larger than hull" fraction 0.26-0.99
+  in every view, which is the over-carving bias above, not a per-view verdict. Around the
+  human-reported C10379 failures: chassis `[573,722)` median C10379 hull IoU 0.11 (hull present
+  on 149/149 frames, median 504 voxels) and `[1020,1172)` median IoU 0.00 (152/152 frames,
+  1186 voxels) against 0.46 in `[279,408)`; rear_body 0.41-0.47 in all three windows; cabin
+  `[279,408)` collapses to a median of 28 voxels (the hand covers it in several views) with
+  C10379 IoU 0.06, against 0.72-0.74 in the other two windows.
+- **Disagreement.** Because every mask exceeds an over-carved hull, a view is flagged only when
+  it disagrees clearly more than the other views on the same frame: IoU < 0.3 *and* 0.15 below
+  the frame's median IoU, or area ratio above max(2.0, 1.5 x the frame's median ratio); >= 5
+  consecutive flagged frames form a `hull_disagreement` episode. 183 episodes; C10395 has 67 and
+  C10118 43 (the two low cameras), C10379 37, the top-down and corner cameras 4-13 each. The 37
+  C10379 episodes are typed proposals (`not_contact_eligible`, `applied: false`): chassis
+  `[240,272)`, `[585,598)`, `[643,651)`, `[665,689)`, `[697,702)`, `[1046,1084)`, `[1089,1101)`,
+  `[1103,1161)`, `[1167,1172)`, `[1487,1493)`, `[1537,1547)`; rear_body `[199,324)`,
+  `[414,613)`, `[614,629)`, `[696,701)`, `[1179,1228)` (four adjacent runs), `[1552,1643)` (four
+  runs), `[1671,1677)`; cabin `[94,114)`, `[156,171)`, `[247,254)`, `[276,298)`, `[342,413)`,
+  `[513,518)`, `[529,572)`, `[700,706)`, `[722,764)`, `[769,875)`, `[921,969)`, `[1111,1116)`. The
+  chassis intervals coincide with the Track 2 centroid contradictions (585-702, 1089-1172); the
+  rear_body and cabin lists are far longer than Track 2's and include windows where the hull
+  itself is tiny, so the hull proposals are the noisier of the two signals and should be read
+  next to `voxel_count`.
+- **Not run, by design.** MVDet-style learned BEV fusion (`not_run`: needs scene-specific
+  ground-plane training data and would be training, which the plan forbids; the carved hull is
+  the training-free equivalent) and homography-to-BEV identity handoff (`not_run`: a
+  multi-person tracking device; one person and four rigid parts leave nothing to hand off).
+  Both are recorded in the manifest's `not_run` map. Hand-occlusion handling (excluding voxels
+  behind a dataset hand in a view) was not implemented; the collapses above are what it would
+  have prevented.
+- **Viewer.** Hull voxels per part at 1 fps in the world-mm 3D view and hull projections as a
+  toggleable overlay in each of the eight 2D views of the static comparison recording; not
+  added to the v4 layer (the hull is a separate run with its own manifest; the v4 3D view
+  already carries the consensus centroids).
+
+### Sep 18: Track 6 of the overnight multicam pass, the other ego cameras
+
+- **Claim boundary first.** e4's seeds are agent-authored geometric transfers like the static
+  ones; its per-frame pose is the dataset's; its intrinsics are the 0.31 px rational estimate;
+  e1/e2 intrinsics are 4-5 px estimates fitted on few hand observations ("projection-only
+  cameras"). Visibility is geometric (inside the sensor, in front of the camera) and ignores
+  occlusion. Nothing here is accuracy. GPU jobs went through the queue (two jobs, both
+  succeeded). CC BY-NC 4.0 applies.
+- **e4 (HMC_21179183).** New clip config
+  `configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_ego_e4_g2.json` (the
+  954x720 proxy from Track 0 at 294.000 s, sha `40e8b4a8...`). Seeds from the same triangulated
+  frame-0 centroids as Track 2, projected with the e4 pose at pose frame 17640 (proxy px = raw
+  px x 1.5): chassis accepted (plane-warp IoU 0.77 into e3, centroid ray 7 mm, area x0.74),
+  rear_body (0.75, 10 mm, x0.52), cabin (0.77, 4 mm, x1.45), left hand accepted; interior
+  projects behind the camera (depth -17 mm: it is at the face) and is blocked. Decode 5.1 s
+  (queue 9.0 s). SAM3 run
+  `runs/muggledsam-sam3-four-part-multiview-first-minute-ego-hmc21179183-20260918t061608z`:
+  1800/1800 frames, 5,273 masks, worker 132 s (queue 173 s), time to first output 4.6 s, peak
+  VRAM 2.10 GB; presence chassis 1.00, cabin 1.00, rear_body 0.93 with the first missing frame
+  at 216. As a moving camera in the consensus (`--ego-view HMC_21179183`,
+  `runs/multiview-part-consensus-first-minute-with-e4/`, 80 s) it joins a frame only behind the
+  wrist gate (both dataset wrists reproject within 10 raw px of the shipped 2D through the e4
+  pose); the gate passes on 1800/1800 frames, which says the pose data are self-consistent, not
+  that the video is (the gate has no video-side observation; the 30 px triangulation filter is
+  what actually drops e4 when its mask disagrees). e4 agreement: chassis 0.97 (mean error 2.9
+  px), cabin 1.00, **rear_body 0.58 (39 px)**: its rear_body mask left the part early and the
+  filter drops it (27 of the 121 episodes are e4's, mostly rear_body). With e4 the C10379
+  contradictions are unchanged for chassis (585-702, 1037-1042, 1089-1172, 1459-1470,
+  1499-1504) but the late rear_body contradiction `[1677,1800)` shrinks to `[1525,1530)`,
+  `[1678,1683)`, `[1698,1704)`: the consensus that contradicted C10379 late was fragile enough
+  for one more (imperfect) view to move it, so the static-only run stays the canonical
+  `runs/multiview-part-consensus-first-minute/` and the e4 variant sits beside it. Carving with
+  e4 (`runs/multiview-visual-hull-first-minute-with-e4/`, 872 s because the ego pose projects
+  the 2 M voxels per frame): chassis hull on 1476 frames (median 705 voxels), cabin 1585 (427),
+  rear_body 1221 (196, down from 1496 static-only: e4's wrong rear_body mask empties the
+  intersection); e4 hull-vs-mask median IoU chassis 0.37, cabin 0.41, rear_body 0.03; 266
+  episodes, 43 C10379 proposals. Both e4 artefacts are kept as the moving-camera arm; the
+  static-only hull is canonical.
+- **e1/e2 audit** (`battle-multiview-ego-visibility`, `multiview_ego_audit.py`,
+  `runs/multiview-ego-visibility-audit/report.json`, 3.6 s, hull voxels at 1 fps and dataset
+  joints at 30 fps through each camera's per-frame pose). Share of sampled frames with > 50 %
+  of the part's hull inside the sensor, and mean share of dataset hand joints inside:
+  **e2 HMC_21176623**: chassis 6 %, rear_body 45 %, cabin 0 %; hands left 2 %, right 31 % ->
+  `not_run` (best part 45 % <= 50 %). **e1 HMC_21176875**: chassis 61 %, rear_body 4 %, cabin
+  88 %; hands 27 % / 23 % -> the rule says a run is warranted, so a clip config was written
+  (`..._focused_ego_e1_g2.json`) and seeds planned, but at frame 0 every part projects outside
+  e1's frame (cabin at proxy row 745 of 720; the rest farther out), so frame-0 seeding is
+  impossible: recorded as `blocked: seed_transfer_failed` in
+  `runs/multiview-seed-transfer-20260918/HMC_21176875/seed_manifest.json` without spending a
+  decode. A later-frame seed (the first frame the cabin is in view) would need a run profile
+  that starts mid-minute; not built tonight. For reference the same audit gives e3 100 / 100 /
+  38 % (hands 95 / 97 %) and e4 100 / 91 / 100 % (hands 100 / 88 %), matching the Track 6 plan
+  note that e4 sees the left hand throughout.
+- **Tests.** The Track 2 fixture tests cover the range guard's e4 exception and the skip
+  decision for a view with no in-frame part; `real_data` covers the e4 run's agent-seed
+  declaration through the shared multiview-run check. No viewer opened.

@@ -1370,6 +1370,60 @@ uv run pytest -q tests/test_multiview_geometry.py
 uv run pytest -q -m real_data tests/test_multiview_geometry.py
 ```
 
+#### Cross-view SAM3, consensus, hull and ego audit (Sep 18, Tracks 2, 5, 6)
+
+Seeds on every view other than C10379 are **agent-authored** (`selected_by: agent`, provenance
+`geometric_seed_transfer`): each part's frame-0 centroid is triangulated from the two views
+with human frame-0 masks (C10379 and the e3 ego run), projected into the target view as box
+prompts, decoded with the isolated SAM3 image decoder, and accepted by an area band plus either
+a table-parallel plane warp into e3 (IoU >= 0.25) or a centroid-ray test (<= 1.5 radii). The
+run profile `--four-part-multiview-first-minute` tracks the accepted parts over `[0, 1800)` with
+no later corrections. Consensus, hull and every disagreement number are cross-view
+disagreement between runs of one tracker, never accuracy; C10379 stays the reference and the
+emitted `not_contact_eligible` intervals are proposals (`applied: false`).
+
+```bash
+# Track 2: seeds (CPU plan, GPU decode through the queue), runs, consensus, review surfaces
+uv run battle-multiview-seed-transfer plan --view C10095 --view C10115 --view C10118 \
+  --view C10119 --view C10390 --view C10395 --view C10404
+uv run scripts/overnight_queue.py runs/overnight-multicam-20260918/jobs_t2_seed_decode.json
+uv run scripts/overnight_queue.py runs/overnight-multicam-20260918/jobs_t2_sam3_runs.json
+#   each job: battle-muggled-smoke --config configs/clips/..._focused_all_static_g2.json \
+#     --view static-c10095 --four-part-multiview-first-minute \
+#     --geometric-seed-manifest runs/multiview-seed-transfer-20260918/C10095/seed_manifest.json \
+#     --max-side-length 720 --checkpoint-every 300
+uv run battle-build-multiview-part-consensus            # runs/multiview-part-consensus-first-minute/
+uv run battle-build-multiview-static-comparison --mask-every 2   # 8-view RRD + world-mm 3D
+uv run battle-build-interaction-review-v4 --overwrite   # adds the assembly101_multiview layer
+
+# Track 5: visual hull (CPU, ~3 min), hull projections and hull_disagreement episodes
+uv run battle-build-visual-hull                         # runs/multiview-visual-hull-first-minute/
+
+# Track 6: e4 as a moving camera, e1/e2 visibility audit
+uv run battle-multiview-seed-transfer plan --view HMC_21179183 \
+  --config configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_ego_e4_g2.json
+uv run scripts/overnight_queue.py runs/overnight-multicam-20260918/jobs_t6_e4_seed_decode.json
+uv run scripts/overnight_queue.py runs/overnight-multicam-20260918/jobs_t6_e4_sam3.json
+uv run battle-build-multiview-part-consensus --ego-view HMC_21179183 \
+  --output-root runs/multiview-part-consensus-first-minute-with-e4
+uv run battle-build-visual-hull --ego-view HMC_21179183 \
+  --consensus-root runs/multiview-part-consensus-first-minute-with-e4 \
+  --output-root runs/multiview-visual-hull-first-minute-with-e4
+uv run battle-multiview-ego-visibility                  # runs/multiview-ego-visibility-audit/report.json
+uv run pytest -q tests/test_multiview_pass.py
+uv run pytest -q -m real_data tests/test_multiview_pass.py
+```
+
+Outputs: `runs/multiview-seed-transfer-20260918/<view>/seed_manifest.json` (every decoded
+candidate, the accepted one, blocked parts with reasons);
+`runs/multiview-part-consensus-first-minute/{manifest.json,per_frame.jsonl,consensus_points.npz}`
+(world-mm consensus per frame and part, per-view raw-px error, `used`/`observed` masks,
+episodes, proposals, the dataset-wrist anchor);
+`runs/multiview-visual-hull-first-minute/{manifest.json,per_frame.jsonl,hull_voxels_1fps.npz,hull_series.npz,hull_projection_masks/}`
+(the npz holds `<target>/<frame:06d>` -> `(N, 3)` int16 voxel indices on world axes;
+`centre_mm = grid_origin_mm + (index + 0.5) * voxel_size_mm`, both in the manifest);
+`runs/multiview-ego-visibility-audit/report.json`.
+
 ### First-minute review metrics (label-free triggers)
 
 `battle-review-metrics` turns the v4 first-minute inputs into per-frame proxy metrics and a
