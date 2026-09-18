@@ -337,6 +337,19 @@ def test_seed_transfer_manifests_are_agent_authored_with_verified_masks() -> Non
             assert len(manifest.accepted_parts) >= manifest.rules.min_parts_to_run
 
 
+def test_default_run_discovery_recognises_the_tracker_policy_as_a_run_condition() -> None:
+    assert mvc.has_default_tracker_policy({"max_side_length": 720})
+    assert mvc.has_default_tracker_policy(
+        {"tracker_memory_policy": json.dumps({"slot_exclusivity": "off", "memory_gate": "off"})}
+    )
+    assert not mvc.has_default_tracker_policy(
+        {"tracker_memory_policy": json.dumps({"slot_exclusivity": "argmax", "memory_gate": "off"})}
+    )
+    assert not mvc.has_default_tracker_policy(
+        {"tracker_memory_policy": {"slot_exclusivity": "off", "memory_gate": "on"}}
+    )
+
+
 @pytest.mark.real_data
 def test_multiview_runs_declare_agent_seeds_and_first_minute() -> None:
     runs = mvc.discover_multiview_runs(Path.cwd())

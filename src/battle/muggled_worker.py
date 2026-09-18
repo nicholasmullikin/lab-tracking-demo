@@ -31,6 +31,20 @@ DETECTION_THRESHOLD = 0.40
 # Connected components smaller than this fraction of the largest one are treated as mask
 # speckle and excluded from the reported box; the saved mask PNG is left untouched.
 BOX_COMPONENT_KEEP_FRACTION = 0.20
+# Tracker memory policy defaults.  Every default is "off" so that a run without the flags is
+# byte-identical to the runs made before the policy existed.
+SLOT_EXCLUSIVITY_MODES = ("off", "argmax")
+MEMORY_GATE_MODES = ("off", "on")
+EXCLUSIVITY_LOSER_LOGIT = -8.0
+GATE_MIN_OBJECT_SCORE = 0.0
+GATE_MIN_IOU = 0.5
+GATE_MAX_CONTESTED_FRACTION = 0.2
+GATE_AREA_BAND = (0.5, 2.0)
+GATE_AREA_HISTORY_FRAMES = 30
+# The score the memory encoder sees for a gated slot: below zero it adds `no_object_embed`
+# for that multiplex entry only, so the frame is memorised as "absent" for that slot.
+GATED_OBJECT_SCORE = -1.0
+GATE_REASONS = ("ok", "warmup", "low_object_score", "low_iou", "contested", "area_jump")
 
 # object index, concept, mask logits, reported confidence, raw presence logit, predicted IoU.
 # The last two are tracker diagnostics and are absent for prompt and detector initialization.
@@ -89,6 +103,17 @@ def _runtime_settings(args: argparse.Namespace, concepts: tuple[str, ...]) -> di
             "Both are diagnostic traces and neither is measured against ground truth."
         ),
         "lost_object_score_threshold": 0.0,
+        "tracker_memory_policy": memory_policy_from_args(args),
+        "tracker_memory_policy_semantics": (
+            "slot_exclusivity argmax gives every pixel predicted positive by more than one "
+            "present slot to the slot with the larger logit and pushes the others to at most "
+            "exclusivity_loser_logit before memory encoding and output; memory_gate on hands "
+            "the memory encoder a score of -1 (its no-object embedding) for a slot whose raw "
+            "score, predicted IoU, contested fraction or area (against the rolling median of "
+            "its trusted frames) fails the thresholds, so that frame is memorised as absent "
+            "for that slot only. Both off reproduces the unpoliced tracker exactly. Neither "
+            "is an accuracy claim."
+        ),
     }
     if getattr(args, "resume_from_checkpoint", None):
         settings["resumed_from_checkpoint"] = args.resume_from_checkpoint
@@ -539,6 +564,142 @@ def _source_binary_masks(mask_logits: Any, frame_shape: tuple[int, int]) -> Any:
     )
 
 
+def memory_policy_from_args(args: argparse.Namespace) -> dict[str, Any]:
+    """Read the tracker memory policy as one plain record, so it can be logged and hashed."""
+    band = getattr(args, "gate_area_band", GATE_AREA_BAND)
+    return {
+        "slot_exclusivity": getattr(args, "slot_exclusivity", "off"),
+        "memory_gate": getattr(args, "memory_gate", "off"),
+        "exclusivity_loser_logit": float(
+            getattr(args, "exclusivity_loser_logit", EXCLUSIVITY_LOSER_LOGIT)
+        ),
+        "gate_min_object_score": float(
+            getattr(args, "gate_min_object_score", GATE_MIN_OBJECT_SCORE)
+        ),
+        "gate_min_iou": float(getattr(args, "gate_min_iou", GATE_MIN_IOU)),
+        "gate_max_contested_fraction": float(
+            getattr(args, "gate_max_contested_fraction", GATE_MAX_CONTESTED_FRACTION)
+        ),
+        "gate_area_band": [float(band[0]), float(band[1])],
+        "gate_area_history_frames": int(
+            getattr(args, "gate_area_history_frames", GATE_AREA_HISTORY_FRAMES)
+        ),
+    }
+
+
+def memory_policy_is_default(policy: dict[str, Any]) -> bool:
+    return policy["slot_exclusivity"] == "off" and policy["memory_gate"] == "off"
+
+
+def resolve_slot_exclusivity(
+    masks_m1hw: Any,
+    scores_m: Any,
+    *,
+    mode: str,
+    loser_logit: float = EXCLUSIVITY_LOSER_LOGIT,
+) -> tuple[Any, list[float]]:
+    """Give each contested pixel to one multiplex slot before anything downstream sees it.
+
+    A pixel is contested when more than one *present* slot (raw score > 0) predicts it
+    positive.  In ``argmax`` mode the slot with the larger logit keeps it and every other
+    present slot has that pixel pushed to at most ``loser_logit``; in ``off`` mode the logits
+    are returned untouched.  Both modes report, per slot, the fraction of its positive pixels
+    that were contested before resolution (0 when it had none or was absent).
+    """
+    import torch
+
+    if mode not in SLOT_EXCLUSIVITY_MODES:
+        raise ValueError(f"unknown slot exclusivity mode {mode!r}")
+    slot_count = int(masks_m1hw.shape[0])
+    if slot_count == 0:
+        return masks_m1hw, []
+    present = (scores_m.reshape(-1) > 0).reshape(slot_count, 1, 1, 1)
+    positive = (masks_m1hw > 0) & present
+    claims = positive.sum(dim=0, keepdim=True)
+    contested = claims > 1
+    positive_counts = positive.flatten(1).sum(dim=1)
+    contested_counts = (positive & contested).flatten(1).sum(dim=1)
+    fractions = torch.where(
+        positive_counts > 0,
+        contested_counts.to(torch.float32) / positive_counts.clamp(min=1).to(torch.float32),
+        torch.zeros_like(positive_counts, dtype=torch.float32),
+    )
+    contested_fraction = [float(value) for value in fractions.tolist()]
+    if mode == "off" or not bool(contested.any()):
+        return masks_m1hw, contested_fraction
+    competing_logits = masks_m1hw.to(torch.float32).masked_fill(~present, float("-inf"))
+    winner = competing_logits.argmax(dim=0, keepdim=True)
+    slot_index = torch.arange(slot_count, device=masks_m1hw.device).reshape(slot_count, 1, 1, 1)
+    loser = positive & contested & (slot_index != winner)
+    resolved = torch.where(loser, masks_m1hw.clamp(max=loser_logit), masks_m1hw)
+    return resolved, contested_fraction
+
+
+def memory_gate(
+    scores_m: Any,
+    ious_m: Any,
+    contested_fraction: list[float],
+    areas: list[int],
+    area_history: list[list[float]],
+    policy: dict[str, Any],
+) -> tuple[Any, list[bool], list[str], list[list[float]]]:
+    """Decide, per slot, whether this frame's mask may be memorised for that slot.
+
+    Returns the scores to hand to ``encode_frame_memory`` (``GATED_OBJECT_SCORE`` for an
+    untrusted slot, the raw score otherwise), a ``written`` flag and a reason per slot, and the
+    updated per-slot history of trusted areas.  The area band is judged against the rolling
+    median of the last ``gate_area_history_frames`` trusted areas and is never applied until
+    that history is full (``warmup``).  With the gate off every slot is written with reason
+    ``ok`` and the scores are returned as they came.
+    """
+    slot_count = int(scores_m.reshape(-1).shape[0])
+    history = [list(entries) for entries in area_history]
+    while len(history) < slot_count:
+        history.append([])
+    if policy["memory_gate"] == "off":
+        return scores_m, [True] * slot_count, ["ok"] * slot_count, history
+    import torch
+
+    raw_scores = [float(value) for value in scores_m.reshape(-1).tolist()]
+    raw_ious = [_scalar(ious_m, position) for position in range(slot_count)]
+    band_low, band_high = policy["gate_area_band"]
+    history_frames = int(policy["gate_area_history_frames"])
+    written: list[bool] = []
+    reasons: list[str] = []
+    for slot in range(slot_count):
+        area = float(areas[slot]) if slot < len(areas) else 0.0
+        fraction = contested_fraction[slot] if slot < len(contested_fraction) else 0.0
+        iou = raw_ious[slot]
+        if raw_scores[slot] <= policy["gate_min_object_score"]:
+            reason = "low_object_score"
+        elif iou is not None and iou < policy["gate_min_iou"]:
+            reason = "low_iou"
+        elif fraction > policy["gate_max_contested_fraction"]:
+            reason = "contested"
+        elif len(history[slot]) < history_frames:
+            reason = "warmup"
+        else:
+            median = float(sorted(history[slot])[len(history[slot]) // 2])
+            ratio = area / median if median > 0 else float("inf")
+            reason = "ok" if band_low <= ratio <= band_high else "area_jump"
+        trusted = reason in ("ok", "warmup")
+        written.append(trusted)
+        reasons.append(reason)
+        if trusted:
+            history[slot] = (history[slot] + [area])[-history_frames:]
+    gated = scores_m.clone()
+    flat = gated.reshape(-1)
+    for slot, trusted in enumerate(written):
+        if not trusted:
+            flat[slot] = torch.tensor(GATED_OBJECT_SCORE, dtype=flat.dtype, device=flat.device)
+    return gated, written, reasons, history
+
+
+def _slot_areas(masks_m1hw: Any) -> list[int]:
+    """Positive-logit pixel count per slot on the model's mask grid."""
+    return [int(value) for value in (masks_m1hw > 0).flatten(1).sum(dim=1).tolist()]
+
+
 def run(args: argparse.Namespace) -> int:
     run_directory = Path(args.run_directory)
     output_path = run_directory / "observations.jsonl"
@@ -815,6 +976,15 @@ def run(args: argparse.Namespace) -> int:
         masks_written = 0
         first_usable: float | None = None
         identity = stream_identity(args, concepts)
+        policy = memory_policy_from_args(args)
+        policy_default = memory_policy_is_default(policy)
+        gate_area_history: list[list[float]] = (
+            [list(entries) for entries in resumed.get("gate_area_history", [])]
+            if resumed is not None
+            else []
+        )
+        while len(gate_area_history) < len(initial_masks):
+            gate_area_history.append([])
         wanted_checkpoints: frozenset[int] = frozenset()
         if not args.no_checkpoints:
             wanted_checkpoints = checkpoint_frames(
@@ -842,6 +1012,8 @@ def run(args: argparse.Namespace) -> int:
                     "frame_memories": list(frame_memories),
                     "max_prompt_memory": MAX_PROMPT_MEMORY,
                     "max_frame_memory": MAX_FRAME_MEMORY,
+                    "tracker_memory_policy": policy,
+                    "gate_area_history": [list(entries) for entries in gate_area_history],
                 },
                 checkpoint_directory / f"f{frame_index:06d}.pt",
             )
@@ -902,6 +1074,42 @@ def run(args: argparse.Namespace) -> int:
                         )
                         for correction in correction_schedule.get(frame_index, [])
                     }
+                    memory_scores = scores
+                    policy_diagnostics: list[dict[str, Any]] = []
+                    if not policy_default:
+                        # Exclusivity runs before the memory encoder and before the output so
+                        # neither ever sees a pixel claimed by two present slots.
+                        masks, contested_fraction = resolve_slot_exclusivity(
+                            masks,
+                            scores,
+                            mode=policy["slot_exclusivity"],
+                            loser_logit=policy["exclusivity_loser_logit"],
+                        )
+                        if correction_masks:
+                            # A correction frame replaces the prompt memory outright; the
+                            # gate has nothing to decide and the corrected slots start a
+                            # fresh area history from their reviewed mask.
+                            written = [True] * len(initial_masks)
+                            reasons = ["corrected"] * len(initial_masks)
+                            for slot in correction_masks:
+                                gate_area_history[slot] = []
+                        else:
+                            memory_scores, written, reasons, gate_area_history = memory_gate(
+                                scores,
+                                ious,
+                                contested_fraction,
+                                _slot_areas(masks),
+                                gate_area_history,
+                                policy,
+                            )
+                        policy_diagnostics = [
+                            {
+                                "contested_fraction": contested_fraction[position],
+                                "memory_written": written[position],
+                                "memory_gate_reason": reasons[position],
+                            }
+                            for position in range(len(initial_masks))
+                        ]
                     if correction_masks:
                         source_masks = _replace_prompt_memory_for_correction(
                             predicted_source_masks=_source_binary_masks(masks, frame.shape[:2]),
@@ -913,7 +1121,7 @@ def run(args: argparse.Namespace) -> int:
                         )
                     elif bool(active.any()):
                         frame_memories.append(
-                            tracking.encode_frame_memory(encoded, masks, pointers, scores)
+                            tracking.encode_frame_memory(encoded, masks, pointers, memory_scores)
                         )
                     tracked = [
                         (
@@ -941,6 +1149,7 @@ def run(args: argparse.Namespace) -> int:
                             "iou_prediction": _scalar(ious, position),
                             "active": bool(active[position]),
                             "corrected": position in correction_masks,
+                            **(policy_diagnostics[position] if policy_diagnostics else {}),
                         }
                         for position, (index, concept, *_) in enumerate(initial_masks)
                     ]
@@ -1074,7 +1283,19 @@ def stream_identity(args: argparse.Namespace, concepts: tuple[str, ...]) -> str:
         "manual_seeds_json": args.manual_seeds_json,
         "multi_keyframe_schedule_json": args.multi_keyframe_schedule_json,
     }
+    # Only a non-default policy joins the identity, so checkpoints written before the policy
+    # existed stay resumable by a run that does not use it.
+    policy = memory_policy_from_args(args)
+    if not memory_policy_is_default(policy):
+        payload["tracker_memory_policy"] = policy
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+
+
+def _area_band(value: str) -> tuple[float, float]:
+    parts = [float(item) for item in value.split(",") if item.strip()]
+    if len(parts) != 2 or parts[0] <= 0 or parts[1] < parts[0]:
+        raise argparse.ArgumentTypeError("area band must be 'low,high' with 0 < low <= high")
+    return parts[0], parts[1]
 
 
 def checkpoint_frames(
@@ -1186,7 +1407,44 @@ def main() -> None:
         "--resume-from-checkpoint",
         help="Restore tracker state from this checkpoint and continue from its frame.",
     )
+    parser.add_argument(
+        "--slot-exclusivity",
+        choices=SLOT_EXCLUSIVITY_MODES,
+        default="off",
+        help="argmax: a pixel positive in several present slots goes to the highest logit.",
+    )
+    parser.add_argument(
+        "--exclusivity-loser-logit",
+        type=float,
+        default=EXCLUSIVITY_LOSER_LOGIT,
+        help="Upper bound applied to a losing slot's logit on a contested pixel.",
+    )
+    parser.add_argument(
+        "--memory-gate",
+        choices=MEMORY_GATE_MODES,
+        default="off",
+        help="on: memorise a slot as absent on frames where its prediction is not trusted.",
+    )
+    parser.add_argument("--gate-min-object-score", type=float, default=GATE_MIN_OBJECT_SCORE)
+    parser.add_argument("--gate-min-iou", type=float, default=GATE_MIN_IOU)
+    parser.add_argument(
+        "--gate-max-contested-fraction", type=float, default=GATE_MAX_CONTESTED_FRACTION
+    )
+    parser.add_argument(
+        "--gate-area-band",
+        type=_area_band,
+        default=GATE_AREA_BAND,
+        help="Accepted mask area as 'low,high' multiples of the slot's rolling median area.",
+    )
+    parser.add_argument(
+        "--gate-area-history-frames",
+        type=int,
+        default=GATE_AREA_HISTORY_FRAMES,
+        help="Trusted frames behind the rolling median; the band is not applied before then.",
+    )
     args = parser.parse_args()
+    if args.gate_area_history_frames < 1:
+        parser.error("--gate-area-history-frames must be at least 1")
     if args.mask_period_frames < 1:
         parser.error("--mask-period-frames must be at least 1")
     if args.checkpoint_every < 0:

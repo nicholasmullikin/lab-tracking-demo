@@ -53,6 +53,7 @@ from .schemas import (
     SmokeRunMetadata,
     StreamContinuityPolicy,
     TimeInterval,
+    TrackerMemoryPolicy,
 )
 
 ADAPTER_VERSION = "0.3.0"
@@ -82,8 +83,18 @@ FOUR_PART_FULL_FRAMES = 5901
 FOUR_PART_FULL_SECONDS = 196.7
 FOUR_PART_FOCUSED_FRAMES = 2781
 FOUR_PART_FOCUSED_SECONDS = 92.7
+# The focused C10379 profile may also stop at the first minute (`--max-frames 1800`): the same
+# stream bounded early, so tracker-policy arms can be compared against the reference's first
+# minute at a fraction of the cost.
+FOUR_PART_FOCUSED_FIRST_MINUTE_FRAMES = 1800
+FOUR_PART_FOCUSED_PERMITTED_FRAMES = (
+    FOUR_PART_FOCUSED_FRAMES,
+    FOUR_PART_FOCUSED_FIRST_MINUTE_FRAMES,
+)
 FOUR_PART_MULTIVIEW_FRAMES = 1800
 FOUR_PART_MULTIVIEW_SECONDS = 60.0
+# Encoder side every four-part static run has used; a different one is named in the run id.
+FOUR_PART_REFERENCE_SIDE_LENGTH = 720
 # Views the geometry-seeded first-minute profile may run on: any static view of the all-static
 # focused config, plus the e4 ego camera (per-frame pose, Track 6).  C10379 stays human-seeded.
 FOUR_PART_MULTIVIEW_EGO_VIEWS = ("ego-hmc21179183",)
@@ -147,9 +158,32 @@ def load_text_target_config(
     return target_config
 
 
-def make_run_id(view_id: str, now: datetime | None = None, *, profile: str = "smoke") -> str:
+def make_run_id(
+    view_id: str, now: datetime | None = None, *, profile: str = "smoke", suffix: str = ""
+) -> str:
     timestamp = (now or datetime.now(UTC)).strftime("%Y%m%dT%H%M%SZ").lower()
-    return f"muggledsam-sam3-{profile}-{view_id.lower()}-{timestamp}"
+    run_id = f"muggledsam-sam3-{profile}-{view_id.lower()}-{timestamp}"
+    return f"{run_id}-{suffix}" if suffix else run_id
+
+
+def run_condition_suffix(
+    policy: TrackerMemoryPolicy,
+    *,
+    max_side_length: int,
+    reference_side_length: int | None = None,
+    frame_zero_seeds_only: bool = False,
+) -> str:
+    """Name the non-default run conditions in the run id so arms stay distinguishable.
+
+    Empty for the established condition (policy off, the profile's usual encoder side, the
+    full correction schedule).  Resolution is named only for profiles that have one.
+    """
+    parts = [policy.run_id_suffix()] if not policy.is_default else []
+    if reference_side_length is not None and max_side_length != reference_side_length:
+        parts.append(f"r{max_side_length}")
+    if frame_zero_seeds_only:
+        parts.append("seed0")
+    return "-".join(parts)
 
 
 def smoke_frame_count(analysis_fps: float) -> int:
@@ -169,9 +203,12 @@ def selected_frame_budget(args: argparse.Namespace, analysis_fps: float) -> int:
         return FOUR_PART_PILOT_FRAMES
     if getattr(args, "four_part_static_full", False):
         return FOUR_PART_FULL_FRAMES
-    if getattr(args, "four_part_static_focused", False) or getattr(
-        args, "four_part_ego_focused", False
-    ):
+    if getattr(args, "four_part_static_focused", False):
+        requested = getattr(args, "max_frames", FOUR_PART_FOCUSED_FRAMES)
+        if requested in FOUR_PART_FOCUSED_PERMITTED_FRAMES:
+            return requested
+        return FOUR_PART_FOCUSED_FRAMES
+    if getattr(args, "four_part_ego_focused", False):
         return FOUR_PART_FOCUSED_FRAMES
     if getattr(args, "four_part_multiview_first_minute", False):
         return FOUR_PART_MULTIVIEW_FRAMES
@@ -236,10 +273,17 @@ def require_four_part_full_range(view_id: str, start_frame: int, max_frames: int
 
 
 def require_four_part_focused_range(view_id: str, start_frame: int, max_frames: int) -> FrameRange:
-    """Permit only the separated-to-assembled focused four-part proxy."""
-    if view_id != "static-c10379" or start_frame != 0 or max_frames != FOUR_PART_FOCUSED_FRAMES:
-        raise ValueError("focused four-part run permits only static-c10379 proxy frames [0, 2781)")
-    return FrameRange(start_frame=start_frame, end_frame_exclusive=FOUR_PART_FOCUSED_FRAMES)
+    """Permit the separated-to-assembled focused four-part proxy, whole or its first minute."""
+    if (
+        view_id != "static-c10379"
+        or start_frame != 0
+        or max_frames not in FOUR_PART_FOCUSED_PERMITTED_FRAMES
+    ):
+        raise ValueError(
+            "focused four-part run permits only static-c10379 proxy frames [0, 2781) or the "
+            "first-minute bound [0, 1800)"
+        )
+    return FrameRange(start_frame=start_frame, end_frame_exclusive=max_frames)
 
 
 def require_four_part_ego_focused_range(
@@ -453,6 +497,7 @@ def _run_worker(
     multi_keyframe_schedule: dict[str, Any] | None = None,
     resume_from_checkpoint: Path | None = None,
     checkpoint_every: int = 0,
+    memory_policy: TrackerMemoryPolicy | None = None,
 ) -> dict[str, Any]:
     environment = os.environ.copy()
     environment["CUDA_VISIBLE_DEVICES"] = "0"
@@ -486,6 +531,8 @@ def _run_worker(
     ]
     if resume_from_checkpoint is not None:
         command.extend(["--resume-from-checkpoint", str(resume_from_checkpoint)])
+    if memory_policy is not None and not memory_policy.is_default:
+        command.extend(memory_policy.worker_arguments())
     if condition is not None:
         command.extend(
             [
@@ -1090,8 +1137,15 @@ def _load_multi_keyframe_correction_schedule(
     proxy: Any,
     analysis_fps: float,
     max_frame_exclusive: int = SMOKE_FRAMES,
+    drop_out_of_range_corrections: bool = False,
+    frame_zero_seeds_only: bool = False,
 ) -> tuple[dict[str, Any], MultiKeyframeCorrectionScheduleMetadata]:
-    """Validate a proposed schedule and prepare its frame-zero and correction mask payload."""
+    """Validate a proposed schedule and prepare its frame-zero and correction mask payload.
+
+    Every entry is verified against the calibration record whether or not it is applied.  A
+    bounded run may drop the corrections past its range (`drop_out_of_range_corrections`),
+    and a seeds-only arm drops every later correction; both are listed in the metadata.
+    """
     if analysis_fps != SCHEDULE_AUTHORING_FPS:
         raise ValueError(
             "correction schedules store analysis frame indices, which are only meaningful on the "
@@ -1162,10 +1216,13 @@ def _load_multi_keyframe_correction_schedule(
     candidates = {candidate.candidate_id: candidate for candidate in calibration.candidates}
     payload_corrections: list[dict[str, Any]] = []
     later_per_target: dict[str, int] = {}
+    dropped_frames: set[int] = set()
     for correction in schedule.corrections:
-        _require_correction_frame_in_range(
-            correction.frame.analysis_frame_index, max_frame_exclusive
-        )
+        frame_index = correction.frame.analysis_frame_index
+        if drop_out_of_range_corrections and frame_index >= max_frame_exclusive:
+            dropped_frames.add(frame_index)
+        else:
+            _require_correction_frame_in_range(frame_index, max_frame_exclusive)
         candidate = candidates.get(correction.candidate_id)
         if candidate is None:
             raise ValueError(
@@ -1236,12 +1293,15 @@ def _load_multi_keyframe_correction_schedule(
         raise ValueError("correction schedule needs one ordered frame-0 mask for every target")
     later = [item for item in payload_corrections if item["frame_index"] != 0]
     later.sort(key=lambda item: (int(item["frame_index"]), int(item["multiplex_slot"])))
+    if frame_zero_seeds_only:
+        dropped_frames.update(int(item["frame_index"]) for item in later)
+    applied = [item for item in later if int(item["frame_index"]) not in dropped_frames]
     for slot, item in enumerate(initial):
         item["initial_multiplex_slot"] = slot
     return (
         {
             "seeds": initial,
-            "corrections": later,
+            "corrections": applied,
             "memory_semantics": schedule.correction_memory_semantics,
         },
         MultiKeyframeCorrectionScheduleMetadata(
@@ -1253,13 +1313,15 @@ def _load_multi_keyframe_correction_schedule(
             correction_policy_fingerprint=schedule.correction_policy_fingerprint,
             correction_memory_semantics=schedule.correction_memory_semantics,
             scheduled_correction_frame_indices=tuple(
-                sorted({int(item["frame_index"]) for item in later})
+                sorted({int(item["frame_index"]) for item in applied})
             ),
             agent_selected_correction_frame_indices=tuple(
                 sorted(
-                    {int(item["frame_index"]) for item in later if item["selected_by"] == "agent"}
+                    {int(item["frame_index"]) for item in applied if item["selected_by"] == "agent"}
                 )
             ),
+            dropped_correction_frame_indices=tuple(sorted(dropped_frames)),
+            frame_zero_seeds_only=frame_zero_seeds_only,
         ),
     )
 
@@ -1671,6 +1733,17 @@ def run_smoke(args: argparse.Namespace) -> Path:
     manual_seed_metadata = None
     multi_keyframe_schedule_payload = None
     multi_keyframe_correction_metadata = None
+    frame_zero_seeds_only = bool(getattr(args, "frame_zero_seeds_only", False))
+    memory_policy = TrackerMemoryPolicy(
+        slot_exclusivity=getattr(args, "slot_exclusivity", "off"),
+        memory_gate=getattr(args, "memory_gate", "off"),
+        exclusivity_loser_logit=getattr(args, "exclusivity_loser_logit", -8.0),
+        gate_min_object_score=getattr(args, "gate_min_object_score", 0.0),
+        gate_min_iou=getattr(args, "gate_min_iou", 0.5),
+        gate_max_contested_fraction=getattr(args, "gate_max_contested_fraction", 0.2),
+        gate_area_band=tuple(getattr(args, "gate_area_band", (0.5, 2.0))),
+        gate_area_history_frames=getattr(args, "gate_area_history_frames", 30),
+    )
     if args.condition_config is not None:
         condition_config_path = args.condition_config.resolve()
         condition_config = MuggledSAMEgoConditionConfig.model_validate_json(
@@ -1762,6 +1835,7 @@ def run_smoke(args: argparse.Namespace) -> Path:
             raise ValueError(
                 "a multi-keyframe correction schedule cannot be combined with another prompt mode"
             )
+        schedule_budget = selected_frame_budget(args, analysis_fps)
         (
             multi_keyframe_schedule_payload,
             multi_keyframe_correction_metadata,
@@ -1771,8 +1845,17 @@ def run_smoke(args: argparse.Namespace) -> Path:
             config_path=config_path,
             proxy=proxy,
             analysis_fps=analysis_fps,
-            max_frame_exclusive=selected_frame_budget(args, analysis_fps),
+            max_frame_exclusive=schedule_budget,
+            # A bounded focused run is the full stream stopped early, so corrections past
+            # the bound are simply never reached rather than a schedule error.
+            drop_out_of_range_corrections=(
+                getattr(args, "four_part_static_focused", False)
+                and schedule_budget < FOUR_PART_FOCUSED_FRAMES
+            ),
+            frame_zero_seeds_only=frame_zero_seeds_only,
         )
+    elif frame_zero_seeds_only:
+        raise ValueError("--frame-zero-seeds-only requires --multi-keyframe-correction-schedule")
     is_g3_candidate = args.g3_full_static
     is_e4_candidate = args.g4_e4_candidate
     is_full_ego_manual_seed = args.full_ego_manual_seed
@@ -1955,7 +2038,20 @@ def run_smoke(args: argparse.Namespace) -> Path:
         if hybrid_payload is not None
         else "smoke"
     )
-    run_id = make_run_id(proxy.view_id, profile=profile)
+    run_id = make_run_id(
+        proxy.view_id,
+        profile=profile,
+        suffix=run_condition_suffix(
+            memory_policy,
+            max_side_length=args.max_side_length,
+            reference_side_length=(
+                FOUR_PART_REFERENCE_SIDE_LENGTH
+                if is_four_part_focused or is_four_part_multiview
+                else None
+            ),
+            frame_zero_seeds_only=frame_zero_seeds_only,
+        ),
+    )
     run_directory = (args.run_root / run_id).resolve()
     suffix = 2
     while run_directory.exists():
@@ -2033,6 +2129,8 @@ def run_smoke(args: argparse.Namespace) -> Path:
         "muggled_sam_source": str(MUGGLED_SAM_SOURCE),
         "model_path": str(model_path),
         "cuda_visible_devices": "0",
+        "tracker_memory_policy": memory_policy.model_dump(mode="json"),
+        "max_side_length": args.max_side_length,
     }
     if is_four_part_full:
         runtime_invocation["known_pilot_failure"] = (
@@ -2164,6 +2262,7 @@ def run_smoke(args: argparse.Namespace) -> Path:
             multi_keyframe_schedule=multi_keyframe_schedule_payload,
             resume_from_checkpoint=resume_checkpoint,
             checkpoint_every=args.checkpoint_every,
+            memory_policy=memory_policy,
         )
 
     observations_path = run_directory / "observations.jsonl"
@@ -2500,10 +2599,11 @@ def run_smoke(args: argparse.Namespace) -> Path:
                         if is_four_part_full
                         else "recorded outputs at 0.000, 46.350, and 92.667 seconds; "
                         "review-only, not accuracy"
-                        if is_four_part_focused or is_four_part_ego_focused
+                        if (is_four_part_focused or is_four_part_ego_focused)
+                        and requested_frames == FOUR_PART_FOCUSED_FRAMES
                         else "recorded outputs at 0.000, 30.000, and 59.967 seconds; "
                         "review-only, not accuracy"
-                        if is_four_part_multiview
+                        if is_four_part_multiview or is_four_part_focused
                         else "recorded outputs at 0.000, 5.000, and 9.967 seconds; "
                         "review-only, not accuracy"
                     ),
@@ -2657,7 +2757,11 @@ def run_smoke(args: argparse.Namespace) -> Path:
     elif is_four_part_focused or is_four_part_ego_focused:
         four_part_focused = FourPartFocusedRunMetadata(
             requested_analysis_frame_range=requested_range,
-            requested_seconds=FOUR_PART_FOCUSED_SECONDS,
+            requested_seconds=(
+                FOUR_PART_FOCUSED_SECONDS
+                if requested_frames == FOUR_PART_FOCUSED_FRAMES
+                else FOUR_PART_MULTIVIEW_SECONDS
+            ),
             view_id=proxy.view_id,
             qa_artifact_uri=relative_uri(qa_path, repository_root) if qa_path is not None else None,
             multi_keyframe_corrections=multi_keyframe_correction_metadata,
@@ -2883,7 +2987,34 @@ def main() -> None:
         type=int,
         help="First frame this run steps itself; requires a checkpoint at that frame.",
     )
+    parser.add_argument(
+        "--frame-zero-seeds-only",
+        action="store_true",
+        help=(
+            "Apply only the schedule's frame-0 seeds and drop every later correction, to "
+            "measure how far the tracker gets without human correction."
+        ),
+    )
+    policy_group = parser.add_argument_group(
+        "tracker memory policy",
+        "Opt-in worker policy; the defaults reproduce the unpoliced tracker byte for byte.",
+    )
+    policy_group.add_argument("--slot-exclusivity", choices=("off", "argmax"), default="off")
+    policy_group.add_argument("--exclusivity-loser-logit", type=float, default=-8.0)
+    policy_group.add_argument("--memory-gate", choices=("off", "on"), default="off")
+    policy_group.add_argument("--gate-min-object-score", type=float, default=0.0)
+    policy_group.add_argument("--gate-min-iou", type=float, default=0.5)
+    policy_group.add_argument("--gate-max-contested-fraction", type=float, default=0.2)
+    policy_group.add_argument(
+        "--gate-area-band",
+        type=lambda value: tuple(float(item) for item in value.split(",")),
+        default=(0.5, 2.0),
+        metavar="LOW,HIGH",
+    )
+    policy_group.add_argument("--gate-area-history-frames", type=int, default=30)
     args = parser.parse_args()
+    if len(args.gate_area_band) != 2:
+        parser.error("--gate-area-band takes exactly 'low,high'")
     if args.resume_at is not None and args.resume_at < 1:
         parser.error("--resume-at must be at least 1")
     if args.resume_at is not None and args.resume_run is None:

@@ -497,6 +497,11 @@ class PerFrameHand(VersionedModel):
     )
 
 
+MemoryGateReason = Literal[
+    "ok", "warmup", "low_object_score", "low_iou", "contested", "area_jump", "corrected"
+]
+
+
 class TrackerSlotDiagnostic(VersionedModel):
     """One multiplex slot's raw tracker state, recorded whether or not it produced an object.
 
@@ -511,6 +516,69 @@ class TrackerSlotDiagnostic(VersionedModel):
     iou_prediction: float | None = Field(default=None, ge=0, le=1)
     active: bool
     corrected: bool = False
+    # Present only on runs with a non-default tracker memory policy; `object_score` stays the
+    # raw presence logit, and these say what the policy did with it on this frame.
+    contested_fraction: float | None = Field(default=None, ge=0, le=1)
+    memory_written: bool | None = None
+    memory_gate_reason: MemoryGateReason | None = None
+
+
+class TrackerMemoryPolicy(VersionedModel):
+    """The worker's slot exclusivity and score-gated memory condition, as run.
+
+    Recorded in every run's runtime settings so the condition is stated even when it is the
+    default (both off), which reproduces the unpoliced tracker exactly.  It is a run
+    condition, not an accuracy claim.
+    """
+
+    slot_exclusivity: Literal["off", "argmax"] = "off"
+    memory_gate: Literal["off", "on"] = "off"
+    exclusivity_loser_logit: float = Field(default=-8.0, le=0)
+    gate_min_object_score: float = 0.0
+    gate_min_iou: float = Field(default=0.5, ge=0, le=1)
+    gate_max_contested_fraction: float = Field(default=0.2, ge=0, le=1)
+    gate_area_band: tuple[float, float] = (0.5, 2.0)
+    gate_area_history_frames: int = Field(default=30, ge=1)
+
+    @model_validator(mode="after")
+    def require_ordered_area_band(self) -> TrackerMemoryPolicy:
+        low, high = self.gate_area_band
+        if low <= 0 or high < low:
+            raise ValueError("gate_area_band must be 0 < low <= high")
+        return self
+
+    @property
+    def is_default(self) -> bool:
+        return self.slot_exclusivity == "off" and self.memory_gate == "off"
+
+    def run_id_suffix(self) -> str:
+        """Short arm label for run ids: empty for the default policy."""
+        parts = []
+        if self.slot_exclusivity != "off":
+            parts.append(f"x{self.slot_exclusivity}")
+        if self.memory_gate != "off":
+            parts.append(f"g{self.memory_gate}")
+        return "-".join(parts)
+
+    def worker_arguments(self) -> list[str]:
+        return [
+            "--slot-exclusivity",
+            self.slot_exclusivity,
+            "--exclusivity-loser-logit",
+            str(self.exclusivity_loser_logit),
+            "--memory-gate",
+            self.memory_gate,
+            "--gate-min-object-score",
+            str(self.gate_min_object_score),
+            "--gate-min-iou",
+            str(self.gate_min_iou),
+            "--gate-max-contested-fraction",
+            str(self.gate_max_contested_fraction),
+            "--gate-area-band",
+            f"{self.gate_area_band[0]},{self.gate_area_band[1]}",
+            "--gate-area-history-frames",
+            str(self.gate_area_history_frames),
+        ]
 
 
 class FrameObservations(VersionedModel):
@@ -1306,6 +1374,10 @@ class MultiKeyframeCorrectionScheduleMetadata(VersionedModel):
     scheduled_correction_frame_indices: tuple[int, ...] = ()
     # Frames whose correction masks were chosen by agent visual review rather than a human.
     agent_selected_correction_frame_indices: tuple[int, ...] = ()
+    # Later corrections the run deliberately did not apply: those past a bounded frame range,
+    # or all of them when the run was asked to track from the frame-0 seeds alone.
+    dropped_correction_frame_indices: tuple[int, ...] = ()
+    frame_zero_seeds_only: bool = False
     ground_truth_accuracy_claim: Literal[False] = False
 
 
@@ -1722,10 +1794,15 @@ class FourPartFullRunMetadata(VersionedModel):
 
 
 class FourPartFocusedRunMetadata(VersionedModel):
-    """Audit data for a separated-to-assembled focused four-part view."""
+    """Audit data for a separated-to-assembled focused four-part view.
+
+    The full profile covers proxy frames [0, 2781); the first-minute bound [0, 1800) is the
+    same stream stopped early, used for tracker-policy arms compared against the first minute
+    of the full reference run.
+    """
 
     requested_analysis_frame_range: FrameRange
-    requested_seconds: Literal[92.7]
+    requested_seconds: Literal[92.7, 60.0]
     view_id: Literal["static-c10379", "ego-hmc21110305"]
     concepts: tuple[str, ...] = Field(min_length=1)
     source_fingerprint: ArtifactFingerprint
@@ -1747,12 +1824,14 @@ class FourPartFocusedRunMetadata(VersionedModel):
 
     @model_validator(mode="after")
     def require_exact_four_part_focused_budget(self) -> FourPartFocusedRunMetadata:
+        permitted = {92.7: 2781, 60.0: 1800}
         if (
             self.requested_analysis_frame_range.start_frame != 0
-            or self.requested_analysis_frame_range.frame_count != 2781
+            or self.requested_analysis_frame_range.frame_count != permitted[self.requested_seconds]
         ):
             raise ValueError(
-                "focused four-part run must cover exactly focused proxy frames [0, 2781)"
+                "focused four-part run must cover exactly focused proxy frames [0, 2781), "
+                "or its first-minute bound [0, 1800) declared as 60.0 seconds"
             )
         if self.concepts != ("chassis", "interior", "rear_body", "cabin"):
             raise ValueError(

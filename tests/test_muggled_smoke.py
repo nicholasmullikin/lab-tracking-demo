@@ -432,6 +432,50 @@ def test_run_identifier_is_portable_lowercase() -> None:
     assert run_id == "muggledsam-sam3-smoke-ego-hmc21110305-20260908t225300z"
 
 
+def test_run_condition_suffix_names_only_what_departs_from_the_reference_condition() -> None:
+    from battle.muggled_smoke import run_condition_suffix
+    from battle.schemas import TrackerMemoryPolicy
+
+    default = TrackerMemoryPolicy()
+    arm = TrackerMemoryPolicy(slot_exclusivity="argmax", memory_gate="on")
+
+    assert run_condition_suffix(default, max_side_length=720, reference_side_length=720) == ""
+    assert run_condition_suffix(default, max_side_length=504) == ""
+    assert run_condition_suffix(default, max_side_length=1008, reference_side_length=720) == "r1008"
+    assert (
+        run_condition_suffix(
+            arm, max_side_length=1008, reference_side_length=720, frame_zero_seeds_only=True
+        )
+        == "xargmax-gon-r1008-seed0"
+    )
+    assert make_run_id(
+        "static-c10379",
+        now=datetime(2026, 9, 18, 12, 0, tzinfo=UTC),
+        profile="four-part-static-focused-reassembly",
+        suffix="gon",
+    ).endswith("-static-c10379-20260918t120000z-gon")
+
+
+def test_focused_profile_may_stop_at_the_first_minute() -> None:
+    frame_range = require_four_part_focused_range("static-c10379", start_frame=0, max_frames=1800)
+    assert frame_range.end_frame_exclusive == 1800
+    with pytest.raises(ValueError, match="first-minute bound"):
+        require_four_part_focused_range("static-c10379", start_frame=0, max_frames=1500)
+
+    common = {
+        "g3_full_static": False,
+        "g4_e4_candidate": False,
+        "full_ego_manual_seed": False,
+        "four_part_static_pilot": False,
+        "four_part_static_full": False,
+        "four_part_ego_focused": False,
+        "four_part_static_focused": True,
+    }
+    assert selected_frame_budget(types.SimpleNamespace(**common, max_frames=1800), 30.0) == 1800
+    # Any other request falls back to the full budget and is refused by the range guard.
+    assert selected_frame_budget(types.SimpleNamespace(**common, max_frames=1500), 30.0) == 2781
+
+
 def test_ego_conditions_are_explicit_and_schema_valid() -> None:
     config_path = Path(__file__).parents[1] / "configs" / "muggledsam_ego_conditions.json"
 
@@ -852,6 +896,65 @@ def test_four_target_manual_seed_initializes_four_ordered_multiplex_slots(tmp_pa
             proxy=proxy,
             analysis_fps=30.0,
         )
+
+
+REFERENCE_SCHEDULE = Path(
+    "runs/muggledsam-sam3-four-part-focused-corrections-agent-swap-20260918t000947z/"
+    "multi_keyframe_correction_schedule.json"
+)
+FOCUSED_CONFIG = Path("configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_g2.json")
+
+
+@pytest.mark.real_data
+def test_bounded_focused_runs_drop_only_the_corrections_they_cannot_reach() -> None:
+    from conftest import require_artifact
+
+    root = Path.cwd()
+    require_artifact(REFERENCE_SCHEDULE)
+    proxy = next(
+        item
+        for item in G2PreprocessingManifest.model_validate_json(FOCUSED_CONFIG.read_text()).proxies
+        if item.view_id == "static-c10379"
+    )
+    common = dict(
+        schedule_path=(root / REFERENCE_SCHEDULE).resolve(),
+        repository_root=root,
+        config_path=(root / FOCUSED_CONFIG).resolve(),
+        proxy=proxy,
+        analysis_fps=30.0,
+    )
+
+    full_payload, full_metadata = _load_multi_keyframe_correction_schedule(
+        **common, max_frame_exclusive=2781
+    )
+    bounded_payload, bounded_metadata = _load_multi_keyframe_correction_schedule(
+        **common, max_frame_exclusive=1800, drop_out_of_range_corrections=True
+    )
+    seeds_only_payload, seeds_only_metadata = _load_multi_keyframe_correction_schedule(
+        **common,
+        max_frame_exclusive=1800,
+        drop_out_of_range_corrections=True,
+        frame_zero_seeds_only=True,
+    )
+
+    assert full_metadata.scheduled_correction_frame_indices == (327, 900, 1172, 1235, 1800, 2700)
+    assert bounded_metadata.scheduled_correction_frame_indices == (327, 900, 1172, 1235)
+    assert bounded_metadata.dropped_correction_frame_indices == (1800, 2700)
+    assert bounded_metadata.agent_selected_correction_frame_indices == (1172,)
+    assert bounded_payload["seeds"] == full_payload["seeds"]
+    assert all(item["frame_index"] < 1800 for item in bounded_payload["corrections"])
+    assert seeds_only_payload["corrections"] == []
+    assert seeds_only_metadata.frame_zero_seeds_only is True
+    assert seeds_only_metadata.dropped_correction_frame_indices == (
+        327,
+        900,
+        1172,
+        1235,
+        1800,
+        2700,
+    )
+    with pytest.raises(ValueError, match=r"permits only frames \[0, 1800\)"):
+        _load_multi_keyframe_correction_schedule(**common, max_frame_exclusive=1800)
 
 
 def test_correction_schedule_is_refused_on_a_clock_it_was_not_authored_against(

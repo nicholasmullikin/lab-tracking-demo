@@ -132,6 +132,17 @@ def load_view_run(
     return ViewRun(view, run_directory, manifest, observations, tuple(targets), provenance)
 
 
+def has_default_tracker_policy(runtime_settings: Mapping[str, object]) -> bool:
+    """True for runs made before the tracker memory policy existed or with it switched off."""
+    recorded = runtime_settings.get("tracker_memory_policy")
+    if recorded is None:
+        return True
+    policy = json.loads(recorded) if isinstance(recorded, str) else dict(recorded)
+    return (
+        policy.get("slot_exclusivity", "off") == "off" and policy.get("memory_gate", "off") == "off"
+    )
+
+
 def discover_multiview_runs(
     repository_root: Path, runs_root: Path = Path("runs")
 ) -> dict[str, Path]:
@@ -147,6 +158,10 @@ def discover_multiview_runs(
             continue
         core = next((s for s in manifest.method_statuses if s.stage == "objects"), None)
         if core is None or core.state.value != "succeeded":
+            continue
+        if not has_default_tracker_policy(metadata.runtime_settings):
+            # Policy arms are compared against the default runs, never silently swapped in;
+            # they reach the combiner only through an explicit --view-run.
             continue
         view = metadata.view_id.split("-", 1)[1].upper()
         if view.startswith("HMC"):

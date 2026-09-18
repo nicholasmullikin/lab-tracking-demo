@@ -157,6 +157,96 @@ def test_iou_prediction_stays_within_its_sigmoid_bounds() -> None:
         )
 
 
+def test_slot_diagnostics_round_trip_with_and_without_the_policy_fields() -> None:
+    legacy = TrackerSlotDiagnostic.model_validate(
+        {
+            "object_id": "sam3-00",
+            "label": "chassis",
+            "multiplex_slot": 0,
+            "object_score": 3.2,
+            "iou_prediction": 0.9,
+            "active": True,
+            "corrected": False,
+        }
+    )
+    policed = TrackerSlotDiagnostic.model_validate(
+        {
+            **legacy.model_dump(mode="json"),
+            "contested_fraction": 0.25,
+            "memory_written": False,
+            "memory_gate_reason": "contested",
+        }
+    )
+
+    assert legacy.contested_fraction is None and legacy.memory_gate_reason is None
+    assert policed.memory_written is False and policed.contested_fraction == 0.25
+    assert TrackerSlotDiagnostic.model_validate_json(policed.model_dump_json()) == policed
+    with pytest.raises(ValidationError):
+        TrackerSlotDiagnostic.model_validate(
+            {**legacy.model_dump(mode="json"), "memory_gate_reason": "because"}
+        )
+
+
+def test_tracker_memory_policy_defaults_are_off_and_bands_are_ordered() -> None:
+    from battle.schemas import TrackerMemoryPolicy
+
+    default = TrackerMemoryPolicy()
+    assert default.is_default and default.run_id_suffix() == ""
+    arm = TrackerMemoryPolicy(slot_exclusivity="argmax", memory_gate="on")
+    assert not arm.is_default and arm.run_id_suffix() == "xargmax-gon"
+    assert TrackerMemoryPolicy(memory_gate="on").run_id_suffix() == "gon"
+    assert "--slot-exclusivity" in arm.worker_arguments()
+    assert arm.worker_arguments()[arm.worker_arguments().index("--gate-area-band") + 1] == "0.5,2.0"
+    with pytest.raises(ValidationError, match="0 < low <= high"):
+        TrackerMemoryPolicy(gate_area_band=(2.0, 0.5))
+    with pytest.raises(ValidationError):
+        TrackerMemoryPolicy(slot_exclusivity="max")
+
+
+def _four_part_focused_payload(*, frame_count: int, requested_seconds: float) -> dict[str, object]:
+    payload = _smoke_metadata_payload(analysis_fps=30, frame_count=frame_count)
+    payload.update(
+        {
+            "requested_seconds": requested_seconds,
+            "view_id": "static-c10379",
+            "concepts": ["chassis", "interior", "rear_body", "cabin"],
+            "multi_keyframe_corrections": {
+                "schedule_fingerprint": payload["source_fingerprint"],
+                "correction_policy_fingerprint": payload["source_fingerprint"],
+                "correction_memory_semantics": "replace_prompt_memory_and_reset_frame_memory",
+            },
+            "rescope_reason": (
+                "old proxy frame 3120 starts with four separated parts before reassembly"
+            ),
+        }
+    )
+    return payload
+
+
+def test_focused_metadata_accepts_the_first_minute_bound_only_as_sixty_seconds() -> None:
+    from battle.schemas import FourPartFocusedRunMetadata
+
+    full = FourPartFocusedRunMetadata.model_validate(
+        _four_part_focused_payload(frame_count=2781, requested_seconds=92.7)
+    )
+    bounded = FourPartFocusedRunMetadata.model_validate(
+        _four_part_focused_payload(frame_count=1800, requested_seconds=60.0)
+    )
+
+    assert full.requested_analysis_frame_range.frame_count == 2781
+    assert bounded.requested_analysis_frame_range.frame_count == 1800
+    assert bounded.multi_keyframe_corrections.dropped_correction_frame_indices == ()
+    assert bounded.multi_keyframe_corrections.frame_zero_seeds_only is False
+    with pytest.raises(ValidationError, match="first-minute bound"):
+        FourPartFocusedRunMetadata.model_validate(
+            _four_part_focused_payload(frame_count=1800, requested_seconds=92.7)
+        )
+    with pytest.raises(ValidationError):
+        FourPartFocusedRunMetadata.model_validate(
+            _four_part_focused_payload(frame_count=1500, requested_seconds=60.0)
+        )
+
+
 def _smoke_metadata_payload(*, analysis_fps: object, frame_count: int) -> dict[str, object]:
     fingerprint = {
         "uri": "artifact.bin",
