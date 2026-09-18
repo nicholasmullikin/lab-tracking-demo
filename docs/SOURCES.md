@@ -124,6 +124,28 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
   does not decide whether job-seeking, private demos, or public display satisfy CC
   BY-NC 4.0 or dataset-specific terms.
 
+## Approved local source: Assembly101 poses, extrinsics and fine-grained annotations
+
+- Status: acquired Sep 17 at the user's explicit request for this recording only; this
+  crosses the earlier "no annotations / no poses" gate. Same dataset/revision
+  (`cvml-nus/assembly101` @ `bfc15ea5e3f0bc8f8c232af6c1b45aa137a9d967`), CC BY-NC 4.0.
+- Assets: the ten `AssemblyPoses.zip` members for the recording, range-extracted from the
+  72 GB archive (never downloaded whole; per-member CRC-32 verified), and this recording's
+  fine-grained rows streamed out of the split CSVs. Acquisition facts, checksums, and
+  format findings are in the ignored
+  `data/raw/assembly101/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532/
+  selective_poses_annotations_acquisition_report.md` and `acquisition_manifest.json`.
+- Derived, checked in: `configs/assembly101/c10379_camera_estimate.json`, a Brown camera
+  model for C10379 fitted to the dataset's own 2D/3D landmark pairs through its shipped
+  camera-to-world pose (fit RMS 5e-5 px, 4,388 points). It reproduces the dataset's
+  internal projection and is labelled `estimated_from_dataset_landmark_projection`; the
+  archive ships no intrinsics.
+- Derived, ignored: `runs/assembly101-reference-first-minute-v1/` from
+  `battle-build-assembly101-reference` (first-minute window, static clock offset +9 pose
+  frames). Use: external review context in the v4 interaction review. Not ground truth for
+  any method; no accuracy claim rests on it. TSM/DINOv2 features were inspected and not
+  downloaded (bulk LMDB archives; DINOv2 only exists for view C10119).
+
 ## External source: Grounded-SAM-2
 
 - Checkout: `/home/nick/src/Grounded-SAM-2` @ `b7a9c29f196edff0eb54dbe14588d7ae5e3dde28`

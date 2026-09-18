@@ -11,10 +11,18 @@ import argparse
 import json
 from pathlib import Path
 
+import numpy as np
 import rerun as rr
 
+from . import assembly101_reference as a101
 from . import ensemble_reference as ensemble
 from . import interaction_review as review
+from .assembly101_pose_schemas import (
+    ASSEMBLY101_EDGES,
+    ASSEMBLY101_JOINT_NAMES,
+    Assembly101HandFrame,
+    Assembly101ReferenceManifest,
+)
 from .build_phases import PhaseTimer
 from .ensemble_reference_schemas import (
     PROVENANCE_CODES,
@@ -80,10 +88,19 @@ COARSE_GT = (
 
 
 STATIC_TEXT_PANELS = (
+    ("metadata/fine_grained_gt", "Fine-grained Assembly101 GT (dataset annotation)"),
     ("metadata/coarse_gt", "Coarse Assembly101 GT (weak supervision)"),
     ("metadata/agent_substeps_first_20s", "Agent-authored substeps (contract, [0,600))"),
     ("metadata/drop_dtw", "Drop-DTW status"),
 )
+# Dataset reference window built by `battle-build-assembly101-reference`: the recording's
+# own 60 fps hand poses and fine-grained labels resampled onto this proxy's analysis clock.
+ASSEMBLY101_REFERENCE = a101.OUTPUT_ROOT
+ASSEMBLY101_HAND_COLORS: dict[str, tuple[int, int, int]] = {
+    "left": (255, 235, 130),
+    "right": (140, 255, 235),
+}
+ASSEMBLY101_CAMERA_PLANE_MM = 300.0
 DROP_DTW_STATUS = """# Drop-DTW weak supervision (first minute)
 
 No Drop-DTW alignment was run for the first-minute window. The only Drop-DTW artifact is the
@@ -207,6 +224,169 @@ def _coarse_gt_markdown() -> str:
     )
 
 
+def _fine_gt_markdown(manifest: Assembly101ReferenceManifest) -> str:
+    rows = "\n".join(
+        f"| {index} | {segment.action} | {segment.proxy_start_frame} | "
+        f"{segment.proxy_end_frame_exclusive} | "
+        f"{SOURCE_START_SECONDS + segment.proxy_start_frame / ANALYSIS_FPS:.3f}–"
+        f"{SOURCE_START_SECONDS + segment.proxy_end_frame_exclusive / ANALYSIS_FPS:.3f} s | "
+        f"{segment.annotation_id}{' (clipped)' if segment.clipped_to_window else ''} |"
+        for index, segment in enumerate(manifest.fine_segments)
+    )
+    rule = manifest.clock_rule
+    return (
+        "# Fine-grained Assembly101 GT over the first minute\n\n"
+        f"Dataset human annotations (30 FPS annotation clock; proxy frame = annotation frame − "
+        f"{manifest.annotation_start_frame}) for recording `{manifest.recording_id}` at "
+        f"revision `{manifest.dataset_revision[:12]}`. Two-hand actions are annotated as "
+        "overlapping segments. Navigation context, not a prediction; licence "
+        f"{manifest.license}.\n\n"
+        f"Static-view pose clock: `pose_frame = {rule.proxy_start_raw_frame} + "
+        f"{rule.raw_frames_per_proxy_frame}·proxy_frame {rule.pose_offset_frames:+d}` "
+        f"(±{rule.offset_uncertainty_frames} frame).\n\n"
+        "| index | action | start frame | end frame (excl.) | source | annotation id |\n"
+        "| --- | --- | --- | --- | --- | --- |\n"
+        f"{rows}\n"
+    )
+
+
+def _log_assembly101_static(entity: str, manifest: Assembly101ReferenceManifest) -> None:
+    """Camera estimate as a frustum in the world-mm view plus the diagnostics series names."""
+    camera = manifest.camera
+    pose = np.asarray(camera.camera_to_world, dtype=np.float64)
+    camera_root = f"{entity}/{review.ASSEMBLY101_3D_ROOT}/camera/{camera.view_key.split(':')[0]}"
+    rr.log(
+        camera_root,
+        rr.Transform3D(translation=pose[:3, 3], mat3x3=pose[:3, :3]),
+        static=True,
+    )
+    rr.log(
+        camera_root,
+        rr.Pinhole(
+            image_from_camera=np.asarray(camera.intrinsic_matrix, dtype=np.float64),
+            resolution=list(camera.raw_image_size),
+            camera_xyz=rr.ViewCoordinates.RDF,
+            image_plane_distance=ASSEMBLY101_CAMERA_PLANE_MM,
+        ),
+        static=True,
+    )
+    for side, color in ASSEMBLY101_HAND_COLORS.items():
+        rr.log(
+            f"{entity}/{review.ASSEMBLY101_DIAGNOSTICS}/confidence/{side}",
+            rr.SeriesLines(names=f"dataset {side} hand confidence", colors=[color]),
+            static=True,
+        )
+        rr.log(
+            f"{entity}/{review.ASSEMBLY101_DIAGNOSTICS}/wrist_distance_to_stabilized_wilor_pixels/{side}",
+            rr.SeriesLines(
+                names=f"dataset {side} wrist -> nearest stabilized WiLoR wrist (px)",
+                colors=[color],
+            ),
+            static=True,
+        )
+
+
+def _log_assembly101_frame(
+    entity: str,
+    frame: Assembly101HandFrame,
+    wilor_observation: FrameObservations,
+    *,
+    dimensions: tuple[int, int],
+    draw_threshold: float,
+) -> None:
+    """Dataset hands in proxy pixels and world millimetres, plus per-side diagnostics.
+
+    Hands below the draw threshold stay out of both spatial views but keep their confidence
+    on the time panel.  The wrist distance compares against the nearest stabilized WiLoR
+    wrist regardless of reported side because method handedness is not stable.
+    """
+    two_d_root = f"{entity}/{review.ASSEMBLY101_2D_ROOT}"
+    three_d_root = f"{entity}/{review.ASSEMBLY101_3D_ROOT}/hands"
+    width, height = dimensions
+    wilor_wrists = np.array(
+        [
+            [hand.landmarks[0].x * width, hand.landmarks[0].y * height]
+            for hand in wilor_observation.hands
+        ]
+    ).reshape(-1, 2)
+    present = {hand.side: hand for hand in frame.hands}
+    for side in ASSEMBLY101_HAND_COLORS:
+        hand = present.get(side)
+        review._log_scalar_or_clear(
+            f"{entity}/{review.ASSEMBLY101_DIAGNOSTICS}/confidence/{side}",
+            None if hand is None else hand.confidence,
+        )
+        distance = None
+        if hand is not None and hand.confidence >= draw_threshold and len(wilor_wrists):
+            wrist = np.array(a101.wrist_pixels(hand))
+            distance = float(np.min(np.linalg.norm(wilor_wrists - wrist, axis=1)))
+        review._log_scalar_or_clear(
+            f"{entity}/{review.ASSEMBLY101_DIAGNOSTICS}/wrist_distance_to_stabilized_wilor_pixels/{side}",
+            distance,
+        )
+    drawn = [hand for hand in frame.hands if hand.confidence >= draw_threshold]
+    if not drawn:
+        rr.log(two_d_root, rr.Clear(recursive=True))
+        rr.log(three_d_root, rr.Clear(recursive=True))
+        return
+    points_2d: list[list[float]] = []
+    strips_2d: list[list[list[float]]] = []
+    points_3d: list[list[float]] = []
+    strips_3d: list[list[list[float]]] = []
+    labels: list[str] = []
+    colors_points: list[tuple[int, int, int]] = []
+    colors_strips: list[tuple[int, int, int]] = []
+    for hand in drawn:
+        color = ASSEMBLY101_HAND_COLORS[hand.side]
+        pixels = [[p.x, p.y] for p in hand.joints_proxy_pixels]
+        world = [[p.x, p.y, p.z] for p in hand.joints_world_mm]
+        points_2d.extend(pixels)
+        points_3d.extend(world)
+        labels.extend(f"dataset {hand.side}: {name}" for name in ASSEMBLY101_JOINT_NAMES)
+        colors_points.extend([color] * len(pixels))
+        strips_2d.extend([[pixels[a], pixels[b]] for a, b in ASSEMBLY101_EDGES])
+        strips_3d.extend([[world[a], world[b]] for a, b in ASSEMBLY101_EDGES])
+        colors_strips.extend([color] * len(ASSEMBLY101_EDGES))
+    rr.log(
+        f"{two_d_root}/landmarks",
+        rr.Points2D(points_2d, labels=labels, colors=colors_points, radii=2.5),
+    )
+    rr.log(f"{two_d_root}/skeletons", rr.LineStrips2D(strips_2d, colors=colors_strips, radii=1.5))
+    rr.log(
+        f"{two_d_root}/wrists",
+        rr.Points2D(
+            [list(a101.wrist_pixels(hand)) for hand in drawn],
+            labels=[
+                f"dataset {hand.side} ({hand.confidence:.2f}, "
+                f"{hand.joints_inside_image}/21 in frame)"
+                for hand in drawn
+            ],
+            colors=[ASSEMBLY101_HAND_COLORS[hand.side] for hand in drawn],
+            radii=5.0,
+        ),
+    )
+    rr.log(
+        f"{three_d_root}/joints",
+        rr.Points3D(points_3d, labels=labels, colors=colors_points, radii=4.0),
+    )
+    rr.log(f"{three_d_root}/skeletons", rr.LineStrips3D(strips_3d, colors=colors_strips, radii=2.0))
+
+
+def _assembly101_coverage(reference: a101.LoadedAssembly101Reference) -> dict[str, int]:
+    threshold = reference.manifest.draw_confidence_threshold
+    frames = reference.frames.values()
+    return {
+        "assembly101_hand_frames": sum(bool(f.hands) for f in frames),
+        "assembly101_drawn_hand_frames": sum(
+            any(h.confidence >= threshold for h in f.hands) for f in frames
+        ),
+        "assembly101_both_hands_drawn_frames": sum(
+            sum(h.confidence >= threshold for h in f.hands) == 2 for f in frames
+        ),
+        "assembly101_fine_segments": len(reference.segments),
+    }
+
+
 def _prepare_output_root(root: Path, *, overwrite: bool) -> None:
     """Create the output root; an existing empty directory is fine, existing files are not."""
     existing = sorted(root.iterdir()) if root.is_dir() else []
@@ -243,9 +423,7 @@ def _reference_section(
     counts = index.reference_provenance_counts or {}
     per_part = "\n".join(
         f"  - `{part}`: eligible {_intervals_text(eligibility.get(part, ()))}; masks "
-        + ", ".join(
-            f"{count} {name}" for name, count in counts.get(part, {}).items() if count
-        )
+        + ", ".join(f"{count} {name}" for name, count in counts.get(part, {}).items() if count)
         for part in TARGETS
     )
     return f"""- The default segmentation display is the **per-target ensemble review reference**
@@ -267,14 +445,54 @@ def _reference_section(
 {per_part}"""
 
 
+def _assembly101_section(
+    index: InteractionReviewIndexManifest, manifest: Assembly101ReferenceManifest | None
+) -> str:
+    if manifest is None:
+        return ""
+    rule = manifest.clock_rule
+    offset_ms = rule.pose_offset_frames / rule.pose_fps * 1000
+    check = manifest.projection_check
+    check_text = (
+        f" Our projection of the dataset 3D reproduces its shipped 2D to {check.rms_pixels:.4f} px "
+        f"RMS over {check.compared_points:,} points."
+        if check is not None
+        else ""
+    )
+    return f"""
+## Assembly101 dataset reference (external context, not ground truth for these methods)
+
+- **Fine-grained GT** replaces the agent-authored substep track as the primary label
+  navigation: {len(manifest.fine_segments)} dataset segments cover the window (per-frame
+  document, `fine_gt_index` series, and the fine-grained table tab). Overlapping segments are
+  the dataset's separate two-hand labels. The agent substep contract stays as a tab and its
+  series remains logged but is no longer on the navigation panel.
+- **Dataset hand poses** (`{review.ASSEMBLY101_2D_ROOT}`, `{review.ASSEMBLY101_3D_ROOT}`)
+  are the recording's own 60 fps multi-view tracker output: 21 joints per hand in a
+  fixed-scale hand model, world-frame millimetres, drawn only at confidence >=
+  {manifest.draw_confidence_threshold}. The 2D overlay is a projection through an
+  **estimated** C10379 camera (Brown model fitted to the dataset's own 2D/3D pairs; fit RMS
+  {manifest.camera.fit_rms_pixels:.1e} px), not an official calibration.{check_text}
+- **Clock correction.** The static C10379 video lags the pose clock by {rule.pose_offset_frames}
+  pose frames (~{offset_ms:.0f} ms, ±{rule.offset_uncertainty_frames}):
+  `pose_frame = {rule.proxy_start_raw_frame} + {rule.raw_frames_per_proxy_frame}·proxy_frame
+  {rule.pose_offset_frames:+d}`. Earlier static/ego comparisons assumed no offset.
+- **Diagnostics** (`{review.ASSEMBLY101_DIAGNOSTICS}`): per-side dataset confidence and the
+  pixel distance from each dataset wrist to the nearest stabilized WiLoR wrist. Distance is a
+  disagreement measure between two imperfect sources, never an error of either. Coverage:
+  dataset hands in {index.coverage.get("assembly101_hand_frames", 0)}/1800 frames, both hands
+  drawn in {index.coverage.get("assembly101_both_hands_drawn_frames", 0)}.
+- Licence {manifest.license}; {manifest.citation}.
+"""
+
+
 def _guide(
     index: InteractionReviewIndexManifest,
     rrd_path: Path,
     eligibility: dict[str, tuple[tuple[int, int], ...]] | None = None,
+    assembly101: Assembly101ReferenceManifest | None = None,
 ) -> str:
-    eligibility = eligibility or {
-        part: SEGMENTATION_CONTACT_ELIGIBLE_INTERVALS for part in TARGETS
-    }
+    eligibility = eligibility or {part: SEGMENTATION_CONTACT_ELIGIBLE_INTERVALS for part in TARGETS}
     display = (
         "the per-target ensemble reference (corrected SAM3 with provenance-tracked DAM4SAM "
         "fallback and agent-labelled hidden intervals)"
@@ -297,14 +515,17 @@ partial Kineo NLF body context are separate/toggleable evidence layers.
 ## Navigation panels
 
 - **Review guide** (bottom row) is this document, logged at `metadata/review_notes`.
-- **Current substep + coarse GT (per frame)** re-renders every frame from
-  `metadata/navigation/current`: the agent-authored substep for `[0,600)`, the coarse
-  Assembly101 GT segment for `[0,1800)`, and the segmentation contact-eligibility state.
-- **Navigation: agent substep index + coarse GT segment** (right column) plots the same two
-  step indices on the time panel so transitions are visible as steps.
-- The bottom-right tabs hold the static coarse GT table, the checked-in substep contract
-  JSON, and the Drop-DTW status note (no Drop-DTW alignment exists for the first minute).
-
+- **Current GT segments (per frame)** re-renders every frame from
+  `metadata/navigation/current`: the active fine-grained Assembly101 segments (when the
+  dataset reference is present), the coarse Assembly101 GT segment for `[0,1800)`, the
+  agent-authored substep for `[0,600)`, and the per-part segmentation contact-eligibility
+  state.
+- **Navigation** (right column) plots the label segment indices on the time panel so
+  transitions are visible as steps.
+- The bottom-right tabs hold the fine-grained and coarse GT tables, the checked-in substep
+  contract JSON, and the Drop-DTW status note (no Drop-DTW alignment exists for the first
+  minute).
+{_assembly101_section(index, assembly101)}
 ## Validity and claim boundaries
 
 {_reference_section(index, eligibility)}
@@ -337,8 +558,25 @@ not accuracy or interaction assertions.
 """
 
 
-def _log_static_documents(entity: str, *, guide: str, fine_contract: object) -> None:
+def _log_static_documents(
+    entity: str,
+    *,
+    guide: str,
+    fine_contract: object,
+    assembly101: Assembly101ReferenceManifest | None = None,
+) -> None:
     """Log every static document the blueprint's text panels reference."""
+    rr.log(
+        f"{entity}/metadata/fine_grained_gt",
+        rr.TextDocument(
+            _fine_gt_markdown(assembly101)
+            if assembly101 is not None
+            else "# Fine-grained Assembly101 GT\n\nNo dataset reference window was supplied "
+            "to this build; run `battle-build-assembly101-reference` first.\n",
+            media_type="text/markdown",
+        ),
+        static=True,
+    )
     rr.log(
         f"{entity}/metadata/coarse_gt",
         rr.TextDocument(_coarse_gt_markdown(), media_type="text/markdown"),
@@ -359,7 +597,7 @@ def _log_static_documents(entity: str, *, guide: str, fine_contract: object) -> 
         rr.TextDocument(guide, media_type="text/markdown"),
         static=True,
     )
-    review._log_navigation_static(entity)
+    review._log_navigation_static(entity, fine_gt=assembly101 is not None)
 
 
 def _sam3_validity_intervals() -> tuple[SegmentationValidityInterval, ...]:
@@ -422,6 +660,7 @@ LAYERS: tuple[str, ...] = (
     "boxmot",
     "kineo",
     "diagnostics",
+    "assembly101_hands",
 )
 
 
@@ -431,6 +670,7 @@ def build_first_minute_review(
     output_root: Path = OUTPUT_ROOT,
     overwrite: bool = False,
     reference_run: Path = FIRST_MINUTE_REFERENCE_SEGMENTATION,
+    assembly101_reference: Path | None = ASSEMBLY101_REFERENCE,
     verify_fingerprints: bool = False,
     layers: tuple[str, ...] = LAYERS,
     timer: PhaseTimer | None = None,
@@ -439,6 +679,8 @@ def build_first_minute_review(
 
     `reference_run` is the ensemble reference by default; a corrected-SAM3 run directory
     (`CORRECTED_SAM3_REFERENCE_SEGMENTATION`) keeps the earlier frame-level eligibility.
+    `assembly101_reference` is the dataset window from `battle-build-assembly101-reference`;
+    `None` builds without the dataset layer and fine-grained labels.
     """
 
     unknown = tuple(name for name in layers if name not in LAYERS)
@@ -448,6 +690,16 @@ def build_first_minute_review(
     timer = timer or PhaseTimer("interaction review v4", enabled=False)
     timer.start("validate")
     repository_root = repository_root.resolve()
+    dataset = (
+        a101.load_reference(
+            assembly101_reference,
+            repository_root,
+            frame_count=FRAME_COUNT,
+            verify=verify_fingerprints,
+        )
+        if assembly101_reference is not None
+        else None
+    )
     sources = {
         name: review._validate_run(
             spec,
@@ -537,10 +789,20 @@ def build_first_minute_review(
     root = (repository_root / output_root).resolve()
     rrd_path, index_path, guide_path, sheet_path = _output_paths(root)
     _prepare_output_root(root, overwrite=overwrite)
+    dataset_manifest_fingerprint = (
+        _file_fingerprint(dataset.run_directory / a101.MANIFEST_NAME, repository_root)
+        if dataset is not None
+        else None
+    )
     artifacts = [
         _file_fingerprint(video_path, repository_root),
         *[item for source in [*sources.values(), reference] for item in source.artifacts],
         *reference_artifacts,
+        *(
+            [dataset_manifest_fingerprint, *dataset.manifest.input_artifacts]
+            if dataset is not None and dataset_manifest_fingerprint is not None
+            else []
+        ),
     ]
     unique = tuple({(item.uri, item.sha256): item for item in artifacts}.values())
     source_fingerprint = getattr(review._metadata(reference.manifest), "source_fingerprint")
@@ -570,6 +832,7 @@ def build_first_minute_review(
         ),
         reference_provenance_sidecar=sidecar_fingerprint,
         reference_provenance_counts=provenance_counts,
+        assembly101_reference=dataset_manifest_fingerprint,
         input_artifacts=unique,
         contact_heuristic=(
             f"On contact-eligible frames per part only ({eligibility_text}): wrist/palm or "
@@ -580,13 +843,24 @@ def build_first_minute_review(
         coordinate_semantics=(
             "2D geometry maps normalized image coordinates to 1280x720 source pixels.",
             "WiLoR 3D is camera-relative/non-metric and separate from the 2D review.",
+            *(
+                (
+                    "Assembly101 dataset hands are world-frame millimetres from the dataset's "
+                    "tracker; their 2D is a projection through an estimated C10379 camera "
+                    "with the measured +9 pose-frame static clock offset.",
+                )
+                if dataset is not None
+                else ()
+            ),
         ),
         claim_boundaries=(
             "Contact candidates and segmentation triggers are not ground-truth interaction claims.",
             "BoxMOT is person context only; Kineo is partial NLF-only body context.",
             "Agent-authored labels and coarse GT are navigation aids, not predictions.",
+            *(dataset.manifest.claim_boundaries if dataset is not None else ()),
         ),
         coverage={
+            **(_assembly101_coverage(dataset) if dataset is not None else {}),
             "reference_part_mask_frames": FRAME_COUNT,
             "stabilized_low_confidence_continuation_instances": sum(
                 count
@@ -633,10 +907,15 @@ def build_first_minute_review(
         rr.TextDocument(index.model_dump_json(indent=2), media_type="application/json"),
         static=True,
     )
-    guide = _guide(index, rrd_path, eligibility)
-    _log_static_documents(entity, guide=guide, fine_contract=fine_contract)
+    dataset_manifest = dataset.manifest if dataset is not None else None
+    guide = _guide(index, rrd_path, eligibility, dataset_manifest)
+    _log_static_documents(
+        entity, guide=guide, fine_contract=fine_contract, assembly101=dataset_manifest
+    )
     if ensemble_context is not None:
         _reference_provenance_static(entity)
+    if dataset is not None and "assembly101_hands" in selected:
+        _log_assembly101_static(entity, dataset.manifest)
     trigger_counts = {
         frame: sum(item.analysis_frame_index == frame for item in triggers)
         for frame in range(FRAME_COUNT)
@@ -704,6 +983,14 @@ def build_first_minute_review(
             )
         if "diagnostics" in selected:
             review._log_diagnostics_frame(entity, frame, contacts, disagreements)
+        if dataset is not None and "assembly101_hands" in selected:
+            _log_assembly101_frame(
+                entity,
+                dataset.frames[frame],
+                sources["stabilized_wilor"].observations[frame],
+                dimensions=dimensions,
+                draw_threshold=dataset.manifest.draw_confidence_threshold,
+            )
         rr.log(
             f"{entity}/diagnostics/segmentation_review_trigger/count",
             rr.Scalars([trigger_counts[frame]]),
@@ -739,6 +1026,11 @@ def build_first_minute_review(
             source_seconds=SOURCE_START_SECONDS + time,
             substep=substep,
             coarse_gt=review.coarse_gt_for_frame(COARSE_GT, frame),
+            fine_gt=(
+                a101.fine_segments_for_frame(dataset.segments, frame)
+                if dataset is not None
+                else None
+            ),
             extra_lines=(
                 (
                     "- reference masks: "
@@ -767,6 +1059,7 @@ def build_first_minute_review(
             dimensions,
             static_text_panels=STATIC_TEXT_PANELS,
             reference_provenance=ensemble_context is not None,
+            assembly101=dataset is not None and "assembly101_hands" in selected,
         )
     )
     rr.disconnect()
@@ -814,6 +1107,20 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--assembly101-reference",
+        type=Path,
+        default=ASSEMBLY101_REFERENCE,
+        help=(
+            "Dataset reference window from battle-build-assembly101-reference (hand poses and "
+            "fine-grained labels on this proxy's clock)."
+        ),
+    )
+    parser.add_argument(
+        "--no-assembly101-reference",
+        action="store_true",
+        help="Build without the dataset hand-pose layer and fine-grained labels.",
+    )
+    parser.add_argument(
         "--verify-fingerprints",
         action="store_true",
         help="Re-read every input instead of trusting a digest cached against size and mtime.",
@@ -840,6 +1147,9 @@ def main() -> None:
             timer=PhaseTimer("interaction review v4", enabled=not args.quiet),
             overwrite=args.overwrite,
             reference_run=args.reference,
+            assembly101_reference=(
+                None if args.no_assembly101_reference else args.assembly101_reference
+            ),
             verify_fingerprints=args.verify_fingerprints,
         )
     )

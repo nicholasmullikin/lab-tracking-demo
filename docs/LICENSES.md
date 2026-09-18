@@ -26,6 +26,12 @@ inputs outside Git.
   approval for the local smoke procedure, not a legal conclusion that a job-seeking,
   private demo, or public display is noncommercial. Raw video, proxy video, derived
   masks, annotations, and RRD files remain ignored and must not be redistributed.
+- **Assembly101 poses and fine-grained annotations (Sep 17):** the same `CC BY-NC 4.0`
+  terms and citation (Sener et al., CVPR 2022) cover the selectively acquired hand poses,
+  extrinsics, and this recording's fine-grained rows, and the derived reference window under
+  `runs/`. The checked-in camera estimate `configs/assembly101/c10379_camera_estimate.json`
+  holds six numbers fitted from dataset landmarks plus the dataset's shipped 4x4 extrinsics;
+  it is attributed to the dataset and is not redistribution of the dataset assets.
 - **MuggledSAM source:** `/home/nick/src/muggled_sam` declares Apache-2.0. Battle uses
   its public interface and does not copy its code. Apache-2.0 covers that source, not
   the SAM3 checkpoint.

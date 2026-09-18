@@ -460,15 +460,23 @@ def test_exported_v4_rrd_carries_navigation_entities_and_blueprint_views() -> No
     assert counts[f"{root}/metadata/review_notes"] >= 1
     index = json.loads((rrd_path.parent / "interaction_review_index.json").read_text())
     ensemble = index["reference_segmentation_method"] == "ensemble_reference"
+    dataset = index.get("assembly101_reference") is not None
     expected_views = _blueprint_views(
         _blueprint(
             root.lstrip("/"),
             (1280, 720),
             static_text_panels=STATIC_TEXT_PANELS,
             reference_provenance=ensemble,
+            assembly101=dataset,
         )
     )
     assert printed.count("ViewBlueprint:display_name") == len(expected_views)
+    if dataset:
+        assert counts[f"{root}/metadata/navigation/fine_gt_index"] >= 1000
+        assert counts[f"{root}/comparison/assembly101_hands_2d/skeletons"] >= 1700
+        assert counts[f"{root}/contexts/assembly101_world_mm_3d/hands/joints"] >= 1700
+        assert counts[f"{root}/contexts/assembly101_world_mm_3d/camera/C10379"] >= 1
+        assert counts[f"{root}/diagnostics/assembly101/confidence/left"] >= 1700
     if ensemble:
         for part in ("chassis", "interior", "rear_body", "cabin"):
             assert counts[f"{root}/diagnostics/reference_provenance/{part}"] >= 1800
@@ -480,6 +488,7 @@ _CHUNK_COLUMNS = re.compile(
     r"^Chunk\(\S+\) with \d+ rows? \([^)]*\) - (/\S+) - data columns: \[([^\]]*)\]", re.MULTILINE
 )
 _3D_VIEW_ROOT = "contexts/wilor_camera_relative_non_metric_3d"
+_3D_VIEW_ROOTS = (_3D_VIEW_ROOT, "contexts/assembly101_world_mm_3d")
 _2D_VIEW_ROOTS = (
     "primary/",
     "comparison/",
@@ -500,7 +509,7 @@ def _archetypes_by_entity(printed: str) -> dict[str, set[str]]:
 def _assert_spatial_dimensionality(archetypes: dict[str, set[str]]) -> None:
     """2D archetypes need a pinhole ancestor in a 3D view, so the roots must not mix."""
     for entity, names in archetypes.items():
-        if f"/{_3D_VIEW_ROOT}/" in entity:
+        if any(f"/{root}/" in entity for root in _3D_VIEW_ROOTS):
             assert not {n for n in names if n.endswith("2D")}, (entity, names)
         if any(f"/{root}" in entity for root in _2D_VIEW_ROOTS):
             assert not {n for n in names if n.endswith("3D")}, (entity, names)

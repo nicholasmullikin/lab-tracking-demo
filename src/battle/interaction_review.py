@@ -1002,6 +1002,7 @@ def _log_diagnostics_frame(
 NAVIGATION_CURRENT = "metadata/navigation/current"
 NAVIGATION_SUBSTEP_INDEX = "metadata/navigation/agent_substep_index"
 NAVIGATION_COARSE_GT_INDEX = "metadata/navigation/coarse_gt_index"
+NAVIGATION_FINE_GT_INDEX = "metadata/navigation/fine_gt_index"
 REVIEW_NOTES = "metadata/review_notes"
 # (relative entity path, panel title) pairs the 20 s blueprint shows as static documents.
 FIRST_20S_STATIC_TEXT_PANELS = (
@@ -1021,7 +1022,7 @@ def coarse_gt_for_frame(
     return None
 
 
-def _log_navigation_static(root: str) -> None:
+def _log_navigation_static(root: str, *, fine_gt: bool = False) -> None:
     rr.log(
         f"{root}/{NAVIGATION_SUBSTEP_INDEX}",
         rr.SeriesLines(names="agent-authored substep S01-S11 (visual review, [0,600) only)"),
@@ -1032,6 +1033,28 @@ def _log_navigation_static(root: str) -> None:
         rr.SeriesLines(names="coarse Assembly101 GT segment index (weak supervision)"),
         static=True,
     )
+    if fine_gt:
+        rr.log(
+            f"{root}/{NAVIGATION_FINE_GT_INDEX}",
+            rr.SeriesLines(names="fine-grained Assembly101 GT segment index (dataset annotation)"),
+            static=True,
+        )
+
+
+def _fine_gt_lines(fine_gt: tuple[tuple[int, object], ...]) -> list[str]:
+    if not fine_gt:
+        return ["- fine-grained Assembly101 GT: no segment covers this frame"]
+    lines = []
+    for index, segment in fine_gt:
+        clipped = " (clipped to window)" if getattr(segment, "clipped_to_window") else ""
+        lines.append(
+            f"- fine-grained Assembly101 GT (dataset annotation, not prediction): segment "
+            f"{index} **{getattr(segment, 'action')}** (frames "
+            f"[{getattr(segment, 'proxy_start_frame')},"
+            f"{getattr(segment, 'proxy_end_frame_exclusive')}), id "
+            f"`{getattr(segment, 'annotation_id')}`){clipped}"
+        )
+    return lines
 
 
 def _log_navigation_frame(
@@ -1041,14 +1064,24 @@ def _log_navigation_frame(
     source_seconds: float,
     substep: object | None,
     coarse_gt: tuple[int, CoarseGtSegment] | None,
+    fine_gt: tuple[tuple[int, object], ...] | None = None,
     extra_lines: tuple[str, ...] = (),
 ) -> None:
     """Log the per-frame navigation document plus its step-index time series.
 
     The document is re-logged every frame so a `TextDocumentView` always shows the current
-    agent-authored substep and coarse GT segment; step indices give the same information a
-    visible shape on the time panel.  Neither is a prediction or an accuracy claim.
+    labels; step indices give the same information a visible shape on the time panel.
+    `fine_gt` is the tuple of active dataset fine-grained segments when a builder has them
+    (`None` when it does not); the lowest active index is what the series plots.  Nothing
+    here is a prediction or an accuracy claim.
     """
+    fine_lines: list[str] = []
+    if fine_gt is not None:
+        fine_lines = _fine_gt_lines(fine_gt)
+        if fine_gt:
+            rr.log(f"{root}/{NAVIGATION_FINE_GT_INDEX}", rr.Scalars([min(i for i, _ in fine_gt)]))
+        else:
+            rr.log(f"{root}/{NAVIGATION_FINE_GT_INDEX}", rr.Clear(recursive=False))
     if substep is None:
         substep_line = "- agent-authored substep: none (outside the checked-in `[0,600)` labels)"
         rr.log(f"{root}/{NAVIGATION_SUBSTEP_INDEX}", rr.Clear(recursive=False))
@@ -1073,8 +1106,9 @@ def _log_navigation_frame(
         [
             f"# Navigation — frame {frame} / source {source_seconds:.3f} s",
             "",
-            substep_line,
+            *fine_lines,
             gt_line,
+            substep_line,
             *extra_lines,
         ]
     )
@@ -1088,14 +1122,25 @@ REFERENCE_PROVENANCE_PANEL_NAME = (
 )
 
 
+ASSEMBLY101_2D_ROOT = "comparison/assembly101_hands_2d"
+ASSEMBLY101_3D_ROOT = "contexts/assembly101_world_mm_3d"
+ASSEMBLY101_DIAGNOSTICS = "diagnostics/assembly101"
+
+
 def _blueprint(
     root: str,
     dimensions: tuple[int, int],
     *,
     static_text_panels: tuple[tuple[str, str], ...] = FIRST_20S_STATIC_TEXT_PANELS,
     reference_provenance: bool = False,
+    assembly101: bool = False,
 ) -> rrb.Blueprint:
-    """Shared review layout; `reference_provenance` adds the ensemble provenance layer/panel."""
+    """Shared review layout.
+
+    `reference_provenance` adds the ensemble provenance layer/panel; `assembly101` adds the
+    dataset hand-pose views, their diagnostics panel, and swaps the navigation panel's agent
+    substep series for the dataset's fine-grained segment index.
+    """
     primary = rrb.Spatial2DView(
         origin=root,
         name=(
@@ -1122,6 +1167,53 @@ def _blueprint(
         if reference_provenance
         else ()
     )
+    assembly101_2d = (
+        (
+            rrb.Spatial2DView(
+                origin=root,
+                name="Assembly101 dataset hands 2D (projected 60 fps 3D, +9 frame static offset)",
+                contents=("$origin/source/video", f"$origin/{ASSEMBLY101_2D_ROOT}/**"),
+                visual_bounds=rrb.VisualBounds2D(
+                    x_range=[0, dimensions[0]], y_range=[0, dimensions[1]]
+                ),
+            ),
+        )
+        if assembly101
+        else ()
+    )
+    assembly101_3d = (
+        (
+            rrb.Spatial3DView(
+                origin=f"{root}/{ASSEMBLY101_3D_ROOT}",
+                name="Assembly101 world-frame 3D hands (mm) + C10379 camera estimate",
+                contents="$origin/**",
+            ),
+        )
+        if assembly101
+        else ()
+    )
+    assembly101_series = (
+        (
+            rrb.TimeSeriesView(
+                origin=f"{root}/{ASSEMBLY101_DIAGNOSTICS}",
+                name="Assembly101 dataset hands: confidence and wrist distance to stabilized WiLoR",
+                contents="$origin/**",
+            ),
+        )
+        if assembly101
+        else ()
+    )
+    navigation_series = (
+        (
+            f"$origin/{NAVIGATION_FINE_GT_INDEX.rsplit('/', 1)[1]}",
+            f"$origin/{NAVIGATION_COARSE_GT_INDEX.rsplit('/', 1)[1]}",
+        )
+        if assembly101
+        else (
+            f"$origin/{NAVIGATION_SUBSTEP_INDEX.rsplit('/', 1)[1]}",
+            f"$origin/{NAVIGATION_COARSE_GT_INDEX.rsplit('/', 1)[1]}",
+        )
+    )
     comparison = rrb.Horizontal(
         rrb.Spatial2DView(
             origin=root,
@@ -1139,6 +1231,7 @@ def _blueprint(
                 x_range=[0, dimensions[0]], y_range=[0, dimensions[1]]
             ),
         ),
+        *assembly101_2d,
     )
     return rrb.Blueprint(
         rrb.Vertical(
@@ -1157,13 +1250,15 @@ def _blueprint(
                     ),
                     rrb.TimeSeriesView(
                         origin=f"{root}/metadata/navigation",
-                        name="Navigation: agent substep index + coarse GT segment",
-                        contents=(
-                            f"$origin/{NAVIGATION_SUBSTEP_INDEX.rsplit('/', 1)[1]}",
-                            f"$origin/{NAVIGATION_COARSE_GT_INDEX.rsplit('/', 1)[1]}",
+                        name=(
+                            "Navigation: fine-grained + coarse Assembly101 GT segment index"
+                            if assembly101
+                            else "Navigation: agent substep index + coarse GT segment"
                         ),
+                        contents=navigation_series,
                     ),
                     *provenance_views,
+                    *assembly101_series,
                 ),
                 column_shares=[3, 2],
             ),
@@ -1185,10 +1280,15 @@ def _blueprint(
                     name="WiLoR camera-relative non-metric 3D",
                     contents="$origin/camera_relative_3d/**",
                 ),
+                *assembly101_3d,
                 rrb.TextDocumentView(origin=f"{root}/{REVIEW_NOTES}", name="Review guide"),
                 rrb.TextDocumentView(
                     origin=f"{root}/{NAVIGATION_CURRENT}",
-                    name="Current substep + coarse GT (per frame)",
+                    name=(
+                        "Current GT segments (per frame)"
+                        if assembly101
+                        else "Current substep + coarse GT (per frame)"
+                    ),
                 ),
                 rrb.Tabs(
                     *[
@@ -1196,7 +1296,7 @@ def _blueprint(
                         for path, title in static_text_panels
                     ]
                 ),
-                column_shares=[2, 2, 2, 2, 2],
+                column_shares=[2] * (6 if assembly101 else 5),
             ),
             row_shares=[4, 3, 2],
         ),

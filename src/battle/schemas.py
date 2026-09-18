@@ -2504,6 +2504,13 @@ class InteractionReviewIndexManifest(VersionedModel):
         description="Per-frame, per-target mask provenance when the reference is an ensemble.",
     )
     reference_provenance_counts: dict[str, dict[str, int]] | None = None
+    assembly101_reference: ArtifactFingerprint | None = Field(
+        default=None,
+        description=(
+            "Manifest of the Assembly101 dataset reference window (hand poses and "
+            "fine-grained labels) when the package includes the dataset layer."
+        ),
+    )
     input_artifacts: tuple[ArtifactFingerprint, ...] = Field(min_length=1)
     contact_heuristic: str = Field(min_length=1)
     hand_matching_rule: str = Field(min_length=1)

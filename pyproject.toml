@@ -43,6 +43,7 @@ battle-build-interaction-review-v4 = "battle.interaction_review_v4:main"
 battle-review-metrics = "battle.review_metrics:main"
 battle-build-ensemble-reference = "battle.ensemble_reference:main"
 battle-cache-masks = "battle.mask_cache:main"
+battle-build-assembly101-reference = "battle.assembly101_reference:main"
 battle-prepare-human-qa = "battle.human_qa:main"
 battle-human-qa-candidates = "battle.human_qa:candidate_main"
 

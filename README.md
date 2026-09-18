@@ -1195,6 +1195,51 @@ uv run battle-stabilize-wilor --wilor-run runs/wilor-hands-static-60s-overnight-
 uv run battle-build-interaction-review-v4 --overwrite
 ```
 
+#### Assembly101 dataset hands and fine-grained labels (Sep 18)
+
+`battle-build-assembly101-reference` resamples the recording's own dataset assets onto the
+first-minute analysis clock and writes `runs/assembly101-reference-first-minute-v1/`
+(`manifest.json` + `hands.jsonl`); `battle-build-interaction-review-v4` reads it by default
+(`--no-assembly101-reference` builds without it). It is **external review context, not ground
+truth for any method here**, and CC BY-NC 4.0 attribution applies.
+
+- **Inputs** (ignored `data/raw/assembly101/<recording>/`, selectively acquired Sep 17):
+  `landmarks3D`, `hand_confidences`, `timestamp`, `camera_extrinsics_fixed` from
+  `AssemblyPoses.zip`, and this recording's fine-grained CSV rows. The C10379 intrinsics are
+  the checked-in estimate `configs/assembly101/c10379_camera_estimate.json` (Brown model fitted
+  to the dataset's own 2D/3D landmark pairs through the shipped camera-to-world pose; the
+  archive ships no intrinsics). The builder refuses a camera estimate whose extrinsics differ
+  from the dataset file.
+- **Clock rule.** Proxy frame `p` -> pose frame `17649 + 2p` for the static view: the C10379
+  video lags the 60 fps pose clock by 9 pose frames (~150 ms, +-1). A method-independent check
+  agrees: the median distance from each dataset wrist to the nearest stabilized WiLoR wrist is
+  minimal at +7..+10 pose frames (30.4 px at +9 vs 33.7 px at 0). Every earlier static/ego
+  comparison assumed zero relative offset.
+- **Projection check.** Our projection of the 3D joints reproduces the dataset's shipped 2D
+  landmarks to 0.0002 px RMS over 73,500 points, so `landmarks2D` (1.1 GB) is never read.
+- **What the viewer gets.** A third comparison view `comparison/assembly101_hands_2d` (dataset
+  left hand yellow, right mint, drawn at confidence >= 0.5, 21 joints in the dataset's own
+  MS-G3D joint order, never remapped onto the MediaPipe order); a `Spatial3DView` at
+  `contexts/assembly101_world_mm_3d` with the world-mm hands and the estimated C10379 camera
+  frustum; a `diagnostics/assembly101` panel (per-side dataset confidence and wrist distance to
+  the nearest stabilized WiLoR wrist, a disagreement between two imperfect sources, not an
+  error of either); and `metadata/fine_grained_gt` plus a `fine_gt_index` navigation series.
+  The 27 fine-grained segments in the window (`position interior` 96-323 and 518-697, `screw
+  chassis with screwdriver` 424-483, 737-1079 and 1668-1800, `position rear body` 1321-1518,
+  pick-up/put-down/inspect steps; overlapping two-hand labels kept) replace the agent-authored
+  substep track on the navigation panel; the substep contract stays as a tab.
+- **Coverage.** Dataset hands in 1800/1800 frames (left 1800, right 1700); 72 of 3,500 hands
+  fall below the draw threshold. Where a dataset wrist lands within 40 px of a WiLoR wrist
+  (1,951 pairs) the wrist-to-middle-tip span ratio dataset/WiLoR has median 1.08 with a wide
+  spread (p10 0.64, p90 1.57): the dataset's fixed-scale hand model and both trackers'
+  articulation noise are visible, especially with fingers hidden behind the held part.
+
+```bash
+uv run battle-build-assembly101-reference            # writes runs/assembly101-reference-first-minute-v1
+uv run battle-build-interaction-review-v4 --overwrite
+uv run pytest -m real_data tests/test_assembly101_reference.py
+```
+
 ### First-minute review metrics (label-free triggers)
 
 `battle-review-metrics` turns the v4 first-minute inputs into per-frame proxy metrics and a

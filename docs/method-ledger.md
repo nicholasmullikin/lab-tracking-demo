@@ -41,7 +41,7 @@ no-annotation, no-accuracy-claims rule.
 | Pin one Assembly101 segment with source/analysis/annotation/pose clocks | Done | `configs/clips/*.json`; nusar-9033, 215.000–395.000 s |
 | MuggledSAM/SAM3 running over the full 180 s static view | Done (aligned hybrid: three text, one reviewed mask) | [Sep 14 aligned hybrid](#sep-14-aligned-static-hybrid-candidate) |
 | MuggledSAM/SAM3 running over the full 180 s ego view | Done, but only with human-seeded masks | [Four-target 180 s baseline](#sep-9-evening-four-target-180-second-ego-baseline) |
-| Both views on one synchronized Rerun timeline | Done; canonical 180 s comparison plus focused 60 s four-part comparison | `battle-build-ego-static-comparison`; [Sep 15 four-part experiment](#sep-15-four-part-static-reassembly-experiment) |
+| Both views on one synchronized Rerun timeline | Done, with a caveat found Sep 17: the static video lags the dataset pose clock by 9 pose frames (~150 ms); the existing comparisons assumed zero relative offset and are not yet corrected | `battle-build-ego-static-comparison`; [Sep 15 four-part experiment](#sep-15-four-part-static-reassembly-experiment); [Sep 18 dataset reference](#sep-18-assembly101-dataset-hands-and-fine-grained-labels-in-the-v4-review) |
 | Five pre-accuracy measures recorded per run | Done | Every `worker_result.json` and `manifest.json` |
 | MediaPipe Hands static-view baseline (core spine) | Selected 60 s run complete | [hand-pose adapter](#hand-pose-adapter) |
 | Second method in the viewer (MediaPipe) | Done; merged into focused first-minute comparison | [hand-pose adapter](#hand-pose-adapter) |
@@ -291,6 +291,9 @@ What the plan said, what happened instead, and why, in one line each.
   remains the named second wave.
 - `yellow_toy_top` leaves the frame at ~216.2 s in every arm; its coverage numbers
   describe the scene, not the tracker.
+- Static/ego clock offset: the static C10379 video lags the dataset pose clock by 9 pose
+  frames (~150 ms). Only the Sep 18 dataset hand layer applies it; every two-view comparison
+  still assumes zero relative offset.
 - Focused static reference, frames 1024-1171: the interior slot leaks onto the visible black
   chassis while the grey block is hidden; a credible chassis+interior correction at leak onset
   (1020) did not hold (Sep 17–18 entry). Options needing human sign-off: a hidden-object
@@ -1699,3 +1702,62 @@ this comparison makes no accuracy or cross-method identity claim.
 - **Tier 4, hygiene** (`da800fe`). `scripts/prune_runs.py` lists run directories that no
   tracked file or other run manifest cites (dry-run only, never deletes); README documents the
   test tiers and when to run each.
+
+### Sep 18: Assembly101 dataset hands and fine-grained labels in the v4 review
+
+- **Claim boundary first.** The dataset poses come from Assembly101's own multi-view tracker
+  with a fixed-scale hand model; the intrinsics are an estimate recovered from the dataset's
+  own 2D/3D projection; the fine-grained segments are the dataset's human annotations. All of
+  it is external review context. It is not ground truth for any method compared here, and no
+  accuracy number rests on it. CPU-only; no model ran; the one viewer opened was the web
+  viewer in a background browser tab for a layout check.
+- **Reference window.** `battle-build-assembly101-reference` (new module
+  `assembly101_reference.py`, typed contracts in `assembly101_pose_schemas.py`) reads
+  `landmarks3D`, `hand_confidences`, `timestamp`, `camera_extrinsics_fixed` and this recording's
+  fine-grained CSV rows, maps every analysis frame `p` of the focused static proxy onto pose
+  frame `17649 + 2p` (the measured +9 static offset, recorded with its evidence and +-1 frame
+  uncertainty in `Assembly101ClockRule`), projects the world-mm joints through the checked-in
+  camera estimate `configs/assembly101/c10379_camera_estimate.json` (the builder refuses a
+  camera whose extrinsics differ from the dataset file), and writes
+  `runs/assembly101-reference-first-minute-v1/{manifest.json,hands.jsonl}` with input
+  fingerprints. 2.6 s. The dataset's 21-joint MS-G3D order and edge list are kept verbatim
+  rather than remapped onto the MediaPipe order (the dataset thumb has three joints plus a
+  palm centre), so the layer has its own schema and drawing code.
+- **Checks.** Our projection reproduces the dataset's shipped `landmarks2D` to 0.0002 px RMS
+  (max 0.0004) over 73,500 points, so the 1.1 GB 2D file is never read. A third,
+  method-independent confirmation of the clock offset: the median distance from each dataset
+  wrist to the nearest stabilized WiLoR wrist across the minute is minimal for +7..+10 pose
+  frames (30.4 px at +9 vs 33.7 px at 0; the mean is minimal at exactly +9). The residual
+  ~30 px is a definition difference (dataset joint 5 vs WiLoR joint 0) plus both trackers'
+  noise, not a claim about either. Coverage: dataset hands in 1800/1800 frames (left 1800,
+  right 1700; 72 of 3,500 hands below the 0.5 draw threshold). Where a dataset wrist lands
+  within 40 px of a WiLoR wrist (1,951 pairs) the wrist-to-middle-tip span ratio dataset/WiLoR
+  has median 1.08, p10 0.64, p90 1.57: scale agrees on average, articulation does not,
+  especially with fingers hidden behind the held part; zoomed overlays at 300/800/1172/1400
+  show the dataset skeleton on the right hand but stretched wide when the hand grips the part.
+- **v4 package.** New layer `assembly101_hands` (on by default; `--no-assembly101-reference`
+  builds without it): `comparison/assembly101_hands_2d` (left yellow, right mint) as a third
+  comparison view, `contexts/assembly101_world_mm_3d` as a `Spatial3DView` with the hands in
+  world mm and the estimated C10379 camera as a `Transform3D` + `Pinhole` frustum,
+  `diagnostics/assembly101/{confidence,wrist_distance_to_stabilized_wilor_pixels}/{left,right}`
+  on a new time panel, and `metadata/fine_grained_gt` (27-row table) plus a
+  `metadata/navigation/fine_gt_index` series. Per the Sep 17 human nit ("agent substep is
+  confusing"), the fine-grained dataset segments replace the agent-authored substep on the
+  navigation panel and lead the per-frame navigation document; the substep series stays
+  logged and the contract stays a tab. `InteractionReviewIndexManifest.assembly101_reference`
+  fingerprints the window manifest; its input fingerprints join `input_artifacts`; the guide
+  gains a dataset section. Rebuilt in place (20.4 s; 18 blueprint views, was 15).
+- **Tests.** 335 passing default tier (+13: clock rule, joint graph, pinhole projection,
+  synthetic hand-frame build with zero-confidence drop and inside-image counts, missing pose
+  frame is an error, fine-grained CSV parsing with view filter/window clipping/overlaps,
+  segment and hand-side validators, `load_reference` fingerprint refusal, the dataset
+  blueprint referencing only logged entities, fine-GT series clearing); `real_data` tier
+  checks the built window (27 segments, +9 offset, projection RMS < 0.01 px) and that the
+  built v4 index and RRD carry the dataset entities; the 2D/3D root dimensionality guard now
+  covers the new 3D root.
+- **Open.** The +9 static offset is applied only to this dataset layer. The canonical
+  ego/static comparisons (`battle-build-ego-static-comparison`, focused two-view) still
+  assume zero relative offset; correcting them is the next multicam step, together with the
+  static/ego correspondence audit and an ATHENA triangulation trial now that the intrinsics
+  blocker is gone in practice. Hidden-interior semantics for `[1024,1172)` and the pending
+  human QA dispositions are unchanged.
