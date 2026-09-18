@@ -36,9 +36,14 @@ from .athena_hands import (
 from .multiview_geometry import CameraRig
 
 THREE_D_ROOT = "contexts/assembly101_world_mm_3d"
-HANDS_ENTITY = f"{THREE_D_ROOT}/athena_hands"
+# Entity label per arm: the v4 review logs the MediaPipe arm under `athena_hands` and the
+# three-view WiLoR arm beside it under `athena_hands_wilor`, so both sit in one 3D view.
+DEFAULT_LABEL = "athena_hands"
+WILOR_LABEL = "athena_hands_wilor"
+WILOR_OUTPUT_ROOT = Path("runs/athena-hands-first-minute-wilor")
+HANDS_ENTITY = f"{THREE_D_ROOT}/{DEFAULT_LABEL}"
 CAMERAS_ENTITY = f"{THREE_D_ROOT}/camera"
-DIAGNOSTICS = "diagnostics/assembly101/athena_hands"
+DIAGNOSTICS = f"diagnostics/assembly101/{DEFAULT_LABEL}"
 DATASET_ENTITY = f"{THREE_D_ROOT}/hands"
 HAND_COLORS: dict[str, tuple[int, int, int]] = {
     "left": (255, 140, 60),
@@ -48,6 +53,28 @@ SMOOTHED_COLORS: dict[str, tuple[int, int, int]] = {
     "left": (200, 90, 30),
     "right": (40, 110, 200),
 }
+WILOR_HAND_COLORS: dict[str, tuple[int, int, int]] = {
+    "left": (255, 80, 200),
+    "right": (80, 230, 120),
+}
+WILOR_SMOOTHED_COLORS: dict[str, tuple[int, int, int]] = {
+    "left": (190, 40, 150),
+    "right": (30, 170, 80),
+}
+ARM_COLORS: dict[str, tuple[dict[str, tuple[int, int, int]], dict[str, tuple[int, int, int]]]] = {
+    DEFAULT_LABEL: (HAND_COLORS, SMOOTHED_COLORS),
+    WILOR_LABEL: (WILOR_HAND_COLORS, WILOR_SMOOTHED_COLORS),
+}
+
+
+def hands_entity(label: str) -> str:
+    return f"{THREE_D_ROOT}/{label}"
+
+
+def diagnostics_entity(label: str) -> str:
+    return f"diagnostics/assembly101/{label}"
+
+
 DATASET_COLORS: dict[str, tuple[int, int, int]] = {
     "left": (255, 235, 130),
     "right": (140, 255, 235),
@@ -105,8 +132,13 @@ def load_run_if_present(run_directory: Path) -> LoadedAthenaHands | None:
 # -- hooks ---------------------------------------------------------------------------------------
 
 
-def log_static(entity: str, run: LoadedAthenaHands, rig: CameraRig | None) -> None:
+def log_static(
+    entity: str, run: LoadedAthenaHands, rig: CameraRig | None, *, label: str = DEFAULT_LABEL
+) -> None:
     """Frusta for every contributing static camera and the diagnostics series names."""
+    hand_colors, _ = ARM_COLORS.get(label, (HAND_COLORS, SMOOTHED_COLORS))
+    diagnostics = diagnostics_entity(label)
+    source = run.manifest.hand_source
     if rig is not None:
         for view in run.views:
             if rig.camera(view).is_ego:
@@ -130,29 +162,32 @@ def log_static(entity: str, run: LoadedAthenaHands, rig: CameraRig | None) -> No
             )
     for side in SIDES:
         rr.log(
-            f"{entity}/{DIAGNOSTICS}/contributing_views/{side}",
-            rr.SeriesLines(names=f"{side} wrist: contributing views", colors=[HAND_COLORS[side]]),
+            f"{entity}/{diagnostics}/contributing_views/{side}",
+            rr.SeriesLines(
+                names=f"{side} wrist ({source}): contributing views", colors=[hand_colors[side]]
+            ),
             static=True,
         )
         rr.log(
-            f"{entity}/{DIAGNOSTICS}/wrist_disagreement_mm/{side}",
+            f"{entity}/{diagnostics}/wrist_disagreement_mm/{side}",
             rr.SeriesLines(
-                names=f"{side} wrist: triangulated vs dataset (mm)", colors=[HAND_COLORS[side]]
+                names=f"{side} wrist ({source}): triangulated vs dataset (mm)",
+                colors=[hand_colors[side]],
             ),
             static=True,
         )
     for index, view in enumerate(run.views):
         shade = 60 + (index * 23) % 160
         rr.log(
-            f"{entity}/{DIAGNOSTICS}/reprojection_rms_px/{view}",
+            f"{entity}/{diagnostics}/reprojection_rms_px/{view}",
             rr.SeriesLines(
-                names=f"{view} reprojection RMS (px, used points)",
+                names=f"{view} reprojection RMS ({source}, px, used points)",
                 colors=[(shade, 200 - shade // 2, 255 - shade)],
             ),
             static=True,
         )
     rr.log(
-        f"{entity}/{HANDS_ENTITY}/manifest",
+        f"{entity}/{hands_entity(label)}/manifest",
         rr.TextDocument(run.manifest.model_dump_json(indent=2), media_type="application/json"),
         static=True,
     )
@@ -165,9 +200,14 @@ def _scalar_or_clear(path: str, value: float | None) -> None:
         rr.log(path, rr.Scalars([float(value)]))
 
 
-def log_frame(entity: str, run: LoadedAthenaHands, frame: int) -> None:
+def log_frame(
+    entity: str, run: LoadedAthenaHands, frame: int, *, label: str = DEFAULT_LABEL
+) -> None:
     """Triangulated hands (raw solid, smoothed thin) and the per-frame series."""
-    hands_root = f"{entity}/{HANDS_ENTITY}"
+    hands_root = f"{entity}/{hands_entity(label)}"
+    diagnostics = diagnostics_entity(label)
+    hand_colors, smoothed_colors = ARM_COLORS.get(label, (HAND_COLORS, SMOOTHED_COLORS))
+    source = run.manifest.hand_source
     points: list[list[float]] = []
     labels: list[str] = []
     point_colors: list[tuple[int, int, int]] = []
@@ -179,32 +219,32 @@ def log_frame(entity: str, run: LoadedAthenaHands, frame: int) -> None:
         raw = run.points[frame, s]
         solved = ~np.isnan(raw[:, 0])
         wrist_views = int(run.used[frame, s, WRIST].sum()) if solved[WRIST] else None
-        _scalar_or_clear(f"{entity}/{DIAGNOSTICS}/contributing_views/{side}", wrist_views)
+        _scalar_or_clear(f"{entity}/{diagnostics}/contributing_views/{side}", wrist_views)
         disagreement = None
         if solved[WRIST] and run.dataset_confidence[frame, s] >= 0.5:
             disagreement = float(np.linalg.norm(raw[WRIST] - run.dataset[frame, s, WRIST]))
-        _scalar_or_clear(f"{entity}/{DIAGNOSTICS}/wrist_disagreement_mm/{side}", disagreement)
+        _scalar_or_clear(f"{entity}/{diagnostics}/wrist_disagreement_mm/{side}", disagreement)
         if not solved.any():
             continue
         for j in np.where(solved)[0]:
             points.append(raw[j].tolist())
-            labels.append(f"triangulated {side}: {COMMON_JOINT_NAMES[j]}")
-            point_colors.append(HAND_COLORS[side])
+            labels.append(f"triangulated {source} {side}: {COMMON_JOINT_NAMES[j]}")
+            point_colors.append(hand_colors[side])
         for a, b in COMMON_EDGES:
             if solved[a] and solved[b]:
                 strips.append([raw[a].tolist(), raw[b].tolist()])
-                strip_colors.append(HAND_COLORS[side])
+                strip_colors.append(hand_colors[side])
         smooth = run.smoothed[frame, s]
         smooth_ok = ~np.isnan(smooth[:, 0])
         for a, b in COMMON_EDGES:
             if smooth_ok[a] and smooth_ok[b]:
                 smooth_strips.append([smooth[a].tolist(), smooth[b].tolist()])
-                smooth_colors.append(SMOOTHED_COLORS[side])
+                smooth_colors.append(smoothed_colors[side])
     for v, view in enumerate(run.views):
         used = run.used[frame, :, :, v]
         errors = run.reprojection_px[frame, :, :, v][used]
         _scalar_or_clear(
-            f"{entity}/{DIAGNOSTICS}/reprojection_rms_px/{view}",
+            f"{entity}/{diagnostics}/reprojection_rms_px/{view}",
             float(np.sqrt(np.mean(errors**2))) if errors.size else None,
         )
     if not points:

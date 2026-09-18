@@ -11,10 +11,25 @@ from conftest import require_artifact
 from test_multiview_geometry import UP, _camera, _look_at, _rule
 
 from battle import athena_hands as ah
+from battle import athena_hands_review as ahr
+from battle import interaction_review_v4 as v4
 from battle import multiview_geometry as mvg
 from battle.assembly101_pose_schemas import ASSEMBLY101_JOINT_NAMES
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_review_arms_land_on_distinct_entity_paths_in_the_v4_layer() -> None:
+    labels = [label for label, _ in v4.ATHENA_HANDS_RUNS]
+    roots = [root for _, root in v4.ATHENA_HANDS_RUNS]
+    assert labels == [ahr.DEFAULT_LABEL, ahr.WILOR_LABEL] and len(set(roots)) == 2
+    assert ahr.hands_entity(ahr.DEFAULT_LABEL) == ahr.HANDS_ENTITY
+    assert ahr.diagnostics_entity(ahr.DEFAULT_LABEL) == ahr.DIAGNOSTICS
+    assert ahr.hands_entity(ahr.WILOR_LABEL).endswith("/athena_hands_wilor")
+    assert ahr.hands_entity(ahr.WILOR_LABEL) != ahr.hands_entity(ahr.DEFAULT_LABEL)
+    wilor_colors, _ = ahr.ARM_COLORS[ahr.WILOR_LABEL]
+    assert wilor_colors["left"] != ahr.HAND_COLORS["left"]
+    assert wilor_colors.keys() == ahr.HAND_COLORS.keys()
 
 
 def test_joint_mapping_covers_twenty_common_joints_and_drops_palm_and_thumb_cmc() -> None:
@@ -266,4 +281,30 @@ def test_built_athena_runs_report_sane_cross_source_disagreement(run: str) -> No
     assert any(
         boundary.startswith("Triangulated hands versus") for boundary in manifest.claim_boundaries
     )
+    assert (root / "hands.rrd").is_file()
+
+
+@pytest.mark.real_data
+def test_built_wilor_arm_carries_three_views_and_the_camera_frame_steadiness_series() -> None:
+    root = REPOSITORY_ROOT / "runs/athena-hands-first-minute-wilor"
+    require_artifact(root / "manifest.json")
+    manifest = ah.load_manifest(root)
+    assert manifest.hand_source == "wilor" and manifest.triangulator == "athena"
+    assert set(manifest.views) == {"C10379", "C10395", "C10115"}
+    assert manifest.frame_count == 1800 and manifest.reference_view == "C10379"
+    for hand in manifest.hands:
+        groups = {g.group: g for g in hand.disagreement_raw}
+        assert hand.frames_with_solution >= 1500
+        assert hand.mean_contributing_views is not None
+        assert 2.0 <= hand.mean_contributing_views <= 3.0
+        assert 5.0 < groups["wrist"].median_mm < 40.0
+        assert all(
+            v.rms_px_used is None or v.rms_px_used <= 30.0 for v in hand.per_view_reprojection
+        )
+        steps = {s.series: s for s in hand.steadiness}
+        assert steps["triangulated_wrist_raw"].median_step < 6.0
+        # WiLoR's own camera-frame wrist (joint 0 + pred_cam_t_full) is what the arm tests against
+        camera_frame = steps["wilor_wrist_camera_frame_C10379"]
+        assert camera_frame.count >= 1000 and camera_frame.median_step is not None
+        assert camera_frame.unit.startswith("WiLoR-metres")
     assert (root / "hands.rrd").is_file()

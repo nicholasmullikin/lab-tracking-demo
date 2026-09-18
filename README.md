@@ -1782,14 +1782,22 @@ uv run battle-athena-hands --views C10095 C10115 C10118 C10119 C10379 C10390 C10
   --output-root runs/athena-hands-first-minute-mediapipe-ego
 uv run battle-build-athena-hands-review --run runs/athena-hands-first-minute-mediapipe
 # rig DLT instead of ATHENA (no venv needed): --triangulator rig
-# WiLoR arm (GPU, queued): runs/overnight-multicam-20260918/jobs_wilor_3views.json, then
-#   battle-athena-hands --views C10379 C10395 C10115 --hand-source wilor ...
+# WiLoR arm (Sep 18, run through the queue): WiLoR on C10379, C10395, C10115 (60 s, native
+# evidence on) then the three-view triangulation and its review recording
+uv run scripts/overnight_queue.py runs/overnight-multicam-20260918/jobs_wilor_3views.json
+# ... which runs, after the three battle-wilor-hands jobs:
+uv run battle-athena-hands --views C10379 C10395 C10115 --hand-source wilor \
+  --output-root runs/athena-hands-first-minute-wilor \
+  --wilor-reference-run runs/wilor-hands-c10379-60s-20260918 --overwrite
+uv run battle-build-athena-hands-review --run runs/athena-hands-first-minute-wilor
 ```
 
 `--run-dir VIEW=PATH` overrides the default run location per view
 (`runs/<source>-hands-<view>-60s-20260918`, C10379 MediaPipe from the Sep 16 selected run).
-`interaction_review_v4` logs the run as its `athena_hands` layer when the default run
-directory exists.
+`interaction_review_v4` logs both arms under its `athena_hands` layer when their default run
+directories exist: the MediaPipe arm at `contexts/assembly101_world_mm_3d/athena_hands` and
+`diagnostics/assembly101/athena_hands`, the WiLoR arm beside it at `.../athena_hands_wilor`
+(magenta / green; the series names carry the hand source).
 
 The exporter writes already-normalized observations only: it never performs inference.
 It can log an input video once when an approved local proxy is supplied, while mask
@@ -1849,6 +1857,12 @@ accuracy; wrists are cross-source disagreement; ego cameras excluded; CC BY-NC 4
 writes `comparison.rrd` with the dataset and aligned Kineo cameras, the Kineo body and the
 dataset hands in one world-mm view plus a wrist-disagreement time panel.
 
+Both GPU jobs ran on Sep 18 (known 222 s, selfcal 280 s; the 8-view SfM and three BA passes
+took under 8 s together, far from the box). Results and their reading are in the ledger entry
+"GPU queue results (WiLoR arm, Kineo, ego-exo)": known-arm wrists 16.9 / 17.4 mm median vs the
+dataset; selfcal camera centres 598 mm per Kineo unit with 3.6-11.4 deg / 61-247 mm per-camera
+disagreement after alignment, a calibration comparison, not pose accuracy.
+
 ### Ego-exo correspondence with LM-EEC (Sep 18, Track 7)
 
 `battle-egoexo-correspondence` asks a correspondence model, not geometry, where the C10379 part
@@ -1896,6 +1910,11 @@ Everything the manifest reports is cross-source disagreement between three estim
 one tracker, a carved hull); the ego video is monochrome and the model never saw grey frames;
 the checkpoint direction is inferred from its file name; LM-EEC's weights are research
 artefacts and Assembly101 is CC BY-NC 4.0.
+
+The job ran on Sep 18 (6.3 s, 752 MiB peak VRAM, 47/47 pairs non-empty): median IoU against the
+ego SAM3 mask 0.41 (chassis), 0.27 (interior), 0.00 (rear_body, cabin); the model's own IoU
+prediction separates those cases (0.70 / 0.71 vs 0.03 / 0.05). Full per-keyframe table in the
+ledger entry "GPU queue results (WiLoR arm, Kineo, ego-exo)".
 
 ## Rerun hierarchy
 

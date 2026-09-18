@@ -669,7 +669,12 @@ LAYERS: tuple[str, ...] = (
 # only when that run exists (Track 2 of the multicam pass).
 MULTIVIEW_CONSENSUS = multiview_consensus.OUTPUT_ROOT
 # Multi-view triangulated hands from `battle-athena-hands`; the layer is skipped when absent.
-ATHENA_HANDS_RUN = athena_hands_review.DEFAULT_OUTPUT_ROOT
+# Both arms are logged when present: the eight-view MediaPipe arm under `athena_hands` and the
+# three-view WiLoR arm under `athena_hands_wilor` (its own entity path, same 3D view).
+ATHENA_HANDS_RUNS: tuple[tuple[str, Path], ...] = (
+    (athena_hands_review.DEFAULT_LABEL, athena_hands_review.DEFAULT_OUTPUT_ROOT),
+    (athena_hands_review.WILOR_LABEL, athena_hands_review.WILOR_OUTPUT_ROOT),
+)
 
 
 def build_first_minute_review(
@@ -944,14 +949,15 @@ def build_first_minute_review(
         _reference_provenance_static(entity)
     if dataset is not None and "assembly101_hands" in selected:
         _log_assembly101_static(entity, dataset.manifest)
-    athena = (
-        athena_hands_review.load_run_if_present(repository_root / ATHENA_HANDS_RUN)
-        if dataset is not None and "athena_hands" in selected
-        else None
-    )
-    if athena is not None:
+    athena_arms: list[tuple[str, athena_hands_review.LoadedAthenaHands]] = []
+    if dataset is not None and "athena_hands" in selected:
+        for label, run_root in ATHENA_HANDS_RUNS:
+            loaded = athena_hands_review.load_run_if_present(repository_root / run_root)
+            if loaded is not None:
+                athena_arms.append((label, loaded))
+    for label, athena in athena_arms:
         athena_hands_review.log_static(
-            entity, athena, athena_hands_review.static_rig(repository_root, athena)
+            entity, athena, athena_hands_review.static_rig(repository_root, athena), label=label
         )
     if multiview is not None:
         multiview_review.v4_log_static(entity, multiview)
@@ -1022,8 +1028,8 @@ def build_first_minute_review(
             )
         if "diagnostics" in selected:
             review._log_diagnostics_frame(entity, frame, contacts, disagreements)
-        if athena is not None:
-            athena_hands_review.log_frame(entity, athena, frame)
+        for label, athena in athena_arms:
+            athena_hands_review.log_frame(entity, athena, frame, label=label)
         if multiview is not None:
             multiview_review.v4_log_frame(entity, multiview, frame)
         if dataset is not None and "assembly101_hands" in selected:

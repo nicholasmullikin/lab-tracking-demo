@@ -2623,3 +2623,152 @@ this comparison makes no accuracy or cross-method identity claim.
   torch 2.7.1 is the same stack the other queue jobs use; the direction of the two checkpoints is
   a file-name inference, so if the exo->ego masks look like exo-view shapes the other checkpoint
   is one `--checkpoint` swap away in `pairs.json`.
+
+### Sep 18: GPU queue results (WiLoR arm, Kineo, ego-exo)
+
+- **Claim boundary first.** Everything below is cross-source disagreement between estimates.
+  The WiLoR-arm millimetres compare a DLT on WiLoR detections (fitted intrinsics, dataset
+  extrinsics) with the dataset's own hand tracker; neither is ground truth. The Kineo
+  self-calibration numbers compare Kineo's estimated cameras with the dataset's shipped
+  extrinsics after a similarity alignment: a calibration comparison against dataset context, not
+  pose accuracy; Kineo wrist numbers are body-model wrists against hand-tracker wrists. The
+  ego-exo IoUs compare a correspondence model with one tracker's ego masks and a carved hull; no
+  ego ground truth exists for these parts. Licences: Assembly101 CC BY-NC 4.0; WiLoR checkpoints
+  CC-BY-NC-ND (MANO and Ultralytics separate); Kineo research/evaluation only, checkout dirty
+  (fingerprinted in `prepare.json`); LM-EEC weights are research artefacts of a NeurIPS 2025
+  paper with no licence file, SAM 2 Apache-2.0; ATHENA MIT. No viewer opened.
+- **Queue.** Four job files, one at a time, every job through `scripts/overnight_queue.py`
+  (systemd-inhibit, `nvidia-smi` + `journalctl -k` between jobs): `jobs_wilor_3views.json`
+  (dry-run clean, then 5/5 succeeded: WiLoR C10379 134.9 s, C10395 77.3 s, C10115 118.9 s,
+  `battle-athena-hands --hand-source wilor` 6.9 s, its review 2.1 s), `jobs_t4_kineo_known.json`
+  (1/1, 222.2 s of the 1800 s box), `jobs_t4_kineo_selfcal.json` (1/1, 280.2 s of 3600 s; the
+  2 h Kineo box used 8.4 min), `jobs_t7_egoexo.json` (appeared while Kineo ran; dry-run clean,
+  1/1, 6.3 s of 1800 s). GPU wall 14.1 min in total; every `gpu_check` ok, no NVRM/Xid line in
+  the kernel journal, idle memory 1.19-1.31 GiB before each job. Nothing failed, timed out or was
+  skipped; no job was rerun.
+- **Five measures per run.** WiLoR C10379 / C10395 / C10115 (`runs/wilor-hands-<view>-60s-20260918`,
+  native evidence on): coverage 1,751 / 1,712 / 1,800 of 1,800 frames with a detection (3,490 /
+  2,140 / 3,622 detections); first usable output 6.3 / 5.1 / 5.1 s; runtime 126.8 / 70.0 /
+  110.7 s (queue 134.9 / 77.3 / 118.9); peak VRAM 2,819,373,056 B (2.63 GiB) on each; ID resets
+  n/a (frame-local ids). ATHENA WiLoR arm (`runs/athena-hands-first-minute-wilor`): left hand
+  solved in 1,623 frames, right in 1,603; first output 4.8 s; runtime 6.3 s; VRAM n/a; ID resets
+  n/a (sides from the dataset match). Kineo known: 1,800 / 1,800 frames with body 3D and both
+  wrists; first 3D output 147.0 s (cumulative through MVS triangulation); runtime 222.2 s
+  (pipeline 206.9); peak VRAM 5,737,807,872 B (5.34 GiB, torch reserved, ONNX Runtime excluded);
+  ID resets n/a (`best_bbox_only`). Kineo selfcal: 1,800 / 1,800; first 3D 155.0 s; runtime
+  280.2 s (pipeline 246.0); VRAM 5,880,414,208 B (5.48 GiB); n/a. LM-EEC
+  (`runs/egoexo-correspondence-first-minute-20260918`): 47 / 47 pairs predicted non-empty (43
+  with an ego SAM3 mask to compare, 26 with a hull projection); first output 4.06 s; runtime
+  6.28 s (driver 5.54 s including model load); peak VRAM 788,529,152 B (752 MiB); ID resets n/a
+  (one object per query).
+- **WiLoR arm (Track 3), three views, 1,800 frames, C10379 clock.** Same alignment, matching,
+  20-joint mapping and ATHENA filter as the MediaPipe arm (Track 3b). Disagreement vs
+  `landmarks3D`, raw DLT (smoothed in brackets); the MediaPipe eight-view arm in the last column
+  for reference:
+
+  | hand | mean views | wrist median / p90 mm | fingertips median / p90 mm | all 20 joints median / p90 mm | MediaPipe 8-view wrist; tips |
+  | --- | --- | --- | --- | --- | --- |
+  | left | 2.19 | 28.9 / 43.1 (28.8 / 43.1) | 29.6 / 64.9 (29.3 / 65.1) | 20.9 / 48.6 (20.9 / 48.3) | 23.9 / 37.1; 38.8 / 84.3 |
+  | right | 2.58 | 21.0 / 34.7 (21.0 / 34.9) | 32.3 / 63.8 (32.3 / 63.9) | 22.5 / 50.1 (22.7 / 50.4) | 19.8 / 31.2; 31.3 / 59.6 |
+
+  Per-view reprojection RMS of used points (left / right): C10379 13.1 / 12.0 px, C10395 10.4 /
+  9.7, C10115 8.5 / 5.9; over all observed points C10379 26.0 / 25.9, C10395 14.1 / 12.1, C10115
+  8.8 / 8.0 (C10379 again the worst view; C10395 detects a second hand in only 11,400 of the
+  left-hand point slots, as in Track 3a). Per joint (raw median, left / right): wrist 28.9 /
+  21.0; palm mcp 14.4-16.4 / 12.6-16.2; tips thumb 23.3 / 28.9, index 27.8 / 27.7, middle 33.1 /
+  33.8, ring 34.7 / 36.1, pinky 31.6 / 33.8. Reading: with three views WiLoR's wrist disagrees
+  slightly more than MediaPipe's eight-view wrist (+5 mm left, +1 mm right) while its fingertips
+  disagree less (-9 mm left, +1 mm right, p90 -20 / +4), so WiLoR's articulation is at least as
+  consistent with the dataset as MediaPipe's, from fewer cameras.
+- **The wrist-step test ("substitute a triangulated wrist for WiLoR's translation").** All on the
+  C10379 clock, per-frame displacement median (p90), left / right. Triangulated WiLoR-arm wrist,
+  raw: 2.4 (7.0) / 4.0 (11.2) mm; ATHENA-smoothed 1.9 (5.5) / 3.3 (10.7); dataset tracker 1.9
+  (4.6) / 3.5 (9.8); the MediaPipe arm was 2.8 / 3.3. In C10379 pixels the triangulated wrist
+  reprojected moves 3.2 (11.4) / 4.9 (14.1) px against WiLoR's own 2D wrist 3.1 (11.2) / 6.3
+  (17.4): equally steady in the image. WiLoR's camera-frame wrist (joint 0 + `pred_cam_t_full`)
+  jumps 145 (535) / 333 (1,169) units x 1e-3 per frame, identical to the Track 3b numbers from
+  the Sep 16 C10379 run (WiLoR is deterministic on this proxy). To put that in millimetres the
+  triangulated wrist was moved into the C10379 camera frame (`CameraRig.world_to_camera`) and
+  WiLoR's camera-frame wrist fitted to it per axis on the 1,588 / 1,349 frames where both exist:
+  lateral 754 / 751 (left) and 766 / 887 (right) mm per WiLoR unit by least squares, depth by the
+  median depth ratio 30.2 mm per unit (the least-squares depth slope, 13 / 6 mm per unit, is
+  diluted by WiLoR's depth noise: depth correlation 0.43 / 0.35). The lateral/depth ratio of ~25
+  is what the pinhole predicts for WiLoR's 25,000 px scaled focal length over the fitted 834 px
+  proxy focal (30), within the MANO-vs-real hand-scale factor. In those millimetres WiLoR's
+  wrist moves 5.1 (17.8) / 12.0 (37.1) mm per frame, of which depth 4.4 (16.2) / 10.1 (35.3) and
+  lateral 2.2 / 4.8; the triangulated wrist's depth step is 1.25 (4.3) / 1.59 (6.4) mm and lateral
+  1.7 / 3.2. The two wrists sit 25.0 (69) / 36.8 (114) mm apart after the fit, |dz| median 21 /
+  33 mm against |dx| 10 / 11 and |dy| 5 / 6. Reading: the hopping is WiLoR's per-frame depth;
+  replacing its translation with the triangulated wrist cuts the depth step 3.5x (left) / 6x
+  (right) and lands the wrist series on the dataset tracker's own steadiness, while WiLoR's 2D and
+  articulation are untouched. That is a statement about steadiness and cross-source agreement,
+  not about which wrist is right. The substitution itself is not built; the arm only measures it.
+- **Viewer.** `interaction_review_v4` now logs both ATHENA arms when present: the MediaPipe arm
+  under `contexts/assembly101_world_mm_3d/athena_hands` and `diagnostics/assembly101/athena_hands`
+  as before, the WiLoR arm beside it under `.../athena_hands_wilor` (magenta / green, series names
+  carry the source), through a `label` argument on `athena_hands_review.log_static` / `log_frame`.
+  Rebuilt in place (`--overwrite`, 30.9 s); `rerun rrd print` shows both `athena_hands` and
+  `athena_hands_wilor` joints / skeletons / skeletons_smoothed / manifest entities and their
+  diagnostics series. The standalone `hands.rrd` of the WiLoR arm was written by the queue.
+- **Kineo known-camera arm** (`runs/kineo-multiview-known-first-minute-20260918`, dataset cameras
+  injected, Kineo only detects and triangulates). Fixed scale 1000 mm per unit; the exported
+  cameras round-trip to the dataset's at < 1e-6 deg / < 1e-4 mm (identity check). Wrist
+  disagreement vs the dataset hand tracker: left median 16.9 mm, p90 37.8, mean 19.3 over 1,800
+  frames; right 17.4 / 31.9 / 20.5 over 1,628; the opposite dataset side is never closer.
+  Stages: rtmlib 28.4 s, NLF 114.5 s, MVS triangulation 4.2 s, Rerun export 59.8 s.
+- **Kineo self-calibration arm** (`runs/kineo-multiview-selfcal-first-minute-20260918`, full
+  stock stage list minus SAM2, `shared_intrinsics: false`). Kineo's own SMPL global scale 15.14.
+  Umeyama with scale on the eight camera centres: recovered scale 597.9 mm per Kineo unit,
+  camera-centre RMS 148.7 mm. Per camera after alignment (rotation deg / translation mm): C10095
+  10.77 / 247.0, C10115 7.94 / 151.9, C10118 3.64 / 226.1, C10119 5.09 / 61.3, C10379 10.22 /
+  102.0, C10390 3.98 / 69.5, C10395 11.41 / 127.3, C10404 6.57 / 80.4; medians 7.26 deg / 114.7
+  mm. Wrist disagreement through that alignment: left 83.1 / 111.1 (mean 84.8, n 1,800), right
+  44.3 / 67.3 (45.7, n 1,628); swapped side closer 0.4 % / 0 %. Runtime 280 s; SfM 6.2 s and
+  the three BA passes 0.4 s each on 1,800 frames x 8 views, so the 3600 s box was never near
+  (Rerun export at 76.6 s and NLF at 112.9 s dominate). Native `.rrd`, `_ba_history.rrd` and
+  `.bvh` fingerprinted in the manifest; `comparison.rrd` written by `rerun` (1.5 s).
+  *Diagnostic, not in the manifest* (`/tmp` script on `body_aligned_mm.npz`): aligning instead on
+  the 3,428 Kineo-vs-dataset wrist pairs asks for a further similarity of scale 1.579, 2.25 deg
+  and 135 mm on top of the camera alignment (total 944 mm per unit), after which the wrists
+  disagree by 17.1 / 17.6 mm median (p90 32.9 / 33.2), the known arm's numbers, while the camera
+  centres then sit 264-842 mm from the dataset's. Reading: Kineo's body 3D is consistent with the
+  dataset up to a similarity; its camera placement is not the dataset's under any similarity.
+  Kineo puts the cameras ~37 % closer to the subject (598 / 944) with 4-11 deg of compensating
+  rotation, which is the expected weak spot of self-calibration from one subject in a ~1 m volume
+  at 2-3 m range (camera depth and rotation trade off in BA). The camera comparison is therefore
+  the honest result of this arm and the wrist numbers under the camera alignment are dominated by
+  it; ego cameras were excluded (Kineo assumes static cameras).
+- **Ego-exo correspondence (Track 7), LM-EEC `ExoEgo_checkpoint.pt`, `sequence` mode, 12
+  keyframes every 150 frames, C10379 -> HMC_21110305.** IoU of the exo->ego prediction against
+  the ego SAM3 mask / against the hull projection, median (n, count >= 0.5), plus the model's own
+  IoU prediction and the SAM3-vs-hull reference-to-reference disagreement:
+
+  | part | model IoU pred. median | vs ego SAM3 | vs hull projection | SAM3 vs hull |
+  | --- | --- | --- | --- | --- |
+  | chassis | 0.70 | 0.41 (12, 5) | 0.37 (7, 1) | 0.006 (7, 1) |
+  | interior | 0.71 | 0.27 (11, 3) | no hull projection on any keyframe | - |
+  | rear_body | 0.03 | 0.00 (11, 2) | 0.00 (9, 0) | 0.23 (8, 3) |
+  | cabin | 0.05 | 0.00 (9, 0) | 0.003 (10, 0) | 0.00 (8, 2) |
+
+  Per keyframe, chassis vs SAM3: 0.35, 0.73, 0.41, 0.26, 0.01, 0.40, 0.70, 0.69, 0.96, 0.57,
+  0.40, 0.33 (frames 0-1650); interior: 0.00, 0.12, 0.51, 0.69, 0.93, 0.33, 0.02, 0.00, 0.27,
+  0.39, 0.23 (no pair at 1050); rear_body has two hits (0.73 at 150, 0.74 at 1350) and zeros
+  elsewhere with 1,200-10,800 px predictions; cabin peaks at 0.34 (frame 0) and 0.10 and is
+  otherwise zero, with predictions of 12,000-84,000 px that are not the cabin. Ego->exo for the
+  hands was skipped (no ego hand masks in any run, recorded in the manifest). Reading: the model
+  finds the two large parts in roughly half the keyframes and its own IoU prediction separates
+  the cases (0.70 for chassis/interior, 0.03-0.05 for the two small dark parts), so its
+  confidence is a usable trigger; the hull projection disagrees with the ego SAM3 masks as much
+  as the model does (SAM3 vs hull median 0.006 for the chassis), so on this monochrome ego view
+  there is no reference the other two agree with. `correspondence.rrd` (2.2 MB) written.
+- **Tests.** `tests/test_athena_hands.py` +1 default (both v4 arms on distinct entity paths and
+  colours) +1 `real_data` (the WiLoR arm: three views, 2 <= mean views <= 3, wrist median in
+  (5, 40) mm, per-view used RMS <= 30 px, the `wilor_wrist_camera_frame_C10379` series present).
+  Default suite 419 passed, `real_data` 37 passed (includes the rebuilt v4 package, both Kineo run
+  directories, the ego-exo run directory and LM-EEC checkout). Ruff clean.
+- **Not done / open.** The substitution (triangulated wrist + WiLoR articulation as a hand
+  series) is measured, not built. Kineo's camera comparison could be repeated with the body-wrist
+  alignment as the manifest's primary alignment if a future arm wants the body numbers; the
+  `evaluate` code keeps the camera-centre Umeyama the plan asked for. LM-EEC `independent` mode
+  and the other checkpoint direction were not run (one queue job as prepared). Plan todos
+  `t4-kineo` and `t7-lmeec` marked completed.
