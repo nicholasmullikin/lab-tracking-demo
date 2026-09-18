@@ -2456,6 +2456,43 @@ class OvernightReviewRecord(VersionedModel):
     ground_truth_accuracy_claim: Literal[False] = False
 
 
+class HumanFeedbackItem(VersionedModel):
+    """One verbatim human observation; the agent adds only a subject and frame hint."""
+
+    subject: str = Field(min_length=1)
+    verbatim: str = Field(min_length=1)
+    frame_hint: str | None = None
+    agent_action_subjects: tuple[str, ...] = ()
+
+
+class HumanFeedbackReviewRecord(VersionedModel):
+    """A human-authored review of a delivered package, kept apart from agent findings.
+
+    The `feedback` text is the human's own words and carries no pass/fail beyond what was
+    said. `agent_actions` are the agent's responses and stay tagged as agent-authored.
+    """
+
+    manifest_kind: Literal["human_feedback_review_record"]
+    author_type: Literal["human"]
+    provenance_tag: Literal["human_feedback_report"]
+    reviewed_package: str = Field(min_length=1)
+    reviewed_recording_uri: str = Field(min_length=1)
+    reviewed_on: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    feedback: tuple[HumanFeedbackItem, ...] = Field(min_length=1)
+    agent_actions: tuple[AgentAuthoredVisualFinding, ...] = ()
+    human_decisions_pending: Literal[True] = True
+    ground_truth_accuracy_claim: Literal[False] = False
+
+    @model_validator(mode="after")
+    def require_actions_to_reference_feedback(self) -> HumanFeedbackReviewRecord:
+        subjects = {item.subject for item in self.agent_actions}
+        for item in self.feedback:
+            missing = set(item.agent_action_subjects) - subjects
+            if missing:
+                raise ValueError(f"feedback references unknown agent actions: {sorted(missing)}")
+        return self
+
+
 class HumanQAEvidence(VersionedModel):
     """One portable, content-addressed visual artifact presented to a reviewer."""
 

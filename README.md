@@ -1101,6 +1101,61 @@ minute (`attach interior`, `screw chassis`, `attach body`, `screw chassis`); it 
 prediction or a replacement for visual review. The v4 guide and index make the retained coverage
 and every human/agent claim boundary explicit.
 
+#### Sep 17 human review follow-up (v4 rebuild)
+
+`docs/qa/interaction-review-first-minute-v4.human-feedback.json` records the human's Sep 17
+review verbatim (author `human`, no pass/fail added) and the agent's responses separately;
+`docs/qa/interaction-review-first-minute-v4r2.agent-review.json` holds the agent findings and
+the agent-proposed correction rows. What changed:
+
+- **Missing panels.** The blueprint's Review guide, Drop-DTW and substep panels pointed at
+  entities the v4 builder never logged (the 20 s builder also lacked `metadata/review_notes`).
+  Both builders now log the guide, a per-frame navigation document (current agent substep,
+  coarse GT segment, contact eligibility), step-index time series, and static coarse-GT /
+  contract / Drop-DTW-status documents. No Drop-DTW alignment exists for the first minute; the
+  panel says so. A test checks the exported RRD rows and blueprint references.
+- **Chassis/interior swap.** Measured onset ~1020-1032 (interior mask leaking onto the chassis),
+  chassis label lost 1110-1166, pure label swap 1167-1234 until the human-selected frame-1235
+  correction. The grey interior block is not separately visible before ~1167, so the earliest
+  credible correction is frame 1172. `battle-muggled-agent-correction` derives a draft
+  calibration from the finalized one, decodes box prompts headlessly, and records acceptances
+  with `selected_by: agent` (schema field; existing rows default to `human`, agents can never
+  seed frame 0). Policy v3 permits a sixth keyframe. The rerun
+  `runs/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260918t001210z`
+  is bit-identical before 1172, fixes 1172-1234 (new chassis vs old interior IoU 0.926), and
+  matches the old run after 1235. v4 references it and restricts `contact_eligible` to
+  `[0,1020)` and `[1172,1200)`. Frames 1020-1171 stay wrong; frame 370 is a bookmark only.
+- **Finger-only hands.** The stabilizer accepts real WiLoR detections with confidence in
+  `[0.35,0.55)` only while they continue a lane accepted within 5 frames, for at most 5
+  consecutive frames, tagged `low_confidence_continuation` (nothing is held or extrapolated).
+  The v5 layer `runs/wilor-hands-stabilized-60s-v5` reduces missing frames 110 -> 79, short
+  per-lane gaps 92 -> 69 and MediaPipe fallback frames 66 -> 15; its state counts are plotted in
+  the disagreement time series. Kineo is body-only NLF context and is not a hand method.
+- `battle-build-interaction-review-v4` accepts an empty existing output root and needs
+  `--overwrite` to replace an existing package; `runs/interaction-review-first-minute-v4-local`
+  is an older, superseded build kept only because a viewer may still have it open.
+
+```bash
+uv run battle-muggled-agent-correction derive \
+  --source-calibration runs/muggledsam-sam3-four-part-focused-corrections-327-1235-20260916t022433z \
+  --output-dir runs/<agent-calibration>
+uv run battle-muggled-agent-correction decode --calibration runs/<agent-calibration> \
+  --frame 1172 --prompt "chassis=870,463,995,583;bg=855,490" --prompt "interior=835,463,900,515"
+uv run battle-muggled-agent-correction accept --calibration runs/<agent-calibration> \
+  --candidate-id t001172-b02 --index 1 --rationale "..."
+uv run battle-muggled-agent-correction schedule --calibration runs/<agent-calibration> \
+  --correction-policy configs/muggledsam_static_four_part_reassembly_focused_correction_policy_v3.json \
+  --manual-seed-target-config configs/muggledsam_static_four_part_reassembly_focused_manual_seed.json
+uv run battle-muggled-smoke --config configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_g2.json \
+  --view static-c10379 --four-part-static-focused --max-side-length 720 \
+  --multi-keyframe-correction-schedule runs/<agent-calibration>/multi_keyframe_correction_schedule.json
+uv run battle-stabilize-wilor --wilor-run runs/wilor-hands-static-60s-overnight-v2 \
+  --mediapipe-run runs/mediapipe-hands-static-60s-fused-dedup-th035-20260916t0430z \
+  --parts-run runs/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260918t001210z \
+  --output-root runs/wilor-hands-stabilized-60s-v5
+uv run battle-build-interaction-review-v4 --overwrite
+```
+
 ### Four-part segmentation comparison
 
 `configs/four_part_segmentation_comparison.json` is the checked-in fair-comparison

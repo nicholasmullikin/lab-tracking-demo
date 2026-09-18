@@ -53,6 +53,7 @@ from battle.interaction_review_v4 import (
 )
 from battle.schemas import (
     FrameObservations,
+    HumanFeedbackReviewRecord,
     InteractionContactDiagnostic,
     InteractionContactEvent,
     InteractionHandDisagreement,
@@ -482,11 +483,36 @@ def test_v3_defaults_use_corrected_sam3_and_fused_kineo_context() -> None:
     )
 
 
+def test_human_feedback_record_stays_human_authored_and_verbatim() -> None:
+    record = HumanFeedbackReviewRecord.model_validate(
+        json.loads(
+            Path("docs/qa/interaction-review-first-minute-v4.human-feedback.json").read_text()
+        )
+    )
+
+    assert (record.author_type, record.provenance_tag) == ("human", "human_feedback_report")
+    assert record.human_decisions_pending is True
+    assert any("1100 - 1200" in item.verbatim for item in record.feedback)
+    assert all(
+        action.disposition == "agent_authored_visual_review" for action in record.agent_actions
+    )
+    with pytest.raises(ValueError, match="unknown agent actions"):
+        HumanFeedbackReviewRecord.model_validate(
+            {
+                **record.model_dump(mode="json"),
+                "feedback": [
+                    {"subject": "x", "verbatim": "y", "agent_action_subjects": ["not an action"]}
+                ],
+            }
+        )
+
+
 def test_overnight_agent_review_keeps_human_feedback_distinct() -> None:
     for filename in (
         "overnight-interaction-review-v2.agent-review.json",
         "overnight-interaction-review-v3.agent-review.json",
         "interaction-review-first-minute-v4.agent-review.json",
+        "interaction-review-first-minute-v4r2.agent-review.json",
     ):
         record = OvernightReviewRecord.model_validate(
             json.loads((Path("docs/qa") / filename).read_text())

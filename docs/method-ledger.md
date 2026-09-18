@@ -1368,3 +1368,60 @@ this comparison makes no accuracy or cross-method identity claim.
   (`runs/interaction-review-overnight-v3/final_agent_review.md`, gitignored) fixed a
   `mediapipe_fallback` audit-sheet labeling bug in `scripts/render_overnight_v3_audits.py`.
   Full suite after that fix: 245 passing tests.
+
+### Sep 17: first-minute v4 human review and follow-up rebuild
+
+- Human feedback (verbatim, `docs/qa/interaction-review-first-minute-v4.human-feedback.json`,
+  author `human`, no pass/fail added): chassis/interior identities swap around frames
+  1100-1200 as a hand sweeps across the part; at 370 the interior briefly grows into the
+  chassis and recedes; hands are good but drop briefly when only a couple of fingers are
+  visible; Kineo is decent on the body and less good on hands than WiLoR; the Review guide,
+  Drop-DTW weak supervision and agent-authored substep panels showed nothing.
+- Missing panels (definite defect): the shared blueprint referenced `metadata/review_notes`,
+  `metadata/drop_dtw` and `metadata/agent_substeps`; the v4 builder logged none of them (its
+  substeps were `TextLog` rows under `metadata/agent_substeps_first_20s/timeline`, which a
+  `TextDocumentView` cannot render) and the 20 s builder also never logged `review_notes`. Both
+  builders now log the guide, a per-frame navigation document, agent-substep and coarse-GT
+  step-index series, and static coarse-GT / contract / Drop-DTW-status documents; the 20 s
+  package was rebuilt in place and `rerun rrd print` confirmed the rows. The v4 builder accepts
+  an empty existing output root and requires `--overwrite` for a non-empty one.
+- Swap analysis on the earlier reference run (dense 1040-1260 metrics and outline sheets under
+  `runs/muggledsam-sam3-four-part-focused-corrections-agent-swap-20260918t000947z/agent_review/`):
+  interior leak onset ~1020-1032, chassis label jumps at 1070-1074/1089, chassis <600 px over
+  1110-1166, swapped labels 1167-1234, and the human-selected frame-1235 correction undoing the
+  swap with 0.89 IoU both ways. The grey interior block is not separately visible before ~1167;
+  a frame-1100 decode found only the yellow body being attached where the tracker's small
+  chassis blob sat. The 20 s DAM4SAM/SAMURAI/SAM2-control arms are irrelevant here (600 frames).
+- Agent-attributed correction: `MuggledSAMCalibrationCandidate` and
+  `MuggledSAMMultiKeyframeCorrection` gained `selected_by: human|agent` (default `human` for
+  every existing record; agent rows are later-frame corrections only and can never seed frame
+  0); run metadata records `agent_selected_correction_frame_indices`. `battle-muggled-agent-
+  correction` derives a draft calibration from the finalized one (hard-linked results, origin
+  fingerprinted), decodes box prompts through the isolated worker, accepts with a written
+  rationale, and finalizes an augmented schedule. Policy v3 allows six later keyframes because
+  chassis already had five. Accepted at 1172: chassis `t001172-b02` candidate 1 (6954 px, box =
+  tracked interior-slot bbox plus a background point on the grey block) and interior
+  `t001172-b03` candidate 0 (2375 px, box = tracked chassis-slot bbox); mutual overlap 18 px.
+- Rerun `muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260918t001210z`:
+  2,781 frames in 192.65 s, 2,209,637,376 bytes peak VRAM, 11,091 masks, corrections at
+  327/900/1172/1235/1800/2700 with 1172 tagged agent-selected. Compared with the old run:
+  identical before 1172 (IoU 1.000), new chassis vs old interior 0.926 over 1172-1234 with
+  0.002 chassis/interior overlap, and >=0.99 agreement after 1235. Visual sheets confirmed blue
+  on the black body and green on the grey block; v4 now references this run with
+  `contact_eligible` = `[0,1020)` and `[1172,1200)`. Frames 1020-1171 remain uncorrected; 370
+  was left alone and added as a bookmark. GPU checks before/after each command: no NVRM/Xid.
+- Finger-only hands: 92 short (1-4 frame) per-lane gaps covered 154 frames in the v4 layer;
+  102 of those frames had a real WiLoR detection in lane range with confidence 0.35-0.55, 34
+  were two-hand dedup merges, 10 were below 0.35 and 7 had none. The stabilizer now accepts
+  sub-gate detections only while continuing a lane accepted within 5 frames, at most 5
+  consecutive frames, tagged `low_confidence_continuation`; no hold/extrapolation. v5 layer:
+  missing frames 110 -> 79, short gaps 92 -> 69, <=2-frame flicker lanes 10 -> 1, MediaPipe
+  fallback 66 -> 15, 405 continuation instances, median wrist jitter 0.00265 -> 0.00274 (raw
+  0.00317). Random (24) and MediaPipe-disagreeing (18) samples showed the continuation landmarks
+  on real partially occluded hands; 192/405 lack a MediaPipe hand within 0.08 and are the
+  conservative phantom bound. Kineo remains NLF body-only context, not a hand method.
+- Rebuilt `runs/interaction-review-first-minute-v4/interaction_review_first_minute_v4.rrd`
+  (1,800 navigation rows, 13 blueprint views, all contact rows over 1020-1171 `invalid_mask`).
+  `runs/interaction-review-first-minute-v4-local` is the superseded build a viewer may still
+  hold open. `docs/qa/interaction-review-first-minute-v4r2.agent-review.json` lists the agent
+  findings and the two agent-proposed correction rows; all human decisions remain pending.

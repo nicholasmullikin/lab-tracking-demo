@@ -1,0 +1,43 @@
+{
+  "schema_version": "1.0",
+  "manifest_kind": "overnight_interaction_review_record",
+  "provenance_tag": "agent_authored_visual_review",
+  "human_feedback": [
+    "Around frames 1100 - 1200 we swap identities of chassis and interior as a hand sweeps across the view of the part",
+    "Identity at 370, the interior briefly grows into the chassis region, but then recedes properly",
+    "Hands are good, but we lose them briefly when we can only see a couple fingers",
+    "Seems to do a decent job on the body. Seems less good on the hands compared to wilor",
+    "I don't see anything in the rerun for Review guide, Drop-DTW weak supervision and agent authored substeps"
+  ],
+  "agent_findings": [
+    {
+      "analysis_frame_index": 1172,
+      "subject": "v4 rebuild after human review",
+      "finding": "The first-minute package was rebuilt from the frame-1172 agent-corrected SAM3 run and the v5 stabilized WiLoR layer with the navigation panels restored. rerun rrd print shows 1800 rows for metadata/navigation/current, coarse_gt_index, segmentation_contact_eligible and the three stabilized-layer state counts, 600 substep-index rows, single static review_notes/coarse_gt/drop_dtw/contract documents and 13 blueprint views. Contact rows over 1020-1171 are all invalid_mask; 1172-1199 carry observed/missing_hand rows again.",
+      "evidence_kind": "audit",
+      "disposition": "agent_authored_visual_review"
+    }
+  ],
+  "correction_candidates": [
+    {
+      "analysis_frame_index": 1172,
+      "target_id": "chassis",
+      "source_method": "baseline_sam3",
+      "provenance": "agent_authored_visual_review",
+      "state": "agent_proposed",
+      "rationale_fingerprint": "runs/muggledsam-sam3-four-part-focused-corrections-agent-swap-20260918t000947z/agent_acceptances.jsonl#t001172-b02",
+      "semantic_claim": "Box prompt on the tracked interior-slot region with a background point on the grey block yields the black chassis body; adopted in the rerun schedule with selected_by=agent, pending human confirmation."
+    },
+    {
+      "analysis_frame_index": 1172,
+      "target_id": "interior",
+      "source_method": "baseline_sam3",
+      "provenance": "agent_authored_visual_review",
+      "state": "agent_proposed",
+      "rationale_fingerprint": "runs/muggledsam-sam3-four-part-focused-corrections-agent-swap-20260918t000947z/agent_acceptances.jsonl#t001172-b03",
+      "semantic_claim": "Box prompt on the tracked chassis-slot region yields the grey interior block consistent with the human-selected frame-1235 interior mask; adopted in the rerun schedule with selected_by=agent, pending human confirmation."
+    }
+  ],
+  "human_decisions_pending": true,
+  "ground_truth_accuracy_claim": false
+}

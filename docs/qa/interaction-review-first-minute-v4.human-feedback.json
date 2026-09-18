@@ -1,0 +1,106 @@
+{
+  "schema_version": "1.0",
+  "manifest_kind": "human_feedback_review_record",
+  "author_type": "human",
+  "provenance_tag": "human_feedback_report",
+  "reviewed_package": "interaction_review_first_minute_v4",
+  "reviewed_recording_uri": "runs/interaction-review-first-minute-v4-local/interaction_review_first_minute_v4.rrd",
+  "reviewed_on": "2026-09-17",
+  "feedback": [
+    {
+      "subject": "Default panel: corrected SAM3 + stabilized WiLoR — chassis/interior swap",
+      "verbatim": "Around frames 1100 - 1200 we swap identities of chassis and interior as a hand sweeps across the view of the part",
+      "frame_hint": "1100-1200",
+      "agent_action_subjects": [
+        "chassis/interior swap onset",
+        "agent-selected frame-1172 correction rerun",
+        "contact eligibility split"
+      ]
+    },
+    {
+      "subject": "Default panel: corrected SAM3 + stabilized WiLoR — transient interior growth",
+      "verbatim": "Identity at 370, the interior briefly grows into the chassis region, but then recedes properly",
+      "frame_hint": "370",
+      "agent_action_subjects": [
+        "frame-370 transient"
+      ]
+    },
+    {
+      "subject": "Default panel: corrected SAM3 + stabilized WiLoR — finger-only hand loss",
+      "verbatim": "Hands are good, but we lose them briefly when we can only see a couple fingers",
+      "frame_hint": null,
+      "agent_action_subjects": [
+        "finger-only hand dropouts"
+      ]
+    },
+    {
+      "subject": "Kineo",
+      "verbatim": "Seems to do a decent job on the body. Seems less good on the hands compared to wilor",
+      "frame_hint": null,
+      "agent_action_subjects": [
+        "Kineo hands clarification"
+      ]
+    },
+    {
+      "subject": "Missing panels",
+      "verbatim": "I don't see anything in the rerun for Review guide, Drop-DTW weak supervision and agent authored substeps",
+      "frame_hint": null,
+      "agent_action_subjects": [
+        "missing navigation panels"
+      ]
+    }
+  ],
+  "agent_actions": [
+    {
+      "analysis_frame_index": 0,
+      "subject": "missing navigation panels",
+      "finding": "The shared blueprint pointed its three text panels at metadata/review_notes, metadata/drop_dtw and metadata/agent_substeps; the v4 builder logged none of them (its substep text lived at metadata/agent_substeps_first_20s/timeline as TextLog rows, which a TextDocumentView cannot show) and the 20 s builder never logged metadata/review_notes either. Both builders now log the guide, a per-frame navigation TextDocument (current agent substep, coarse GT segment, contact eligibility), step-index time series, and static coarse-GT/contract/Drop-DTW-status documents; a test asserts the exported RRD carries them and the blueprint references them. No Drop-DTW alignment exists for the first minute; the panel says so instead of staying blank.",
+      "evidence_kind": "audit",
+      "disposition": "agent_authored_visual_review"
+    },
+    {
+      "analysis_frame_index": 1020,
+      "subject": "chassis/interior swap onset",
+      "finding": "Dense mask metrics on the earlier reference run: the interior mask starts leaking onto the black chassis body at ~1020-1032 (interior area 1119 px at 1020, 1986 at 1032, 5104 at 1056 while chassis falls 7307 -> 1883), the chassis label jumps at 1070-1074 and 1089, is essentially lost (<600 px) over 1110-1166, and from 1167 to 1234 the two regions are tracked with swapped labels (at the human-selected frame-1235 correction the swap is undone with 0.89 IoU both ways). The grey interior block is not separately visible until ~1167, so no credible interior mask exists earlier; a frame-1100 decode was tried and the small candidate was the yellow body being attached, not the interior.",
+      "evidence_kind": "derived_metric",
+      "disposition": "agent_authored_visual_review"
+    },
+    {
+      "analysis_frame_index": 1172,
+      "subject": "agent-selected frame-1172 correction rerun",
+      "finding": "A derived calibration decoded box prompts at frame 1172 (chassis box = tracked interior-slot bbox with a background point on the grey block; interior box = tracked chassis-slot bbox). Candidates t001172-b02#1 (chassis, 6954 px) and t001172-b03#0 (interior, 2375 px, 18 px mutual overlap) were accepted with selected_by=agent and never as a human decision. The rerun runs/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260918t001210z is bit-identical to the old reference before 1172; over 1172-1234 new chassis vs old interior IoU is 0.926 with 0.002 chassis/interior overlap, and after 1235 it matches the old run (>=0.99). The first-minute review now references this run. Frames 1020-1171 remain wrong and uncorrected.",
+      "evidence_kind": "generated_contact_sheet",
+      "disposition": "agent_authored_visual_review"
+    },
+    {
+      "analysis_frame_index": 1172,
+      "subject": "contact eligibility split",
+      "finding": "contact_eligible is now [0,1020) and [1172,1200); [1020,1172) carries the human-reported swap and [1200,1800) keeps the earlier late-degradation decision. Ineligible frames emit invalid_mask for every lane and part.",
+      "evidence_kind": "audit",
+      "disposition": "agent_authored_visual_review"
+    },
+    {
+      "analysis_frame_index": 370,
+      "subject": "frame-370 transient",
+      "finding": "Recorded as reported; the human says it recedes on its own, so no correction was attempted and frame 370 was added as a pinned review bookmark only.",
+      "evidence_kind": "audit",
+      "disposition": "agent_authored_visual_review"
+    },
+    {
+      "analysis_frame_index": 58,
+      "subject": "finger-only hand dropouts",
+      "finding": "In the v4 stabilized layer 92 short (1-4 frame) per-lane gaps covered 154 frames; 102 of those frames had a real WiLoR detection within lane distance whose confidence was 0.35-0.55 (just under the 0.55 gate), 34 were two-hand dedup merges, 10 were <0.35 and 7 had no nearby detection. The stabilizer now accepts such sub-gate detections only while they continue a lane accepted within 5 frames, for at most 5 consecutive frames, tagged low_confidence_continuation (no hold or extrapolation). v5 layer: missing frames 110 -> 79, per-lane short gaps 92 -> 69, <=2-frame flicker lanes 10 -> 1, MediaPipe fallback frames 66 -> 15, 405 continuation instances; median wrist jitter 0.00265 -> 0.00274 (raw 0.00317). Two visual samples (24 random continuation frames and 18 MediaPipe-disagreeing ones) showed the continuation landmarks on real, partially occluded hands; 192/405 continuation instances have no MediaPipe hand within 0.08 and are the conservative phantom upper bound.",
+      "evidence_kind": "derived_metric",
+      "disposition": "agent_authored_visual_review"
+    },
+    {
+      "analysis_frame_index": 0,
+      "subject": "Kineo hands clarification",
+      "finding": "Kineo in this pipeline is NLF-only 2D body/crop context (55 body joints with BoxMOT fallback); it produces no hand articulation, so a hands comparison with WiLoR has no Kineo output to compare. The guide and README now say so; nothing was changed in the Kineo layer.",
+      "evidence_kind": "audit",
+      "disposition": "agent_authored_visual_review"
+    }
+  ],
+  "human_decisions_pending": true,
+  "ground_truth_accuracy_claim": false
+}
