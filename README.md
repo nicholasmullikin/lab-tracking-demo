@@ -16,18 +16,22 @@ project was measured against is preserved unedited in
 and the research brief that preceded it, with the verbatim first request, is
 [`battle_plan.agent.final.md`](battle_plan.agent.final.md).
 
-In one paragraph: the repository has typed Pydantic manifests for clips, runs, timing,
-coverage, and observations; an inference-free Rerun exporter; and one method, SAM3 via
-MuggledSAM, exercised on Assembly101 RGB static and monochrome ego views. Text prompting,
-human-seeded masks, reviewed keyframe corrections, and a browser calibration workspace
-were all tested. A 196.7-second static exploration failed through identity drift, then
-aligned 92.7-second static and monochrome ego runs were completed from a cleaner
-separated-parts frame. Human review retained only their first 60 seconds for the
-synchronized two-view comparison; later outputs remain failure evidence. The second
-method in the original core spine, MediaPipe Hands, has a selected 60-second static run
-merged into the focused first-minute comparison. The Sep 16 exploratory queue has one
-Battle-integrated BoxMOT, CLIP+Drop-DTW, Grounded-SAM-2, SAMURAI, and DAM4SAM video smokes.
-WiLoR and Kineo remain external partials after an adversarial evidence audit; ATHENA is blocked.
+In one paragraph, as of Sep 18: the repository has typed Pydantic manifests for clips,
+runs, timing, coverage, and observations; an inference-free Rerun exporter; and nine
+methods attempted on one Assembly101 recording. SAM3 via MuggledSAM is the only method
+that completed both the RGB static and monochrome ego views, and only with human-seeded
+masks and reviewed keyframe corrections from a browser calibration workspace; text
+prompting failed on the ego view and the composite toy vocabulary failed everywhere. The
+retained comparison unit is the first 60 seconds of a focused 92.7-second four-part
+reassembly window, human-reviewed on Sep 17; later output is failure evidence. Over that
+minute the review package (`battle-build-interaction-review-v4`) shows a per-target
+ensemble segmentation reference (corrected SAM3 with provenance-tracked DAM4SAM fallback),
+a WiLoR-primary stabilized hand layer with MediaPipe fallback, BoxMOT and Kineo body
+context, label-free review metrics, and, since Sep 18, the dataset's own 60 fps hand poses
+and 27 fine-grained action segments as external context. Grounded-SAM-2, SAMURAI, DAM4SAM,
+CLIP + Drop-DTW and BoxMOT exist as smoke-tier arms; ATHENA's intrinsics blocker was
+removed by fitting the dataset's own projection but no triangulation has been run. Human
+QA dispositions are pending for every method, and no accuracy claim is made anywhere.
 
 The rest of this file is the how-to: each section below gives the exact commands that
 reproduce a stage. No recordings, annotations, or model weights are included. The SAM3

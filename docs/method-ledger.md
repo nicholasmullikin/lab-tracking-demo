@@ -37,7 +37,7 @@ no-annotation, no-accuracy-claims rule.
 
 | Goal (from the Sep 8 ask and plan) | Status | Evidence |
 | --- | --- | --- |
-| Typed manifests, fixture tests, inference-free Rerun exporter | Done | `src/battle/schemas.py`, `src/battle/exporter.py`, 209 passed |
+| Typed manifests, fixture tests, inference-free Rerun exporter | Done | `src/battle/schemas.py`, `src/battle/exporter.py`; 335 tests in the 8 s default tier, 13 more behind `real_data`/`gpu` markers |
 | Pin one Assembly101 segment with source/analysis/annotation/pose clocks | Done | `configs/clips/*.json`; nusar-9033, 215.000–395.000 s |
 | MuggledSAM/SAM3 running over the full 180 s static view | Done (aligned hybrid: three text, one reviewed mask) | [Sep 14 aligned hybrid](#sep-14-aligned-static-hybrid-candidate) |
 | MuggledSAM/SAM3 running over the full 180 s ego view | Done, but only with human-seeded masks | [Four-target 180 s baseline](#sep-9-evening-four-target-180-second-ego-baseline) |
@@ -46,15 +46,21 @@ no-annotation, no-accuracy-claims rule.
 | MediaPipe Hands static-view baseline (core spine) | Selected 60 s run complete | [hand-pose adapter](#hand-pose-adapter) |
 | Second method in the viewer (MediaPipe) | Done; merged into focused first-minute comparison | [hand-pose adapter](#hand-pose-adapter) |
 | Fixed two-timestamp human QA per completed method | Records prepared; human dispositions pending | Human-selected source frames 14,868/21,732; aligned static, ego, and preserved historical records under `docs/qa/` |
-| No training, no annotation project, no accuracy claims | Held | Reviewed masks are calibration seeds, not labels; no metric vs. ground truth anywhere |
-| Four physical components through reassembly | Focused run completed; visual disposition pending | [Sep 15 four-part experiment](#sep-15-four-part-static-reassembly-experiment) |
+| Exploratory queue (WiLoR, BoxMOT, CLIP + Drop-DTW, Grounded-SAM-2, SAMURAI, DAM4SAM, ATHENA, Kineo) | All eight attempted in one autonomous pass at smoke tier; four-part segmentation arms and a unified review surface built; ATHENA blocked on intrinsics until Sep 17; Kineo body-only partial | [Sep 16 queue](#sep-16-exploratory-queue-autonomous-pass); [review surface](#sep-16-final-unified-exploratory-review-surface) |
+| No training, no annotation project, no accuracy claims | Held, with one gate crossed on request: dataset poses and fine-grained labels were acquired Sep 17 as review context only | Reviewed masks are calibration seeds, not labels; no metric vs. ground truth anywhere; [Sep 17 acquisition](#sep-17-assembly101-poses-extrinsics-and-fine-grained-annotations-selective-acquisition) |
+| Four physical components through reassembly | Focused 92.7 s run completed; the first minute was human-reviewed Sep 17 and is the retained comparison window; identity failures at 279/573/1043 are the documented SAM3 limit | [Sep 15 four-part experiment](#sep-15-four-part-static-reassembly-experiment); [Sep 17 human review](#sep-17-first-minute-v4-human-review-and-follow-up-rebuild) |
 | Git history from the start | Missed, then repaired | First commit Sep 13 after five days of uncommitted work |
 | FineBio | Still pending | Not part of any run |
 | Audio | Deferred by plan | Not revisited |
 
-The honest summary: one method, one dataset, one clip. The comparison lab the plan
-described has a working spine for its first method and a well-instrumented viewer, and
-essentially all of the time went into making SAM3 usable on the monochrome ego view.
+The honest summary, as of Sep 18: nine methods attempted, one clip, one minute reviewed
+closely. SAM3 with human seeds is the only method that completed both target views;
+MediaPipe and WiLoR completed the retained first minute of the static view; the rest are
+smoke-tier evidence. The SAM3 spine is at its ceiling for this part taxonomy (label
+migration between similar dark parts under rotation), the hand story has no trustworthy
+3D from any monocular source, and the review tooling built to iterate on that one clip is
+where most of the code and roughly half the time went. The multi-view line is now
+unblocked but untried.
 
 ### Timeline
 
@@ -245,13 +251,65 @@ essentially all of the time went into making SAM3 usable on the monochrome ego v
   mask IoU, versus 111 such pair-frames in the exploratory run; visual identity review
   remains pending.
 
+#### Sep 16: MediaPipe, then the whole exploratory queue in one unattended pass
+
+- MediaPipe Hand Landmarker became the second core method: full-frame plus a fixed
+  workspace ROI, fused and capped at two hands per frame, over the retained first minute.
+  Record: [hand-pose adapter](#hand-pose-adapter).
+- The user left for eight hours with "do all non-gated work in the exploratory queue".
+  WiLoR, BoxMOT, CLIP + Drop-DTW, Grounded-SAM-2, SAMURAI, DAM4SAM, ATHENA and Kineo were
+  each attempted at smoke tier, the segmentation arms were re-run on the same four-part
+  seeds, and one unified review recording was built. ATHENA stayed blocked on missing
+  intrinsics; Kineo produced body-only NLF output. Records:
+  [exploratory queue](#sep-16-exploratory-queue-autonomous-pass),
+  [review surface](#sep-16-final-unified-exploratory-review-surface),
+  [four-part comparison](#sep-16-focused-static-four-part-segmentation-comparison),
+  [interaction review](#sep-16-focused-non-segmentation-interaction-review-package).
+- Overnight rebuilds v2 and v3 stabilized the WiLoR-primary hand layer and made the
+  first-minute package continuous. Records:
+  [v2](#sep-1617-overnight-interaction-review-v2-rebuild),
+  [v3](#sep-1617-overnight-interaction-review-v3-continuity-rebuild).
+
+#### Sep 17: human review of the first minute, and what it set in motion
+
+- The user's review of v4 named the real failures: chassis/interior identity swap around
+  1100–1200 as a hand sweeps past, interior leaking into the chassis after 279/573/1043
+  as the part rotates, three WiLoR hands, a frame-185 fusion drop, hopping WiLoR 3D, and
+  coarse GT too coarse inside `screw chassis`. Fixes: two-hand cap, fusion regression test,
+  wrist-relative 3D, an agent-selected correction at 1172, and missing panels logged.
+  Record: [v4 review](#sep-17-first-minute-v4-human-review-and-follow-up-rebuild).
+- A leak-onset correction at 1020 did not hold; DAM4SAM was run over the minute; a
+  per-target ensemble review reference took DAM4SAM's chassis inside the one failing
+  interval and labelled the interior hidden over [1024,1172). Label-free review metrics
+  ranked 198 episodes. Records:
+  [leak onset](#sep-1718-leak-onset-correction-attempt-20-s-v5-hand-layer-dam4sam-first-minute),
+  [metrics](#sep-17-label-free-first-minute-review-metrics-and-ranked-triggers),
+  [ensemble](#sep-1718-metrics-branch-merged-3d-view-defect-per-target-ensemble-reference).
+- On request, the recording's dataset poses, extrinsics and fine-grained annotations were
+  selectively acquired. Two findings: the static video lags the pose clock by 9 frames, and
+  C10379 intrinsics can be recovered from the dataset's own projection. Record:
+  [acquisition](#sep-17-assembly101-poses-extrinsics-and-fine-grained-annotations-selective-acquisition).
+- An iteration-speed pass (test tiers, mask/digest/probe caches, SAM3 checkpoint/resume,
+  warm decode worker) cut the review rebuild from 85 s to 19 s and a correction rerun from
+  191 s to 112 s. Record: [speed pass](#sep-17-faster-test-and-iteration-cycle-plan-executed-four-tiers).
+
+#### Sep 18: dataset reference in the review
+
+- The dataset hand poses, projected through the estimated camera with the +9 offset, and
+  the 27 fine-grained segments joined the v4 package as external context; the fine-grained
+  labels replaced the agent-authored substeps for navigation. Record:
+  [dataset reference](#sep-18-assembly101-dataset-hands-and-fine-grained-labels-in-the-v4-review).
+- Clean-up: `ruff format` applied tree-wide, stale front matter here refreshed, 72
+  unreferenced run directories (1.86 GB) listed for the user's deletion decision.
+
 ### Plan versus actual
 
 What the plan said, what happened instead, and why, in one line each.
 
-- One dataset, one clip, one ten-second interval for most experiments, versus "as many
-  repos as we can". The ego footage was hard enough that making one method usable on it
-  consumed the budget; the 180 s runs exist, but the iteration loop lived at 10 s.
+- One dataset, one clip, and a 60 s window for the close comparison, versus "as many
+  repos as we can". Nine methods were eventually attempted, but only after the ego
+  footage had consumed the original budget on one of them; the 180 s runs exist, the
+  iteration loop lived at 10–60 s.
 - SAM3 with human-seeded masks, versus zero-shot text prompts. Text prompts worked on
   the RGB static view and failed on the monochrome ego view (Sep 8, 23:46). Every ego
   result after that is human-in-the-loop initialization, and is labelled that way; it is
@@ -264,7 +322,20 @@ What the plan said, what happened instead, and why, in one line each.
   representative (Sep 9, 22:53). Corrections reset a slot's memory at a human-verified
   frame; the run manifest records every correction.
 - MediaPipe was delayed until Sep 16 by the calibration work, then completed over the
-  retained first minute. WiLoR and the remaining exploratory queue were not reached.
+  retained first minute. The exploratory queue was reached only by running it unattended
+  in one night at smoke tier, with delegated workers, rather than as the plan's serial
+  time-boxed trials; the results are labelled accordingly.
+- Review tooling (four review-package generations, label-free metrics, an ensemble
+  reference, an agent-correction CLI, a speed pass), versus "the recording, the normalized
+  artifacts and the ledger are the deliverables". This is the second large scope
+  expansion after the calibration workspace; it made iterating on one clip fast and made
+  the plan's fixed human QA gate slower to reach.
+- Dataset poses and fine-grained annotations acquired Sep 17, versus "ground truth only as
+  an optional visual reference". They are used exactly that way, but the acquisition
+  itself crossed a gate the plan had closed, at the user's request, and it surfaced the
+  static/pose clock offset that every earlier two-view comparison had missed.
+- Masks per frame at full rate as RGBA cut-outs, versus the plan's 5 fps segmentation
+  cadence in the `.rrd`; the plan's cadence rule is documented as superseded below.
 - Masks on every frame in Rerun, versus the historical external-PNG cadence of 5 fps
   (`mask_period_frames=6` at 30 fps). The worker now writes compressed PNGs every analysis
   frame and Rerun logs each object's PNG as an RGBA `EncodedImage` cut-out. The distinct
@@ -280,24 +351,34 @@ What the plan said, what happened instead, and why, in one line each.
 
 ### Open items
 
-- Visually review the focused four-part run in Rerun, especially frames 707, 1946,
-  2381, 2578, and 2684. Those are the first target-loss frames or the sole frame with
-  pairwise mask IoU above 0.5.
-- Inspect the aligned hybrid static and canonical ego model-overlay sheets and complete
-  their pending records under `docs/qa/`. The old static zero-shot record remains historical;
-  no new hybrid pass/flag/fail has been assigned.
-- Review the combined first-minute SAM3 + MediaPipe recording. MediaPipe's final
-  20-second occlusion gaps and unstable handedness remain explicit limitations. WiLoR
-  remains the named second wave.
-- `yellow_toy_top` leaves the frame at ~216.2 s in every arm; its coverage numbers
+Human gates (nothing below can be claimed until these are recorded):
+
+- Fixed two-timestamp QA dispositions for every completed method under `docs/qa/`
+  (aligned static hybrid, canonical ego, MediaPipe, WiLoR). Records are prepared; no
+  pass/flag/fail has been assigned. The old static zero-shot record is historical.
+- Hidden-interior semantics for focused frames [1024,1172): accept the agent's
+  `hidden_agent_label` (explicit empty masks) or keep the gap `not_contact_eligible`.
+- The four-part run beyond the first minute: frames 1946, 2381, 2578 and 2684 are the
+  first target-loss frames; the late reassembly has never been dispositioned and is
+  currently treated as failure evidence only.
+- G5 claims gate, including the still-unanswered CC BY-NC question for any job-seeking or
+  demo use; it now covers the poses and annotations as well.
+
+Technical:
+
+- Static/ego clock offset: only the Sep 18 dataset hand layer applies the +9 pose-frame
+  static lag; `battle-build-ego-static-comparison` and the focused two-view build still
+  assume zero relative offset.
+- Multi-view: ATHENA triangulation and a static/ego correspondence audit are unblocked by
+  the fitted intrinsics and untried.
+- Human-review nits not yet addressed: SAM mask palette (orange on yellow), skeleton lines
+  for Kineo body joints.
+- 72 unreferenced run directories (1.86 GB) plus the superseded
+  `runs/interaction-review-first-minute-v4-local` await a deletion decision;
+  `scripts/prune_runs.py` lists them and never deletes.
+- `yellow_toy_top` leaves the frame at ~216.2 s in every 180 s arm; its coverage numbers
   describe the scene, not the tracker.
-- Static/ego clock offset: the static C10379 video lags the dataset pose clock by 9 pose
-  frames (~150 ms). Only the Sep 18 dataset hand layer applies it; every two-view comparison
-  still assumes zero relative offset.
-- Focused static reference, frames 1024-1171: the interior slot leaks onto the visible black
-  chassis while the grey block is hidden; a credible chassis+interior correction at leak onset
-  (1020) did not hold (Sep 17–18 entry). Options needing human sign-off: a hidden-object
-  (empty mask) interior correction semantics, or accepting the gap as `not_contact_eligible`.
+- FineBio access and audio: never entered; close out explicitly or drop.
 
 ### Sep 13: fixed two-timestamp QA infrastructure
 
