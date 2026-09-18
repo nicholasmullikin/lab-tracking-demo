@@ -1436,6 +1436,57 @@ episodes, proposals, the dataset-wrist anchor);
 `centre_mm = grid_origin_mm + (index + 0.5) * voxel_size_mm`, both in the manifest);
 `runs/multiview-ego-visibility-audit/report.json`.
 
+#### Tracker memory policy: slot exclusivity and score-gated memory (Sep 18)
+
+The SAM3 worker has an opt-in **tracker memory policy**, a run condition recorded in every
+manifest as `runtime_settings.tracker_memory_policy` (typed `TrackerMemoryPolicy`) and named in
+the run id (`-xargmax`, `-gon`, `-r1008`, `-seed0`). `--slot-exclusivity argmax` gives each pixel
+predicted positive by more than one present slot to the slot with the larger logit and pushes the
+others to at most `-8` before memory encoding and output; `--memory-gate on` hands the memory
+encoder a score of `-1` (its no-object embedding) for a slot whose raw score (`<= 0`), predicted
+IoU (`< 0.5`), contested fraction (`> 0.2`) or area (outside `[0.5, 2]` x the rolling median of
+its last 30 trusted frames, never during warm-up) fails on a frame, so that frame is memorised as
+absent for that slot only. Corrections are untouched. The defaults (both off) reproduce the
+unpoliced tracker byte for byte (`tests/test_worker_policy_gpu.py`, `gpu` tier). Diagnostics gain
+`contested_fraction`, `memory_written` and `memory_gate_reason` per slot; the focused C10379
+profile accepts `--max-frames 1800` (its first minute, corrections past the bound dropped and
+listed) and `--frame-zero-seeds-only`. Policy runs are excluded from the combiner's default run
+discovery and reach it only through `--view-run`.
+
+```bash
+# unit tests of the pure functions under both interpreters
+uv run pytest -q tests/test_worker_policy.py
+/home/nick/.pyenv/versions/muggled_sam/bin/python -m pytest -q tests/test_worker_policy.py
+# one arm (GPU, through the queue in practice): focused C10379 first minute, exclusivity + gate
+uv run battle-muggled-smoke --config configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_g2.json \
+  --view static-c10379 --four-part-static-focused --max-frames 1800 --max-side-length 720 \
+  --multi-keyframe-correction-schedule runs/muggledsam-sam3-four-part-focused-corrections-agent-swap-20260918t000947z/multi_keyframe_correction_schedule.json \
+  --slot-exclusivity argmax --memory-gate on --run-root runs/sam3-policy-ablation-20260918/arms/xg-r720-sched
+# the Sep 18 ablation: 12 C10379 arms + 7 views, three queue passes, then the label-free table,
+# sheets and recording (runs/sam3-policy-ablation-20260918/README.md holds the tables and reading)
+uv run scripts/overnight_queue.py runs/sam3-policy-ablation-20260918/jobs_1_resolution.json
+uv run scripts/overnight_queue.py runs/sam3-policy-ablation-20260918/jobs_2_ablation_r720.json
+uv run scripts/overnight_queue.py runs/sam3-policy-ablation-20260918/jobs_3_views_xg_r720.json
+uv run battle-policy-ablation summarize --review-metrics      # summary.json + summary.md
+uv run battle-policy-ablation sheets --best xg-r720-sched     # sheets/<arm>.png, best_vs_reference.png
+uv run battle-policy-ablation rrd --best xg-r720-sched        # best_vs_reference.rrd
+uv run rerun runs/sam3-policy-ablation-20260918/best_vs_reference.rrd
+uv run battle-build-multiview-part-consensus --reference-run <xg C10379 run> \
+  --view-run C10095=<xg C10095 run> ... --output-root runs/multiview-part-consensus-first-minute-policy
+uv run battle-build-visual-hull --consensus-root runs/multiview-part-consensus-first-minute-policy \
+  --output-root runs/multiview-visual-hull-first-minute-policy
+uv run battle-review-metrics --reference-run <any first-minute C10379 run> --output-root <dir> --skip-rrd
+```
+
+Result in one line (details in the ledger, "slot exclusivity and score-gated memory"): the policy
+costs nothing (125-127 s, 2.06 GiB, 180 px grid) and, with the reference schedule,
+`xg-r720-sched` departs from the reference only inside the human-flagged windows; it is the
+**candidate** reference for the anchor-frame labelling and is not adopted, because the eight-view
+consensus and hull rebuilt with it contradict C10379's chassis on more frames, not fewer. The
+gate starves without corrections (53-67 % of chassis/interior frames withheld) and on the grazing
+camera C10395; higher encoder sides (1008, 1280) rewrite the trajectory outside the windows, so
+720 stays. Every number is label-free disagreement, not accuracy.
+
 ### First-minute review metrics (label-free triggers)
 
 `battle-review-metrics` turns the v4 first-minute inputs into per-frame proxy metrics and a

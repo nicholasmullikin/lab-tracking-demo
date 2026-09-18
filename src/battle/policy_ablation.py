@@ -350,21 +350,27 @@ def analyse_arm(
 
 
 def review_metric_episodes(
-    repository_root: Path, run_directory: Path, output_root: Path
+    repository_root: Path, run_directory: Path, output_root: Path, *, rebuild: bool = False
 ) -> dict[str, object]:
-    """`battle-review-metrics` with the arm as the mask source; episode counts per window."""
-    from .review_metrics import build_review_metrics
+    """`battle-review-metrics` with the arm as the mask source; episode counts per window.
 
-    metrics_path = build_review_metrics(
-        repository_root=repository_root,
-        output_root=output_root,
-        write_rrd=False,
-        overwrite=True,
-        reference_run=run_directory,
-    )
-    triggers = json.loads(
-        (metrics_path.parent / "review_triggers.json").read_text(encoding="utf-8")
-    )
+    A package already built for this arm is reused unless `rebuild` is set, because the
+    metrics pass costs about two minutes per arm and depends only on the arm's own files.
+    """
+    from .review_metrics import METRICS_NAME, TRIGGERS_NAME, build_review_metrics
+
+    metrics_path = (repository_root / output_root).resolve() / METRICS_NAME
+    triggers_path = metrics_path.parent / TRIGGERS_NAME
+    if rebuild or not triggers_path.is_file():
+        metrics_path = build_review_metrics(
+            repository_root=repository_root,
+            output_root=output_root,
+            write_rrd=False,
+            overwrite=True,
+            reference_run=run_directory,
+        )
+        triggers_path = metrics_path.parent / TRIGGERS_NAME
+    triggers = json.loads(triggers_path.read_text(encoding="utf-8"))
     families = {
         "swap": ("segmentation_identity_swap", "segmentation_label_crossing"),
         "leakage": ("appearance_leakage",),
@@ -392,7 +398,11 @@ def review_metric_episodes(
             )
         )
         counts[family] = per_window
-    return {"metrics_uri": str(metrics_path), "episodes": counts}
+    return {
+        "metrics_uri": str(metrics_path),
+        "episode_count": len(triggers["episodes"]),
+        "episodes": counts,
+    }
 
 
 def summarize(
@@ -686,7 +696,7 @@ def render_sheets(
     arms: Mapping[str, Path] | None = None,
     best_arm: str | None = None,
     frames: Sequence[int] = ANCHOR_FRAMES,
-    tile_width: int = 400,
+    tile_width: int = 512,
 ) -> list[Path]:
     root = (repository_root / root).resolve()
     arms = dict(arms) if arms is not None else discover_arms(root)

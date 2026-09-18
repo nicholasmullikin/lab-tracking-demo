@@ -2858,3 +2858,148 @@ this comparison makes no accuracy or cross-method identity claim.
   `evaluate` code keeps the camera-centre Umeyama the plan asked for. LM-EEC `independent` mode
   and the other checkpoint direction were not run (one queue job as prepared). Plan todos
   `t4-kineo` and `t7-lmeec` marked completed.
+
+### Sep 18: slot exclusivity and score-gated memory (tracker policy ablation)
+
+- **Claim boundary first.** Every number in this section is either disagreement between two runs
+  of one tracker (an arm against the human-corrected reference
+  `runs/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260918t001210z`,
+  frames `[0,1800)`, which is itself known to be wrong inside `[279,408)`, `[573,722)` and
+  `[1020,1172)`), self-consistency of one run (its own slot overlaps, area traces and gate
+  decisions), or cross-view disagreement on the calibrated rig. None is accuracy; a low IoU with
+  the reference inside a flagged window is as consistent with a fix as with a different failure.
+  The policy is a **run condition**, recorded as `runtime_settings.tracker_memory_policy`
+  (typed `TrackerMemoryPolicy`) in every manifest and named in the run id. Nothing was swapped
+  into any reference; the candidate below is named, not adopted. GPU work ran only through
+  `scripts/overnight_queue.py` (three passes, 20 jobs, 20 succeeded, no timeout, no `NVRM`/`Xid`;
+  `runs/sam3-policy-ablation-20260918/queue.log`). CC BY-NC 4.0 applies to the dataset assets.
+- **What was built.** In `muggled_worker.py`, two pure functions on the multiplex step's own
+  outputs: `resolve_slot_exclusivity(masks, scores, mode)` (`argmax`: a pixel positive in more
+  than one present slot, raw score > 0, goes to the larger logit and the losers are clamped to
+  at most `-8` before `encode_frame_memory` and before `_observation`; both modes report each
+  slot's contested fraction) and `memory_gate(scores, ious, contested, areas, history, policy)`
+  (a slot whose raw score `<= 0`, predicted IoU `< 0.5`, contested fraction `> 0.2` or area
+  outside `[0.5, 2]` x the rolling median of its last 30 trusted frames is handed to the memory
+  encoder with score `-1`, which adds MuggledSAM's `no_object_embed` for that multiplex entry
+  only, so the frame is memorised as absent for that slot; the band is never applied during the
+  first 30 trusted frames, reason `warmup`; corrected frames are never gated, reason
+  `corrected`, and the corrected slot's area history restarts). Flags `--slot-exclusivity
+  off|argmax`, `--memory-gate off|on`, `--gate-min-object-score`, `--gate-min-iou`,
+  `--gate-max-contested-fraction`, `--gate-area-band`, `--gate-area-history-frames`; the
+  area history rides in the checkpoint payload under a new key with a default on load and a
+  non-default policy joins the stream identity. `TrackerSlotDiagnostic` gains optional
+  `contested_fraction`, `memory_written`, `memory_gate_reason`; the raw `object_score` is
+  unchanged. `battle-muggled-smoke` passes the flags through, suffixes the run id
+  (`-xargmax-gon-r1008-seed0`), lets the focused C10379 profile stop at `--max-frames 1800`
+  (corrections past the bound are dropped and listed in the metadata) and run
+  `--frame-zero-seeds-only`; `discover_multiview_runs` skips policy runs so last night's
+  combiner inputs cannot be replaced by accident. `battle-policy-ablation` (new
+  `policy_ablation.py`) computes the table below, the sheets and the recording;
+  `battle-review-metrics --reference-run` measures any first-minute C10379 run with the override
+  recorded in the package.
+- **Regression.** `off-r720-sched` (policy off, 720 px, the schedule, first minute) is
+  byte-identical to the reference over `[0,1800)`: 1800 observation rows (same md5 as the
+  reference's first 1800 lines) and 7197 mask PNGs (`tests/test_worker_policy_gpu.py`, run as
+  queue job `regression-policy-off-byte-identical`). The policy is additive.
+- **Resolution axis** (focused C10379, first minute, with the schedule; six runs):
+
+  | arm | side | mask grid | runtime s | ttfu s | peak VRAM GiB | IoU chassis / interior vs ref | chassis IoU 573-722 / 1020-1172 | episodes vs ref (outside windows) | gated chassis / interior % |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | off-r720-sched | 720 | 180 | 125.6 | 4.40 | 2.06 | 1.000 / 1.000 | 1.00 / 1.00 | 0 (0) | - |
+  | off-r1008-sched | 1008 | 252 | 199.4 | 4.35 | 2.16 | 0.699 / 0.646 | 0.35 / 0.24 | 14 (8) | - |
+  | off-r1280-sched | 1280 | 320 | 348.5 | 4.18 | 2.43 | 0.693 / 0.608 | 0.39 / 0.22 | 17 (8) | - |
+  | xg-r720-sched | 720 | 180 | 126.5 | 4.46 | 2.06 | 0.896 / 0.862 | 0.53 / 0.90 | 3 (1) | 15 / 18 |
+  | xg-r1008-sched | 1008 | 252 | 201.8 | 4.32 | 2.16 | 0.676 / 0.639 | 0.22 / 0.29 | 12 (8) | 15 / 7 |
+  | xg-r1280-sched | 1280 | 320 | 346.4 | 4.17 | 2.43 | 0.725 / 0.606 | 0.13 / 0.35 | 16 (10) | 19 / 8 |
+
+  Runtime 1.6x and 2.8x the 720 run; VRAM 2.2-2.4 GiB (the 8 GiB stop was never near). A larger
+  encoder side rewrites the whole trajectory: 1008 and 1280 open eight or more disagreement
+  episodes outside the windows (the largest an interior episode over `[1464,1800)`, 336 frames,
+  IoU 0.29-0.35 with the reference), and the in-window self-consistency proxies (pairwise slot
+  overlap, area jumps, gate fraction) do not improve. By the plan's rule the **working
+  resolution stays 720**; whether 1008 is better or worse late in the minute is a labelling
+  question.
+- **Ablation at 720 px** (four policies x {reference schedule, frame-0 seeds only}; `off/sched`
+  is the reference itself). Five pre-accuracy measures for every arm: coverage 1800/1800 frames,
+  7091-7200 masks, per-part mask presence 1742-1800 frames (lowest `xg-r720-seed0`: chassis 1749,
+  interior 1742); runtime 125.4-127.0 s; time to first usable output 4.07-4.46 s; peak VRAM
+  1.99-2.06 GiB; mask grid 180 x 180. The policy costs nothing measurable.
+
+  | arm | policy | corrections | IoU ch / in / rb / cab vs ref | ch IoU 279-408 / 573-722 / 1020-1172 | in IoU 1020-1172 | IoU outside windows | episodes (outside) | slot pair IoU > 0.3 frames | area-jump frames ch / in | gated ch / in % | review-metric swaps (in windows / outside) |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | off-r720-sched | off | full | 1.000 / 1.000 / 1.000 / 1.000 | 1.00 / 1.00 / 1.00 | 1.00 | 1.000 | 0 (0) | 0 | 141 / 123 | - | 7 (4 / 3) |
+  | x-r720-sched | x | full | 0.849 / 0.807 / 0.968 / 0.999 | 0.99 / 0.48 / 0.40 | 0.51 | 0.931 | 7 (2) | 0 | 109 / 180 | 0 / 0 | 4 (2 / 2) |
+  | g-r720-sched | g | full | 0.881 / 0.870 / 0.986 / 0.999 | 1.00 / 0.42 / 0.93 | 0.98 | 0.941 | 4 (1) | 0 | 141 / 149 | 20 / 18 | 6 (3 / 3) |
+  | **xg-r720-sched** | x+g | full | 0.896 / 0.862 / 0.978 / 0.999 | 0.99 / 0.53 / 0.90 | 0.96 | 0.938 | 3 (1) | 0 | 150 / 147 | 15 / 18 | 4 (2 / 2) |
+  | off-r720-seed0 | off | frame 0 | 0.592 / 0.589 / 0.941 / 0.989 | 0.47 / 0.42 / 0.05 | 0.35 | 0.805 | 10 (3) | 0 | 164 / 125 | - | 13 (5 / 8) |
+  | x-r720-seed0 | x | frame 0 | 0.560 / 0.341 / 0.941 / 0.989 | 0.48 / 0.59 / 0.05 | 0.34 | 0.708 | 11 (4) | 0 | 120 / 163 | 0 / 0 | 12 (4 / 8) |
+  | g-r720-seed0 | g | frame 0 | 0.576 / 0.559 / 0.948 / 0.988 | 0.49 / 0.58 / 0.05 | 0.34 | 0.785 | 13 (4) | 0 | 134 / 102 | **53 / 34** | 6 (2 / 4) |
+  | xg-r720-seed0 | x+g | frame 0 | 0.543 / 0.354 / 0.939 / 0.988 | 0.37 / 0.59 / 0.05 | 0.35 | 0.707 | 12 (5) | 0 | 140 / 152 | **59 / 67** | 13 (4 / 9) |
+
+  Where the schedule arms differ from the reference: `xg-r720-sched` interior `[707,900)` (IoU
+  0.18, up to the 900 correction), chassis `[617,697)` 0.26, interior `[1220,1235)` 0.01;
+  `g-r720-sched` adds chassis `[702,827)`; `x-r720-sched` adds chassis `[1089,1172)` 0.03 and
+  interior `[1096,1172)` 0.08, i.e. exclusivity alone changes the swap window and the gate
+  undoes that. Every frame-0-only arm loses the chassis to the reference from frame ~695 until the
+  1172 correction (IoU 0.02-0.04) and the interior over `[707,1050)`: no policy removes the need
+  for the 900 and 1172 corrections. Review-metric leakage / growth / area-anomaly episode counts
+  (arm masks as the tool's reference) move by at most a few episodes between the schedule arms
+  (leakage 17-22, growth 54-58, area anomaly 23-27). Pairwise slot IoU above 0.3 never occurs in
+  the first minute in any arm, so exclusivity has little to act on here (contested fraction >
+  0.2 on 2-43 frames per slot).
+- **Gate behaviour.** With the schedule, `area_jump` is 80-90 % of every gated frame (`xg`:
+  chassis 212 of 264 gated frames, `contested` 25, `low_iou` 23, `low_object_score` 4; interior
+  308 of 327), cabin is never gated and rear_body 19 %; no slot crosses the 30 % starvation
+  line. Without corrections the gate **starves**: chassis 53 % / interior 34 % (`g`) and 59 % /
+  67 % (`xg`). The cause is by construction: the rolling median only advances on trusted frames,
+  so once a part's apparent size changes for good the band never catches up until a correction
+  resets the history. The same happens on the grazing camera in the seven-view pass (below).
+- **Seven other views and the combiner** (candidate `xg`, 720 px, last night's geometric seeds,
+  `runs/sam3-policy-ablation-20260918/views/<view>/`): 1800/1800 frames each, 123.7-125.3 s,
+  1.96 GiB; gated chassis / rear_body / cabin: C10095 35 / 10 / 0, C10115 4 / 9 / 0, C10118
+  10 / 12 / 0, C10119 0 / 2 / 0, C10390 19 / 11 / 25, C10395 **42** / 6 / **64**, C10404 0 / 3 / 0;
+  first missing frames unchanged where they existed (C10095 chassis 1537, C10115 chassis 234,
+  C10395 cabin 228 / chassis 594). Consensus rebuilt with the eight `xg` runs into
+  `runs/multiview-part-consensus-first-minute-policy/` (63 s) and the hull into
+  `runs/multiview-visual-hull-first-minute-policy/` (148 s); last night's roots untouched.
+  C10379 chassis contradicted by the majority: before `[585,604)` `[643,658)` `[665,689)`
+  `[697,702)` `[1089,1163)` `[1167,1172)` `[1464,1471)` (147 frames), after `[476,494)`
+  `[586,604)` `[618,703)` `[1088,1162)` `[1167,1172)` `[1358,1366)` `[1464,1471)` `[1502,1509)`
+  `[1514,1520)` (228 frames); rear_body before `[1525,1530)` `[1677,1751)` `[1759,1781)`
+  `[1786,1800)` (115), after `[1524,1530)` `[1705,1751)` `[1759,1765)` `[1767,1781)`
+  `[1790,1800)` (82). C10379 agreement chassis / rear_body / cabin 0.88 / 0.93 / 1.00 before,
+  0.83 / 0.95 / 1.00 after; consensus episodes over all views 83 (C10379 14) before, 99 (15)
+  after. Hull-vs-mask median IoU for the C10379 chassis in `[279,408)` / `[573,722)` /
+  `[1020,1172)`: 0.46 / 0.11 / 0.005 before, 0.47 / 0.00 / 0.003 after; overall 0.456 -> 0.396;
+  hull episodes 183 (C10379 37) -> 146 (32), the chassis ones now including `[477,494)` and
+  `[1571,1641)`.
+- **Reading and the candidate.** The policy is cheap and additive, and with the reference
+  schedule `xg-r720-sched` (`runs/sam3-policy-ablation-20260918/arms/xg-r720-sched/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260918t153507z-xargmax-gon`)
+  agrees with the reference everywhere except the two windows the human flagged and 15 frames
+  before the 1235 correction, with the fewest swap episodes and no starved slot; it is the
+  **CANDIDATE reference** for the anchor-frame labelling and is **not adopted**. The label-free
+  multi-view evidence does not endorse it: the same arm on all eight views contradicts C10379's
+  chassis on more frames (147 -> 228), lowers its chassis agreement (0.88 -> 0.83) and takes the
+  `[573,722)` hull IoU from 0.11 to 0.00, while rear_body improves (115 -> 82, 0.93 -> 0.95). The
+  gate is the part to fix before wider use (an area band that follows lasting size changes, or a
+  median over all recent frames rather than trusted ones); exclusivity is nearly inert on this
+  minute. Deliverables: `runs/sam3-policy-ablation-20260918/{README.md,summary.json,summary.md}`,
+  `sheets/<arm>.png` for the 12 arms and the reference at frames 300, 370, 400, 600, 650, 700,
+  900, 1050, 1100, 1150, 1200, 1500, 1700 with the gated slots named per tile,
+  `best_vs_reference.png` (reference | `xg-r720-sched`, cropped to the assembly region),
+  `best_vs_reference.rrd` (`uv run rerun runs/sam3-policy-ablation-20260918/best_vs_reference.rrd`:
+  the video once, both runs' masks as toggleable layers, object score and gated flag per slot),
+  `analysis/<arm>/review_metrics/`. No viewer was opened.
+- **Tests.** `tests/test_worker_policy.py` (12 tests: exclusivity on synthetic 3-slot logits
+  incl. an absent slot and bfloat16, off-is-identity, gate reason order and thresholds, rolling
+  median warm-up, history padding, stream identity, area-band parsing) passes under the battle
+  interpreter (9 passed, 9 torch cases skipped) and under the MuggledSAM interpreter (12 passed;
+  pytest installed into that env for this); `tests/test_worker_policy_gpu.py` (`gpu`) is the
+  byte-identity check; `tests/test_policy_ablation.py` (5) covers the metrics, summary and sheet
+  rendering on synthetic runs; schema round trips with and without the new fields, the focused
+  first-minute bound and the seeds-only schedule (`real_data`) and the combiner's discovery guard
+  are in `test_schemas.py`, `test_muggled_smoke.py`, `test_multiview_pass.py`. Default suite 433
+  passed, `real_data` 38 passed. Ruff clean.
+- **Not done, by instruction.** The anchor-frame labelling set-up (`x-anchor-setup`) and the
+  labels themselves; no reference was swapped; the v4 package and the contact eligibility are
+  unchanged.
