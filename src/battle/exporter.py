@@ -690,9 +690,22 @@ def export_synchronized_comparison(
     static_description: str = (
         "Existing bounded static-camera video paired to the same analysis timeline."
     ),
+    static_clock_shift_seconds: float = 0.0,
+    clock_shift_note: str | None = None,
 ) -> Path:
-    """Export two existing views to one analysis-time-synchronized RRD without inference."""
+    """Export two existing views to one analysis-time-synchronized RRD without inference.
+
+    `static_clock_shift_seconds` is the measured lag of the static video behind the ego
+    video on the shared world (pose) clock: static analysis frame `p` shows the scene
+    `shift` seconds later than ego frame `p`.  Every static entry (video frame reference,
+    masks, hands, diagnostics) is therefore logged at `analysis_time = p / fps + shift` and
+    `source_time = source_seconds + shift`; nothing is resampled and the static
+    `VideoFrameReference` still points at frame `p` of the static file.  On the integer
+    `analysis_frame` timeline the static entries move by `round(shift * fps)` frames (a half
+    frame cannot be represented there); scrub `analysis_time` for exact alignment.
+    """
     analysis_fps = ego_manifest.clip.timing.clocks.fps_for(ClockName.ANALYSIS)
+    static_frame_shift = int(round(static_clock_shift_seconds * analysis_fps))
     static_analysis_fps = static_manifest.clip.timing.clocks.fps_for(ClockName.ANALYSIS)
     if analysis_fps != static_analysis_fps:
         raise ValueError("comparison views must use the same analysis FPS")
@@ -742,6 +755,22 @@ def export_synchronized_comparison(
                         "label": ego_label,
                     },
                     "static": {"view_id": static_view_id, "label": static_label},
+                    "static_clock_shift": {
+                        "seconds": static_clock_shift_seconds,
+                        "analysis_frames_exact": static_clock_shift_seconds * analysis_fps,
+                        "analysis_frame_timeline_shift": static_frame_shift,
+                        "rule": (
+                            "static analysis frame p is logged at analysis_time p/fps + "
+                            "seconds; the static VideoFrameReference still addresses frame "
+                            "p of the static file; no observation is resampled"
+                        ),
+                        "note": clock_shift_note
+                        or (
+                            "zero: both views assumed to share the analysis clock"
+                            if static_clock_shift_seconds == 0.0
+                            else "measured per-view video-vs-pose-clock offsets"
+                        ),
+                    },
                 },
                 indent=2,
             ),
@@ -794,6 +823,17 @@ def export_synchronized_comparison(
             analysis_seconds=analysis_seconds,
             segmentation_frame_period=segmentation_frame_period,
         )
+        _log_tracker_diagnostics(ego_observation, view_root=ego_root, annotations=ego_annotations)
+        if static_clock_shift_seconds != 0.0:
+            rr.set_time(
+                "analysis_frame",
+                sequence=static_observation.analysis_frame_index + static_frame_shift,
+            )
+            rr.set_time("analysis_time", duration=analysis_seconds + static_clock_shift_seconds)
+            rr.set_time(
+                "source_time",
+                duration=static_observation.source_seconds + static_clock_shift_seconds,
+            )
         _log_observation(
             static_observation,
             view_root=static_root,
@@ -804,7 +844,6 @@ def export_synchronized_comparison(
             analysis_seconds=analysis_seconds,
             segmentation_frame_period=segmentation_frame_period,
         )
-        _log_tracker_diagnostics(ego_observation, view_root=ego_root, annotations=ego_annotations)
         _log_tracker_diagnostics(
             static_observation, view_root=static_root, annotations=static_annotations
         )

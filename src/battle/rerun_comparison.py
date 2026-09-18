@@ -37,6 +37,48 @@ DEFAULT_MEDIAPIPE_HANDS_RUN = Path(
     "runs/mediapipe-hands-static-60s-fused-dedup-th035-20260916t0430z"
 )
 FOCUSED_OUTPUT_NAME = "four_part_focused_first_minute_ego_static_comparison.rrd"
+# Rebuilt with the measured per-view clock offsets (Sep 18); the earlier zero-offset
+# recordings under `runs/four-part-focused-first-minute-comparison/` and inside the ego run
+# directory are superseded but kept.
+DEFAULT_FOCUSED_OUTPUT_ROOT = Path("runs/four-part-focused-first-minute-comparison-offset-v2")
+DEFAULT_APPROVED_OUTPUT_ROOT = Path("runs/ego-static-synchronized-comparison-offset-v2")
+POSE_FPS = 60
+
+
+def _camera_name(view_id: str) -> str:
+    """`static-c10379` -> `C10379`; `ego-hmc21110305` -> `HMC_21110305`."""
+    kind, _, rest = view_id.partition("-")
+    if kind == "static":
+        return rest.upper()
+    if kind == "ego" and rest.startswith("hmc"):
+        return f"HMC_{rest[3:]}"
+    raise ValueError(f"cannot map view id {view_id!r} onto a camera name")
+
+
+def measured_static_clock_shift(
+    repository_root: Path, *, static_view_id: str, ego_view_id: str
+) -> tuple[float, str]:
+    """Seconds by which the static video lags the ego video on the shared pose clock.
+
+    Each view's measured rule says `pose_frame = raw_frame + offset`; static analysis frame
+    `p` therefore shows pose time `(offset_static - offset_ego) / 60` s later than ego frame
+    `p`.  For C10379 vs HMC_21110305 that is +9 pose frames = 4.5 analysis frames = 0.150 s.
+    """
+    from .assembly101_clock_offset import load_clock_rules
+
+    rules = load_clock_rules(repository_root)
+    static_rule = rules.rule(_camera_name(static_view_id))
+    ego_rule = rules.rule(_camera_name(ego_view_id))
+    delta = static_rule.pose_offset_frames - ego_rule.pose_offset_frames
+    note = (
+        f"{static_view_id} lags the pose clock by {static_rule.pose_offset_frames:+d} pose "
+        f"frames (+-{static_rule.offset_uncertainty_frames}), {ego_view_id} by "
+        f"{ego_rule.pose_offset_frames:+d} (+-{ego_rule.offset_uncertainty_frames}); relative "
+        f"{delta:+d} pose frames = {delta / 2:+.1f} analysis frames = {delta / POSE_FPS:+.3f} s "
+        "(configs/assembly101/clock_rules.json, battle-assembly101-clock-offset scans of the "
+        "focused window; assumed constant over the recording)"
+    )
+    return delta / POSE_FPS, note
 
 
 def _load_manifest(run_directory: Path) -> RunManifest:
@@ -240,8 +282,13 @@ def build_focused_first_minute_comparison(
     static_run_directory: Path,
     hands_run_directory: Path | None = None,
     output_path: Path | None = None,
+    static_clock_shift_seconds: float | None = None,
 ) -> Path:
-    """Build the selected first-minute two-view comparison without inference."""
+    """Build the selected first-minute two-view comparison without inference.
+
+    `static_clock_shift_seconds=None` applies the measured per-view offsets; pass `0.0` to
+    reproduce the earlier zero-offset recording.
+    """
     ego_run_directory = ego_run_directory.resolve()
     static_run_directory = static_run_directory.resolve()
     ego_full = _load_manifest(ego_run_directory)
@@ -272,10 +319,15 @@ def build_focused_first_minute_comparison(
         expected_proxy_uri=static_metadata.proxy_fingerprint.uri,
         expected_proxy_sha256=static_metadata.proxy_fingerprint.sha256,
     )
-    if output_path is None:
-        output_path = (
-            repository_root / "runs/four-part-focused-first-minute-comparison" / FOCUSED_OUTPUT_NAME
+    shift_note = None
+    if static_clock_shift_seconds is None:
+        static_clock_shift_seconds, shift_note = measured_static_clock_shift(
+            repository_root,
+            static_view_id=static_metadata.view_id,
+            ego_view_id=ego_metadata.view_id,
         )
+    if output_path is None:
+        output_path = repository_root / DEFAULT_FOCUSED_OUTPUT_ROOT / FOCUSED_OUTPUT_NAME
     output_path = output_path.resolve()
     ego_video = _create_first_minute_video(
         ego_run_directory / "input_2781f.mp4",
@@ -321,6 +373,8 @@ def build_focused_first_minute_comparison(
         static_description=(
             "First 1,800 frames derived from the fingerprinted focused static run input."
         ),
+        static_clock_shift_seconds=static_clock_shift_seconds,
+        clock_shift_note=shift_note,
     )
 
 
@@ -330,8 +384,13 @@ def build_comparison(
     ego_run_directory: Path,
     static_run_directory: Path,
     output_path: Path | None = None,
+    static_clock_shift_seconds: float | None = None,
 ) -> Path:
-    """Repackage persisted SAM3 outputs and videos; this function never invokes inference."""
+    """Repackage persisted SAM3 outputs and videos; this function never invokes inference.
+
+    `static_clock_shift_seconds=None` applies the measured per-view offsets; pass `0.0` to
+    reproduce the earlier zero-offset recording.
+    """
     ego_run_directory = ego_run_directory.resolve()
     static_run_directory = static_run_directory.resolve()
     ego = _load_manifest(ego_run_directory)
@@ -364,8 +423,15 @@ def build_comparison(
         raise ValueError("comparison proxies must be 30-fps, 5,400-frame assets")
     ego_video = ego_run_directory / "input_5400f.mp4"
     static_video = static_run_directory / "input_5400f.mp4"
+    shift_note = None
+    if static_clock_shift_seconds is None:
+        static_clock_shift_seconds, shift_note = measured_static_clock_shift(
+            repository_root,
+            static_view_id=static_metadata.view_id,
+            ego_view_id=ego_metadata.view_id,
+        )
     if output_path is None:
-        output_path = ego_run_directory / DEFAULT_OUTPUT_NAME
+        output_path = repository_root / DEFAULT_APPROVED_OUTPUT_ROOT / DEFAULT_OUTPUT_NAME
     return export_synchronized_comparison(
         ego,
         static,
@@ -391,6 +457,8 @@ def build_comparison(
             if static_metadata.hybrid_initialization is not None
             else "historical G3 SAM3 zero-shot candidate outputs"
         ),
+        static_clock_shift_seconds=static_clock_shift_seconds,
+        clock_shift_note=shift_note,
     )
 
 
@@ -407,6 +475,15 @@ def main() -> None:
         action="store_true",
         help="Compare the selected first 1,800 frames of aligned focused four-part runs.",
     )
+    parser.add_argument(
+        "--static-clock-shift-seconds",
+        type=float,
+        default=None,
+        help=(
+            "Override the measured static-behind-ego lag (default: from "
+            "configs/assembly101/clock_rules.json; 0 reproduces the old zero-offset build)."
+        ),
+    )
     args = parser.parse_args()
     if args.focused_first_minute:
         output = build_focused_first_minute_comparison(
@@ -415,6 +492,7 @@ def main() -> None:
             static_run_directory=args.static_run or DEFAULT_FOCUSED_STATIC_RUN,
             hands_run_directory=args.hands_run or DEFAULT_MEDIAPIPE_HANDS_RUN,
             output_path=args.output,
+            static_clock_shift_seconds=args.static_clock_shift_seconds,
         )
     else:
         output = build_comparison(
@@ -422,6 +500,7 @@ def main() -> None:
             ego_run_directory=args.ego_run or DEFAULT_EGO_RUN,
             static_run_directory=args.static_run or DEFAULT_STATIC_RUN,
             output_path=args.output,
+            static_clock_shift_seconds=args.static_clock_shift_seconds,
         )
     print(f"Wrote synchronized ego/static comparison: {output}")
 

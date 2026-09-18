@@ -8,9 +8,11 @@ import pytest
 from battle.fixtures import synthetic_run_manifest
 from battle.rerun_comparison import (
     FIRST_MINUTE_FRAME_COUNT,
+    _camera_name,
     _create_first_minute_video,
     _first_minute_manifest,
     _merge_static_hands,
+    measured_static_clock_shift,
 )
 from battle.schemas import (
     AdapterMetadata,
@@ -112,3 +114,22 @@ def test_static_comparison_manifest_can_attach_aligned_hands() -> None:
 
     assert all(len(observation.hands) == 1 for observation in merged.observations)
     assert len(merged.observations) == FIRST_MINUTE_FRAME_COUNT
+
+
+def test_view_ids_map_onto_camera_names() -> None:
+    assert _camera_name("static-c10379") == "C10379"
+    assert _camera_name("ego-hmc21110305") == "HMC_21110305"
+    with pytest.raises(ValueError):
+        _camera_name("mystery-view")
+
+
+def test_measured_static_clock_shift_comes_from_the_tracked_clock_rules() -> None:
+    shift, note = measured_static_clock_shift(
+        Path.cwd(), static_view_id="static-c10379", ego_view_id="ego-hmc21110305"
+    )
+    assert shift == pytest.approx(9 / 60)
+    assert "+9 pose frames" in note and "+4.5 analysis frames" in note
+    shift_e4, _ = measured_static_clock_shift(
+        Path.cwd(), static_view_id="static-c10379", ego_view_id="ego-hmc21179183"
+    )
+    assert shift_e4 == pytest.approx(0.150)

@@ -160,6 +160,75 @@ def test_comparison_export_embeds_synchronized_ego_and_static_views(
     assert "Frame count" in printed
 
 
+def test_comparison_export_shifts_static_entries_by_the_measured_clock_lag(
+    tmp_path: Path, synthetic_video: Path, monkeypatch
+) -> None:
+    import json
+
+    from battle import exporter as exporter_module
+
+    documents: list[str] = []
+    real_log = exporter_module.rr.log
+
+    def capturing_log(path, value, **kwargs):
+        if str(path).endswith("comparison_metadata"):
+            documents.append(value.text.as_arrow_array().to_pylist()[0])
+        return real_log(path, value, **kwargs)
+
+    monkeypatch.setattr(exporter_module.rr, "log", capturing_log)
+    ego_manifest = synthetic_run_manifest()
+    static_manifest = ego_manifest.model_copy(
+        update={
+            "observations": tuple(
+                observation.model_copy(update={"view_id": "static-01"})
+                for observation in ego_manifest.observations
+            )
+        }
+    )
+    output = export_synchronized_comparison(
+        ego_manifest,
+        static_manifest,
+        tmp_path / "comparison.rrd",
+        ego_video_path=synthetic_video,
+        ego_video_dimensions=(16, 8),
+        ego_asset_reference=ego_manifest.clip.asset,
+        ego_mask_artifact_root=None,
+        static_video_path=synthetic_video,
+        static_video_dimensions=(16, 8),
+        static_asset_reference=ego_manifest.clip.asset,
+        static_mask_artifact_root=None,
+        static_label="static",
+        ego_label="ego",
+        static_clock_shift_seconds=0.15,
+        clock_shift_note="fixture: static lags ego by 0.150 s",
+    )
+    printed = subprocess.run(
+        [str(Path(sys.executable).with_name("rerun")), "rrd", "print", "-vvv", str(output)],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    metadata = json.loads(documents[0])["static_clock_shift"]
+    assert metadata["seconds"] == 0.15
+    assert abs(metadata["analysis_frames_exact"] - 4.5) < 1e-9
+    assert metadata["analysis_frame_timeline_shift"] == 4
+    assert metadata["note"] == "fixture: static lags ego by 0.150 s"
+    # The static video frame reference still addresses frame 0 of its own file, but its first
+    # row sits at analysis_frame 4 / analysis_time 0.15 s; the ego's first row is at 0 / 0 s.
+    lines = printed.splitlines()
+
+    def first_rows(entity: str) -> list[str]:
+        start = next(
+            i for i, line in enumerate(lines) if line.startswith("Chunk(") and entity in line
+        )
+        return [line for line in lines[start : start + 40] if line.lstrip().startswith("│ │ row_")]
+
+    static_row = first_rows("/views/static-01/video -")[0]
+    ego_row = first_rows("/views/ego-01/video -")[0]
+    assert "┆ 4 " in static_row and "PT0.15S" in static_row and "[0]" in static_row
+    assert "┆ 0 " in ego_row and "P0D" in ego_row
+
+
 def test_tracker_diagnostics_are_logged_even_when_a_slot_is_dropped(tmp_path: Path) -> None:
     """The trace must stay gapless across the frames where tracking actually fails."""
     manifest = synthetic_run_manifest()

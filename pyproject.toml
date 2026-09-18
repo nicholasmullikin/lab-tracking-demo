@@ -47,6 +47,7 @@ battle-build-assembly101-reference = "battle.assembly101_reference:main"
 battle-fetch-assembly101-view = "battle.assembly101_fetch_view:main"
 battle-assembly101-clock-offset = "battle.assembly101_clock_offset:main"
 battle-fit-assembly101-camera = "battle.assembly101_camera_fit:main"
+battle-multiview-rig-check = "battle.multiview_geometry:main"
 battle-prepare-human-qa = "battle.human_qa:main"
 battle-human-qa-candidates = "battle.human_qa:candidate_main"
 

@@ -1951,3 +1951,76 @@ this comparison makes no accuracy or cross-method identity claim.
 - **Boundary.** The runner knows nothing about what the jobs do or produce; it only sequences
   them and records their exit. It does not resume a partially run list; re-run with a trimmed
   job file.
+
+### Sep 18: Track 1, one calibrated rig for all twelve views and the two-view clock fix
+
+- **Claim boundary first.** The rig is geometry on dataset context (shipped extrinsics, per-frame
+  ego poses) and on fitted estimates (intrinsics). Its residuals against the dataset's own 2D
+  and 3D landmarks show that it reproduces the dataset's internal projection; they are not
+  accuracy claims about the dataset, the cameras or any method. Triangulated points are
+  cross-view agreement. CPU only; no model ran; no viewer opened. CC BY-NC 4.0 applies.
+- **Module.** `multiview_geometry.CameraRig` (`CameraRig.load(repository_root)` reads the twelve
+  `configs/assembly101/<view>_camera_estimate.json`, `configs/assembly101/clock_rules.json` and
+  the window's `camera_extrinsics_ego`). Time is the 60 fps pose clock; `pose_frame(view,
+  analysis_frame)` applies the view's measured rule. API: `project(view, X_world_mm,
+  pose_frame=None)` (raw px, distortion applied, ego views need the pose frame),
+  `depth`, `undistort` (raw px to normalised coordinates, Brown or rational), `ray(view,
+  pixel, pose_frame=None)` (world `Ray(origin, direction)`), `triangulate(points_by_view,
+  pose_frame=None, reproj_filter_px=30, min_views=2)` (equal-weight DLT on normalised
+  coordinates as in ATHENA's `triangulaterefine`, then, while a point's worst reprojection
+  error exceeds the threshold and more than `min_views` views remain, drop the view whose
+  removal leaves the smallest worst-case error; the fixture showed that dropping the largest
+  residual can remove a good view when the compromise spreads a gross error), returning
+  points, the used-view mask and the per-view reprojection error so a disagreeing two-view
+  point stays visible; `epipolar_distance(view_a, px_a, view_b, px_b, pose_frame=None)`;
+  `fit_table_plane(landmarks3d, confidences, pose_frames, lowest_fraction=0.05)` where
+  "down" is the mean image-down (y) axis of the static cameras, cross-checked against the
+  camera-to-scene direction, never an assumed world axis; `TablePlane.intersect_ray` for seed
+  transfer. `battle-multiview-rig-check` writes `runs/assembly101-multiview-rig-check/report.json`.
+- **Measures (rig check, every 25th pose frame of the window, hands with confidence >= 0.8).**
+  Coverage 12/12 views loaded; runtime 3.3 s (time to first output the same). Projection of
+  dataset 3D vs shipped 2D: C10095 0.00039 px RMS, C10115 0.00096, C10118 0.00062, C10119
+  0.00027, C10379 0.00028, C10390 0.00062, C10395 0.00021, C10404 0.00228 (8,733-8,736 points
+  each); ego HMC_21110305 0.274 px (max 2.2, 8,406 points), HMC_21179183 0.306 (max 1.3),
+  HMC_21176875 4.04 (max 5.3, 3,232 points), HMC_21176623 5.14 (max 30.1, 2,313 points).
+  Triangulating the dataset's own 2D back to 3D: all eight static views median 0.0004 mm, p95
+  0.0004, max 0.001 (8 views used everywhere); C10379+C10395 median 0.0007 mm, p95 0.0029,
+  max 0.098; C10115+C10404 median 0.0020 mm, p95 0.0024; eight static + HMC_21110305 median
+  0.062 mm, p95 1.94, max 16.0 (mean 8.96 views used: the ego's 0.3 px residual at a 190 px
+  focal length is millimetres at arm's length and the 30 px filter rarely drops it, so the
+  ego view should be weighted or filtered tighter when it joins a static triangulation).
+  Table plane: normal (-0.331, 0.942, 0.048), 2,604 of 52,075 fingertips (lowest 5 %), residual
+  RMS 9.98 mm, p95 19.7 mm, 0.2 % of all fingertips more than 20 mm below the plane, normal 3.5
+  degrees from the mean static image-down axis; the camera-position-to-scene direction is 56
+  degrees from that axis, which says the cameras look at the table obliquely, not that either
+  estimate is wrong.
+- **Two-view clock fix.** `export_synchronized_comparison` gained `static_clock_shift_seconds`
+  and `rerun_comparison.measured_static_clock_shift` derives it from the tracked rules: C10379
+  +9 pose frames minus HMC 0 = 9 pose frames = 4.5 analysis frames = 0.150 s; the static video
+  started later, so static analysis frame p shows the scene 0.150 s after ego frame p.
+  Decision on the half frame: nothing is resampled. Every static entry (video frame reference,
+  masks, hands, tracker diagnostics) is logged at `analysis_time = p/30 + 0.150` and
+  `source_time + 0.150`, the static `VideoFrameReference` still addresses frame p of the static
+  file, and on the integer `analysis_frame` timeline the static entries move by
+  round(4.5) = 4 frames (documented in the recording's `comparison_metadata`). Scrubbing
+  `analysis_time` gives exact alignment; the static view is empty for the first 0.150 s and
+  runs 0.150 s past the ego's end. Rebuilt: focused first minute to
+  `runs/four-part-focused-first-minute-comparison-offset-v2/` (84.5 MB, 58 s) and the canonical
+  180 s pair (C10379 vs HMC_21179183, same 0.150 s) to
+  `runs/ego-static-synchronized-comparison-offset-v2/` (122.0 MB, 20 s). Verified in the RRD:
+  static frame 0 sits at analysis_frame 4 / analysis_time 0.150 s / source_time 294.150 s with
+  video timestamp 0, ego frame 0 at 0 / 0 / 294.000. The earlier zero-offset recordings
+  (`runs/four-part-focused-first-minute-comparison/`, 81.0 MB, and the 131.5 MB one inside the
+  ego run directory) are superseded and kept. `--static-clock-shift-seconds 0` reproduces
+  them. The offset is assumed constant over the recording; it was measured on the focused
+  window only.
+- **Tests.** `tests/test_multiview_geometry.py`: a three-static-plus-one-ego fixture rig with
+  Brown and rational distortion (bookkeeping and clock rules, projection equals OpenCV and rays
+  pass through the points, ego pose changes per frame, triangulation recovers points to 0.01 mm
+  and removes a corrupted third view while the unfiltered solve does not, NaN gaps and lone
+  views, `dlt_triangulate` patterns, epipolar distance zero for a consistent pair, table plane
+  on a tilted synthetic table with camera-derived down and ray intersection); `real_data`:
+  the loaded rig reproduces the shipped 2D for a static and an ego view and triangulates a
+  dataset hand from three static views to 0.01 mm, and the rig-check report meets the
+  thresholds above. Exporter/comparison tests cover the shift metadata and the shifted static
+  rows, view-id-to-camera mapping and the measured 0.150 s.

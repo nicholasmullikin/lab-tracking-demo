@@ -432,13 +432,28 @@ traces without inference:
 ```bash
 uv run battle-build-ego-static-comparison --focused-first-minute
 uv run rerun \
-  runs/four-part-focused-first-minute-comparison/four_part_focused_first_minute_ego_static_comparison.rrd
+  runs/four-part-focused-first-minute-comparison-offset-v2/four_part_focused_first_minute_ego_static_comparison.rrd
 ```
 
 The default MediaPipe input is
 `mediapipe-hands-static-60s-fused-dedup-th035-20260916t0430z`; override it with
-`--hands-run runs/<run-id>`. The resulting 81.0 MB recording keeps the static RGB view
-as the hand-pose claim and the monochrome ego view as the object-tracking stress test.
+`--hands-run runs/<run-id>`. The resulting recording keeps the static RGB view as the
+hand-pose claim and the monochrome ego view as the object-tracking stress test.
+
+**Clock offset (Sep 18).** Both two-view builders (`--focused-first-minute` and the 180 s
+default) now apply the measured per-view video-vs-pose-clock offsets from
+`configs/assembly101/clock_rules.json`: the C10379 video lags the pose clock by +9 pose
+frames and the HMC cameras by 0, so static analysis frame `p` shows the scene 0.150 s
+(4.5 analysis frames) later than ego frame `p`. Rather than resampling observations, every
+static entry (video frame reference, masks, hands, diagnostics) is logged at
+`analysis_time = p/30 + 0.150 s` and `source_time + 0.150 s`; the static
+`VideoFrameReference` still addresses frame `p` of the static file. On the integer
+`analysis_frame` timeline the static entries sit 4 frames later (a half frame cannot be
+represented there); scrub `analysis_time` for exact alignment. The recording's
+`comparison_metadata` document records the shift and its provenance. Outputs go to new
+directories (`runs/four-part-focused-first-minute-comparison-offset-v2/` and
+`runs/ego-static-synchronized-comparison-offset-v2/`); the earlier zero-offset recordings are
+kept and superseded. `--static-clock-shift-seconds 0` reproduces the old behaviour.
 
 ## Fixed human QA hard gate
 
@@ -1289,6 +1304,45 @@ uv run battle-assembly101-clock-offset --view C10095 --view C10115 --view C10118
   --view HMC_21110305 --view HMC_21176623 --view HMC_21176875 --view HMC_21179183 --write-config
 uv run battle-fit-assembly101-camera --all
 uv run pytest -q tests/test_assembly101_acquisition.py
+```
+
+#### Shared multi-view geometry: `multiview_geometry.CameraRig` (Sep 18)
+
+Track 1 puts the twelve camera estimates, the twelve clock rules and the dataset's per-frame
+ego poses behind one object so later tracks (seed transfer, triangulated hands, Kineo with
+known cameras, visual hull) share the same geometry. Time is the dataset's 60 fps pose clock;
+`rig.pose_frame(view, analysis_frame)` converts a view's proxy frame with its measured rule.
+
+```python
+from pathlib import Path
+from battle.multiview_geometry import CameraRig
+
+rig = CameraRig.load(Path.cwd())                     # all 8 static + 4 ego views
+k = rig.pose_frame("C10379", 800)                    # 17640 + 2*800 + 9
+px = rig.project("C10395", X_world_mm)               # (N, 3) mm -> (N, 2) raw px, distortion on
+px_ego = rig.project("HMC_21110305", X_world_mm, k)  # ego views need the pose frame
+ray = rig.ray("C10379", (640.0, 360.0))              # world Ray(origin, direction)
+result = rig.triangulate({"C10379": uv_a, "C10395": uv_b, "C10115": uv_c}, k,
+                         reproj_filter_px=30)        # DLT + leave-one-out view dropping
+result.points, result.used, result.reprojection_px   # (N,3) mm, (N,V) bool, (N,V) px
+d = rig.epipolar_distance("C10379", uv_a[0], "C10395", uv_b[0])
+plane = rig.fit_table_plane(landmarks3d, confidences, pose_frames=range(17640, 23202))
+hit = plane.intersect_ray(ray)                       # seed transfer: pixel -> table point
+```
+
+`battle-multiview-rig-check` runs the real-data verification and writes
+`runs/assembly101-multiview-rig-check/report.json`: projecting the dataset 3D reproduces its
+shipped 2D in every view (static 0.0002-0.002 px RMS; ego e3/e4 0.27/0.31 px; e1/e2 4-5 px),
+triangulating the dataset's own 2D from any two static views recovers its 3D to
+0.001-0.003 mm (all eight views: 0.0004 mm), and the table plane through the lowest 5 % of
+fingertips has a 10 mm RMS residual with its normal 3.5 degrees from the mean static-camera
+image-down axis (down is derived from the extrinsics, not assumed). These numbers verify the
+rig reproduces the dataset's geometry; they are not accuracy claims about anything.
+
+```bash
+uv run battle-multiview-rig-check
+uv run pytest -q tests/test_multiview_geometry.py
+uv run pytest -q -m real_data tests/test_multiview_geometry.py
 ```
 
 ### First-minute review metrics (label-free triggers)
