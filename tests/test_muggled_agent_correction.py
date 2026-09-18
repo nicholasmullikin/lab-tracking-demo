@@ -8,9 +8,11 @@ import pytest
 
 from battle.muggled_agent_correction import (
     accept_agent_candidate,
+    decode_candidate_batch,
     decode_candidates,
     derive_calibration,
     finalize_agent_schedule,
+    load_decode_plan,
     parse_prompt,
 )
 from battle.muggled_calibration import build_manifest
@@ -318,3 +320,46 @@ def test_agent_correction_flow_keeps_provenance_explicit(tmp_path: Path) -> None
             manual_seed_target_config_path=TARGET_CONFIG,
             repository_root=ROOT,
         )
+
+
+def test_a_batch_decodes_every_frame_against_one_worker(tmp_path: Path) -> None:
+    source = _finalized_source(tmp_path)
+    derived_dir = tmp_path / "runs" / "agent-calibration"
+    derive_calibration(source_dir=source, output_dir=derived_dir, repository_root=ROOT)
+    decoder = _FakeDecoder(derived_dir / "results")
+
+    decoded = decode_candidate_batch(
+        calibration_dir=derived_dir,
+        plan=((1172, ("chassis=900,440,1000,560",)), (1235, ("interior=840,450,900,520",))),
+        repository_root=ROOT,
+        decoder=decoder,
+    )
+
+    assert decoded == {1172: ("t001172-b01",), 1235: ("t001235-b01",)}
+    assert [command for command, _ in decoder.requests].count("batch_decode") == 2
+    manifest = json.loads((derived_dir / "calibration_manifest.json").read_text())
+    agent_frames = {
+        item["frame"]["analysis_frame_index"]
+        for item in manifest["candidates"]
+        if item["selected_by"] == "agent"
+    }
+    assert agent_frames == {1172, 1235}
+
+
+def test_a_decode_plan_is_validated_before_the_model_loads(tmp_path: Path) -> None:
+    plan_path = tmp_path / "plan.json"
+
+    plan_path.write_text('[{"frame": 1172, "prompts": ["chassis=1,1,5,5"]}]')
+    assert load_decode_plan(plan_path) == ((1172, ("chassis=1,1,5,5",)),)
+
+    plan_path.write_text("[]")
+    with pytest.raises(ValueError, match="non-empty list"):
+        load_decode_plan(plan_path)
+
+    plan_path.write_text('[{"frame": 0, "prompts": ["chassis=1,1,5,5"]}]')
+    with pytest.raises(ValueError, match="above zero"):
+        load_decode_plan(plan_path)
+
+    plan_path.write_text('[{"frame": 1172, "prompts": []}]')
+    with pytest.raises(ValueError, match="at least one prompt"):
+        load_decode_plan(plan_path)

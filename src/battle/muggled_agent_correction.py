@@ -268,6 +268,67 @@ def decode_candidates(
     return tuple(request["candidate_id"] for request in requests)
 
 
+def load_decode_plan(path: Path) -> tuple[tuple[int, tuple[str, ...]], ...]:
+    """Read an ordered list of `{frame, prompts}` groups to decode in one session."""
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, list) or not payload:
+        raise ValueError("a decode plan must be a non-empty list of {frame, prompts} objects")
+    plan: list[tuple[int, tuple[str, ...]]] = []
+    for entry in payload:
+        if not isinstance(entry, dict):
+            raise ValueError(f"decode plan entries must be objects, got {type(entry).__name__}")
+        frame = entry.get("frame")
+        prompts = entry.get("prompts")
+        if not isinstance(frame, int) or frame < 1:
+            raise ValueError(f"decode plan frame must be an integer above zero, got {frame!r}")
+        if not isinstance(prompts, list) or not prompts:
+            raise ValueError(f"decode plan frame {frame} needs at least one prompt")
+        plan.append((frame, tuple(str(prompt) for prompt in prompts)))
+    return tuple(plan)
+
+
+def decode_candidate_batch(
+    *,
+    calibration_dir: Path,
+    plan: tuple[tuple[int, tuple[str, ...]], ...],
+    repository_root: Path,
+    external_python: Path = MUGGLED_SAM_PYTHON,
+    model: Path = DEFAULT_MODEL,
+    device: str = "cuda:0",
+    decoder: Any | None = None,
+) -> dict[int, tuple[str, ...]]:
+    """Decode several frames' prompts against one warm worker.
+
+    Each `decode` invocation otherwise reloads the multi-gigabyte checkpoint, which
+    dominates a review loop that is really asking one model several small questions.
+    """
+    _, manifest = _load(calibration_dir)
+    owns_decoder = decoder is None
+    if decoder is None:
+        decoder = _worker(
+            manifest,
+            repository_root=repository_root,
+            output_dir=calibration_dir.resolve(),
+            external_python=external_python,
+            model=model,
+            device=device,
+        )
+    decoded: dict[int, tuple[str, ...]] = {}
+    try:
+        for frame_index, prompts in plan:
+            decoded[frame_index] = decode_candidates(
+                calibration_dir=calibration_dir,
+                frame_index=frame_index,
+                prompts=prompts,
+                repository_root=repository_root,
+                decoder=decoder,
+            )
+    finally:
+        if owns_decoder:
+            decoder.close()
+    return decoded
+
+
 def _placeholder(
     manifest: MuggledSAMBoxCalibrationManifest,
     candidate_id: str,
@@ -426,6 +487,20 @@ def main() -> None:
     decode.add_argument("--model", type=Path, default=DEFAULT_MODEL)
     decode.add_argument("--device", default="cuda:0")
 
+    batch = commands.add_parser(
+        "decode-batch", help="decode several frames' prompts against one warm worker"
+    )
+    batch.add_argument("--calibration", type=Path, required=True)
+    batch.add_argument(
+        "--plan",
+        type=Path,
+        required=True,
+        help='JSON list of {"frame": int, "prompts": ["target=x1,y1,x2,y2", ...]} groups.',
+    )
+    batch.add_argument("--external-python", type=Path, default=MUGGLED_SAM_PYTHON)
+    batch.add_argument("--model", type=Path, default=DEFAULT_MODEL)
+    batch.add_argument("--device", default="cuda:0")
+
     accept = commands.add_parser("accept", help="record an agent visual-review acceptance")
     accept.add_argument("--calibration", type=Path, required=True)
     accept.add_argument("--candidate-id", required=True)
@@ -456,6 +531,21 @@ def main() -> None:
             device=args.device,
         )
         print(json.dumps({"candidate_ids": list(ids)}))
+    elif args.command == "decode-batch":
+        decoded = decode_candidate_batch(
+            calibration_dir=args.calibration,
+            plan=load_decode_plan(args.plan),
+            repository_root=root,
+            external_python=args.external_python,
+            model=args.model,
+            device=args.device,
+        )
+        print(
+            json.dumps(
+                {str(frame): list(ids) for frame, ids in decoded.items()},
+                sort_keys=True,
+            )
+        )
     elif args.command == "accept":
         accepted = accept_agent_candidate(
             calibration_dir=args.calibration,

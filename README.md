@@ -1177,6 +1177,9 @@ uv run battle-muggled-agent-correction derive \
   --output-dir runs/<agent-calibration>
 uv run battle-muggled-agent-correction decode --calibration runs/<agent-calibration> \
   --frame 1172 --prompt "chassis=870,463,995,583;bg=855,490" --prompt "interior=835,463,900,515"
+# Several candidate frames at once, loading the checkpoint a single time:
+uv run battle-muggled-agent-correction decode-batch --calibration runs/<agent-calibration> \
+  --plan runs/<agent-calibration>/decode_plan.json
 uv run battle-muggled-agent-correction accept --calibration runs/<agent-calibration> \
   --candidate-id t001172-b02 --index 1 --rationale "..."
 uv run battle-muggled-agent-correction schedule --calibration runs/<agent-calibration> \
@@ -1419,6 +1422,23 @@ Measured on the focused four-part run: worker inference fell from 191.1 s to 112
 resuming at frame 1172 of 2,781, and all 2,781 frames were bit-identical to the
 continuous run. `uv run pytest -m gpu` asserts that equivalence on the 300-frame smoke.
 Each checkpoint is about 6.6 MB, and they live under the ignored run directory.
+
+### One warm worker per decode session
+
+`battle-muggled-agent-correction decode` starts an isolated worker, which loads the
+multi-gigabyte checkpoint before it answers anything. A review loop usually asks the same
+model about several candidate frames, so `decode-batch` takes a plan and reuses one
+worker for all of it:
+
+```json
+[
+  {"frame": 1172, "prompts": ["chassis=870,463,995,583;bg=855,490"]},
+  {"frame": 1235, "prompts": ["interior=835,463,900,515"]}
+]
+```
+
+The plan is validated before the model is loaded, so a malformed frame or an empty prompt
+list fails immediately rather than after the checkpoint is resident.
 
 ### Cached digests and probes
 
