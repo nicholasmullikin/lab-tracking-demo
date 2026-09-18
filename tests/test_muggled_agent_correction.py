@@ -27,6 +27,9 @@ TARGET_CONFIG = ROOT / "configs/muggledsam_static_four_part_reassembly_focused_m
 POLICY_V3 = (
     ROOT / "configs/muggledsam_static_four_part_reassembly_focused_correction_policy_v3.json"
 )
+POLICY_V4 = (
+    ROOT / "configs/muggledsam_static_four_part_reassembly_focused_correction_policy_v4.json"
+)
 TARGETS = ("chassis", "interior", "rear_body", "cabin")
 
 
@@ -102,6 +105,21 @@ def test_policy_v3_allows_six_keyframes_but_v2_stays_at_five() -> None:
     with pytest.raises(ValueError, match="v2 permits at most five"):
         MuggledSAMMultiKeyframeCorrectionPolicy.model_validate(
             {**policy.model_dump(mode="json"), "policy_version": "2"}
+        )
+
+
+def test_policy_v4_allows_eight_keyframes_but_v3_stays_at_six() -> None:
+    policy = MuggledSAMMultiKeyframeCorrectionPolicy.model_validate_json(POLICY_V4.read_text())
+    assert (policy.policy_version, policy.maximum_later_correction_keyframes_per_target) == ("4", 8)
+    v3 = MuggledSAMMultiKeyframeCorrectionPolicy.model_validate_json(POLICY_V3.read_text())
+    assert policy.manual_seed_target_config_fingerprint == v3.manual_seed_target_config_fingerprint
+    with pytest.raises(ValueError, match="v3 permits at most six"):
+        MuggledSAMMultiKeyframeCorrectionPolicy.model_validate(
+            {**policy.model_dump(mode="json"), "policy_version": "3"}
+        )
+    with pytest.raises(ValueError, match="less than or equal to 8"):
+        MuggledSAMMultiKeyframeCorrectionPolicy.model_validate(
+            {**policy.model_dump(mode="json"), "maximum_later_correction_keyframes_per_target": 9}
         )
 
 

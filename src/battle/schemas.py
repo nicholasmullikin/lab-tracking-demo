@@ -1165,11 +1165,11 @@ class MuggledSAMMultiKeyframeCorrectionPolicy(VersionedModel):
 
     manifest_kind: Literal["muggledsam_sam3_multi_keyframe_correction_policy"]
     policy_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]*$")
-    policy_version: Literal["1", "2", "3"]
+    policy_version: Literal["1", "2", "3", "4"]
     view_id: Literal["static-c10379", "ego-hmc21110305", "ego-hmc21179183"]
     manual_seed_target_config_fingerprint: ArtifactFingerprint
     targets: tuple[str, ...] = Field(min_length=1)
-    maximum_later_correction_keyframes_per_target: int = Field(ge=0, le=6)
+    maximum_later_correction_keyframes_per_target: int = Field(ge=0, le=8)
     correction_memory_semantics: Literal["replace_prompt_memory_and_reset_frame_memory"]
 
     @model_validator(mode="after")
@@ -1180,6 +1180,8 @@ class MuggledSAMMultiKeyframeCorrectionPolicy(VersionedModel):
             raise ValueError("correction policy v1 permits at most three later keyframes")
         if self.policy_version == "2" and self.maximum_later_correction_keyframes_per_target > 5:
             raise ValueError("correction policy v2 permits at most five later keyframes")
+        if self.policy_version == "3" and self.maximum_later_correction_keyframes_per_target > 6:
+            raise ValueError("correction policy v3 permits at most six later keyframes")
         return self
 
 
