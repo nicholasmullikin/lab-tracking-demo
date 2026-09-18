@@ -20,6 +20,7 @@ import rerun.blueprint as rrb
 from PIL import Image, ImageDraw
 
 from . import mask_cache, media_probe
+from .build_phases import PhaseTimer
 from .exploratory_comparison import (
     METHOD_COLORS,
     _drop_dtw_text,
@@ -272,11 +273,37 @@ def _distance_map(mask: np.ndarray) -> np.ndarray:
     return cv2.distanceTransform((~mask).astype(np.uint8), cv2.DIST_L2, cv2.DIST_MASK_PRECISE)
 
 
+def mask_summary(mask: np.ndarray) -> tuple[int, float, float]:
+    """Return a mask's area and centroid without materialising its pixel indices.
+
+    Two axis reductions replace `np.nonzero`, which allocated a coordinate array per
+    mask purely to average it.
+    """
+    rows = mask.sum(axis=1)
+    columns = mask.sum(axis=0)
+    area = int(rows.sum())
+    if area == 0:
+        return 0, 0.0, 0.0
+    centroid_y = float((rows * np.arange(mask.shape[0])).sum() / area)
+    centroid_x = float((columns * np.arange(mask.shape[1])).sum() / area)
+    return area, centroid_x, centroid_y
+
+
 def contact_measurement(
     hand: object, mask: np.ndarray, dimensions: tuple[int, int]
 ) -> tuple[float, float, float, bool]:
     """Return palm, nearest-fingertip, aggregate distance, and exact inside status."""
-    distance = _distance_map(mask)
+    return measure_against_distance_map(hand, _distance_map(mask), dimensions)
+
+
+def measure_against_distance_map(
+    hand: object, distance: np.ndarray, dimensions: tuple[int, int]
+) -> tuple[float, float, float, bool]:
+    """Measure one hand against an already-computed distance map for a part.
+
+    The map depends only on the part's mask, so a frame with two hands transforms it
+    once rather than once per hand.
+    """
     palm_x, palm_y = _pixel(getattr(hand, "landmarks")[0], dimensions)
     palm = float(distance[palm_y, palm_x])
     tips = [
@@ -305,6 +332,7 @@ def segmentation_review_triggers(
 
     triggers: list[SegmentationReviewTrigger] = []
     previous: dict[str, np.ndarray] = {}
+    summaries: dict[str, tuple[int, float, float]] = {}
     for frame in range(frame_count):
         for part in TARGETS:
             current = _mask_for_part(
@@ -318,7 +346,10 @@ def segmentation_review_triggers(
             if current is None:
                 continue
             prior = previous.get(part)
+            current_summary = mask_summary(current)
             if prior is not None:
+                prior_area, prior_x, prior_y = summaries[part]
+                current_area, current_x, current_y = current_summary
                 temporal_iou = _mask_iou(prior, current)
                 if temporal_iou < 0.5:
                     triggers.append(
@@ -329,7 +360,7 @@ def segmentation_review_triggers(
                             value=temporal_iou,
                         )
                     )
-                ratio = max(prior.sum(), current.sum()) / max(1, min(prior.sum(), current.sum()))
+                ratio = max(prior_area, current_area) / max(1, min(prior_area, current_area))
                 if ratio > 2:
                     triggers.append(
                         SegmentationReviewTrigger(
@@ -339,9 +370,7 @@ def segmentation_review_triggers(
                             value=float(ratio),
                         )
                     )
-                old_y, old_x = np.nonzero(prior)
-                new_y, new_x = np.nonzero(current)
-                jump = float(np.hypot(new_x.mean() - old_x.mean(), new_y.mean() - old_y.mean()))
+                jump = float(np.hypot(current_x - prior_x, current_y - prior_y))
                 if jump > 25:
                     triggers.append(
                         SegmentationReviewTrigger(
@@ -363,6 +392,7 @@ def segmentation_review_triggers(
                         )
                     )
             previous[part] = current
+            summaries[part] = current_summary
     return tuple(triggers)
 
 
@@ -633,6 +663,7 @@ def _contacts(
             )
             for part in TARGETS
         }
+        distances: dict[str, np.ndarray] = {}
         for hand_index, hand in enumerate(mediapipe.observations[frame].hands):
             lane = lanes[(frame, hand_index)]
             for part, mask in masks.items():
@@ -657,7 +688,11 @@ def _contacts(
                         )
                     )
                     continue
-                palm, fingertip, minimum, inside = contact_measurement(hand, mask, dimensions)
+                if part not in distances:
+                    distances[part] = _distance_map(mask)
+                palm, fingertip, minimum, inside = measure_against_distance_map(
+                    hand, distances[part], dimensions
+                )
                 candidate = inside or minimum <= CONTACT_THRESHOLD_PIXELS
                 raw[key][frame] = candidate
                 draft.append(
@@ -1327,12 +1362,16 @@ def build_interaction_review(
     output_root: Path = OUTPUT_ROOT,
     reference_segmentation_method: str = "baseline_sam3",
     verify_fingerprints: bool = False,
+    overwrite: bool = True,
+    timer: PhaseTimer | None = None,
 ) -> Path:
     """Build and validate the review package without model inference."""
     if reference_segmentation_method not in REFERENCE_SEGMENTATIONS:
         raise ValueError(
             "reference segmentation must be reviewed_seed_sam2_control or baseline_sam3"
         )
+    timer = timer or PhaseTimer("interaction review", enabled=False)
+    timer.start("validate")
     repository_root = repository_root.resolve()
     contract = load_contract(
         repository_root, Path("configs/four_part_segmentation_comparison.json")
@@ -1374,6 +1413,8 @@ def build_interaction_review(
         raise ValueError(
             f"expected one 1280x720 600-frame 30-fps video, got {(frames, fps, dimensions)}"
         )
+    timer.stop("validate")
+    timer.start("geometry")
     contacts, events = _contacts(sources["stabilized_wilor"], reference, dimensions)
     disagreements = _disagreements(sources["mediapipe"], sources["wilor"], dimensions)
     triggers = segmentation_review_triggers(
@@ -1383,7 +1424,11 @@ def build_interaction_review(
     moments = deterministic_pinned_moments(
         disagreements, contacts, events, sources["kineo"], triggers, episodes
     )
+    timer.stop("geometry")
+    timer.start("export")
     rrd_path, index_path, guide_path, sheet_path = output_paths(repository_root, output_root)
+    if not overwrite and rrd_path.exists():
+        raise FileExistsError(f"{rrd_path} already exists; pass --overwrite to replace it")
     rrd_path.parent.mkdir(parents=True, exist_ok=True)
     artifacts = [
         _file_fingerprint(contract.path, repository_root),
@@ -1613,6 +1658,8 @@ def build_interaction_review(
         }
     )
     index_path.write_text(final.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    timer.stop("export")
+    timer.print_report()
     return rrd_path
 
 
@@ -1627,6 +1674,16 @@ def main() -> None:
         help="Reference part source; default is the corrected focused static SAM3 run.",
     )
     parser.add_argument(
+        "--no-overwrite",
+        action="store_true",
+        help="Refuse to replace an existing recording in --output-root.",
+    )
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Suppress the per-phase timing report.",
+    )
+    parser.add_argument(
         "--verify-fingerprints",
         action="store_true",
         help="Re-read every input instead of trusting a digest cached against size and mtime.",
@@ -1638,6 +1695,8 @@ def main() -> None:
             output_root=args.output_root,
             reference_segmentation_method=args.reference_segmentation,
             verify_fingerprints=args.verify_fingerprints,
+            overwrite=not args.no_overwrite,
+            timer=PhaseTimer("interaction review", enabled=not args.quiet),
         )
     )
 

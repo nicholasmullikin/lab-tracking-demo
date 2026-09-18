@@ -1371,6 +1371,30 @@ For the 1,800-frame first-minute package this took the rebuild from about 85 s t
 through the shared in-memory cache, and to about 44 s with the sidecar present; the
 recording holds the same rows, in fewer and larger chunks.
 
+### Phase timing and narrowed builds
+
+Every builder prints its split when it finishes, so the next regression is visible
+without a profiler. `--quiet` suppresses it.
+
+```text
+interaction review v4: total 18.8s (validate 1.2s geometry 12.5s export 5.1s other 0.0s)
+```
+
+That report is what showed the geometry pass, not the export, dominated a rebuild:
+centroids were measured with `np.nonzero`, mask areas were summed four times per
+comparison, and a frame with two hands transformed each part mask twice. Measuring the
+area and centroid in two axis reductions and sharing one distance map per part per frame
+halved the phase, with byte-identical triggers, contacts, events, and episodes.
+
+`--layers` narrows a build to the layers under review, which is useful while iterating on
+one overlay. Anything short of the full set is recorded as `logged_layers` in the index so
+a narrowed package cannot be mistaken for a reviewable one:
+
+```bash
+uv run battle-build-interaction-review-v4 \
+  --output-root runs/iteration --layers reference_masks,stabilized_wilor
+```
+
 ### Cached digests and probes
 
 Builders also stop re-reading unchanged inputs. `src/battle/digest_cache.py` remembers a

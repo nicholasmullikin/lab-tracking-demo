@@ -15,6 +15,7 @@ import rerun as rr
 
 from . import ensemble_reference as ensemble
 from . import interaction_review as review
+from .build_phases import PhaseTimer
 from .ensemble_reference_schemas import (
     PROVENANCE_CODES,
     EnsembleProvenanceSidecar,
@@ -412,6 +413,18 @@ def _sam3_validity_intervals() -> tuple[SegmentationValidityInterval, ...]:
     )
 
 
+LAYERS: tuple[str, ...] = (
+    "reference_masks",
+    "stabilized_wilor",
+    "wilor_2d",
+    "mediapipe_2d",
+    "wilor_3d",
+    "boxmot",
+    "kineo",
+    "diagnostics",
+)
+
+
 def build_first_minute_review(
     *,
     repository_root: Path,
@@ -419,6 +432,8 @@ def build_first_minute_review(
     overwrite: bool = False,
     reference_run: Path = FIRST_MINUTE_REFERENCE_SEGMENTATION,
     verify_fingerprints: bool = False,
+    layers: tuple[str, ...] = LAYERS,
+    timer: PhaseTimer | None = None,
 ) -> Path:
     """Build a 1,800-row review package from retained, source-aligned artifacts.
 
@@ -426,6 +441,12 @@ def build_first_minute_review(
     (`CORRECTED_SAM3_REFERENCE_SEGMENTATION`) keeps the earlier frame-level eligibility.
     """
 
+    unknown = tuple(name for name in layers if name not in LAYERS)
+    if unknown:
+        raise ValueError(f"unknown review layers {unknown}; choose from {LAYERS}")
+    selected = frozenset(layers)
+    timer = timer or PhaseTimer("interaction review v4", enabled=False)
+    timer.start("validate")
     repository_root = repository_root.resolve()
     sources = {
         name: review._validate_run(
@@ -484,6 +505,8 @@ def build_first_minute_review(
         provenance_counts = {
             item.target_id: dict(item.provenance_counts) for item in sidecar.summaries
         }
+    timer.stop("validate")
+    timer.start("geometry")
     contacts, events = review._contacts(
         sources["stabilized_wilor"],
         reference,
@@ -596,7 +619,10 @@ def build_first_minute_review(
         segmentation_review_episodes=episodes,
         segmentation_validity_intervals=validity,
         pinned_moments=moments,
+        logged_layers=None if selected == frozenset(LAYERS) else tuple(sorted(selected)),
     )
+    timer.stop("geometry")
+    timer.start("export")
     fine_contract = load_fine_substep_contract(repository_root / FINE_LABELS)
     rr.init("battle-interaction-review-v4", recording_id="interaction_review_first_minute_v4")
     rr.save(rrd_path)
@@ -624,52 +650,60 @@ def build_first_minute_review(
             f"{entity}/source/video",
             rr.VideoFrameReference(seconds=time, video_reference=f"{entity}/source/video_asset"),
         )
-        review._log_reference_masks(
-            entity, reference.observations[frame], reference.run_directory, dimensions
-        )
-        _log_hands(
-            f"{entity}/primary/stabilized_wilor/render",
-            sources["stabilized_wilor"].observations[frame],
-            dimensions=dimensions,
-            color=review.METHOD_COLORS["wilor"],
-            include_3d=False,
-        )
-        _log_hands(
-            f"{entity}/comparison/wilor_2d/render",
-            sources["wilor"].observations[frame],
-            dimensions=dimensions,
-            color=review.METHOD_COLORS["wilor"],
-            include_3d=False,
-        )
-        _log_hands(
-            f"{entity}/comparison/mediapipe_2d/render",
-            sources["mediapipe"].observations[frame],
-            dimensions=dimensions,
-            color=review.METHOD_COLORS["mediapipe"],
-            include_3d=False,
-        )
-        _log_hands(
-            f"{entity}/contexts/wilor_camera_relative_non_metric_3d",
-            sources["wilor"].observations[frame],
-            dimensions=dimensions,
-            color=review.METHOD_COLORS["wilor"],
-            include_3d=True,
-            include_2d=False,
-        )
-        review._log_context_boxes(
-            entity, "boxmot_worker_context", sources["boxmot"].observations[frame], dimensions
-        )
-        kineo_path = f"{entity}/contexts/kineo_nlf_body_context"
-        review._log_context_boxes(
-            entity, "kineo_nlf_body_context", sources["kineo"].observations[frame], dimensions
-        )
-        _log_nlf_body(
-            kineo_path,
-            sources["kineo"].observations[frame],
-            dimensions=dimensions,
-            color=review.METHOD_COLORS["kineo_nlf"],
-        )
-        review._log_diagnostics_frame(entity, frame, contacts, disagreements)
+        if "reference_masks" in selected:
+            review._log_reference_masks(
+                entity, reference.observations[frame], reference.run_directory, dimensions
+            )
+        if "stabilized_wilor" in selected:
+            _log_hands(
+                f"{entity}/primary/stabilized_wilor/render",
+                sources["stabilized_wilor"].observations[frame],
+                dimensions=dimensions,
+                color=review.METHOD_COLORS["wilor"],
+                include_3d=False,
+            )
+        if "wilor_2d" in selected:
+            _log_hands(
+                f"{entity}/comparison/wilor_2d/render",
+                sources["wilor"].observations[frame],
+                dimensions=dimensions,
+                color=review.METHOD_COLORS["wilor"],
+                include_3d=False,
+            )
+        if "mediapipe_2d" in selected:
+            _log_hands(
+                f"{entity}/comparison/mediapipe_2d/render",
+                sources["mediapipe"].observations[frame],
+                dimensions=dimensions,
+                color=review.METHOD_COLORS["mediapipe"],
+                include_3d=False,
+            )
+        if "wilor_3d" in selected:
+            _log_hands(
+                f"{entity}/contexts/wilor_camera_relative_non_metric_3d",
+                sources["wilor"].observations[frame],
+                dimensions=dimensions,
+                color=review.METHOD_COLORS["wilor"],
+                include_3d=True,
+                include_2d=False,
+            )
+        if "boxmot" in selected:
+            review._log_context_boxes(
+                entity, "boxmot_worker_context", sources["boxmot"].observations[frame], dimensions
+            )
+        if "kineo" in selected:
+            kineo_path = f"{entity}/contexts/kineo_nlf_body_context"
+            review._log_context_boxes(
+                entity, "kineo_nlf_body_context", sources["kineo"].observations[frame], dimensions
+            )
+            _log_nlf_body(
+                kineo_path,
+                sources["kineo"].observations[frame],
+                dimensions=dimensions,
+                color=review.METHOD_COLORS["kineo_nlf"],
+            )
+        if "diagnostics" in selected:
+            review._log_diagnostics_frame(entity, frame, contacts, disagreements)
         rr.log(
             f"{entity}/diagnostics/segmentation_review_trigger/count",
             rr.Scalars([trigger_counts[frame]]),
@@ -756,6 +790,8 @@ def build_first_minute_review(
         + "\n",
         encoding="utf-8",
     )
+    timer.stop("export")
+    timer.print_report()
     return rrd_path
 
 
@@ -782,11 +818,26 @@ def main() -> None:
         action="store_true",
         help="Re-read every input instead of trusting a digest cached against size and mtime.",
     )
+    parser.add_argument(
+        "--layers",
+        default=",".join(LAYERS),
+        help=(
+            "Comma-separated layers to log for a narrowed iteration build; anything short of "
+            f"the full set is recorded as logged_layers in the index. Choose from {LAYERS}."
+        ),
+    )
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Suppress the per-phase timing report.",
+    )
     args = parser.parse_args()
     print(
         build_first_minute_review(
             repository_root=args.repository_root,
             output_root=args.output_root,
+            layers=tuple(name.strip() for name in args.layers.split(",") if name.strip()),
+            timer=PhaseTimer("interaction review v4", enabled=not args.quiet),
             overwrite=args.overwrite,
             reference_run=args.reference,
             verify_fingerprints=args.verify_fingerprints,

@@ -20,6 +20,7 @@ import rerun.blueprint as rrb
 from PIL import Image
 
 from . import digest_cache
+from .build_phases import PhaseTimer
 from .exporter import HAND_CONNECTIONS, HAND_LANDMARK_NAMES, _rgba_mask_png
 from .schemas import (
     ArtifactFingerprint,
@@ -752,10 +753,14 @@ def build_exploratory_comparison(
     output_root: Path = OUTPUT_ROOT,
     methods: tuple[MethodSpec, ...] = DEFAULT_METHODS,
     frame_count: int = FRAME_COUNT,
+    overwrite: bool = True,
+    timer: PhaseTimer | None = None,
 ) -> Path:
     """Validate and compose the fixed bounded exploration without re-running inference."""
+    timer = timer or PhaseTimer("exploratory comparison", enabled=False)
     if frame_count != FRAME_COUNT:
         raise ValueError("the final exploratory deliverable is fixed to 600 frames / 20 seconds")
+    timer.start("validate")
     repository_root = repository_root.resolve()
     loaded = [
         _load_method(spec, repository_root=repository_root, frame_count=frame_count)
@@ -783,7 +788,11 @@ def build_exploratory_comparison(
             f"shared embedded video must be {frame_count} frames at {ANALYSIS_FPS} fps; "
             f"got {actual_frames} frames at {fps} fps"
         )
+    timer.stop("validate")
+    timer.start("export")
     rrd_path, index_path = output_paths(repository_root, output_root)
+    if not overwrite and rrd_path.exists():
+        raise FileExistsError(f"{rrd_path} already exists; pass --overwrite to replace it")
     rrd_path.parent.mkdir(parents=True, exist_ok=True)
     athena = _load_athena_metadata(repository_root)
     index = ExploratoryComparisonIndexManifest(
@@ -880,6 +889,8 @@ def build_exploratory_comparison(
         update={"output_rrd": _file_fingerprint(rrd_path, repository_root)}
     )
     index_path.write_text(final_index.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    timer.stop("export")
+    timer.print_report()
     return rrd_path
 
 
@@ -887,9 +898,22 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repository-root", type=Path, default=Path.cwd())
     parser.add_argument("--output-root", type=Path, default=OUTPUT_ROOT)
+    parser.add_argument(
+        "--no-overwrite",
+        action="store_true",
+        help="Refuse to replace an existing recording in --output-root.",
+    )
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Suppress the per-phase timing report.",
+    )
     args = parser.parse_args()
     output = build_exploratory_comparison(
-        repository_root=args.repository_root, output_root=args.output_root
+        repository_root=args.repository_root,
+        output_root=args.output_root,
+        overwrite=not args.no_overwrite,
+        timer=PhaseTimer("exploratory comparison", enabled=not args.quiet),
     )
     print(f"Wrote exploratory comparison: {output}")
 

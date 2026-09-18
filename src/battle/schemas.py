@@ -2494,6 +2494,13 @@ class InteractionReviewIndexManifest(VersionedModel):
     segmentation_review_episodes: tuple[SegmentationReviewEpisode, ...] = ()
     segmentation_validity_intervals: tuple[SegmentationValidityInterval, ...] = ()
     pinned_moments: tuple[InteractionReviewPinnedMoment, ...] = Field(min_length=3)
+    logged_layers: tuple[str, ...] | None = Field(
+        default=None,
+        description=(
+            "Layers this recording actually logged when a build was narrowed for "
+            "iteration. A complete package leaves this unset."
+        ),
+    )
     output_rrd: ArtifactFingerprint | None = None
     review_guide: ArtifactFingerprint | None = None
     contact_sheet: ArtifactFingerprint | None = None
