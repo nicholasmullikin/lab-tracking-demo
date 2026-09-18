@@ -461,16 +461,26 @@ def test_exported_v4_rrd_carries_navigation_entities_and_blueprint_views() -> No
     index = json.loads((rrd_path.parent / "interaction_review_index.json").read_text())
     ensemble = index["reference_segmentation_method"] == "ensemble_reference"
     dataset = index.get("assembly101_reference") is not None
+    multiview = index.get("multiview_consensus") is not None
     expected_views = _blueprint_views(
         _blueprint(
             root.lstrip("/"),
             (1280, 720),
-            static_text_panels=STATIC_TEXT_PANELS,
+            static_text_panels=(
+                (*STATIC_TEXT_PANELS, ("metadata/multiview_disagreement", "multiview"))
+                if multiview
+                else STATIC_TEXT_PANELS
+            ),
             reference_provenance=ensemble,
             assembly101=dataset,
+            multiview=multiview,
         )
     )
     assert printed.count("ViewBlueprint:display_name") == len(expected_views)
+    if multiview:
+        assert counts[f"{root}/metadata/multiview_disagreement"] >= 1
+        assert counts[f"{root}/contexts/assembly101_world_mm_3d/multiview_consensus"] >= 1700
+        assert counts[f"{root}/diagnostics/multiview/chassis/c10379_error_px"] >= 1700
     if dataset:
         assert counts[f"{root}/metadata/navigation/fine_gt_index"] >= 1000
         assert counts[f"{root}/comparison/assembly101_hands_2d/skeletons"] >= 1700

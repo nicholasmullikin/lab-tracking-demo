@@ -15,7 +15,7 @@ import numpy as np
 import rerun as rr
 
 from . import assembly101_reference as a101
-from . import athena_hands_review
+from . import athena_hands_review, multiview_consensus, multiview_review
 from . import ensemble_reference as ensemble
 from . import interaction_review as review
 from .assembly101_pose_schemas import (
@@ -663,7 +663,11 @@ LAYERS: tuple[str, ...] = (
     "diagnostics",
     "assembly101_hands",
     "athena_hands",
+    "assembly101_multiview",
 )
+# Cross-view part consensus from `battle-build-multiview-part-consensus`; the layer is logged
+# only when that run exists (Track 2 of the multicam pass).
+MULTIVIEW_CONSENSUS = multiview_consensus.OUTPUT_ROOT
 # Multi-view triangulated hands from `battle-athena-hands`; the layer is skipped when absent.
 ATHENA_HANDS_RUN = athena_hands_review.DEFAULT_OUTPUT_ROOT
 
@@ -675,6 +679,7 @@ def build_first_minute_review(
     overwrite: bool = False,
     reference_run: Path = FIRST_MINUTE_REFERENCE_SEGMENTATION,
     assembly101_reference: Path | None = ASSEMBLY101_REFERENCE,
+    multiview_consensus_root: Path | None = MULTIVIEW_CONSENSUS,
     verify_fingerprints: bool = False,
     layers: tuple[str, ...] = LAYERS,
     timer: PhaseTimer | None = None,
@@ -702,6 +707,16 @@ def build_first_minute_review(
             verify=verify_fingerprints,
         )
         if assembly101_reference is not None
+        else None
+    )
+    multiview = (
+        multiview_review.MultiviewLayer(repository_root, multiview_consensus_root)
+        if "assembly101_multiview" in selected
+        and dataset is not None
+        and multiview_consensus_root is not None
+        and (
+            repository_root / multiview_consensus_root / multiview_consensus.MANIFEST_NAME
+        ).is_file()
         else None
     )
     sources = {
@@ -798,6 +813,11 @@ def build_first_minute_review(
         if dataset is not None
         else None
     )
+    multiview_fingerprint = (
+        _file_fingerprint(multiview.root / multiview_consensus.MANIFEST_NAME, repository_root)
+        if multiview is not None
+        else None
+    )
     artifacts = [
         _file_fingerprint(video_path, repository_root),
         *[item for source in [*sources.values(), reference] for item in source.artifacts],
@@ -807,6 +827,7 @@ def build_first_minute_review(
             if dataset is not None and dataset_manifest_fingerprint is not None
             else []
         ),
+        *([multiview_fingerprint] if multiview_fingerprint is not None else []),
     ]
     unique = tuple({(item.uri, item.sha256): item for item in artifacts}.values())
     source_fingerprint = getattr(review._metadata(reference.manifest), "source_fingerprint")
@@ -837,6 +858,7 @@ def build_first_minute_review(
         reference_provenance_sidecar=sidecar_fingerprint,
         reference_provenance_counts=provenance_counts,
         assembly101_reference=dataset_manifest_fingerprint,
+        multiview_consensus=multiview_fingerprint,
         input_artifacts=unique,
         contact_heuristic=(
             f"On contact-eligible frames per part only ({eligibility_text}): wrist/palm or "
@@ -862,9 +884,11 @@ def build_first_minute_review(
             "BoxMOT is person context only; Kineo is partial NLF-only body context.",
             "Agent-authored labels and coarse GT are navigation aids, not predictions.",
             *(dataset.manifest.claim_boundaries if dataset is not None else ()),
+            *(multiview.manifest.claim_boundaries if multiview is not None else ()),
         ),
         coverage={
             **(_assembly101_coverage(dataset) if dataset is not None else {}),
+            **(multiview_review.v4_coverage(multiview) if multiview is not None else {}),
             "reference_part_mask_frames": FRAME_COUNT,
             "stabilized_low_confidence_continuation_instances": sum(
                 count
@@ -929,6 +953,8 @@ def build_first_minute_review(
         athena_hands_review.log_static(
             entity, athena, athena_hands_review.static_rig(repository_root, athena)
         )
+    if multiview is not None:
+        multiview_review.v4_log_static(entity, multiview)
     trigger_counts = {
         frame: sum(item.analysis_frame_index == frame for item in triggers)
         for frame in range(FRAME_COUNT)
@@ -998,6 +1024,8 @@ def build_first_minute_review(
             review._log_diagnostics_frame(entity, frame, contacts, disagreements)
         if athena is not None:
             athena_hands_review.log_frame(entity, athena, frame)
+        if multiview is not None:
+            multiview_review.v4_log_frame(entity, multiview, frame)
         if dataset is not None and "assembly101_hands" in selected:
             _log_assembly101_frame(
                 entity,
@@ -1066,15 +1094,21 @@ def build_first_minute_review(
                     )
                     for part in TARGETS
                 )
-            ),
+            )
+            + (multiview.navigation_lines(frame) if multiview is not None else ()),
         )
     rr.send_blueprint(
         review._blueprint(
             entity,
             dimensions,
-            static_text_panels=STATIC_TEXT_PANELS,
+            static_text_panels=(
+                (*STATIC_TEXT_PANELS, multiview_review.V4_TEXT_PANEL)
+                if multiview is not None
+                else STATIC_TEXT_PANELS
+            ),
             reference_provenance=ensemble_context is not None,
             assembly101=dataset is not None and "assembly101_hands" in selected,
+            multiview=multiview is not None,
         )
     )
     rr.disconnect()

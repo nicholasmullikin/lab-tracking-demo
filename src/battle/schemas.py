@@ -1761,6 +1761,66 @@ class FourPartFocusedRunMetadata(VersionedModel):
         return self
 
 
+class GeometricSeedProvenance(VersionedModel):
+    """One agent-authored frame-0 seed transferred from the human masks by geometry."""
+
+    target: str = Field(min_length=1)
+    multiplex_slot: int = Field(ge=0)
+    mask_fingerprint: ArtifactFingerprint
+    prompt_id: str = Field(pattern=r"^t\d{6}-b\d{2,}$")
+    candidate_index: int = Field(ge=0)
+    backprojection_iou: float | None = Field(default=None, ge=0, le=1)
+    area_ratio_vs_expected: float | None = Field(default=None, ge=0)
+    selected_by: Literal["agent"] = "agent"
+    provenance: Literal["geometric_seed_transfer"] = "geometric_seed_transfer"
+
+
+class FourPartMultiviewRunMetadata(VersionedModel):
+    """Audit data for a first-minute four-part run on a view seeded by geometry, not a human.
+
+    The seeds came from `battle-multiview-seed-transfer` (agent-authored, back-projection IoU
+    acceptance); parts the transfer could not seed are listed as blocked and the run tracks
+    only the accepted subset.  No later corrections are applied: the run is cross-view
+    comparison evidence for the human-corrected C10379 reference, never a reference itself.
+    """
+
+    requested_analysis_frame_range: FrameRange
+    requested_seconds: Literal[60.0]
+    view_id: str = Field(min_length=1)
+    concepts: tuple[str, ...] = Field(min_length=2)
+    source_fingerprint: ArtifactFingerprint
+    proxy_fingerprint: ArtifactFingerprint
+    config_fingerprint: ArtifactFingerprint
+    adapter: AdapterMetadata
+    continuity: StreamContinuityPolicy
+    runtime_settings: dict[str, str | int | float | bool | None]
+    measurements: RuntimeMeasurements
+    observations_uri: str | None = None
+    mask_artifact_uri: str | None = None
+    mask_artifact_count: int = Field(ge=0)
+    rerun_artifact_uri: str | None = None
+    qa_artifact_uri: str | None = None
+    seed_manifest_fingerprint: ArtifactFingerprint
+    seeds: tuple[GeometricSeedProvenance, ...] = Field(min_length=2)
+    blocked_targets: dict[str, str] = Field(default_factory=dict)
+    seed_provenance: Literal["geometric_seed_transfer"] = "geometric_seed_transfer"
+    later_corrections: Literal["none"] = "none"
+    ground_truth_accuracy_claim: Literal[False] = False
+
+    @model_validator(mode="after")
+    def require_first_minute_and_ordered_seeds(self) -> FourPartMultiviewRunMetadata:
+        if (
+            self.requested_analysis_frame_range.start_frame != 0
+            or self.requested_analysis_frame_range.frame_count != 1800
+        ):
+            raise ValueError("multiview four-part runs cover exactly analysis frames [0, 1800)")
+        if tuple(seed.target for seed in self.seeds) != self.concepts:
+            raise ValueError("multiview seeds must match the ordered concepts")
+        if [seed.multiplex_slot for seed in self.seeds] != list(range(len(self.seeds))):
+            raise ValueError("multiview seeds must fill multiplex slots from zero")
+        return self
+
+
 class FineSubstepRunMetadata(VersionedModel):
     """Audit data for one bounded fine-substep crop CLIP experiment."""
 
@@ -2214,6 +2274,7 @@ class RunManifest(VersionedModel):
     four_part_pilot: FourPartPilotRunMetadata | None = None
     four_part_full: FourPartFullRunMetadata | None = None
     four_part_focused: FourPartFocusedRunMetadata | None = None
+    four_part_multiview: FourPartMultiviewRunMetadata | None = None
     mediapipe_hands: MediaPipeHandsRunMetadata | None = None
     wilor_hands: WiLoRHandsRunMetadata | None = None
     boxmot: BoxMOTRunMetadata | None = None
@@ -2509,6 +2570,13 @@ class InteractionReviewIndexManifest(VersionedModel):
         description=(
             "Manifest of the Assembly101 dataset reference window (hand poses and "
             "fine-grained labels) when the package includes the dataset layer."
+        ),
+    )
+    multiview_consensus: ArtifactFingerprint | None = Field(
+        default=None,
+        description=(
+            "Manifest of the cross-view part consensus (battle-build-multiview-part-consensus) "
+            "when the package includes the assembly101_multiview layer."
         ),
     )
     input_artifacts: tuple[ArtifactFingerprint, ...] = Field(min_length=1)

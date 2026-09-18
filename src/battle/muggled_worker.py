@@ -111,11 +111,23 @@ def _runtime_settings(args: argparse.Namespace, concepts: tuple[str, ...]) -> di
             "prompt API does not expose a detector confidence"
         )
     if args.manual_seeds_json:
-        settings["manual_seed_multiplex"] = json.loads(args.manual_seeds_json)
+        manual_seeds = json.loads(args.manual_seeds_json)
+        settings["manual_seed_multiplex"] = manual_seeds
         settings["initialization_api"] = "encode_prompt_memory_from_mask"
+        agent_seeded = any(
+            seed.get("selected_by") == "agent" for seed in manual_seeds.get("seeds", [])
+        )
         settings["initial_confidence_semantics"] = (
-            "1.0 is a human-selected-mask initialization sentinel; it is not a "
-            "detector confidence or an accuracy score"
+            (
+                "1.0 is an agent-selected-mask initialization sentinel (provenance "
+                f"{manual_seeds.get('seed_provenance', 'agent')}); it is not a human review, "
+                "a detector confidence or an accuracy score"
+            )
+            if agent_seeded
+            else (
+                "1.0 is a human-selected-mask initialization sentinel; it is not a "
+                "detector confidence or an accuracy score"
+            )
         )
     if args.hybrid_initialization_json:
         hybrid = json.loads(args.hybrid_initialization_json)

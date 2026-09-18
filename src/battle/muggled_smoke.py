@@ -22,6 +22,7 @@ from .schemas import (
     EncodedAssetInput,
     FourPartFocusedRunMetadata,
     FourPartFullRunMetadata,
+    FourPartMultiviewRunMetadata,
     FourPartPilotRunMetadata,
     FrameObservations,
     FrameRange,
@@ -29,6 +30,7 @@ from .schemas import (
     FullEgoManualSeedRunMetadata,
     G2PreprocessingManifest,
     G3CandidateRunMetadata,
+    GeometricSeedProvenance,
     HybridInitializationMetadata,
     HybridSmokeHumanApproval,
     HybridTargetInitializationProvenance,
@@ -80,6 +82,11 @@ FOUR_PART_FULL_FRAMES = 5901
 FOUR_PART_FULL_SECONDS = 196.7
 FOUR_PART_FOCUSED_FRAMES = 2781
 FOUR_PART_FOCUSED_SECONDS = 92.7
+FOUR_PART_MULTIVIEW_FRAMES = 1800
+FOUR_PART_MULTIVIEW_SECONDS = 60.0
+# Views the geometry-seeded first-minute profile may run on: any static view of the all-static
+# focused config, plus the e4 ego camera (per-frame pose, Track 6).  C10379 stays human-seeded.
+FOUR_PART_MULTIVIEW_EGO_VIEWS = ("ego-hmc21179183",)
 MUGGLED_SAM_SOURCE = Path("/home/nick/src/muggled_sam")
 MUGGLED_SAM_PYTHON = Path("/home/nick/.pyenv/versions/muggled_sam/bin/python")
 DEFAULT_MODEL = MUGGLED_SAM_SOURCE / "model_weights" / "sam3.1_multiplex.pt"
@@ -166,6 +173,8 @@ def selected_frame_budget(args: argparse.Namespace, analysis_fps: float) -> int:
         args, "four_part_ego_focused", False
     ):
         return FOUR_PART_FOCUSED_FRAMES
+    if getattr(args, "four_part_multiview_first_minute", False):
+        return FOUR_PART_MULTIVIEW_FRAMES
     return smoke_frame_count(analysis_fps)
 
 
@@ -242,6 +251,104 @@ def require_four_part_ego_focused_range(
             "focused ego four-part run permits only ego-hmc21110305 proxy frames [0, 2781)"
         )
     return FrameRange(start_frame=start_frame, end_frame_exclusive=FOUR_PART_FOCUSED_FRAMES)
+
+
+def require_four_part_multiview_range(
+    view_id: str, start_frame: int, max_frames: int
+) -> FrameRange:
+    """Permit the first minute on a geometry-seeded static view or the e4 ego view only."""
+    permitted_view = (
+        view_id.startswith("static-") and view_id != "static-c10379"
+    ) or view_id in FOUR_PART_MULTIVIEW_EGO_VIEWS
+    if not permitted_view or start_frame != 0 or max_frames != FOUR_PART_MULTIVIEW_FRAMES:
+        raise ValueError(
+            "multiview four-part run permits only proxy frames [0, 1800) of a non-C10379 "
+            "static view or ego-hmc21179183"
+        )
+    return FrameRange(start_frame=start_frame, end_frame_exclusive=FOUR_PART_MULTIVIEW_FRAMES)
+
+
+def _load_geometric_seed_manifest(
+    *,
+    seed_manifest_path: Path,
+    repository_root: Path,
+    config_path: Path,
+    proxy: Any,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Turn an accepted `battle-multiview-seed-transfer` manifest into a worker seed payload.
+
+    Returns the worker payload (`seeds` ordered by multiplex slot) and the audit fields for
+    `FourPartMultiviewRunMetadata`.  Every accepted mask is re-hashed here and again by the
+    worker before it is encoded.
+    """
+    from .multiview_schemas import MultiviewSeedTransferManifest
+
+    manifest = MultiviewSeedTransferManifest.model_validate_json(
+        seed_manifest_path.read_text(encoding="utf-8")
+    )
+    if manifest.view_id != proxy.view_id:
+        raise ValueError("geometric seed manifest must name the selected view")
+    if manifest.proxy.uri != proxy.proxy_uri or manifest.proxy.sha256 != proxy.checksum_sha256:
+        raise ValueError("geometric seed manifest proxy does not match the selected G2 proxy")
+    if manifest.clip_config.uri != relative_uri(
+        config_path, repository_root
+    ) or manifest.clip_config.sha256 != sha256_file(config_path):
+        raise ValueError("geometric seed manifest config does not match the selected G2 config")
+    if manifest.decode_state != "decoded" or manifest.run_decision != "run":
+        raise ValueError(
+            f"geometric seed manifest for {manifest.view} is not cleared to run: "
+            f"{manifest.run_decision_reason}"
+        )
+    seeds: list[dict[str, Any]] = []
+    provenance: list[dict[str, Any]] = []
+    blocked: dict[str, str] = {}
+    for part in manifest.parts:
+        if part.status != "accepted" or part.accepted is None:
+            blocked[part.target] = part.blocked_reason or "blocked"
+            continue
+        mask_path = (repository_root / part.accepted.mask.uri).resolve()
+        if not mask_path.is_file() or sha256_file(mask_path) != part.accepted.mask.sha256:
+            raise ValueError(f"accepted seed mask is unavailable or has changed: {mask_path}")
+        slot = len(seeds)
+        seeds.append(
+            {
+                "target": part.target,
+                "initial_multiplex_slot": slot,
+                "multiplex_slot": slot,
+                "object_id": f"sam3-{slot:02d}",
+                "frame_index": 0,
+                "candidate_id": part.accepted.prompt_id,
+                "mask_path": str(mask_path),
+                "mask_sha256": part.accepted.mask.sha256,
+                "selected_by": "agent",
+                "provenance": manifest.provenance,
+            }
+        )
+        provenance.append(
+            {
+                "target": part.target,
+                "multiplex_slot": slot,
+                "mask_fingerprint": part.accepted.mask.model_dump(mode="json"),
+                "prompt_id": part.accepted.prompt_id,
+                "candidate_index": part.accepted.candidate_index,
+                "backprojection_iou": part.accepted.backprojection_iou,
+                "area_ratio_vs_expected": part.accepted.area_ratio_vs_expected,
+            }
+        )
+    if len(seeds) < manifest.rules.min_parts_to_run:
+        raise ValueError("geometric seed manifest has too few accepted parts to run")
+    return (
+        {"seeds": seeds, "seed_provenance": manifest.provenance},
+        {
+            "seed_manifest_fingerprint": ArtifactFingerprint(
+                uri=relative_uri(seed_manifest_path, repository_root),
+                sha256=sha256_file(seed_manifest_path),
+                source="measured",
+            ),
+            "seeds": provenance,
+            "blocked_targets": blocked,
+        },
+    )
 
 
 def checkpoint_path_for(run_directory: Path, frame_index: int) -> Path:
@@ -1526,6 +1633,7 @@ def _qa_method_name(
     four_part_full: bool,
     four_part_static_focused: bool,
     four_part_ego_focused: bool,
+    four_part_multiview: bool = False,
 ) -> str:
     if hybrid:
         return "static-hybrid-semantic-gate"
@@ -1539,6 +1647,8 @@ def _qa_method_name(
         return "four-part-static-focused-reassembly-qa"
     if four_part_ego_focused:
         return "four-part-ego-focused-reassembly-qa"
+    if four_part_multiview:
+        return "four-part-multiview-first-minute-qa"
     return "manual-seed-multiplexed-e4-zero-shot-qa"
 
 
@@ -1670,6 +1780,8 @@ def run_smoke(args: argparse.Namespace) -> Path:
     is_four_part_full = args.four_part_static_full
     is_four_part_focused = getattr(args, "four_part_static_focused", False)
     is_four_part_ego_focused = getattr(args, "four_part_ego_focused", False)
+    is_four_part_multiview = getattr(args, "four_part_multiview_first_minute", False)
+    geometric_seed_audit: dict[str, Any] | None = None
     if (
         sum(
             (
@@ -1680,11 +1792,32 @@ def run_smoke(args: argparse.Namespace) -> Path:
                 is_four_part_full,
                 is_four_part_focused,
                 is_four_part_ego_focused,
+                is_four_part_multiview,
             )
         )
         > 1
     ):
         raise ValueError("only one approved candidate profile may be selected")
+    geometric_seed_path = getattr(args, "geometric_seed_manifest", None)
+    if is_four_part_multiview != (geometric_seed_path is not None):
+        raise ValueError(
+            "--four-part-multiview-first-minute and --geometric-seed-manifest go together"
+        )
+    if is_four_part_multiview:
+        if (
+            condition is not None
+            or text_target_payload is not None
+            or hybrid_payload is not None
+            or manual_seed_payload is not None
+            or multi_keyframe_schedule_payload is not None
+        ):
+            raise ValueError("the multiview four-part run takes only its geometric seed manifest")
+        manual_seed_payload, geometric_seed_audit = _load_geometric_seed_manifest(
+            seed_manifest_path=geometric_seed_path.resolve(),
+            repository_root=repository_root,
+            config_path=config_path,
+            proxy=proxy,
+        )
     four_part_targets = (
         tuple(seed.intended_target for seed in manual_seed_metadata.seeds)
         if manual_seed_metadata is not None
@@ -1788,6 +1921,8 @@ def run_smoke(args: argparse.Namespace) -> Path:
         if is_four_part_focused
         else require_four_part_ego_focused_range(proxy.view_id, args.start_frame, args.max_frames)
         if is_four_part_ego_focused
+        else require_four_part_multiview_range(proxy.view_id, args.start_frame, args.max_frames)
+        if is_four_part_multiview
         else require_smoke_range(args.start_frame, args.max_frames, analysis_fps)
     )
 
@@ -1808,6 +1943,8 @@ def run_smoke(args: argparse.Namespace) -> Path:
         if is_four_part_focused
         else "four-part-ego-focused-reassembly"
         if is_four_part_ego_focused
+        else "four-part-multiview-first-minute"
+        if is_four_part_multiview
         else f"smoke-{condition.condition_id}"
         if condition
         else "smoke-manual-seed-multiplexed"
@@ -1883,6 +2020,8 @@ def run_smoke(args: argparse.Namespace) -> Path:
             if is_four_part_focused
             else "four_part_ego_focused_reassembly"
             if is_four_part_ego_focused
+            else "four_part_multiview_first_minute"
+            if is_four_part_multiview
             else "smoke_hybrid_static"
             if hybrid_payload is not None
             else "smoke"
@@ -1951,9 +2090,20 @@ def run_smoke(args: argparse.Namespace) -> Path:
                 "prompt_mode": "manual_seed_multiplexed",
                 "manual_seed_multiplex": manual_seed_payload,
                 "initialization_api": "encode_prompt_memory_from_mask",
-                "label": "manual-seed multiplexed; not out-of-box/text zero-shot",
+                "label": (
+                    "agent-authored geometric seed transfer (selected_by agent, provenance "
+                    "geometric_seed_transfer), no later corrections; not human-reviewed and "
+                    "not text zero-shot"
+                    if is_four_part_multiview
+                    else "manual-seed multiplexed; not out-of-box/text zero-shot"
+                ),
             }
         )
+    if geometric_seed_audit is not None:
+        runtime_invocation["geometric_seed_manifest"] = geometric_seed_audit[
+            "seed_manifest_fingerprint"
+        ].model_dump(mode="json")
+        runtime_invocation["blocked_targets"] = geometric_seed_audit["blocked_targets"]
     if multi_keyframe_schedule_payload is not None:
         runtime_invocation.update(
             {
@@ -2095,6 +2245,8 @@ def run_smoke(args: argparse.Namespace) -> Path:
                 if is_four_part_focused
                 else "muggledsam-sam3-four-part-ego-focused-reassembly"
                 if is_four_part_ego_focused
+                else "muggledsam-sam3-four-part-multiview-first-minute"
+                if is_four_part_multiview
                 else "muggledsam-sam3-manual-seed-multiplexed-smoke"
                 if manual_seed_payload is not None
                 else "muggledsam-sam3-multi-keyframe-correction-smoke"
@@ -2154,6 +2306,8 @@ def run_smoke(args: argparse.Namespace) -> Path:
         if is_four_part_focused
         else "four_part_ego_focused_reassembly.rrd"
         if is_four_part_ego_focused
+        else "four_part_multiview_first_minute.rrd"
+        if is_four_part_multiview
         else "smoke.rrd"
     )
     if method_state is MethodState.SUCCEEDED:
@@ -2206,6 +2360,8 @@ def run_smoke(args: argparse.Namespace) -> Path:
                     if is_four_part_focused
                     else "rerun-four-part-ego-focused-reassembly-export"
                     if is_four_part_ego_focused
+                    else "rerun-four-part-multiview-first-minute-export"
+                    if is_four_part_multiview
                     else "rerun-smoke-export",
                     stage="export",
                     state=MethodState.SUCCEEDED,
@@ -2231,6 +2387,8 @@ def run_smoke(args: argparse.Namespace) -> Path:
                         if is_four_part_focused
                         else "rerun-four-part-ego-focused-reassembly-export"
                         if is_four_part_ego_focused
+                        else "rerun-four-part-multiview-first-minute-export"
+                        if is_four_part_multiview
                         else "rerun-smoke-export"
                     ),
                     stage="export",
@@ -2254,6 +2412,8 @@ def run_smoke(args: argparse.Namespace) -> Path:
                     if is_four_part_focused
                     else "rerun-four-part-ego-focused-reassembly-export"
                     if is_four_part_ego_focused
+                    else "rerun-four-part-multiview-first-minute-export"
+                    if is_four_part_multiview
                     else "rerun-smoke-export"
                 ),
                 stage="export",
@@ -2267,6 +2427,7 @@ def run_smoke(args: argparse.Namespace) -> Path:
         manual_seed_metadata is not None
         or multi_keyframe_correction_metadata is not None
         or hybrid_metadata is not None
+        or is_four_part_multiview
     ) and method_state is MethodState.SUCCEEDED:
         try:
             qa_path = (
@@ -2293,6 +2454,7 @@ def run_smoke(args: argparse.Namespace) -> Path:
                     or is_four_part_full
                     or is_four_part_focused
                     or is_four_part_ego_focused
+                    or is_four_part_multiview
                 )
                 else _render_full_ego_manual_seed_contact_sheet(
                     repository_root=repository_root,
@@ -2315,6 +2477,7 @@ def run_smoke(args: argparse.Namespace) -> Path:
                         four_part_full=is_four_part_full,
                         four_part_static_focused=is_four_part_focused,
                         four_part_ego_focused=is_four_part_ego_focused,
+                        four_part_multiview=is_four_part_multiview,
                     ),
                     stage="review",
                     state=MethodState.SUCCEEDED,
@@ -2338,6 +2501,9 @@ def run_smoke(args: argparse.Namespace) -> Path:
                         else "recorded outputs at 0.000, 46.350, and 92.667 seconds; "
                         "review-only, not accuracy"
                         if is_four_part_focused or is_four_part_ego_focused
+                        else "recorded outputs at 0.000, 30.000, and 59.967 seconds; "
+                        "review-only, not accuracy"
+                        if is_four_part_multiview
                         else "recorded outputs at 0.000, 5.000, and 9.967 seconds; "
                         "review-only, not accuracy"
                     ),
@@ -2353,6 +2519,7 @@ def run_smoke(args: argparse.Namespace) -> Path:
                         four_part_full=is_four_part_full,
                         four_part_static_focused=is_four_part_focused,
                         four_part_ego_focused=is_four_part_ego_focused,
+                        four_part_multiview=is_four_part_multiview,
                     ),
                     stage="review",
                     state=MethodState.FAILED,
@@ -2431,6 +2598,7 @@ def run_smoke(args: argparse.Namespace) -> Path:
     four_part_pilot = None
     four_part_full = None
     four_part_focused = None
+    four_part_multiview = None
     if is_g3_candidate:
         g3_candidate = G3CandidateRunMetadata(
             requested_analysis_frame_range=requested_range,
@@ -2498,6 +2666,21 @@ def run_smoke(args: argparse.Namespace) -> Path:
             ),
             **metadata_common,
         )
+    elif is_four_part_multiview:
+        assert geometric_seed_audit is not None
+        four_part_multiview = FourPartMultiviewRunMetadata(
+            requested_analysis_frame_range=requested_range,
+            requested_seconds=FOUR_PART_MULTIVIEW_SECONDS,
+            view_id=proxy.view_id,
+            qa_artifact_uri=relative_uri(qa_path, repository_root) if qa_path is not None else None,
+            seed_manifest_fingerprint=geometric_seed_audit["seed_manifest_fingerprint"],
+            seeds=tuple(
+                GeometricSeedProvenance.model_validate(item)
+                for item in geometric_seed_audit["seeds"]
+            ),
+            blocked_targets=geometric_seed_audit["blocked_targets"],
+            **metadata_common,
+        )
     else:
         smoke = SmokeRunMetadata(
             requested_analysis_frame_range=requested_range,
@@ -2529,6 +2712,7 @@ def run_smoke(args: argparse.Namespace) -> Path:
         four_part_pilot=four_part_pilot,
         four_part_full=four_part_full,
         four_part_focused=four_part_focused,
+        four_part_multiview=four_part_multiview,
     )
     (run_directory / "manifest.json").write_text(manifest.model_dump_json(indent=2) + "\n")
     return run_directory
@@ -2546,7 +2730,14 @@ def main() -> None:
     parser.add_argument(
         "--view",
         choices=(
+            "static-c10095",
+            "static-c10115",
+            "static-c10118",
+            "static-c10119",
             "static-c10379",
+            "static-c10390",
+            "static-c10395",
+            "static-c10404",
             "ego-hmc21110305",
             "ego-hmc21176875",
             "ego-hmc21176623",
@@ -2609,6 +2800,19 @@ def main() -> None:
         "--four-part-ego-focused",
         action="store_true",
         help="Run the aligned 2,781-frame monochrome ego four-part proxy.",
+    )
+    parser.add_argument(
+        "--four-part-multiview-first-minute",
+        action="store_true",
+        help=(
+            "Run the first minute [0, 1800) of a non-C10379 static view (or e4) seeded by "
+            "battle-multiview-seed-transfer; requires --geometric-seed-manifest."
+        ),
+    )
+    parser.add_argument(
+        "--geometric-seed-manifest",
+        type=Path,
+        help="Accepted seed_manifest.json from battle-multiview-seed-transfer for --view.",
     )
     parser.add_argument("--external-python", type=Path, default=MUGGLED_SAM_PYTHON)
     parser.add_argument("--model", type=Path, default=DEFAULT_MODEL)
@@ -2698,6 +2902,8 @@ def main() -> None:
         args.max_frames = FOUR_PART_FOCUSED_FRAMES
     if args.four_part_ego_focused and args.max_frames == SMOKE_FRAMES:
         args.max_frames = FOUR_PART_FOCUSED_FRAMES
+    if args.four_part_multiview_first_minute and args.max_frames == SMOKE_FRAMES:
+        args.max_frames = FOUR_PART_MULTIVIEW_FRAMES
     try:
         run_directory = run_smoke(args)
     except (OSError, ValueError, json.JSONDecodeError) as error:

@@ -1125,6 +1125,7 @@ REFERENCE_PROVENANCE_PANEL_NAME = (
 ASSEMBLY101_2D_ROOT = "comparison/assembly101_hands_2d"
 ASSEMBLY101_3D_ROOT = "contexts/assembly101_world_mm_3d"
 ASSEMBLY101_DIAGNOSTICS = "diagnostics/assembly101"
+MULTIVIEW_DIAGNOSTICS = "diagnostics/multiview"
 
 
 def _blueprint(
@@ -1134,6 +1135,7 @@ def _blueprint(
     static_text_panels: tuple[tuple[str, str], ...] = FIRST_20S_STATIC_TEXT_PANELS,
     reference_provenance: bool = False,
     assembly101: bool = False,
+    multiview: bool = False,
 ) -> rrb.Blueprint:
     """Shared review layout.
 
@@ -1203,6 +1205,17 @@ def _blueprint(
         if assembly101
         else ()
     )
+    multiview_series = (
+        (
+            rrb.TimeSeriesView(
+                origin=f"{root}/{MULTIVIEW_DIAGNOSTICS}",
+                name="Multiview: views in consensus and C10379 error vs consensus (raw px)",
+                contents="$origin/**",
+            ),
+        )
+        if multiview
+        else ()
+    )
     navigation_series = (
         (
             f"$origin/{NAVIGATION_FINE_GT_INDEX.rsplit('/', 1)[1]}",
@@ -1259,6 +1272,7 @@ def _blueprint(
                     ),
                     *provenance_views,
                     *assembly101_series,
+                    *multiview_series,
                 ),
                 column_shares=[3, 2],
             ),
