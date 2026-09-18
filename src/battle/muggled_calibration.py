@@ -359,6 +359,7 @@ def finalize_correction_schedule(
             MuggledSAMMultiKeyframeCorrection(
                 candidate_id=candidate.candidate_id,
                 human_selected_candidate_index=candidate.human_selected_candidate_index,
+                selected_by=candidate.selected_by,
                 target_id=slot.target_id,
                 object_id=slot.object_id,
                 multiplex_slot=slot.multiplex_slot,

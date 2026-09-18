@@ -24,6 +24,7 @@ from battle.interaction_review import (
     build_interaction_review,
     cluster_segmentation_triggers,
     coarse_gt_for_frame,
+    contact_eligible_frame,
     contact_measurement,
     debounce_contact,
     deterministic_pinned_moments,
@@ -34,6 +35,8 @@ from battle.interaction_review import (
 from battle.interaction_review_v4 import (
     COARSE_GT,
     FINE_LABELS,
+    FIRST_MINUTE_REFERENCE_SEGMENTATION,
+    SEGMENTATION_CONTACT_ELIGIBLE_INTERVALS,
     SEGMENTATION_CONTACT_ELIGIBLE_THROUGH,
     STATIC_TEXT_PANELS,
     _log_static_documents,
@@ -221,6 +224,44 @@ def test_late_invalid_masks_clear_every_previously_seen_lane() -> None:
 def test_v4_declares_first_minute_alignment_and_late_contact_cutoff() -> None:
     assert FIRST_MINUTE_FRAME_COUNT == 1800
     assert SEGMENTATION_CONTACT_ELIGIBLE_THROUGH == 1200
+    assert SEGMENTATION_CONTACT_ELIGIBLE_INTERVALS == ((0, 1020), (1172, 1200))
+    assert FIRST_MINUTE_REFERENCE_SEGMENTATION.name.endswith("20260918t001210z")
+
+
+def test_contact_eligibility_intervals_yield_invalid_mask_inside_the_swap_gap() -> None:
+    rows = {
+        frame: SimpleNamespace(hands=(_hand(0.5, 0.5),) if frame == 0 else (), objects=())
+        for frame in range(1800)
+    }
+    source = SimpleNamespace(observations=rows, run_directory=Path("."))
+
+    diagnostics, _ = _contacts(
+        source,
+        source,
+        (1280, 720),
+        frame_count=1800,
+        segmentation_contact_eligible_intervals=((0, 1020), (1172, 1200)),
+    )
+    states = {}
+    for item in diagnostics:
+        states.setdefault(item.analysis_frame_index, set()).add(item.observation_state)
+
+    assert states[1019] == {"missing_hand"}
+    assert states[1020] == {"invalid_mask"}
+    assert states[1171] == {"invalid_mask"}
+    assert states[1172] == {"missing_hand"}
+    assert states[1200] == {"invalid_mask"}
+    assert contact_eligible_frame(1172, ((0, 1020), (1172, 1200))) is True
+    assert contact_eligible_frame(1100, ((0, 1020), (1172, 1200))) is False
+    with pytest.raises(ValueError, match="not both"):
+        _contacts(
+            source,
+            source,
+            (1280, 720),
+            frame_count=1800,
+            segmentation_contact_eligible_through=1200,
+            segmentation_contact_eligible_intervals=((0, 1020),),
+        )
 
 
 def _blueprint_views(blueprint) -> list:

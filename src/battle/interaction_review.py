@@ -570,6 +570,11 @@ def _disagreements(
     return tuple(records)
 
 
+def contact_eligible_frame(frame: int, intervals: tuple[tuple[int, int], ...]) -> bool:
+    """True when `frame` lies inside any half-open contact-eligible interval."""
+    return any(start <= frame < end for start, end in intervals)
+
+
 def _contacts(
     mediapipe: LoadedSource,
     segmentation: LoadedSource,
@@ -577,16 +582,32 @@ def _contacts(
     *,
     frame_count: int = FRAME_COUNT,
     segmentation_contact_eligible_through: int | None = None,
+    segmentation_contact_eligible_intervals: tuple[tuple[int, int], ...] | None = None,
 ) -> tuple[tuple[InteractionContactDiagnostic, ...], tuple[InteractionContactEvent, ...]]:
+    """Measure hand-to-part geometry on contact-eligible frames only.
+
+    Eligibility is either everything before `segmentation_contact_eligible_through` or the
+    union of half-open `segmentation_contact_eligible_intervals`; every other frame yields
+    explicit `invalid_mask` rows so no stale candidate can leak across an ineligible gap.
+    """
+    if segmentation_contact_eligible_intervals is None:
+        segmentation_contact_eligible_intervals = (
+            ((0, segmentation_contact_eligible_through),)
+            if segmentation_contact_eligible_through is not None
+            else ((0, frame_count),)
+        )
+    elif segmentation_contact_eligible_through is not None:
+        raise ValueError("pass either a contact-eligible cutoff or explicit intervals, not both")
+
+    def eligible(frame: int) -> bool:
+        return contact_eligible_frame(frame, segmentation_contact_eligible_intervals)
+
     lanes = _spatial_lanes(mediapipe.observations, dimensions, frame_count=frame_count)
     lanes_seen = sorted(set(lanes.values()))
     raw: dict[tuple[str, str], list[bool | None]] = defaultdict(lambda: [None] * frame_count)
     draft: list[InteractionContactDiagnostic] = []
     for frame in range(frame_count):
-        if (
-            segmentation_contact_eligible_through is not None
-            and frame >= segmentation_contact_eligible_through
-        ):
+        if not eligible(frame):
             for lane in lanes_seen:
                 for part in TARGETS:
                     draft.append(
@@ -637,10 +658,7 @@ def _contacts(
                 )
     # Absence is separately represented for every lane that exists anywhere, never carried forward.
     for frame in range(frame_count):
-        if (
-            segmentation_contact_eligible_through is not None
-            and frame >= segmentation_contact_eligible_through
-        ):
+        if not eligible(frame):
             continue
         present = {
             lanes[(frame, index)] for index in range(len(mediapipe.observations[frame].hands))
@@ -719,7 +737,18 @@ def deterministic_pinned_moments(
     if frame_count == FIRST_MINUTE_FRAME_COUNT:
         requested.extend(
             (
+                (370, "segmentation_reference_review", "Human-noted transient interior growth."),
                 (900, "mid_minute_review", "First-minute midpoint review."),
+                (
+                    1020,
+                    "segmentation_swap_review",
+                    "Measured onset of the human-reported chassis/interior swap.",
+                ),
+                (
+                    1172,
+                    "segmentation_correction_review",
+                    "Agent-selected chassis/interior correction keyframe.",
+                ),
                 (1200, "late_segmentation_review", "Known later segmentation degradation review."),
                 (1584, "late_hand_review", "Requested late WiLoR audit interval begins."),
                 (1637, "late_hand_review", "Requested late WiLoR audit interval ends."),

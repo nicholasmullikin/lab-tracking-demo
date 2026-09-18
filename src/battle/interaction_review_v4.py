@@ -33,10 +33,23 @@ GUIDE_NAME = "review_guide.md"
 CONTACT_SHEET_NAME = "pinned_moments_contact_sheet.png"
 FINE_LABELS = Path("configs/fine_substeps/assembly101_focused_static_first_20s_agent_labels.json")
 
-# The first 40 s are retained as reviewable geometry. The later primary masks remain visible
-# for comparison, but the user-reported degradation and our late overlays make them ineligible
-# for new contact candidates.
+# Corrected focused SAM3 rerun whose schedule adds an agent-selected chassis/interior
+# correction at frame 1172 on top of the human-selected seeds and corrections. Frames before
+# 1172 are bit-identical to the earlier reference run.
+FIRST_MINUTE_REFERENCE_SEGMENTATION = Path(
+    "runs/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260918t001210z"
+)
+# Contact geometry is measured only where the corrected masks keep stable part identities.
+# The human-reported chassis/interior swap was measured to start leaking at ~1020-1032 and
+# the chassis label is lost or swapped until the agent-selected correction at 1172; frames
+# from 1200 remain ineligible per the retained late-degradation review.
+SWAP_ONSET_FRAME = 1020
+SWAP_CORRECTION_FRAME = 1172
 SEGMENTATION_CONTACT_ELIGIBLE_THROUGH = 1200
+SEGMENTATION_CONTACT_ELIGIBLE_INTERVALS = (
+    (0, SWAP_ONSET_FRAME),
+    (SWAP_CORRECTION_FRAME, SEGMENTATION_CONTACT_ELIGIBLE_THROUGH),
+)
 COARSE_GT = (
     ("attach interior", 0, 318),
     ("screw chassis", 318, 1031),
@@ -131,9 +144,17 @@ partial Kineo NLF body context are separate/toggleable evidence layers.
 
 - Corrected SAM3 stays the default segmentation display. It is a visible-surface comparison
   layer, not semantic ground truth. Geometry/disagreement triggers are review prompts only.
-- The agent-reviewed source/mask overlays support only `[0,1200)` as
-  `contact_eligible`. From frame 1200 onward, masks remain visible with an explicit warning but
-  all contact fields are `invalid_mask`; no late contact candidates/events are derived.
+- The reference run adds one agent-selected chassis/interior correction at frame 1172
+  (schedule rows tagged `selected_by: agent`, provenance `agent_authored_visual_review`); all
+  frame-0 seeds and every other correction remain the earlier human-selected masks, and
+  frames before 1172 are bit-identical to the previous reference.
+- `contact_eligible` covers only `[0,1020)` and `[1172,1200)`. Frames `[1020,1172)` hold the
+  human-reported chassis/interior swap (interior label leaks over the chassis from ~1020,
+  chassis label lost from ~1110, pure label swap 1167-1234 in the old run) and frames from
+  1200 keep the earlier late-degradation decision. On ineligible frames masks stay visible
+  with a warning but all contact fields are `invalid_mask`.
+- Frame ~370: the interior mask briefly grows into the chassis and recedes on its own (human
+  observation); no correction was attempted there.
 - Stabilized WiLoR preserves raw/smoothed/fallback/missing per-hand provenance. MediaPipe is a
   short-gap fallback only; its IDs are neither identities nor action labels.
 - BoxMOT is independent YOLO/BotSort person context only. Kineo is NLF-only 2D body/crop
@@ -192,7 +213,7 @@ def build_first_minute_review(
         for name, spec in review.FIRST_MINUTE_SOURCES.items()
     }
     reference = review._validate_run(
-        review.SourceSpec("baseline_sam3", review.REFERENCE_SEGMENTATIONS["baseline_sam3"]),
+        review.SourceSpec("baseline_sam3", FIRST_MINUTE_REFERENCE_SEGMENTATION),
         repository_root,
         frame_count=FRAME_COUNT,
     )
@@ -208,7 +229,7 @@ def build_first_minute_review(
         reference,
         dimensions,
         frame_count=FRAME_COUNT,
-        segmentation_contact_eligible_through=SEGMENTATION_CONTACT_ELIGIBLE_THROUGH,
+        segmentation_contact_eligible_intervals=SEGMENTATION_CONTACT_ELIGIBLE_INTERVALS,
     )
     disagreements = review._disagreements(
         sources["mediapipe"], sources["wilor"], dimensions, frame_count=FRAME_COUNT
@@ -241,18 +262,46 @@ def build_first_minute_review(
     validity = (
         SegmentationValidityInterval(
             start_frame=0,
+            end_frame_exclusive=SWAP_ONSET_FRAME,
+            state="contact_eligible",
+            rationale=(
+                "Human review accepted the first ~40 s apart from the chassis/interior swap; "
+                "the agent narrowed the end to the measured onset of the interior mask "
+                "leaking onto the chassis (interior area doubles over frames 1020-1044)."
+            ),
+            provenance="agent_authored_visual_review",
+        ),
+        SegmentationValidityInterval(
+            start_frame=SWAP_ONSET_FRAME,
+            end_frame_exclusive=SWAP_CORRECTION_FRAME,
+            state="not_contact_eligible",
+            rationale=(
+                "Human-reported chassis/interior identity swap: the interior label grows over "
+                "the chassis body, the chassis label collapses (<600 px from 1110) and the "
+                "grey interior block is not separately visible until ~1167, so no credible "
+                "correction mask exists earlier."
+            ),
+            provenance="human_feedback_report",
+        ),
+        SegmentationValidityInterval(
+            start_frame=SWAP_CORRECTION_FRAME,
             end_frame_exclusive=SEGMENTATION_CONTACT_ELIGIBLE_THROUGH,
             state="contact_eligible",
-            rationale="Retained first ~40 s corrected-SAM3 review interval.",
-            provenance="human_feedback_report",
+            rationale=(
+                "Agent-selected frame-1172 chassis/interior correction (selected_by=agent in "
+                "the schedule) restored the labels; new chassis vs old interior IoU 0.926 over "
+                "1172-1234 and near-zero chassis/interior overlap."
+            ),
+            provenance="agent_authored_visual_review",
         ),
         SegmentationValidityInterval(
             start_frame=SEGMENTATION_CONTACT_ELIGIBLE_THROUGH,
             end_frame_exclusive=FRAME_COUNT,
             state="not_contact_eligible",
             rationale=(
-                "Late corrected-SAM3 overlays visibly cease to track stable part semantics; "
-                "masks remain comparison evidence only."
+                "Late corrected-SAM3 overlays visibly cease to track stable part semantics "
+                "(rear-body label stays on the table piece while the body is attached); masks "
+                "remain comparison evidence only."
             ),
             provenance="agent_authored_visual_review",
         ),
@@ -271,8 +320,9 @@ def build_first_minute_review(
         ),
         input_artifacts=unique,
         contact_heuristic=(
-            "On contact-eligible frames only: wrist/palm or fingertip inside a mask or <=12 "
-            "pixels, with 2-frame start and 3-frame end debounce. Missing or invalid masks clear."
+            "On contact-eligible frames only ([0,1020) and [1172,1200)): wrist/palm or "
+            "fingertip inside a mask or <=12 pixels, with 2-frame start and 3-frame end "
+            "debounce. Missing or invalid masks clear."
         ),
         hand_matching_rule="Greedy same-frame nearest-wrist assignment, never identity matching.",
         coordinate_semantics=(
@@ -383,9 +433,10 @@ def build_first_minute_review(
             f"{entity}/diagnostics/segmentation_review_trigger/count",
             rr.Scalars([trigger_counts[frame]]),
         )
+        eligible = review.contact_eligible_frame(frame, SEGMENTATION_CONTACT_ELIGIBLE_INTERVALS)
         rr.log(
             f"{entity}/diagnostics/segmentation_contact_eligible",
-            rr.Scalars([float(frame < SEGMENTATION_CONTACT_ELIGIBLE_THROUGH)]),
+            rr.Scalars([float(eligible)]),
         )
         substep = substep_for_frame(fine_contract, frame) if frame < 600 else None
         if substep is not None:
@@ -393,7 +444,6 @@ def build_first_minute_review(
                 f"{entity}/metadata/agent_substeps_first_20s/timeline",
                 rr.TextLog(f"{substep.substep_id}: {substep.label} (agent_authored_visual_review)"),
             )
-        eligible = frame < SEGMENTATION_CONTACT_ELIGIBLE_THROUGH
         review._log_navigation_frame(
             entity,
             frame,

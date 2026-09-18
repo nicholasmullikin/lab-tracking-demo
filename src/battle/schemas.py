@@ -743,6 +743,10 @@ class MuggledSAMCalibrationCandidate(VersionedModel):
     live_preview: bool = False
     human_selected_candidate_index: int | None = Field(default=None, ge=0)
     human_accepted: bool = False
+    # Who made the acceptance recorded in the historical `human_*` fields. Existing records
+    # predate this field and were human-reviewed, hence the default; agent-authored visual
+    # review must say so explicitly and may only supply later-frame corrections.
+    selected_by: Literal["human", "agent"] = "human"
     legacy_finalization_requested: bool = False
     selected_for_finalization: bool = False
     selected_for_correction: bool = False
@@ -779,6 +783,10 @@ class MuggledSAMCalibrationCandidate(VersionedModel):
             raise ValueError("correction eligibility requires explicit human mask acceptance")
         if self.selected_for_correction and self.frame.analysis_frame_index == 0:
             raise ValueError("correction eligibility requires a later-frame mask")
+        if self.selected_by == "agent" and (
+            self.selected_for_finalization or self.frame.analysis_frame_index == 0
+        ):
+            raise ValueError("agent-selected masks are later-frame corrections only, never seeds")
         if self.rejected and (
             self.human_accepted
             or self.human_selected_candidate_index is not None
@@ -890,6 +898,9 @@ class MuggledSAMBoxCalibrationManifest(VersionedModel):
     # finalized again writes revision 2 onwards beside it instead of over it.
     plan_revision: int = Field(default=0, ge=0)
     superseded_plans: tuple[MuggledSAMSupersededTrackingPlan, ...] = ()
+    # Set when a calibration was copied from a finalized one so extra later-frame
+    # corrections could be added without rewriting the original's fingerprinted manifest.
+    derived_from_calibration: ArtifactFingerprint | None = None
 
     @field_validator("requested_proxy_timestamps_seconds")
     @classmethod
@@ -1154,11 +1165,11 @@ class MuggledSAMMultiKeyframeCorrectionPolicy(VersionedModel):
 
     manifest_kind: Literal["muggledsam_sam3_multi_keyframe_correction_policy"]
     policy_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]*$")
-    policy_version: Literal["1", "2"]
+    policy_version: Literal["1", "2", "3"]
     view_id: Literal["static-c10379", "ego-hmc21110305", "ego-hmc21179183"]
     manual_seed_target_config_fingerprint: ArtifactFingerprint
     targets: tuple[str, ...] = Field(min_length=1)
-    maximum_later_correction_keyframes_per_target: int = Field(ge=0, le=5)
+    maximum_later_correction_keyframes_per_target: int = Field(ge=0, le=6)
     correction_memory_semantics: Literal["replace_prompt_memory_and_reset_frame_memory"]
 
     @model_validator(mode="after")
@@ -1167,6 +1178,8 @@ class MuggledSAMMultiKeyframeCorrectionPolicy(VersionedModel):
             raise ValueError("correction policy targets must be distinct")
         if self.policy_version == "1" and self.maximum_later_correction_keyframes_per_target > 3:
             raise ValueError("correction policy v1 permits at most three later keyframes")
+        if self.policy_version == "2" and self.maximum_later_correction_keyframes_per_target > 5:
+            raise ValueError("correction policy v2 permits at most five later keyframes")
         return self
 
 
@@ -1183,11 +1196,18 @@ class MuggledSAMMultiKeyframeCorrection(VersionedModel):
 
     candidate_id: str = Field(pattern=r"^t\d{6}-b\d{2,}$")
     human_selected_candidate_index: int = Field(ge=0)
+    selected_by: Literal["human", "agent"] = "human"
     target_id: str = Field(min_length=1)
     object_id: str = Field(pattern=r"^sam3-\d{2,}$")
     multiplex_slot: int = Field(ge=0)
     frame: CalibrationFrameReference
     calibration_mask_fingerprint: ArtifactFingerprint
+
+    @model_validator(mode="after")
+    def require_human_frame_zero_seed(self) -> MuggledSAMMultiKeyframeCorrection:
+        if self.selected_by == "agent" and self.frame.analysis_frame_index == 0:
+            raise ValueError("frame-0 seeds must be human-selected")
+        return self
 
 
 class MuggledSAMMultiKeyframeCorrectionSchedule(VersionedModel):
@@ -1259,6 +1279,8 @@ class MultiKeyframeCorrectionScheduleMetadata(VersionedModel):
     correction_policy_fingerprint: ArtifactFingerprint
     correction_memory_semantics: Literal["replace_prompt_memory_and_reset_frame_memory"]
     scheduled_correction_frame_indices: tuple[int, ...] = ()
+    # Frames whose correction masks were chosen by agent visual review rather than a human.
+    agent_selected_correction_frame_indices: tuple[int, ...] = ()
     ground_truth_accuracy_claim: Literal[False] = False
 
 

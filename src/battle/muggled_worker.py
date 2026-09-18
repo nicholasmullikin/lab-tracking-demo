@@ -127,20 +127,33 @@ def _runtime_settings(args: argparse.Namespace, concepts: tuple[str, ...]) -> di
         )
     if args.multi_keyframe_schedule_json:
         schedule = json.loads(args.multi_keyframe_schedule_json)
+        agent_frames = sorted(
+            {
+                int(correction["frame_index"])
+                for correction in schedule["corrections"]
+                if correction.get("selected_by") == "agent"
+            }
+        )
         settings["multi_keyframe_correction_schedule"] = {
             "initial_seed_count": len(schedule["seeds"]),
             "later_correction_count": len(schedule["corrections"]),
             "correction_frames": sorted(
                 {int(correction["frame_index"]) for correction in schedule["corrections"]}
             ),
+            "agent_selected_correction_frames": agent_frames,
             "memory_semantics": schedule["memory_semantics"],
         }
         settings["initialization_api"] = "encode_prompt_memory_from_mask"
         settings["correction_api"] = "encode_prompt_memory_from_mask"
         settings["correction_memory_semantics"] = schedule["memory_semantics"]
         settings["initial_confidence_semantics"] = (
-            "1.0 marks a human-selected initialization/correction mask; it is not a "
-            "detector confidence or an accuracy score"
+            "1.0 marks a human-selected initialization/correction mask"
+            + (
+                f" (agent-selected correction masks at frames {agent_frames})"
+                if agent_frames
+                else ""
+            )
+            + "; it is not a detector confidence or an accuracy score"
         )
     if args.text_targets_json:
         settings["text_prompt_mapping"] = json.loads(args.text_targets_json)

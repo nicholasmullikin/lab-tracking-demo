@@ -1025,6 +1025,7 @@ def _load_multi_keyframe_correction_schedule(
             candidate.intended_target != correction.target_id
             or candidate.frame != correction.frame
             or candidate.human_selected_candidate_index != correction.human_selected_candidate_index
+            or candidate.selected_by != correction.selected_by
             or not candidate.human_accepted
             or (
                 candidate.frame.analysis_frame_index == 0
@@ -1033,7 +1034,7 @@ def _load_multi_keyframe_correction_schedule(
             or (candidate.frame.analysis_frame_index != 0 and not candidate.selected_for_correction)
         ):
             raise ValueError(
-                f"correction schedule entry does not match an eligible human selection: "
+                "correction schedule entry does not match an eligible recorded selection: "
                 f"{correction.candidate_id}"
             )
         selected = next(
@@ -1069,6 +1070,7 @@ def _load_multi_keyframe_correction_schedule(
                 "frame_index": correction.frame.analysis_frame_index,
                 "mask_path": str(mask_path),
                 "mask_sha256": correction.calibration_mask_fingerprint.sha256,
+                "selected_by": correction.selected_by,
             }
         )
     if any(
@@ -1101,6 +1103,11 @@ def _load_multi_keyframe_correction_schedule(
             correction_memory_semantics=schedule.correction_memory_semantics,
             scheduled_correction_frame_indices=tuple(
                 sorted({int(item["frame_index"]) for item in later})
+            ),
+            agent_selected_correction_frame_indices=tuple(
+                sorted(
+                    {int(item["frame_index"]) for item in later if item["selected_by"] == "agent"}
+                )
             ),
         ),
     )
@@ -1836,7 +1843,15 @@ def run_smoke(args: argparse.Namespace) -> Path:
                 "prompt_mode": "manual_seed_multiplexed_keyframes",
                 "multi_keyframe_correction_schedule": multi_keyframe_schedule_payload,
                 "correction_memory_semantics": multi_keyframe_schedule_payload["memory_semantics"],
-                "label": "human-selected multi-keyframe correction schedule; not text zero-shot",
+                "label": (
+                    "multi-keyframe correction schedule with human-selected seeds and "
+                    "agent-selected later corrections; not text zero-shot"
+                    if any(
+                        item.get("selected_by") == "agent"
+                        for item in multi_keyframe_schedule_payload["corrections"]
+                    )
+                    else "human-selected multi-keyframe correction schedule; not text zero-shot"
+                ),
             }
         )
     (run_directory / "runtime_settings.json").write_text(
