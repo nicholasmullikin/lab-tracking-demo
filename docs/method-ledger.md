@@ -1368,3 +1368,54 @@ this comparison makes no accuracy or cross-method identity claim.
   (`runs/interaction-review-overnight-v3/final_agent_review.md`, gitignored) fixed a
   `mediapipe_fallback` audit-sheet labeling bug in `scripts/render_overnight_v3_audits.py`.
   Full suite after that fix: 245 passing tests.
+
+### Sep 17: label-free first-minute review metrics and ranked triggers
+
+- Claim boundary first: every number in `runs/review-metrics-first-minute-v1/` is a geometry,
+  appearance, or provenance proxy computed on CPU from already retained v4 inputs. None is an
+  accuracy metric, a ground-truth label, or a statement about what the worker touched; the
+  ranked episodes are prompts for a human to look at a frame range. No model ran and no viewer
+  was opened. Expected touched parts per substep are `agent_authored_assumption` records layered
+  on the agent-authored substeps (`configs/review_metrics/first_minute_v1.json`).
+- Inputs were located through the v4 index and every manifest/observation file plus the bounded
+  video was re-verified against its declared SHA-256 before use. `metrics.json` records 7,200
+  part stats, 10,800 pair metrics, 7,200 appearance rows, 7,200 growth rows, 114 gap proxies,
+  20 gaps, 2,577 jitter rows, 145 contact intervals, and 1,800 Kineo rows; absence is an explicit
+  state and the file contains no NaN.
+- Segmentation: part area medians were chassis 7,164, interior 2,627, rear_body 2,136, cabin
+  16,445 px. The chassis/interior swap score reached 0.89 at f1235 (a clean label exchange, also
+  the only chassis/interior label-crossing) and stayed 0.36–0.70 over f1091–f1164 through the
+  absorption term (interior 3.4–4.3× its median while chassis fell below 0.1×). Uniform thresholds
+  also fired at f326 (matching the previously verified human frame-327 correction), f616–f623, and
+  f1062–f1073. The user-reported 1100–1200 swap is therefore caught by the swap detector, the
+  chassis collapse anomaly (f1089–f1173, rank 1), and the chassis appearance drift (f1089–f1180).
+  The reported transient interior growth near f370 is a slow ramp (444 px at f279 to 5,255 px at
+  f365) that no frame-to-frame step of ≥1.3× marks; it is caught by the sustained interior area
+  anomaly f346–f393 (only 1.17× threshold, rank 156) and the ramp-onset growth event f291–f298.
+- Appearance: the yellow band derived from frame-0 rear_body/cabin masks is HSV hue 17–24,
+  S ≥147, V ≥179. The first version flagged leakage whenever a stabilized hand box covered ≥35 %
+  of a mask, which fired on 77 % of chassis and 97 % of interior frames because hands legitimately
+  cover the handled parts; hand overlap is now recorded as context and the leakage flag uses each
+  part's own robust Lab-distance z (≥3, distance ≥18) or a dark part turning yellow. This is a
+  design correction, not a tuning to the reported frames.
+- Hands: 20 frame-level stabilized-WiLoR gaps cover 110 frames. The skin band calibrated from
+  confident raw WiLoR boxes (YCrCb Cr 131–152, Cb 111–130) also admits 20 % of non-hand scene
+  pixels, so a gap frame is a visible-but-undetected suspect only when its last-pose window beats
+  the frame background by 2× as well as half the reference; 67/114 gap frames qualify. Four gaps
+  re-enter ≥1 hand-scale away (f377–388, f394–414, f1119–1120, f1132–1156). Normalized wrist
+  jitter medians per substep are 0.00–0.044 with p90 up to 1.6 in S04/S05; these include real
+  motion.
+- Contacts: 145 debounced intervals on `[0,1200)`, 51 shorter than 5 frames, median 9 frames,
+  p90 42, max 317; 53 expected, 39 unexpected, and 53 outside the labeled `[0,600)` against the
+  agent-assumed parts. Kineo: 1,619 `detected_native` frames with mean joint confidence 0.412 and
+  median joint jitter 4.01 px, 150 `boxmot_fallback` at 0.384 / 5.46 px, 14 `interpolated` at
+  0.348 / 3.50 px (p90 126 px), 17 `missing`.
+- Ranking: scores are threshold units and comparable only within a type, so the rank interleaves
+  types (round k holds the k-th strongest episode of every type). 220 episodes were written;
+  the top 12 spans all ten detectors and each has a contact sheet with before/after context.
+- Tests: 13 synthetic-fixture tests cover swap/exchange/absorption, label crossing, missing-mask
+  explicitness, step and slow-ramp growth classification, area anomalies, gap/re-entry/proxy,
+  jitter by phase, contact durations/flicker/substep consistency, provenance grouping, ranking,
+  and the checked-in config. They need no real data or models.
+- **TODO (GPU, not run):** DAM4SAM over the 60 s window and its cross-method disagreement against
+  corrected SAM3 as an additional swap/leakage trigger.
