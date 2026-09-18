@@ -2077,3 +2077,118 @@ this comparison makes no accuracy or cross-method identity claim.
 - **Tests.** `tests/test_mediapipe_hands.py` +3: view-id to camera-name mapping, `real_data`
   derived-ROI agreement with the Sep 16 crop, and the eight Sep 18 run directories with their
   dataset checks (coverage and wrist-median floors).
+
+### Sep 18: Track 3b, ATHENA multi-view hand triangulation against the dataset 3D
+
+- **Claim boundary first.** The triangulated hands are a DLT on MediaPipe detections through
+  fitted intrinsics and the dataset's shipped extrinsics; the dataset `landmarks3D` are the
+  output of the dataset's own multi-view tracker with a fixed-scale hand model. Their
+  millimetre difference is cross-source disagreement between two estimates, never accuracy of
+  either. Hand-side correspondence borrows the dataset wrist projected into each view (method
+  handedness is unreliable); positions do not. Intrinsics are estimates. CPU only; the GPU was
+  not touched; no viewer opened. Assembly101 CC BY-NC 4.0; ATHENA MIT.
+- **ATHENA itself, not a reimplementation.** `/home/nick/src/athena` @ `e85bd494` was installed
+  into its own py3.12 virtualenv (`/home/nick/src/athena/.venv`, `uv pip install -e .`:
+  mediapipe 0.10.21, numpy 1.26.4, opencv 4.11.0, scipy 1.17.1). Its `labels2d` module imports
+  tkinter and MediaPipe 0.10 at import time, so pulling `triangulaterefine` into the battle env
+  (mediapipe 1.0.1, no scipy) was not an option; `battle-athena-hands` instead writes the
+  undistorted normalised points, matching pixel coordinates, world-to-camera extrinsics and
+  intrinsics to an `.npz`, runs `scripts/athena_triangulate_worker.py` under the ATHENA
+  interpreter (`_triangulate_with_filtering` per batch, then `_smooth3d`, 20 Hz Savitzky-Golay,
+  order 3, gaps over five frames restored) and reads the points back; only numpy crosses the
+  boundary. Two ATHENA conventions were handled rather than copied: the dataset's
+  camera-to-world poses are inverted to world-to-camera (`CameraRig.projection_matrix`), and
+  because ATHENA's filter reprojects with `K @ E` and no distortion, the "pixel" coordinates it
+  compares against are the *undistorted-image* pixels (`K` applied to the Brown/rational
+  undistorted normalised coordinates), so the 30 px filter acts in a consistent space. The
+  zero-distortion shortcut was not used: every observation goes through
+  `cv2.undistortPoints` with the view's fitted coefficients. ATHENA returns points only, so a
+  view counts as contributing when its final reprojection error is within the filter threshold
+  (the loop's own acceptance rule). `--triangulator rig` runs the Track 1 leave-one-out DLT
+  instead; on the same inputs it lands within 0.4 mm of ATHENA on every headline number
+  (wrist median 24.3 / 19.8 mm vs 23.9 / 19.8) in 31 s against ATHENA's 6.7 s, which says the
+  two filters agree here and that ATHENA's batched SVD is the one to keep.
+- **Inputs and alignment.** Per view: the Sep 18 MediaPipe runs (C10379: the selected Sep 16
+  run), landmarks normalised -> raw px (x1.5). Analysis timeline = C10379 clock
+  (`pose_frame = 17649 + 2p`, the dataset reference window); every other view contributes the
+  analysis frame nearest that pose frame under its own measured rule: C10095 +2.0 frames
+  (residual 0), C10119/C10390 +1.0 (0), C10115/C10118/C10395/C10404 +1.5 (rounds to +1 pose
+  frame = 16.7 ms), HMC_21110305 +4.5 (+1). Nothing is resampled; the residual is in the
+  manifest. Side matching: minimum-total-distance assignment of <= 2 detections to <= 2 dataset
+  wrists (confidence >= 0.5) within 150 raw px; match-distance medians 16-30 px on the seven
+  other static views, 51.6 px on C10379 (671 of 2,600 C10379 detections unmatched, the view's
+  known weakness from Track 3a). Twenty common joints (table in the module docstring; dataset
+  palm and MediaPipe thumb_cmc dropped; the thumb pair is the least certain correspondence).
+- **Measures, static arm** (`runs/athena-hands-first-minute-mediapipe/`, 8 static views, 1,800
+  frames; runtime 6.7 s, first output 6.6 s; VRAM n/a; coverage: left hand solved in 1,757
+  frames, right in 1,634, dataset present 1,800 / 1,700; ID resets n/a, sides come from the
+  dataset match). Disagreement vs `landmarks3D`, raw DLT (smoothed in brackets):
+
+  | hand | mean contributing views | wrist median / p90 mm | fingertips median / p90 mm | all 20 joints median / p90 mm |
+  | --- | --- | --- | --- | --- |
+  | left | 3.64 | 23.9 / 37.1 (23.9 / 36.3) | 38.8 / 84.3 (38.8 / 82.4) | 25.4 / 68.7 (25.6 / 66.6) |
+  | right | 6.59 | 19.8 / 31.2 (19.7 / 31.1) | 31.3 / 59.6 (31.3 / 59.4) | 21.9 / 48.2 (21.9 / 48.1) |
+
+  Per joint (raw median mm, left / right): wrist 23.9 / 19.8; index_mcp 17.7 / 13.9, middle_mcp
+  18.6 / 12.5, ring_mcp 18.9 / 14.3, pinky_mcp 23.2 / 18.8 (the palm agrees best); thumb_cmc
+  16.5 / 26.2, thumb_ip 20.3 / 26.9 (the uncertain correspondence); tips thumb 26.0 / 28.7,
+  index 37.5 / 26.0, middle 46.6 / 32.8, ring 44.8 / 35.9, pinky 42.9 / 35.3. Fingertips
+  disagree roughly twice as much as the palm, on both hands, which matches the Sep 18 2D
+  finding that dataset and method agree on hand scale but not on articulation when fingers are
+  hidden behind the held part. Per-view reprojection RMS of the points a view contributed to
+  (left / right): C10095 15.3 / 7.8 px, C10115 12.8 / 9.0, C10118 15.8 / 12.3, C10119 10.7 / 9.8,
+  C10379 15.8 / 13.4, C10390 12.8 / 8.7, C10395 11.9 / 12.5, C10404 11.5 / 10.4; over all
+  observed points (including the ones the filter dropped) C10379 is worst at 59.1 / 41.1 px and
+  C10118 second at 51.4 / 17.1. The left hand is seen by half as many views as the right
+  (3.6 vs 6.6): C10095 and C10395 rarely detect a second hand (Track 3a) and C10379 misses it.
+- **Ego arm** (`runs/athena-hands-first-minute-mediapipe-ego/`, + HMC_21110305 with its
+  per-frame pose, 1,800 single-frame ATHENA batches, 9.8 s). MediaPipe found hands in only 446
+  ego frames (mono stress test), 445 matched at 20.2 px median; the ego view was used for 4,820
+  of 5,020 observed left-hand points (RMS 10.7 px) and 2,931 of 3,880 right (14.7 px). Headline
+  numbers move by under 0.4 mm (left wrist 23.9 -> 23.9, right 19.8 -> 19.6; mean views 3.64 ->
+  3.75 and 6.59 -> 6.67). So with this few ego detections the ego camera neither helps nor
+  hurts measurably; the Track 1 warning about weighting it stands for a future arm with a
+  colour ego stream.
+- **First honest answer on "is WiLoR 3D hopping fixable".** Median per-frame wrist displacement
+  on the C10379 clock: multi-view DLT 2.8 mm (left) / 3.3 mm (right) raw, 2.5 / 2.9 mm after
+  ATHENA smoothing; dataset tracker 1.9 / 3.5 mm; p90 10.4 / 9.8 mm vs dataset 4.6 / 9.8. In
+  C10379 pixels the multi-view wrist reprojected moves 4.3 / 4.0 px per frame (p90 19.5 / 12.5)
+  against WiLoR's own 2D wrist 3.1 / 6.3 px (p90 11.2 / 17.4): in the image the two are equally
+  steady. WiLoR's *camera-frame* wrist (joint 0 plus `pred_cam_t_full` from the native evidence,
+  in WiLoR's own units under its 25,000 px scaled focal length, not millimetres) jumps a median
+  145 (left) / 333 (right) units x 1e-3 per frame, p90 535 / 1,169, almost entirely in depth,
+  while its wrist-rooted `joints_3d_camera_relative` is constant by construction (the wrist sits
+  at a fixed MANO offset, ~2e-5 per frame). Reading: the hopping lives in WiLoR's per-frame
+  depth/translation guess, not in its 2D or its hand articulation; a calibrated multi-view
+  estimate of the same wrist is two orders of magnitude steadier frame to frame and within
+  ~20 mm (median) of the dataset's tracker. "Fixable" therefore means replacing WiLoR's
+  translation with a triangulated wrist and keeping WiLoR's articulation, which is what the
+  queued three-view WiLoR arm will test; it is not a claim that either estimate is right.
+- **WiLoR arm, queued not run.** `runs/overnight-multicam-20260918/jobs_wilor_3views.json`
+  (validated with `--dry-run`): `battle-wilor-hands` on C10379, C10395, C10115 (60 s, native
+  evidence on, 900 s timeouts) followed by `battle-athena-hands --hand-source wilor` on the
+  three and its review recording. `--hand-source wilor` reads the same `observations.jsonl`
+  contract (WiLoR's 21 joints share the MediaPipe order) and attaches `pred_cam_t_full` from
+  `native_evidence/` for the steadiness series; verified as a loading smoke against the
+  existing `runs/wilor-hands-static-60s-overnight-v2` (1,800 frames, 1,751 with hands,
+  camera-frame depth ~31.8 units), and a single view is refused with "needs at least two views".
+- **Viewer.** `battle-build-athena-hands-review` writes `hands.rrd` beside each run (dataset
+  hands yellow/mint, triangulated orange/blue with thin smoothed skeletons, eight camera frusta,
+  time series of contributing views, wrist disagreement mm and per-view reprojection RMS; 2.8 s).
+  `interaction_review_v4` gained an `athena_hands` layer (on by default, skipped when
+  `runs/athena-hands-first-minute-mediapipe/` is absent) that logs the same entities under the
+  existing `contexts/assembly101_world_mm_3d` and `diagnostics/assembly101` roots through the
+  new module `athena_hands_review.py`, so they land in the dataset 3D view and time panel
+  without blueprint changes; a scratch rebuild confirmed the entities. The tracked v4 package
+  was not rebuilt in place tonight (another worker is rebuilding it for the multiview layer).
+- **Tests.** `tests/test_athena_hands.py` (9): mapping table invariants, nearest-frame residual
+  rule, handedness-agnostic matching with threshold, numpy Savitzky-Golay preserving cubics and
+  the undistorted-pixel helper, a three-camera synthetic scene (Brown distortion, moving hands,
+  one view with swapped detection order) recovered to < 2 mm median through the rig path, the
+  same scene through the ATHENA worker with one corrupted wrist dropped by the filter (skipped
+  when the ATHENA venv is missing); `real_data`: WiLoR loading smoke with camera translation and
+  single-view refusal, and both built runs (>= 1,500 frames solved, mean views >= 3, wrist
+  median in (5, 40) mm, per-view used RMS <= 30 px, hands.jsonl length, claim boundary, RRD).
+- **Open.** Per-view weights (ego especially) and a tighter ego filter; WiLoR arm pending GPU;
+  the thumb correspondence; a per-frame time interpolation of views to the reference pose frame
+  would remove the 16.7 ms residual for fast motion.

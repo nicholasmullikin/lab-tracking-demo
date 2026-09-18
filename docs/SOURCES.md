@@ -244,6 +244,18 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
 - Archive members for the approved recording include extrinsics/positions/timestamps but no
   intrinsics path; ATHENA fixture smoke only: `uv run battle-athena-fixture-smoke`.
 
+### Sep 18: ATHENA installed and used for real triangulation
+
+- Same checkout and revision (`e85bd49444253aed9532439ace8ede146d1b6470`, clean tree), installed
+  editable into `/home/nick/src/athena/.venv` (py3.12; `uv venv --python 3.12 .venv && uv pip
+  install --python .venv/bin/python -e .`): mediapipe 0.10.21, numpy 1.26.4, opencv-python
+  4.11.0, scipy 1.17.1, athena 1.0. The battle env keeps mediapipe 1.0.1; the two never share an
+  interpreter.
+- Used functions: `athena.triangulaterefine._triangulate_with_filtering` and `_smooth3d`, called
+  by `scripts/athena_triangulate_worker.py` under that interpreter from `battle-athena-hands`.
+  The intrinsics blocker is gone in practice: intrinsics are the fitted estimates in
+  `configs/assembly101/*_camera_estimate.json` (Track 0), not a dataset member.
+
 ## External source: Kineo (`kineo_nlf_only_partial`)
 
 - Checkout: `/home/nick/src/kineo` @ `03b36e31…` (dirty working tree during smokes).

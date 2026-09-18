@@ -15,6 +15,7 @@ import numpy as np
 import rerun as rr
 
 from . import assembly101_reference as a101
+from . import athena_hands_review
 from . import ensemble_reference as ensemble
 from . import interaction_review as review
 from .assembly101_pose_schemas import (
@@ -661,7 +662,10 @@ LAYERS: tuple[str, ...] = (
     "kineo",
     "diagnostics",
     "assembly101_hands",
+    "athena_hands",
 )
+# Multi-view triangulated hands from `battle-athena-hands`; the layer is skipped when absent.
+ATHENA_HANDS_RUN = athena_hands_review.DEFAULT_OUTPUT_ROOT
 
 
 def build_first_minute_review(
@@ -916,6 +920,15 @@ def build_first_minute_review(
         _reference_provenance_static(entity)
     if dataset is not None and "assembly101_hands" in selected:
         _log_assembly101_static(entity, dataset.manifest)
+    athena = (
+        athena_hands_review.load_run_if_present(repository_root / ATHENA_HANDS_RUN)
+        if dataset is not None and "athena_hands" in selected
+        else None
+    )
+    if athena is not None:
+        athena_hands_review.log_static(
+            entity, athena, athena_hands_review.static_rig(repository_root, athena)
+        )
     trigger_counts = {
         frame: sum(item.analysis_frame_index == frame for item in triggers)
         for frame in range(FRAME_COUNT)
@@ -983,6 +996,8 @@ def build_first_minute_review(
             )
         if "diagnostics" in selected:
             review._log_diagnostics_frame(entity, frame, contacts, disagreements)
+        if athena is not None:
+            athena_hands_review.log_frame(entity, athena, frame)
         if dataset is not None and "assembly101_hands" in selected:
             _log_assembly101_frame(
                 entity,

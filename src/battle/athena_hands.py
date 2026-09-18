@@ -375,7 +375,7 @@ def run_athena_worker(
 class ViewAlignment(VersionedModel):
     view: str
     run_directory: str
-    proxy_fingerprint: ArtifactFingerprint
+    proxy_fingerprint: ArtifactFingerprint | None
     pose_offset_frames: int
     analysis_frame_shift: float = Field(
         description="view analysis frame minus reference frame (exact, may be half-integral)"
@@ -701,7 +701,7 @@ def triangulate_hands(
         alignments[view] = ViewAlignment(
             view=view,
             run_directory=hands[view].run_directory.as_posix(),
-            proxy_fingerprint=hands[view].proxy_fingerprint,  # type: ignore[arg-type]
+            proxy_fingerprint=hands[view].proxy_fingerprint,
             pose_offset_frames=rule.pose_offset_frames,
             analysis_frame_shift=(reference_rule.pose_offset_frames - rule.pose_offset_frames) / 2,
             residual_pose_frames_used=tuple(sorted(residuals[view])),

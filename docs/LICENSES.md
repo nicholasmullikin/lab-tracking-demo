@@ -64,6 +64,13 @@ inputs outside Git.
 - **ATHENA:** MIT source checkout; Assembly101 real triangulation blocked (no intrinsics in
   official `AssemblyPoses.zip` member inventory). Fixture smoke only. Official sources place
   extrinsics/positions in `AssemblyPoses.zip` but do not establish that intrinsics are absent.
+  *Sep 18 update:* ATHENA (MIT, Neural Control & Computation Lab, 2025) is now installed in its
+  own virtualenv and its DLT/filter/smoothing functions run on Assembly101 detections via
+  `battle-athena-hands`; MIT permits this use with attribution retained in the checkout's
+  `LICENSE`. Its pinned dependency MediaPipe 0.10.21 (Apache-2.0) lives only in that venv. The
+  triangulated outputs derive from Assembly101 video and poses and inherit the dataset's
+  CC BY-NC 4.0 terms; the queued WiLoR arm additionally inherits WiLoR's CC-BY-NC-ND weights
+  caveat.
 - **Kineo:** research/evaluation terms per upstream README; its checkout was dirty during the
   NLF-only partial smoke. The readable PKLs are person-centric outputs without SfM, metric
   world scale, BVH, or hand-part claims.

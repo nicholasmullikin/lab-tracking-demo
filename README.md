@@ -1701,6 +1701,42 @@ stdout/stderr to `logs/<index>_<name>.log` beside it. The queue stops at the fir
 exit, timeout, spawn failure or GPU error unless `--continue-on-failure` is given; jobs after
 the stop are logged as `skipped` with the reason. Exit code 0 only when every job succeeded.
 
+### ATHENA multi-view hands (Sep 18)
+
+`battle-athena-hands` triangulates the per-view MediaPipe (or WiLoR) hands of the first
+minute on the calibrated `CameraRig`: normalised landmarks to raw pixels, hand side by
+proximity to the dataset wrist projected into each view (handedness-agnostic), real
+Brown/rational undistortion per view, dataset camera-to-world inverted to world-to-camera,
+then ATHENA's `_triangulate_with_filtering` (30 px reprojection filter, >= 2 views) and
+`_smooth3d`, executed by ATHENA's own virtualenv through `scripts/athena_triangulate_worker.py`.
+Twenty joints are common to the MediaPipe/WiLoR and dataset orders (dataset palm and MediaPipe
+thumb_cmc dropped; the table is in the module docstring). Output: a typed `manifest.json`
+(per-view alignment, per hand median/p90 mm disagreement vs the dataset `landmarks3D` for the
+wrist, fingertips and all joints, per-view reprojection RMS, mean contributing views, per-frame
+wrist steadiness), `hands.jsonl`, `hands.npz`, and `hands.rrd` from the review builder. The
+disagreement is cross-source (the dataset poses are its own tracker's output), never accuracy.
+
+```bash
+# ATHENA venv, once (py3.12; the battle env is untouched)
+(cd /home/nick/src/athena && uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -e .)
+# static arm (8 views) with the WiLoR C10379 run for the steadiness comparison
+uv run battle-athena-hands --views C10095 C10115 C10118 C10119 C10379 C10390 C10395 C10404 \
+  --hand-source mediapipe --output-root runs/athena-hands-first-minute-mediapipe \
+  --wilor-reference-run runs/wilor-hands-static-60s-overnight-v2
+# ego arm: add HMC_21110305 with its per-frame pose
+uv run battle-athena-hands --views C10095 C10115 C10118 C10119 C10379 C10390 C10395 C10404 HMC_21110305 \
+  --output-root runs/athena-hands-first-minute-mediapipe-ego
+uv run battle-build-athena-hands-review --run runs/athena-hands-first-minute-mediapipe
+# rig DLT instead of ATHENA (no venv needed): --triangulator rig
+# WiLoR arm (GPU, queued): runs/overnight-multicam-20260918/jobs_wilor_3views.json, then
+#   battle-athena-hands --views C10379 C10395 C10115 --hand-source wilor ...
+```
+
+`--run-dir VIEW=PATH` overrides the default run location per view
+(`runs/<source>-hands-<view>-60s-20260918`, C10379 MediaPipe from the Sep 16 selected run).
+`interaction_review_v4` logs the run as its `athena_hands` layer when the default run
+directory exists.
+
 The exporter writes already-normalized observations only: it never performs inference.
 It can log an input video once when an approved local proxy is supplied, while mask
 locations remain external/native artifact references. When a mask artifact root is
