@@ -1476,6 +1476,25 @@ uv run pytest -m real_data                           # artifact integration chec
 uv run pytest -m gpu                                 # device-bound checks
 ```
 
+While iterating, `uv run ruff check .` plus the fast tier is enough to catch a mistake in
+a few seconds. Before a commit, run the default tier; before claiming a run's provenance
+in the ledger, run the `real_data` tier and the relevant builder with
+`--verify-fingerprints`. The `gpu` tier is for the device-bound equivalence checks and
+needs the local SAM3 checkpoint.
+
+### Pruning runs
+
+`runs/` accumulates every experiment. This reports the directories that nothing committed
+cites, largest first, and separates the ones that only another run's manifest names:
+
+```bash
+uv run python scripts/prune_runs.py
+uv run python scripts/prune_runs.py --json
+```
+
+It deletes nothing. The last line is a `rm -rf` to review and run by hand, because a run
+cited only from an uncommitted note is still evidence.
+
 The exporter writes already-normalized observations only: it never performs inference.
 It can log an input video once when an approved local proxy is supplied, while mask
 locations remain external/native artifact references. When a mask artifact root is
