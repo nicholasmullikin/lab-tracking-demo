@@ -25,6 +25,8 @@ MAX_FRAME_MEMORY = 4
 MAX_PROMPT_MEMORY = 1
 MAX_SIDE_LENGTH = 504
 ANALYSIS_FPS = 30.0
+# Bumped whenever the saved tracker state stops being loadable by this worker.
+CHECKPOINT_FORMAT = "muggledsam-sam3-multiplex-tracker-state/1"
 DETECTION_THRESHOLD = 0.40
 # Connected components smaller than this fraction of the largest one are treated as mask
 # speckle and excluded from the reported box; the saved mask PNG is left untouched.
@@ -88,6 +90,11 @@ def _runtime_settings(args: argparse.Namespace, concepts: tuple[str, ...]) -> di
         ),
         "lost_object_score_threshold": 0.0,
     }
+    if getattr(args, "resume_from_checkpoint", None):
+        settings["resumed_from_checkpoint"] = args.resume_from_checkpoint
+        settings["chunking"] = (
+            "none; one tracker stream resumed from a saved state rather than stepped from frame 0"
+        )
     if args.preprocessing == "gray_p01_p99_clahe":
         settings.update(
             {
@@ -647,6 +654,31 @@ def run(args: argparse.Namespace) -> int:
         initial_masks: list[TrackedMask] = []
         initial_memory: Any = None
         correction_schedule: dict[int, list[dict[str, Any]]] = {}
+        resumed: dict[str, Any] | None = None
+        if args.resume_from_checkpoint:
+            resumed = torch.load(
+                Path(args.resume_from_checkpoint), map_location="cuda:0", weights_only=False
+            )
+            if resumed.get("format") != CHECKPOINT_FORMAT:
+                raise ValueError(
+                    f"checkpoint format {resumed.get('format')!r} is not {CHECKPOINT_FORMAT!r}"
+                )
+            if resumed["stream_identity"] != stream_identity(args, concepts):
+                raise ValueError(
+                    "checkpoint was produced by a different stream: the video, model, encoder "
+                    "settings, preprocessing, or initialization does not match this run"
+                )
+            if resumed["max_frame_memory"] != MAX_FRAME_MEMORY:
+                raise ValueError(
+                    f"checkpoint holds {resumed['max_frame_memory']} frame-memory entries; "
+                    f"this run is configured for {MAX_FRAME_MEMORY}"
+                )
+        start_frame = 1 if resumed is None else int(resumed["frame_index"])
+        if start_frame >= MAX_FRAMES:
+            raise ValueError(
+                f"checkpoint resumes at frame {start_frame}, at or past this run's {MAX_FRAMES}"
+            )
+        mode = "w" if resumed is None else "a"
         if hybrid_initialization is not None:
             _validate_hybrid_initialization(hybrid_initialization, concepts)
             detector = core.get_detector_context()
@@ -770,29 +802,79 @@ def run(args: argparse.Namespace) -> int:
         processed = 0
         masks_written = 0
         first_usable: float | None = None
-        with output_path.open("w") as observations:
-            initial_observation, written = _observation(
-                view_id=args.view_id,
-                frame_index=0,
-                source_offset_seconds=args.source_offset_seconds,
-                masks=initial_masks,
-                frame_shape=first_frame.shape[:2],
-                masks_directory=masks_directory,
-                run_directory=run_directory,
+        identity = stream_identity(args, concepts)
+        wanted_checkpoints: frozenset[int] = frozenset()
+        if not args.no_checkpoints:
+            wanted_checkpoints = checkpoint_frames(
+                every=args.checkpoint_every,
+                correction_frames=tuple(correction_schedule),
+                extra_frames=tuple(args.checkpoint_at),
+                max_frames=MAX_FRAMES,
             )
-            observations.write(json.dumps(initial_observation, sort_keys=True) + "\n")
-            processed = 1
-            masks_written += written
-            if initial_observation["objects"]:
-                first_usable = perf_counter() - start
+        checkpoint_directory = run_directory / "native" / "checkpoints"
+
+        def save_checkpoint(
+            frame_index: int, prompt_memories: Any, frame_memories: Any
+        ) -> None:
+            """Persist the state that is ready to process `frame_index`.
+
+            Naming a checkpoint by the frame it has not yet stepped is what lets a rerun
+            restart exactly at a correction keyframe and apply a new mask there.
+            """
+            checkpoint_directory.mkdir(parents=True, exist_ok=True)
+            torch.save(
+                {
+                    "format": CHECKPOINT_FORMAT,
+                    "frame_index": frame_index,
+                    "stream_identity": identity,
+                    "slots": [(index, concept) for index, concept, *_ in initial_masks],
+                    "prompt_memories": list(prompt_memories),
+                    "frame_memories": list(frame_memories),
+                    "max_prompt_memory": MAX_PROMPT_MEMORY,
+                    "max_frame_memory": MAX_FRAME_MEMORY,
+                },
+                checkpoint_directory / f"f{frame_index:06d}.pt",
+            )
+
+        with output_path.open(mode) as observations:
+            if resumed is None:
+                initial_observation, written = _observation(
+                    view_id=args.view_id,
+                    frame_index=0,
+                    source_offset_seconds=args.source_offset_seconds,
+                    masks=initial_masks,
+                    frame_shape=first_frame.shape[:2],
+                    masks_directory=masks_directory,
+                    run_directory=run_directory,
+                )
+                observations.write(json.dumps(initial_observation, sort_keys=True) + "\n")
+                processed = 1
+                masks_written += written
+                if initial_observation["objects"]:
+                    first_usable = perf_counter() - start
 
             if initial_masks:
-                prompt_memories = deque([initial_memory], maxlen=MAX_PROMPT_MEMORY)
-                frame_memories = deque([], maxlen=MAX_FRAME_MEMORY)
-                for frame_index in range(1, MAX_FRAMES):
+                if resumed is None:
+                    prompt_memories = deque([initial_memory], maxlen=MAX_PROMPT_MEMORY)
+                    frame_memories = deque([], maxlen=MAX_FRAME_MEMORY)
+                else:
+                    prompt_memories = deque(
+                        resumed["prompt_memories"], maxlen=MAX_PROMPT_MEMORY
+                    )
+                    frame_memories = deque(resumed["frame_memories"], maxlen=MAX_FRAME_MEMORY)
+                    # Decode, without encoding, up to the resumed frame: seeking a
+                    # long-GOP proxy by index is not frame-exact in every backend.
+                    for _ in range(1, start_frame):
+                        if not capture.read()[0]:
+                            raise RuntimeError(
+                                f"proxy ended before the resumed frame {start_frame}"
+                            )
+                for frame_index in range(start_frame, MAX_FRAMES):
                     ok, frame = capture.read()
                     if not ok:
                         break
+                    if frame_index in wanted_checkpoints:
+                        save_checkpoint(frame_index, prompt_memories, frame_memories)
                     model_frame = _prepare_frame(frame, args)
                     if condition_writer is not None:
                         condition_writer.write(model_frame)
@@ -871,7 +953,7 @@ def run(args: argparse.Namespace) -> int:
                         first_usable = perf_counter() - start
             else:
                 # Preserve the per-frame contract even when no initial concept produces a mask.
-                for frame_index in range(1, MAX_FRAMES):
+                for frame_index in range(start_frame, MAX_FRAMES):
                     ok, frame = capture.read()
                     if not ok:
                         break
@@ -946,6 +1028,66 @@ def _positive_frame_count(value: str) -> int:
     return frame_count
 
 
+def _frame_list(value: str) -> tuple[int, ...]:
+    frames = tuple(sorted({int(item) for item in value.split(",") if item.strip()}))
+    if any(frame < 1 for frame in frames):
+        raise argparse.ArgumentTypeError("checkpoint frames must be at least 1")
+    return frames
+
+
+def stream_identity(args: argparse.Namespace, concepts: tuple[str, ...]) -> str:
+    """Hash everything that decides what this stream produces frame by frame.
+
+    A checkpoint may only be resumed by a run whose video, model, encoder settings,
+    preprocessing, and initialization would have produced that exact tracker state.
+    """
+    video_path = Path(args.video)
+    model_path = Path(args.model)
+    payload = {
+        "video": str(video_path.resolve()),
+        "video_size_bytes": video_path.stat().st_size if video_path.is_file() else None,
+        "model": str(model_path.resolve()),
+        "model_size_bytes": model_path.stat().st_size if model_path.is_file() else None,
+        "view_id": args.view_id,
+        "source_offset_seconds": args.source_offset_seconds,
+        "analysis_fps": args.analysis_fps,
+        "max_side_length": args.max_side_length,
+        "max_frame_memory": args.max_frame_memory,
+        "preprocessing": args.preprocessing,
+        "lower_percentile": args.lower_percentile,
+        "upper_percentile": args.upper_percentile,
+        "clahe_clip_limit": args.clahe_clip_limit,
+        "clahe_tile_grid_size": args.clahe_tile_grid_size,
+        "prompt_mode": args.prompt_mode,
+        "concepts": list(concepts),
+        "text_targets_json": args.text_targets_json,
+        "hybrid_initialization_json": args.hybrid_initialization_json,
+        "manual_box_json": args.manual_box_json,
+        "manual_seeds_json": args.manual_seeds_json,
+        "multi_keyframe_schedule_json": args.multi_keyframe_schedule_json,
+    }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+
+
+def checkpoint_frames(
+    *,
+    every: int,
+    correction_frames: tuple[int, ...],
+    extra_frames: tuple[int, ...],
+    max_frames: int,
+) -> frozenset[int]:
+    """Choose the frames whose tracker state is worth keeping.
+
+    Correction keyframes are always included: they are where a reviewer re-seeds a
+    target, so they are exactly the frames a later run wants to restart from.
+    """
+    frames = {frame for frame in correction_frames if 0 < frame < max_frames}
+    frames.update(frame for frame in extra_frames if 0 < frame < max_frames)
+    if every > 0:
+        frames.update(range(every, max_frames, every))
+    return frozenset(frames)
+
+
 def main() -> None:
     global MAX_FRAMES, MAX_SIDE_LENGTH, MAX_FRAME_MEMORY, ANALYSIS_FPS, MASK_PERIOD_FRAMES
 
@@ -1015,9 +1157,32 @@ def main() -> None:
         default=MASK_PERIOD_FRAMES,
         help="Write mask PNGs every N analysis frames; 1 writes one per object on every frame.",
     )
+    parser.add_argument(
+        "--checkpoint-every",
+        type=int,
+        default=0,
+        help="Save tracker state every N frames; 0 saves only the correction keyframes.",
+    )
+    parser.add_argument(
+        "--checkpoint-at",
+        type=_frame_list,
+        default=(),
+        help="Additional comma-separated frames whose tracker state should be saved.",
+    )
+    parser.add_argument(
+        "--no-checkpoints",
+        action="store_true",
+        help="Save no tracker state, not even at correction keyframes.",
+    )
+    parser.add_argument(
+        "--resume-from-checkpoint",
+        help="Restore tracker state from this checkpoint and continue from its frame.",
+    )
     args = parser.parse_args()
     if args.mask_period_frames < 1:
         parser.error("--mask-period-frames must be at least 1")
+    if args.checkpoint_every < 0:
+        parser.error("--checkpoint-every must not be negative")
     MAX_FRAMES = args.max_frames
     MAX_SIDE_LENGTH = args.max_side_length
     MAX_FRAME_MEMORY = args.max_frame_memory

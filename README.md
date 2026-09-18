@@ -1395,6 +1395,31 @@ uv run battle-build-interaction-review-v4 \
   --output-root runs/iteration --layers reference_masks,stabilized_wilor
 ```
 
+### Resuming a SAM3 correction rerun
+
+Adding one correction keyframe used to mean re-streaming the whole clip, because the
+tracker's memory at frame *k* only exists if frames `[0,k)` were stepped. The worker now
+saves that memory at every correction keyframe (and every `--checkpoint-every` frames) to
+`native/checkpoints/f<frame>.pt`, so a rerun can restart at the keyframe it is changing:
+
+```bash
+uv run battle-muggled-smoke --config configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_g2.json \
+  --view static-c10379 --four-part-static-focused --max-side-length 720 \
+  --multi-keyframe-correction-schedule runs/<calibration>/multi_keyframe_correction_schedule.json \
+  --resume-run runs/<prior-run> --resume-at 1172
+```
+
+The resumed run copies the prior run's rows and mask PNGs for `[0,1172)` byte for byte and
+steps only `[1172,2781)`. A checkpoint is refused unless the video, model, encoder
+settings, preprocessing, and initialization hash to the same stream, and the run manifest
+records `mode: checkpoint_resumed` with the prior run, the resume frame, and the
+checkpoint's fingerprint, so a resumed stream is never presented as a continuous one.
+
+Measured on the focused four-part run: worker inference fell from 191.1 s to 112.2 s when
+resuming at frame 1172 of 2,781, and all 2,781 frames were bit-identical to the
+continuous run. `uv run pytest -m gpu` asserts that equivalence on the 300-frame smoke.
+Each checkpoint is about 6.6 MB, and they live under the ignored run directory.
+
 ### Cached digests and probes
 
 Builders also stop re-reading unchanged inputs. `src/battle/digest_cache.py` remembers a

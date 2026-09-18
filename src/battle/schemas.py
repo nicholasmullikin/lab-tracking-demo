@@ -544,11 +544,34 @@ class AdapterMetadata(VersionedModel):
 class StreamContinuityPolicy(VersionedModel):
     """Bounded rolling memory with no chunk boundary or intentional ID reset."""
 
-    mode: Literal["continuous_stream"] = "continuous_stream"
+    mode: Literal["continuous_stream", "checkpoint_resumed"] = "continuous_stream"
     intentional_id_resets: Literal[False] = False
     max_prompt_memory_entries: int = Field(ge=1)
     max_frame_memory_entries: int = Field(ge=1)
     detected_object_limit: int = Field(ge=1)
+    resumed_from_run: str | None = Field(
+        default=None,
+        description="Run whose observations and masks this run reuses before its resume frame.",
+    )
+    resumed_at_frame: int | None = Field(
+        default=None,
+        gt=0,
+        description="First frame this run stepped itself; earlier frames are copied unchanged.",
+    )
+    checkpoint_fingerprint: ArtifactFingerprint | None = None
+
+    @model_validator(mode="after")
+    def require_complete_resume_provenance(self) -> StreamContinuityPolicy:
+        resume_fields = (self.resumed_from_run, self.resumed_at_frame, self.checkpoint_fingerprint)
+        if self.mode == "continuous_stream":
+            if any(field is not None for field in resume_fields):
+                raise ValueError("a continuous stream cannot claim resume provenance")
+            return self
+        if any(field is None for field in resume_fields):
+            raise ValueError(
+                "a resumed stream must name its prior run, resume frame, and checkpoint"
+            )
+        return self
 
 
 class RuntimeMeasurements(VersionedModel):

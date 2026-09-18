@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
@@ -256,6 +257,60 @@ def require_four_part_ego_focused_range(
     return FrameRange(start_frame=start_frame, end_frame_exclusive=FOUR_PART_FOCUSED_FRAMES)
 
 
+def checkpoint_path_for(run_directory: Path, frame_index: int) -> Path:
+    return run_directory / "native" / "checkpoints" / f"f{frame_index:06d}.pt"
+
+
+def prepare_resume(
+    *, prior_run: Path, resume_at: int, run_directory: Path, repository_root: Path
+) -> tuple[Path, ArtifactFingerprint]:
+    """Copy a prior run's frames before `resume_at` so a rerun only re-steps the tail.
+
+    The copied prefix is bit-identical to the prior run, which is the whole point: the
+    tracker state saved at `resume_at` was produced by exactly those frames, so the run
+    may not recompute them and may not claim to have stepped them.
+    """
+    checkpoint = checkpoint_path_for(prior_run, resume_at)
+    if not checkpoint.is_file():
+        raise ValueError(
+            f"{prior_run} has no tracker checkpoint for frame {resume_at}; rerun it with "
+            "--checkpoint-at or --checkpoint-every to make one"
+        )
+    kept: list[tuple[str, FrameObservations]] = []
+    for line in (prior_run / "observations.jsonl").read_text().splitlines():
+        if not line.strip():
+            continue
+        observation = FrameObservations.model_validate_json(line)
+        if observation.analysis_frame_index < resume_at:
+            kept.append((line, observation))
+    if len(kept) != resume_at:
+        raise ValueError(
+            f"{prior_run} holds {len(kept)} rows before frame {resume_at}; a resume needs "
+            "one row for every earlier frame"
+        )
+    run_directory.mkdir(parents=True, exist_ok=True)
+    (run_directory / "masks").mkdir(exist_ok=True)
+    with (run_directory / "observations.jsonl").open("w") as output:
+        for line, observation in kept:
+            for item in observation.objects:
+                if item.mask is None:
+                    continue
+                source = prior_run / item.mask.uri
+                if not source.is_file():
+                    raise FileNotFoundError(f"prior run mask is unavailable: {source}")
+                destination = run_directory / item.mask.uri
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, destination)
+            # The prior line is written back verbatim: the prefix must be the prior run's
+            # bytes, not a re-serialization that happens to validate the same way.
+            output.write(line + "\n")
+    return checkpoint, ArtifactFingerprint(
+        uri=relative_uri(checkpoint, repository_root),
+        sha256=sha256_file(checkpoint),
+        source="measured",
+    )
+
+
 def load_observations(path: Path) -> tuple[FrameObservations, ...]:
     """Validate streaming worker records one line at a time."""
     observations: list[FrameObservations] = []
@@ -302,6 +357,8 @@ def _run_worker(
     hybrid_initialization: dict[str, Any] | None = None,
     manual_seeds: dict[str, Any] | None = None,
     multi_keyframe_schedule: dict[str, Any] | None = None,
+    resume_from_checkpoint: Path | None = None,
+    checkpoint_every: int = 0,
 ) -> dict[str, Any]:
     environment = os.environ.copy()
     environment["CUDA_VISIBLE_DEVICES"] = "0"
@@ -330,7 +387,11 @@ def _run_worker(
         str(max_frame_memory),
         "--analysis-fps",
         str(analysis_fps),
+        "--checkpoint-every",
+        str(checkpoint_every),
     ]
+    if resume_from_checkpoint is not None:
+        command.extend(["--resume-from-checkpoint", str(resume_from_checkpoint)])
     if condition is not None:
         command.extend(
             [
@@ -1779,6 +1840,26 @@ def run_smoke(args: argparse.Namespace) -> Path:
         run_directory = (args.run_root / f"{run_id}-{suffix}").resolve()
         suffix += 1
     run_directory.mkdir(parents=True)
+    resume_at = 0
+    resume_checkpoint: Path | None = None
+    resume_continuity: dict[str, Any] = {}
+    if args.resume_run is not None:
+        if args.resume_at is None:
+            raise ValueError("--resume-run requires --resume-at")
+        resume_at = args.resume_at
+        prior_run = args.resume_run.resolve()
+        resume_checkpoint, checkpoint_fingerprint = prepare_resume(
+            prior_run=prior_run,
+            resume_at=resume_at,
+            run_directory=run_directory,
+            repository_root=repository_root,
+        )
+        resume_continuity = {
+            "mode": "checkpoint_resumed",
+            "resumed_from_run": relative_uri(prior_run, repository_root),
+            "resumed_at_frame": resume_at,
+            "checkpoint_fingerprint": checkpoint_fingerprint,
+        }
     proxy_path = (repository_root / proxy.proxy_uri).resolve()
     model_path = args.model.resolve()
     worker_path = Path(__file__).with_name("muggled_worker.py")
@@ -1946,11 +2027,14 @@ def run_smoke(args: argparse.Namespace) -> Path:
             hybrid_initialization=hybrid_payload,
             manual_seeds=manual_seed_payload,
             multi_keyframe_schedule=multi_keyframe_schedule_payload,
+            resume_from_checkpoint=resume_checkpoint,
+            checkpoint_every=args.checkpoint_every,
         )
 
     observations_path = run_directory / "observations.jsonl"
     observations = load_observations(observations_path) if observations_path.is_file() else ()
-    frames_processed = min(int(worker_result["frames_processed"]), requested_frames)
+    # A resumed run copies the prior prefix, which it did not step itself.
+    frames_processed = min(int(worker_result["frames_processed"]) + resume_at, requested_frames)
     if len(observations) != frames_processed:
         worker_result["state"] = "failed"
         worker_result["reason"] = (
@@ -2319,6 +2403,7 @@ def run_smoke(args: argparse.Namespace) -> Path:
             max_prompt_memory_entries=1,
             max_frame_memory_entries=args.max_frame_memory,
             detected_object_limit=len(configured_concepts),
+            **resume_continuity,
         ),
         runtime_settings={
             "external_python": str(args.external_python),
@@ -2587,7 +2672,33 @@ def main() -> None:
         type=Path,
         help=("Integrity-validated frame-0 seed plus later correction schedule."),
     )
+    parser.add_argument(
+        "--checkpoint-every",
+        type=int,
+        default=0,
+        help=(
+            "Save tracker state every N frames in addition to the correction keyframes, "
+            "so a later rerun can resume instead of re-streaming from frame zero."
+        ),
+    )
+    parser.add_argument(
+        "--resume-run",
+        type=Path,
+        help=(
+            "Prior run whose frames before --resume-at are copied unchanged and whose "
+            "tracker checkpoint continues this stream."
+        ),
+    )
+    parser.add_argument(
+        "--resume-at",
+        type=int,
+        help="First frame this run steps itself; requires a checkpoint at that frame.",
+    )
     args = parser.parse_args()
+    if args.resume_at is not None and args.resume_at < 1:
+        parser.error("--resume-at must be at least 1")
+    if args.resume_at is not None and args.resume_run is None:
+        parser.error("--resume-at requires --resume-run")
     if args.g3_full_static and args.max_frames == SMOKE_FRAMES:
         args.max_frames = G3_STATIC_FRAMES
     if args.g4_e4_candidate and args.max_frames == SMOKE_FRAMES:
