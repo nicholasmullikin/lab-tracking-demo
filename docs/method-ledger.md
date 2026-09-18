@@ -2521,3 +2521,105 @@ this comparison makes no accuracy or cross-method identity claim.
 - **Tests.** The Track 2 fixture tests cover the range guard's e4 exception and the skip
   decision for a view with no in-frame part; `real_data` covers the e4 run's agent-seed
   declaration through the shared multiview-run check. No viewer opened.
+
+### Sep 18: Track 7 preparation, LM-EEC ego-exo correspondence (CPU only, GPU job queued)
+
+- **Claim boundary first.** Every number this track will produce is an IoU between two
+  estimates of the same ego-view region: the LM-EEC prediction from a human C10379 mask, the ego
+  SAM3 mask of the Sep 16 run (human frame-0 seed, one tracker), and Track 5's visual hull
+  (agent-seeded static masks, fitted intrinsics, dataset extrinsics) projected into the ego
+  camera. Cross-source disagreement, not accuracy; no ego ground truth exists for the parts.
+  The ego video is monochrome and LM-EEC was trained on colour Aria frames; both views are
+  squashed to 480x480 inside the model. LM-EEC's released checkpoints are research artefacts of a
+  NeurIPS 2025 paper with no separate licence file (SAM 2 code Apache-2.0); Assembly101 is
+  CC BY-NC 4.0. Tonight: CPU only, the GPU was never touched (every check ran with
+  `CUDA_VISIBLE_DEVICES=""`); no viewer opened.
+- **Install (LM-EEC, inside the 90 min box; the ObjectRelator fallback was not needed).**
+  `juneyeeHu/LM-EEC` cloned to `/home/nick/src/LM-EEC` at `b37e50e50fd03ae8625e6100da37bad3dfeb6aa4`
+  (the pre-flight HEAD), own venv (Python 3.10 as in its `environment.yml`), torch 2.7.1+cu128 /
+  torchvision 0.22.1 (the upstream cu118 pins cannot drive the RTX 5070 Ti; 2.7.1+cu128 is the
+  build already proven on this machine), `pip install -e .` with `SAM2_BUILD_CUDA=0` (the
+  connected-components CUDA extension is optional post-processing), plus four imports the
+  package needs at construction time that its `setup.py` never declares (`timm`, `matplotlib`,
+  `scikit-learn`, `networkx`) and the inference tool's `natsort`/`pycocotools`/OpenCV. The
+  released weights are on the authors' Google Drive, not HF: `ExoEgo_checkpoint.pt`
+  (SHA-256 `b3130bcb…83dcd9c`, 1,003,932,430 B) and `EgoExo_checkpoint.pt` (`a79234ab…af259ad`,
+  1,003,932,238 B), fetched with `gdown`; both carry identical training metadata (epoch 60,
+  11,280 steps) and no direction label, so `ExoEgo` is used for exo->ego on its file name alone
+  (recorded as a claim boundary). The SAM 2.1 base-plus weights are symlinked from
+  Grounded-SAM-2 into `./checkpoint/` (the training config's path; inference does not read
+  them, the fine-tuned checkpoint holds every tensor: 627 keys load with no missing/unexpected
+  keys). Clock: clone at 06:32Z, model constructing on CPU at 06:43Z (11 min). All steps in
+  `scripts/install_lm_eec.sh` (idempotent, re-run clean in 8 s). Recorded in `docs/SOURCES.md` /
+  `docs/LICENSES.md`.
+- **What the CPU dry run proved.** (1) Config parses, `build_sam2_video_predictor_ego` constructs
+  `sam2.sam2_correspondence_predictor.SAM2VideoPredictor` on CPU (83.6 M parameters, image size
+  480) in 3.2 s, checkpoint loads with `map_location="cpu"`, `forward_image` runs on a dummy pair
+  (FPN 32x120x120 / 64x60x60 / 256x30x30). (2) The whole driver path ran end to end on CPU on a
+  copy of the real run directory with the model's five hard-coded `.to("cuda")` calls shimmed
+  (`--cpu-smoke`; `sam2/modeling/sam2_base.py:738,982,1237,1422,1648`): 47 pairs (4 parts x 12
+  keyframes minus interior at 1050), 23.8 s total, first output 3.3 s after start, 0.42 s per
+  frame, every prediction non-empty, model predicted-IoU 0.26-0.64 and object-score logits
+  8-13 on the first pairs. Those CPU masks are smoke output and were deleted; the real run
+  directory holds no `predictions.json` until the queue runs. (3) Reading the predictor: its
+  `ego_*` tensors are the *query* view and `exo_*` the *predicted* view whatever the cameras are
+  (the tool's `--swap False` therefore means exo->ego); `_get_orig_video_res_output1` returns
+  480x480 logits, not frame-sized ones, so the driver resizes to the target frame itself; frames
+  are read as `<key>.jpg` from one directory per view with a shared key list; the query mask
+  must be present on every frame fed (`propagate_in_video` skips frames without one), so the
+  twelve keyframes of one part are one twelve-frame clip in `sequence` mode (memory spans the
+  150-frame gaps it was not trained on; `--mode independent` resets per keyframe).
+- **Prepared (`battle-egoexo-correspondence prepare`, 3.3 s).**
+  `runs/egoexo-correspondence-first-minute-20260918/`: frames at C10379 analysis frames 0, 150,
+  ..., 1650 and ego HMC_21110305 frames `p + 4` (`floor((17649 + 2p - 17640) / 2)`; the half
+  frame is rounded down, so every ego frame is one pose frame = 16.7 ms *before* its exo frame,
+  the same integer-timeline convention as the Track 1 synchronized recordings; residual `-1`
+  recorded per pair), JPEG quality 95, 1280x720 and 954x720. Query masks: 47 human/agent
+  C10379 masks from `runs/ensemble-reference-first-minute-v1` (interior absent at 1050).
+  Reference masks: 43 ego SAM3 masks from the Sep 16 e3 run (absent: cabin at 150, 600, 900 and
+  rear_body at 900). Hull voxels available (Track 5, `hull_voxels_1fps.npz`, 1 fps covers every
+  keyframe): chassis on 7, rear_body on 9, cabin on 10 keyframes, interior never. Ego->exo for
+  the two hands is wired in the driver and `pairs.json` but `skipped`: neither run carries a hand
+  mask (`PerFrameHand` has no mask field). Queue job
+  `runs/overnight-multicam-20260918/jobs_t7_egoexo.json` (name `lm-eec-egoexo-correspondence`,
+  interpreter `/home/nick/src/LM-EEC/.venv/bin/python`, cwd the LM-EEC checkout because Hydra
+  resolves the config module from the package, `CUDA_VISIBLE_DEVICES=0`, 1800 s); `--dry-run`
+  clean. `run` prints the same argv and refuses to execute with CUDA hidden.
+- **Evaluate / rerun (CPU, ready; exercised on the smoke copy).** `evaluate` projects each hull
+  voxel's eight corners through `CameraRig` into the ego camera at the ego frame's pose frame
+  (raw 636x480 px scaled x1.5 to the proxy, pixel boxes filled, corners behind the camera
+  dropped) and writes `hull_projection/ego-hmc21110305/<part>/<key>.png`; visually the
+  projections sit on the parts in the ego frame (frame 0: chassis, cabin and rear_body coincide
+  with the ego SAM3 masks). On the smoke copy the reference-vs-hull IoU (SAM3 vs hull, no model
+  involved) had medians chassis 0.006 (n=7), rear_body 0.23 (n=9), cabin 0.0 (n=10): the ego
+  SAM3 run and the hull agree at frame 0 and disagree later (at 450 the SAM3 chassis is not where
+  the hull puts it), which is the same tracker drift the Sep 16 ego review reported and is the
+  yardstick any model number has to be read against. Typed `manifest.json`
+  (`egoexo_correspondence_evaluation`): per pair IoU vs SAM3, vs hull, SAM3 vs hull, the model's
+  predicted IoU and object score, areas, notes; per-part summaries; the five measures (coverage
+  = non-empty predictions / pairs, first output and driver time from `predictions.json`, runtime
+  = queue `job_end.duration_s`, VRAM = torch `max_memory_reserved` from the driver, ID resets
+  n/a); the queue record; claim boundaries. `rerun` writes `correspondence.rrd` (2.2 MB on the
+  smoke): two 2D views per keyframe (exo frame + query cut-outs; ego frame + prediction in
+  magenta, hull in white, SAM3 in part colours), an IoU time panel, the manifest.
+- **Tests (`tests/test_egoexo_correspondence.py`, 15 default + 2 `real_data`).** Keyframe list;
+  the clock mapping on the +9/0 rules (`p + 4`, residual -1), on equal rules, on +6/0, on the
+  inverse ego->exo direction (frame 10 -> 5, residual -1) and its refusal before the target
+  proxy (the inverse mapping initially forgot the target's own pose offset; the test caught it);
+  IoU edge cases; mask PNG round trip; hand-mask lookup by label; voxel corners and the box
+  rasteriser (fill, NaN drop, clipping, empty); hull projection on a fixture rig landing on the
+  rig's own projection and dropping voxels behind the camera; `prepare` on a fixture repository
+  (synthetic runs, fake frame reader, tiny checkpoints: mapping, JPEG sizes, missing masks ->
+  None, hull availability, skipped direction, fingerprints, queue job against `QueueSpec`);
+  `prepare` without a hull; `evaluate` + `rerun` on driver-shaped predictions (perfect / empty /
+  disjoint masks, per-pair notes, summaries, measures, queue record, de-duplicated skips) and
+  without a hull; `PredictionsFile`/`KeyframePair` typing; driver argv and queue job;
+  `summarize`. `real_data`: the prepared run directory (12 pairs, `p + 4`, files present, >= 40
+  query masks, sizes, queue job) and the LM-EEC checkout at the pinned commit with the 1 GB
+  checkpoint present. Default suite 419 passed.
+- **Not run.** The GPU job. After it: `uv run battle-egoexo-correspondence evaluate` then
+  `uv run battle-egoexo-correspondence rerun`. Known risks: the model asserts a 2-D query mask
+  and needs it on every frame fed (satisfied by construction); bf16 autocast on Blackwell with
+  torch 2.7.1 is the same stack the other queue jobs use; the direction of the two checkpoints is
+  a file-name inference, so if the exo->ego masks look like exo-view shapes the other checkpoint
+  is one `--checkpoint` swap away in `pairs.json`.

@@ -1849,6 +1849,54 @@ accuracy; wrists are cross-source disagreement; ego cameras excluded; CC BY-NC 4
 writes `comparison.rrd` with the dataset and aligned Kineo cameras, the Kineo body and the
 dataset hands in one world-mm view plus a wrist-disagreement time panel.
 
+### Ego-exo correspondence with LM-EEC (Sep 18, Track 7)
+
+`battle-egoexo-correspondence` asks a correspondence model, not geometry, where the C10379 part
+masks land in the ego view. [LM-EEC](https://github.com/juneyeeHu/LM-EEC) (NeurIPS 2025, SAM 2.1
+base-plus with a dual long-term memory and a memory-view mixture of experts, trained on
+Ego-Exo4D) lives in its own venv at `/home/nick/src/LM-EEC` (`scripts/install_lm_eec.sh`,
+idempotent: clone at the pinned commit, Python 3.10, torch 2.7.1+cu128 for the Blackwell GPU,
+editable install without the optional CUDA extension, the undeclared `timm`/`matplotlib`/
+`scikit-learn`/`networkx` imports, the two released checkpoints from the authors' Google Drive,
+a symlink to the existing SAM 2.1 base-plus weights, and a CPU-only construction check). The
+battle env gains no dependency. `prepare` (CPU) writes
+`runs/egoexo-correspondence-first-minute-20260918/`: twelve keyframe pairs every 150 frames as
+JPEGs (`frames/<view>/<key>.jpg`, the ego frame at `p + 4` per the measured clock rules, the half
+frame rounded down and the 16.7 ms residual recorded), the human/agent-corrected C10379 query
+masks per part from the ensemble reference run, the ego SAM3 masks per part for comparison, a
+typed `pairs.json` and the queue job `runs/overnight-multicam-20260918/jobs_t7_egoexo.json`
+(1800 s). The job runs `scripts/lm_eec_driver.py` under the LM-EEC interpreter from the LM-EEC
+checkout: one model load per direction, the twelve keyframes of a part as one clip through the
+predictor's `init_state`/`propagate_in_video` (its `ego_*` is the query view, `exo_*` the
+predicted view), 480x480 logits resized back to the target frame, `predictions.json` with the
+model's own predicted IoU and object score plus runtime and peak VRAM. Ego->exo for the two
+hands is wired but skipped: no ego hand masks exist in any run. `evaluate` (CPU) projects
+Track 5's hull voxels into the ego camera through the rig (eight corners per voxel, pixel boxes
+filled, per-frame ego pose) and reports IoU of the prediction against the ego SAM3 mask and
+against the hull projection per part per keyframe, plus SAM3-vs-hull as the reference-to-reference
+disagreement, the five pre-accuracy measures (runtime from the queue log, VRAM from the driver)
+and the claim boundaries. `rerun` writes `correspondence.rrd`: exo frame with the query cut-out
+beside the ego frame with the prediction (magenta), the hull projection (white) and the ego SAM3
+cut-out, an IoU time panel and the manifest.
+
+```bash
+scripts/install_lm_eec.sh                                   # idempotent; CPU verification
+uv run battle-egoexo-correspondence prepare                 # ~3 s, CPU (add --mode independent)
+uv run scripts/overnight_queue.py --dry-run runs/overnight-multicam-20260918/jobs_t7_egoexo.json
+# GPU, through the queue only
+uv run scripts/overnight_queue.py runs/overnight-multicam-20260918/jobs_t7_egoexo.json
+# CPU, after the job
+uv run battle-egoexo-correspondence evaluate
+uv run battle-egoexo-correspondence rerun
+# CPU smoke of the whole driver path with the model's hard-coded cuda calls shimmed
+CUDA_VISIBLE_DEVICES="" uv run battle-egoexo-correspondence run --cpu-smoke --run-dir <copy>
+```
+
+Everything the manifest reports is cross-source disagreement between three estimates (model,
+one tracker, a carved hull); the ego video is monochrome and the model never saw grey frames;
+the checkpoint direction is inferred from its file name; LM-EEC's weights are research
+artefacts and Assembly101 is CC BY-NC 4.0.
+
 ## Rerun hierarchy
 
 The fixture exporter records the following stable hierarchy:

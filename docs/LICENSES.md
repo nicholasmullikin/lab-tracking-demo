@@ -76,6 +76,14 @@ inputs outside Git.
   world scale, BVH, or hand-part claims. The Sep 18 multi-view arms (`battle-kineo-multiview`)
   stay under the same research/evaluation terms; their inputs and every comparison number
   derive from Assembly101 video, extrinsics and poses and inherit CC BY-NC 4.0.
+- **LM-EEC (Track 7):** the repository ships no LICENSE file; its code is SAM 2 (Apache-2.0
+  headers) plus the authors' NeurIPS 2025 additions, and the two released checkpoints are
+  research artefacts fine-tuned from Meta's SAM 2.1 base-plus (Apache-2.0) on Ego-Exo4D, whose
+  own licence (Ego-Exo4D license agreement, non-commercial research) travels with the weights.
+  Treat both checkpoints as research/non-commercial only; nothing is redistributed. Every
+  prediction is made on Assembly101 frames and masks and inherits CC BY-NC 4.0. The
+  ObjectRelator fallback (`wangzeze/ObjectRelator-Exo2Ego-Small`, LLaVA/PSALM stack, likewise
+  non-commercial) was not installed or run.
 
 ## Dependency and future-model review
 

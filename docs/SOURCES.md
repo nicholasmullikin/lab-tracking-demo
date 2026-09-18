@@ -281,6 +281,36 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
   `body_models/smplx/SMPLX_NEUTRAL.npz` (self-calibration arm only). Inputs are the eight
   static G1 proxies trimmed to 1,800 frames (fingerprints in `prepare.json`).
 
+## External source: LM-EEC (ego-exo correspondence, Sep 18, Track 7)
+
+- Repository: `https://github.com/juneyeeHu/LM-EEC` ("Robust Ego-Exo Correspondence with
+  Long-Term Memory", Hu et al., NeurIPS 2025, arXiv 2510.11417). Checkout
+  `/home/nick/src/LM-EEC` pinned at `b37e50e50fd03ae8625e6100da37bad3dfeb6aa4` (clean tree;
+  nothing edited). Code is Meta's SAM 2 (Apache-2.0 headers) plus the authors' additions; the
+  repository ships no LICENSE file of its own.
+- Environment: own venv (`.venv`, Python 3.10, torch 2.7.1+cu128, torchvision 0.22.1, editable
+  install with `SAM2_BUILD_CUDA=0`, plus `timm`, `matplotlib`, `scikit-learn`, `networkx`,
+  `natsort`, `pycocotools`, `opencv-python-headless`), created by `scripts/install_lm_eec.sh`.
+  The battle env is untouched.
+- Weights (retrieved Sep 18, 2026 with `gdown` from the authors' Google Drive folder
+  `1tc5HNWl0j7BcJE4uX0Bzb6PiYdlIWvXx`, linked from the README; not on Hugging Face):
+  `checkpoints/LM-EEC-checkpoint/ExoEgo_checkpoint.pt` SHA-256
+  `b3130bcbb8c907bf86a0c3afa321aa9d31c74ae64b842c71e1503ffba83dcd9c` (1,003,932,430 B) and
+  `EgoExo_checkpoint.pt` SHA-256
+  `a79234ab9ac20ca7a6d493ee8b65dbf970e6b5d0ace52321c500e850daf259ad` (1,003,932,238 B). Both are
+  full fine-tuned SAM 2.1 base-plus models (627 tensors, epoch 60, 11,280 steps) trained on the
+  Ego-Exo4D correspondence split; the direction each serves is not documented and is inferred
+  from the file name (`ExoEgo` -> exo query, ego prediction). The SAM 2.1 base-plus checkpoint
+  under `checkpoint/sam2.1_hiera_base_plus.pt` is a symlink to the Grounded-SAM-2 copy and is
+  not read at inference.
+- Battle-owned glue: `src/battle/egoexo_correspondence.py`, `scripts/lm_eec_driver.py` (run
+  under the LM-EEC interpreter), `scripts/install_lm_eec.sh`. Inputs: the C10379 and
+  HMC_21110305 G1 proxies (twelve keyframes each), the ensemble reference masks, the Sep 16 ego
+  SAM3 masks, the Track 5 hull voxels (fingerprints in `pairs.json`).
+- Fallback not exercised: `/home/nick/src/ObjectRelator` (cloned earlier, not installed) and
+  the `wangzeze/ObjectRelator-Exo2Ego-Small` checkpoint were not needed because LM-EEC installed
+  and constructed on CPU within the 90 min box.
+
 ## Candidate source: FineBio
 
 - Status: `pending access and license review`; no application or download is performed

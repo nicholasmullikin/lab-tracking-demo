@@ -58,6 +58,7 @@ battle-build-multiview-part-consensus = "battle.multiview_consensus:main"
 battle-build-multiview-static-comparison = "battle.multiview_review:main"
 battle-build-visual-hull = "battle.multiview_visual_hull:main"
 battle-multiview-ego-visibility = "battle.multiview_ego_audit:main"
+battle-egoexo-correspondence = "battle.egoexo_correspondence:main"
 battle-prepare-human-qa = "battle.human_qa:main"
 battle-human-qa-candidates = "battle.human_qa:candidate_main"
 
