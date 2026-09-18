@@ -29,9 +29,21 @@ ensemble segmentation reference (corrected SAM3 with provenance-tracked DAM4SAM 
 a WiLoR-primary stabilized hand layer with MediaPipe fallback, BoxMOT and Kineo body
 context, label-free review metrics, and, since Sep 18, the dataset's own 60 fps hand poses
 and 27 fine-grained action segments as external context. Grounded-SAM-2, SAMURAI, DAM4SAM,
-CLIP + Drop-DTW and BoxMOT exist as smoke-tier arms; ATHENA's intrinsics blocker was
-removed by fitting the dataset's own projection but no triangulation has been run. Human
-QA dispositions are pending for every method, and no accuracy claim is made anywhere.
+CLIP + Drop-DTW and BoxMOT exist as smoke-tier arms. Overnight on Sep 18 the multi-camera
+pass ran: all eight static views of the recording were fetched for the focused window with
+measured per-view clock offsets and fitted cameras (see "All eight static views" and
+"Shared multi-view geometry" below), SAM3 was run from agent-authored seeds on the seven new
+views plus e4 and combined into a cross-view consensus and a visual hull that independently
+flag the human-reported C10379 identity failures ("Cross-view SAM3, consensus, hull and ego
+audit"), ATHENA triangulated MediaPipe and WiLoR hands against the dataset 3D and showed
+WiLoR's hopping to be its per-frame depth ("ATHENA multi-view hands"), Kineo ran on eight
+cameras in both self-calibrated and known-camera arms ("Kineo, properly multi-camera"), and
+LM-EEC mapped C10379 part masks into the ego view at twelve keyframes ("Ego-exo
+correspondence with LM-EEC"). Every one of those results is cross-source disagreement on
+dataset context; the morning review guide is
+[`docs/review-guide-2026-09-18-multicam.md`](docs/review-guide-2026-09-18-multicam.md).
+Human QA dispositions are pending for every method, including the new agent seeds and the
+proposed `not_contact_eligible` intervals, and no accuracy claim is made anywhere.
 
 The rest of this file is the how-to: each section below gives the exact commands that
 reproduce a stage. No recordings, annotations, or model weights are included. The SAM3

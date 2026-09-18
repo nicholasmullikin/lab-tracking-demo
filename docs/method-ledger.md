@@ -37,30 +37,45 @@ no-annotation, no-accuracy-claims rule.
 
 | Goal (from the Sep 8 ask and plan) | Status | Evidence |
 | --- | --- | --- |
-| Typed manifests, fixture tests, inference-free Rerun exporter | Done | `src/battle/schemas.py`, `src/battle/exporter.py`; 335 tests in the 8 s default tier, 13 more behind `real_data`/`gpu` markers |
+| Typed manifests, fixture tests, inference-free Rerun exporter | Done | `src/battle/schemas.py`, `src/battle/exporter.py`; 419 tests in the 11 s default tier, 37 more behind `real_data` and 1 behind `gpu` |
 | Pin one Assembly101 segment with source/analysis/annotation/pose clocks | Done | `configs/clips/*.json`; nusar-9033, 215.000–395.000 s |
 | MuggledSAM/SAM3 running over the full 180 s static view | Done (aligned hybrid: three text, one reviewed mask) | [Sep 14 aligned hybrid](#sep-14-aligned-static-hybrid-candidate) |
 | MuggledSAM/SAM3 running over the full 180 s ego view | Done, but only with human-seeded masks | [Four-target 180 s baseline](#sep-9-evening-four-target-180-second-ego-baseline) |
-| Both views on one synchronized Rerun timeline | Done, with a caveat found Sep 17: the static video lags the dataset pose clock by 9 pose frames (~150 ms); the existing comparisons assumed zero relative offset and are not yet corrected | `battle-build-ego-static-comparison`; [Sep 15 four-part experiment](#sep-15-four-part-static-reassembly-experiment); [Sep 18 dataset reference](#sep-18-assembly101-dataset-hands-and-fine-grained-labels-in-the-v4-review) |
+| Both views on one synchronized Rerun timeline | Done; the 9-pose-frame (0.150 s) static lag found Sep 17 is now applied in the rebuilt two-view recordings `runs/four-part-focused-first-minute-comparison-offset-v2/` and `runs/ego-static-synchronized-comparison-offset-v2/` (static entries shift by 4 integer analysis frames, exact on `analysis_time`); the zero-offset originals are kept as superseded | `battle-build-ego-static-comparison`; [Sep 15 four-part experiment](#sep-15-four-part-static-reassembly-experiment); [Sep 18 Track 1](#sep-18-track-1-one-calibrated-rig-for-all-twelve-views-and-the-two-view-clock-fix) |
 | Five pre-accuracy measures recorded per run | Done | Every `worker_result.json` and `manifest.json` |
 | MediaPipe Hands static-view baseline (core spine) | Selected 60 s run complete | [hand-pose adapter](#hand-pose-adapter) |
 | Second method in the viewer (MediaPipe) | Done; merged into focused first-minute comparison | [hand-pose adapter](#hand-pose-adapter) |
 | Fixed two-timestamp human QA per completed method | Records prepared; human dispositions pending | Human-selected source frames 14,868/21,732; aligned static, ego, and preserved historical records under `docs/qa/` |
-| Exploratory queue (WiLoR, BoxMOT, CLIP + Drop-DTW, Grounded-SAM-2, SAMURAI, DAM4SAM, ATHENA, Kineo) | All eight attempted in one autonomous pass at smoke tier; four-part segmentation arms and a unified review surface built; ATHENA blocked on intrinsics until Sep 17; Kineo body-only partial | [Sep 16 queue](#sep-16-exploratory-queue-autonomous-pass); [review surface](#sep-16-final-unified-exploratory-review-surface) |
+| Exploratory queue (WiLoR, BoxMOT, CLIP + Drop-DTW, Grounded-SAM-2, SAMURAI, DAM4SAM, ATHENA, Kineo) | All eight attempted in one autonomous pass at smoke tier; four-part segmentation arms and a unified review surface built; ATHENA blocked on intrinsics until Sep 17 and Kineo body-only partial, both closed by the Sep 18 multi-camera rows below | [Sep 16 queue](#sep-16-exploratory-queue-autonomous-pass); [review surface](#sep-16-final-unified-exploratory-review-surface) |
+| Multi-view geometry (8 static + 4 ego cams, dataset extrinsics, fitted intrinsics) | Done, as external context (not in the plan): 7 static views fetched by HTTP Range for the 92.7 s window only, per-view clock offsets measured (+5..+9 pose frames static, 0 ego), 12 camera estimates checked in; the rig reproduces the dataset's shipped 2D to <= 0.0023 px RMS (static) and 0.27-5.1 px (ego) | `configs/assembly101/`, `runs/assembly101-multiview-rig-check/`; [Track 0](#sep-18-track-0-of-the-overnight-multicam-pass-all-static-views-per-view-clocks-per-view-cameras); [Track 1](#sep-18-track-1-one-calibrated-rig-for-all-twelve-views-and-the-two-view-clock-fix) |
+| Cross-view SAM3 consensus + visual hull | Done on the first minute with agent-authored seeds on 7 static views and e4 (no human has reviewed a mask on them); interior never seeded off C10379; consensus contradicts C10379 on chassis 585-702 and 1089-1172 and rear_body 1677-1800, the hull agrees on the chassis windows; 13 consensus and 37 hull `not_contact_eligible` proposals await human dispositions, nothing substituted | `runs/multiview-part-consensus-first-minute/`, `runs/multiview-visual-hull-first-minute/`, `runs/multiview-static-comparison-first-minute/`; [Track 2](#sep-18-track-2-of-the-overnight-multicam-pass-cross-view-sam3-with-a-geometric-combiner); [Track 5](#sep-18-track-5-of-the-overnight-multicam-pass-per-part-visual-hulls-from-eight-silhouettes); [Track 6](#sep-18-track-6-of-the-overnight-multicam-pass-the-other-ego-cameras) |
+| Multi-view hand triangulation (ATHENA on MediaPipe/WiLoR) | Done: ATHENA's own filter on an 8-view MediaPipe arm and a 3-view WiLoR arm; wrist disagreement vs the dataset tracker 20-29 mm median, fingertips roughly twice that; WiLoR's 3D hopping shown to be its per-frame depth and a triangulated wrist is 3.5-6x steadier (measured, not built) | `runs/athena-hands-first-minute-mediapipe/`, `runs/athena-hands-first-minute-wilor/`; [Track 3a](#sep-18-track-3a-mediapipe-on-every-static-view-plus-the-ego-mono-stress-test); [Track 3b](#sep-18-track-3b-athena-multi-view-hand-triangulation-against-the-dataset-3d); [GPU results](#sep-18-gpu-queue-results-wilor-arm-kineo-ego-exo) |
+| Kineo multi-camera | Done, both arms in 8.4 min of the 2 h box: known-camera wrists 17 mm median from the dataset's; self-calibrated cameras 7.3 deg / 115 mm median from the dataset's after similarity alignment (body consistent up to a similarity, camera placement not) | `runs/kineo-multiview-{known,selfcal}-first-minute-20260918/`; [Track 4 prep](#sep-18-track-4-preparation-kineo-on-all-eight-static-views-cpu-only-gpu-jobs-queued); [GPU results](#sep-18-gpu-queue-results-wilor-arm-kineo-ego-exo) |
+| Ego-exo correspondence (LM-EEC) | Done at 12 keyframes, un-deferred at the user's request: exo->ego IoU vs the ego SAM3 mask 0.41 chassis / 0.27 interior median, 0.00 rear_body and cabin; checkpoint direction inferred from the file name; hands skipped (no ego hand masks) | `runs/egoexo-correspondence-first-minute-20260918/`; [Track 7 prep](#sep-18-track-7-preparation-lm-eec-ego-exo-correspondence-cpu-only-gpu-job-queued); [GPU results](#sep-18-gpu-queue-results-wilor-arm-kineo-ego-exo) |
 | No training, no annotation project, no accuracy claims | Held, with one gate crossed on request: dataset poses and fine-grained labels were acquired Sep 17 as review context only | Reviewed masks are calibration seeds, not labels; no metric vs. ground truth anywhere; [Sep 17 acquisition](#sep-17-assembly101-poses-extrinsics-and-fine-grained-annotations-selective-acquisition) |
 | Four physical components through reassembly | Focused 92.7 s run completed; the first minute was human-reviewed Sep 17 and is the retained comparison window; identity failures at 279/573/1043 are the documented SAM3 limit | [Sep 15 four-part experiment](#sep-15-four-part-static-reassembly-experiment); [Sep 17 human review](#sep-17-first-minute-v4-human-review-and-follow-up-rebuild) |
 | Git history from the start | Missed, then repaired | First commit Sep 13 after five days of uncommitted work |
 | FineBio | Still pending | Not part of any run |
 | Audio | Deferred by plan | Not revisited |
 
-The honest summary, as of Sep 18: nine methods attempted, one clip, one minute reviewed
-closely. SAM3 with human seeds is the only method that completed both target views;
-MediaPipe and WiLoR completed the retained first minute of the static view; the rest are
-smoke-tier evidence. The SAM3 spine is at its ceiling for this part taxonomy (label
-migration between similar dark parts under rotation), the hand story has no trustworthy
-3D from any monocular source, and the review tooling built to iterate on that one clip is
-where most of the code and roughly half the time went. The multi-view line is now
-unblocked but untried.
+The honest summary, as of the morning of Sep 18: nine-plus methods attempted, one clip,
+one minute reviewed closely. SAM3 with human seeds is still the only method that completed
+both target views; MediaPipe and WiLoR completed the retained first minute of the static
+view; the rest are smoke-tier evidence. The SAM3 spine is at its ceiling for this part
+taxonomy (label migration between similar dark parts under rotation), and the review
+tooling built to iterate on that one clip is where most of the code and roughly half the
+time went. The multi-view line was tried overnight, on the dataset's own extrinsics and
+fitted intrinsics, with agent-authored seeds no human has looked at. What it found:
+cross-view consensus and a carved visual hull independently flag the human-reported C10379
+identity failures (chassis 585-702 and 1089-1172) and do not flag 279-408; WiLoR's 3D
+hopping is its per-frame depth guess, and a triangulated wrist removes it (depth step cut
+3.5-6x) while its 2D and articulation stay untouched; Kineo's body agrees with the dataset
+up to a similarity but its self-calibrated cameras sit 7 deg / 115 mm (median) from the
+dataset's under any alignment; LM-EEC finds the chassis and interior in the monochrome ego
+view in about half the keyframes and never the rear body or cabin; and the dataset's own
+hand poses, which every one of those numbers is measured against, are themselves a
+tracker's estimate that stretches when fingers hide behind the held part. Every number on
+that line is cross-source disagreement between estimates, not accuracy.
 
 ### Timeline
 
@@ -302,6 +317,41 @@ unblocked but untried.
 - Clean-up: `ruff format` applied tree-wide, stale front matter here refreshed, 72
   unreferenced run directories (1.86 GB) listed for the user's deletion decision.
 
+#### Sep 18, overnight: multi-camera pass
+
+Run unattended from the user's plan (`overnight_multicam_pass`), one commit and one ledger
+section per track; GPU work only through a serial queue with a kernel-error watchdog (25
+jobs, 25 succeeded, no `NVRM`/`Xid` line). The morning review guide is
+[`docs/review-guide-2026-09-18-multicam.md`](review-guide-2026-09-18-multicam.md).
+
+- Track 0 (`0fdfeb7`). The seven remaining static views fetched for the 92.7 s window only
+  (1.85 GB, 10-11 % of each file), 720p proxies, per-view clock offsets (+5..+9 pose frames
+  static, 0 ego; C10379's +9 is the largest) and twelve camera estimates checked in. Record:
+  [Track 0](#sep-18-track-0-of-the-overnight-multicam-pass-all-static-views-per-view-clocks-per-view-cameras).
+- Queue runner (`994fbd5`). Record: [queue runner](#sep-18-overnight-gpu-queue-runner).
+- Track 1 (`a2e4157`). `CameraRig` over all twelve views; the two-view recordings rebuilt
+  with the measured 0.150 s static lag, closing the Sep 17 debt. Record:
+  [Track 1](#sep-18-track-1-one-calibrated-rig-for-all-twelve-views-and-the-two-view-clock-fix).
+- Track 3 (`a7d9807`, `5c0d87e`). MediaPipe on every static view with a dataset-derived
+  crop (C10379, the close-up, is the weakest view); ATHENA triangulation of the eight views
+  against the dataset 3D, and the first honest reading of WiLoR's hopping. Records:
+  [Track 3a](#sep-18-track-3a-mediapipe-on-every-static-view-plus-the-ego-mono-stress-test),
+  [Track 3b](#sep-18-track-3b-athena-multi-view-hand-triangulation-against-the-dataset-3d).
+- Track 4 preparation (`3a81384`). Record:
+  [Track 4 prep](#sep-18-track-4-preparation-kineo-on-all-eight-static-views-cpu-only-gpu-jobs-queued).
+- Tracks 2, 5, 6 (`577df77`, `cd6d857`, `c7fe790`). Table-plane seed transfer failed from
+  the grazing C10379 camera, so seeds were triangulated from C10379 and the e3 human masks;
+  seven static SAM3 runs plus e4; cross-view consensus, visual hull, e1/e2 visibility audit.
+  Records:
+  [Track 2](#sep-18-track-2-of-the-overnight-multicam-pass-cross-view-sam3-with-a-geometric-combiner),
+  [Track 5](#sep-18-track-5-of-the-overnight-multicam-pass-per-part-visual-hulls-from-eight-silhouettes),
+  [Track 6](#sep-18-track-6-of-the-overnight-multicam-pass-the-other-ego-cameras).
+- Track 7 preparation (`4e6f0e2`). LM-EEC installed inside its 90 min box. Record:
+  [Track 7 prep](#sep-18-track-7-preparation-lm-eec-ego-exo-correspondence-cpu-only-gpu-job-queued).
+- GPU results (`5e11133`). WiLoR three-view arm, both Kineo arms, LM-EEC; 14.1 min of GPU
+  wall for the four job files. Record:
+  [GPU queue results](#sep-18-gpu-queue-results-wilor-arm-kineo-ego-exo).
+
 ### Plan versus actual
 
 What the plan said, what happened instead, and why, in one line each.
@@ -334,6 +384,15 @@ What the plan said, what happened instead, and why, in one line each.
   an optional visual reference". They are used exactly that way, but the acquisition
   itself crossed a gate the plan had closed, at the user's request, and it surfaced the
   static/pose clock offset that every earlier two-view comparison had missed.
+- Multi-view was reached, versus the plan's "Kineo as a final two-hour trial" and an ATHENA
+  trial time-boxed to format conversion on "shipped intrinsics" the archive turned out not
+  to have. It came through a door the plan did not draw: eight static views acquired for
+  the focused window, the dataset's own extrinsics, and intrinsics fitted to the dataset's
+  own 2D/3D projection, so every multi-view number is measured against dataset context
+  rather than a calibration of our own. Kineo used 8.4 min of its two hours; LM-EEC (the
+  brief's deferred ego-exo correspondence line) was un-deferred at the user's request and
+  ran inside its 90 min box. Seeds on the new views are agent-authored and labelled so,
+  per the overnight plan's ground rule; no human has reviewed a mask on any of them.
 - Masks per frame at full rate as RGBA cut-outs, versus the plan's 5 fps segmentation
   cadence in the `.rrd`; the plan's cadence rule is documented as superseded below.
 - Masks on every frame in Rerun, versus the historical external-PNG cadence of 5 fps
@@ -362,18 +421,45 @@ Human gates (nothing below can be claimed until these are recorded):
   first target-loss frames; the late reassembly has never been dispositioned and is
   currently treated as failure evidence only.
 - G5 claims gate, including the still-unanswered CC BY-NC question for any job-seeking or
-  demo use; it now covers the poses and annotations as well.
+  demo use; it now covers the poses, annotations and the seven newly fetched views as well.
+- Dispositions on the 13 consensus-proposed `not_contact_eligible` intervals for C10379
+  (`runs/multiview-part-consensus-first-minute/manifest.json`,
+  `proposed_validity_intervals`, all `applied: false`): chassis 585-604, 643-658, 665-689,
+  697-702, 1089-1163, 1167-1172, 1464-1471; rear_body 1525-1530, 1677-1751, 1759-1781,
+  1786-1800. The 37 hull proposals in
+  `runs/multiview-visual-hull-first-minute/manifest.json` are the noisier second signal.
+- Dispositions on the agent-authored frame-0 seeds of the seven new static views and e4
+  (`runs/multiview-seed-transfer-20260918/<view>/seed_manifest.json`, `selected_by: agent`):
+  no human has looked at a mask on any of those eight views, so every consensus and hull
+  number rests on them.
+- Whether the consensus/hull disagreement triggers should enter `contact_eligible` at all
+  (as `SegmentationValidityInterval` rows with provenance `human_feedback_report`), or stay
+  review triggers beside the ensemble reference.
+- LM-EEC checkpoint direction: `ExoEgo_checkpoint.pt` was used for exo->ego on its file
+  name alone; the other checkpoint is one `--checkpoint` swap away in `pairs.json`.
+- Whether to seed e1 (HMC_21176875) mid-minute: every part is outside its frame at frame 0,
+  so a run needs a profile that starts at the first frame the cabin is in view.
 
 Technical:
 
-- Static/ego clock offset: only the Sep 18 dataset hand layer applies the +9 pose-frame
-  static lag; `battle-build-ego-static-comparison` and the focused two-view build still
-  assume zero relative offset.
-- Multi-view: ATHENA triangulation and a static/ego correspondence audit are unblocked by
-  the fitted intrinsics and untried.
+- Static/ego clock offset: fixed for the two rebuilt two-view recordings
+  (`runs/*-offset-v2/`) and applied per view everywhere in the multi-camera pass; the
+  offsets are per-camera constants measured on the focused window only, with the half
+  analysis frame left unresampled (16.7 ms residual in the manifests).
+- Interior was never seeded on any view other than C10379 (its two-clock triangulation is
+  invalid because it is in the hand at frame 0), so it has no consensus, no hull and no
+  ego-exo hull reference; a same-clock second human view, or seeding at the first frame it
+  rests on the table, would fix it.
+- Kineo self-calibration: cameras land ~37 % closer to the subject with 4-11 deg of
+  compensating rotation (one subject in a ~1 m volume at 2-3 m range); the camera
+  comparison is the honest result of that arm and its wrist numbers under the camera
+  alignment are dominated by it.
+- WiLoR wrist substitution (triangulated wrist + WiLoR articulation as a hand series) is
+  measured, not built; per-view weights for the ego camera in triangulation; the thumb
+  correspondence.
 - Human-review nits not yet addressed: SAM mask palette (orange on yellow), skeleton lines
   for Kineo body joints.
-- 72 unreferenced run directories (1.86 GB) plus the superseded
+- 74 unreferenced run directories (1.93 GB) plus the superseded
   `runs/interaction-review-first-minute-v4-local` await a deletion decision;
   `scripts/prune_runs.py` lists them and never deletes.
 - `yellow_toy_top` leaves the frame at ~216.2 s in every 180 s arm; its coverage numbers
