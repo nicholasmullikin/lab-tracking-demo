@@ -2024,3 +2024,56 @@ this comparison makes no accuracy or cross-method identity claim.
   dataset hand from three static views to 0.01 mm, and the rig-check report meets the
   thresholds above. Exporter/comparison tests cover the shift metadata and the shifted static
   rows, view-id-to-camera mapping and the measured 0.150 s.
+
+### Sep 18: Track 3a, MediaPipe on every static view plus the ego mono stress test
+
+- **Claim boundary first.** Detection presence, handedness and landmark placement are model
+  outputs with no hand-pose ground truth. The per-view "wrist vs dataset 2D" numbers compare
+  MediaPipe's wrist against the dataset's own tracker projection (raw sensor pixels,
+  handedness-agnostic nearest match): cross-source distance, not accuracy. CPU only, no GPU
+  touched; no viewer opened. CC BY-NC 4.0 applies to the dataset assets.
+- **Adapter change.** `battle-mediapipe-hands` accepts any view of the given clip config (it
+  previously refused everything but `static-c10379`), and gained `--roi-from-dataset-2d
+  [--roi-margin 0.05]`: the inference crop is the union box of the dataset's shipped 2D hand
+  joints for that camera over the run (hands with confidence >= 0.5, joints inside the sensor)
+  padded by 5 % of the image per side, recorded in the manifest as `roi` plus
+  `roi_source`. The Sep 16 hand-tuned C10379 crop `0.45,0.35,0.55,0.65` is reproduced by the
+  derived rule to within 0.07 (`0.520,0.355,0.480,0.619`), which is why the derived ROI was
+  trusted on the other seven views instead of a copied crop; per-view crops span 12-31 % of
+  the image (C10390 smallest, C10118 largest). All seven static runs used the selected Sep 16
+  condition otherwise (full frame + 2x upscaled crop fusion, two-hand cap, 0.35 thresholds).
+  The ego mono proxy ran full-frame only (its joints fill the frame) with the same thresholds;
+  OpenCV decodes the yuv420p mono file as three identical channels, so MediaPipe saw a
+  grayscale RGB image, which is the stress: this model was trained on colour.
+- **Runs** (`runs/mediapipe-hands-<view>-60s-20260918/`, 1,800 frames each, four in parallel,
+  ~35 s wall each; `dataset_2d_check.json` in each run from `battle-hands-2d-check`). Five
+  measures per view: coverage (frames with >= 1 hand / with 2), time to first output, runtime,
+  VRAM n/a (CPU), ID resets n/a (hand ids are frame-local by contract). Wrist column: median
+  (p90) distance in raw px from each dataset wrist (confidence >= 0.5, inside the image) to the
+  nearest detected wrist, and how many of those dataset wrists had a detection within 150 px.
+
+  | view | frames with hand (two) | first output s | runtime s | wrist median (p90) px | within 150 px |
+  | --- | --- | --- | --- | --- | --- |
+  | C10095 | 1795 (304) | 0.126 | 35.3 | 32.2 (134.5) | 3226 / 3426 |
+  | C10115 | 1797 (1301) | 0.129 | 34.8 | 20.8 (207.3) | 2965 / 3427 |
+  | C10118 | 1800 (951) | 0.122 | 36.4 | 35.5 (280.6) | 2641 / 3427 |
+  | C10119 | 1800 (1122) | 0.130 | 34.1 | 19.8 (259.7) | 2773 / 3427 |
+  | C10379 (Sep 16 run, fixed crop) | 1648 (952) | 0.081 | 30.7 | 91.9 (340.1) | 2026 / 3428 |
+  | C10390 | 1759 (681) | 0.119 | 34.3 | 24.4 (118.3) | 3281 / 3427 |
+  | C10395 | 1350 (69) | 0.081 | 36.4 | 50.7 (249.9) | 1708 / 3427 |
+  | C10404 | 1800 (1492) | 0.095 | 34.1 | 17.3 (68.1) | 3119 / 3427 |
+  | HMC_21110305 mono (stress) | 446 (14) | 0.057 | 14.1 | 40.7 (265.9) | 483 / 2714 |
+
+  Reading: C10404, C10115 and C10119 are the strongest views (both hands in most frames,
+  wrists within ~20 px of the dataset's). C10395 finds a second hand in only 69 frames and
+  C10095 in 304, so they contribute mostly one hand to any triangulation. C10379, the close-up
+  that every earlier MediaPipe number was measured on, has the largest wrist disagreement
+  (91.9 px raw = 61 proxy px); a clock sweep over +5..+11 pose frames moves that median by
+  under 1 px, so it is not a synchronisation error but the view itself: hands are large and
+  frequently occluded by the held part, and the nearest-detection rule pays the full distance
+  to the other hand whenever one is missed (only 59 % of dataset wrists have a detection within
+  150 px, against 91 % on C10404). The ego mono stress arm fails as expected: hands in 446 of
+  1,800 frames, two hands in 14, on a camera the dataset says sees both hands almost always.
+- **Tests.** `tests/test_mediapipe_hands.py` +3: view-id to camera-name mapping, `real_data`
+  derived-ROI agreement with the Sep 16 crop, and the eight Sep 18 run directories with their
+  dataset checks (coverage and wrist-median floors).

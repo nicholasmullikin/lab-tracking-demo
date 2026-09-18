@@ -103,6 +103,31 @@ shows landmarks, hand skeletons, boxes, detection count, and mean handedness con
 Detection presence and handedness are model outputs without hand-pose ground truth, not
 accuracy measurements.
 
+### Sep 18: every static view, dataset-derived crop
+
+Any view of a clip config can be run. For the seven other static cameras the workspace
+crop is derived from the dataset's own 2D hand landmarks for that camera (union over the
+run plus a 5 % margin, recorded as `roi_source` in the manifest) instead of the hand-tuned
+C10379 crop; the ego mono proxy runs full-frame as a stress test. `battle-hands-2d-check`
+writes `dataset_2d_check.json` into each run: frames with a detection and the raw-pixel
+distance from each dataset wrist to the nearest detected wrist (cross-source distance, not
+accuracy).
+
+```bash
+for v in c10095 c10115 c10118 c10119 c10390 c10395 c10404; do
+  uv run battle-mediapipe-hands \
+    --config configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_all_static_g2.json \
+    --view static-$v --seconds 60 --run-id mediapipe-hands-$v-60s-20260918 \
+    --roi-from-dataset-2d --roi-upscale 2 --include-full-frame \
+    --min-detection-confidence 0.35 --min-presence-confidence 0.35 --min-tracking-confidence 0.35
+done
+uv run battle-mediapipe-hands \
+  --config configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_ego_g2.json \
+  --view ego-hmc21110305 --seconds 60 --run-id mediapipe-hands-hmc21110305-60s-20260918 \
+  --min-detection-confidence 0.35 --min-presence-confidence 0.35 --min-tracking-confidence 0.35
+uv run battle-hands-2d-check --views C10095 C10115 C10118 C10119 C10379 C10390 C10395 C10404 HMC_21110305
+```
+
 ## Audited exploratory queue
 
 The classifications below are deliberately strict. An “integrated smoke” has Battle

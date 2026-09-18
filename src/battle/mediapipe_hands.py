@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 import cv2
+import numpy as np
 
 from .exporter import export_run
 from .schemas import (
@@ -119,6 +120,69 @@ def parse_roi(value: str) -> NormalizedRoi:
     if x < 0 or y < 0 or width <= 0 or height <= 0 or x + width > 1 or y + height > 1:
         raise argparse.ArgumentTypeError("ROI must be a positive rectangle inside [0, 1]²")
     return x, y, width, height
+
+
+def camera_name(view_id: str) -> str:
+    """`static-c10379` -> `C10379`; `ego-hmc21110305` -> `HMC_21110305`."""
+    kind, _, rest = view_id.partition("-")
+    if kind == "static":
+        return rest.upper()
+    if kind == "ego" and rest.startswith("hmc"):
+        return f"HMC_{rest[3:]}"
+    raise ValueError(f"cannot map view id {view_id!r} onto a camera name")
+
+
+def dataset_hand_roi(
+    repository_root: Path,
+    view_id: str,
+    *,
+    frame_count: int,
+    margin: float = 0.05,
+    confidence_floor: float = 0.5,
+) -> NormalizedRoi:
+    """Normalised crop covering every dataset hand joint the view sees over the run.
+
+    The dataset's shipped 2D landmarks for this camera (raw sensor pixels, 60 fps pose clock)
+    are gathered at the pose frame each analysis frame shows under the view's measured clock
+    rule, hands below `confidence_floor` are skipped, joints outside the sensor are dropped,
+    and the union box is padded by `margin` of the image on each side.  This is a workspace
+    crop derived from dataset context, not a detection.
+    """
+    from .assembly101_camera_fit import raw_image_size
+    from .assembly101_clock_offset import (
+        POSES_ROOT,
+        SHIPPED_2D_WINDOW,
+        WINDOW_START_POSE_FRAME,
+        load_clock_rules,
+        load_window_confidences,
+        npz_key,
+    )
+    from .assembly101_fetch_view import RECORDING_ID
+
+    view = camera_name(view_id)
+    rule = load_clock_rules(repository_root).rule(view)
+    with np.load(repository_root / SHIPPED_2D_WINDOW) as archive:
+        landmarks = np.asarray(archive[npz_key(view)], dtype=np.float64)
+    confidences = load_window_confidences(
+        repository_root / POSES_ROOT / "hand_confidences" / f"{RECORDING_ID}.json"
+    )
+    width, height = raw_image_size(view)
+    rows = [rule.pose_frame(frame) - WINDOW_START_POSE_FRAME for frame in range(frame_count)]
+    rows = [row for row in rows if 0 <= row < landmarks.shape[0]]
+    joints = landmarks[rows].reshape(len(rows), 2, 21, 2)
+    keep = confidences[rows] >= confidence_floor
+    points = joints[keep].reshape(-1, 2)
+    inside = (
+        (points[:, 0] >= 0) & (points[:, 0] < width) & (points[:, 1] >= 0) & (points[:, 1] < height)
+    )
+    points = points[inside]
+    if points.shape[0] == 0:
+        raise ValueError(f"no dataset hand joints inside {view} over {frame_count} frames")
+    x1 = max(0.0, points[:, 0].min() / width - margin)
+    y1 = max(0.0, points[:, 1].min() / height - margin)
+    x2 = min(1.0, points[:, 0].max() / width + margin)
+    y2 = min(1.0, points[:, 1].max() / height + margin)
+    return (float(x1), float(y1), float(x2 - x1), float(y2 - y1))
 
 
 def remap_landmarks(
@@ -313,8 +377,11 @@ def _verify_inputs(
         raise ValueError(f"seconds must be in (0, {MAX_SECONDS}]")
     config = G2PreprocessingManifest.model_validate_json(config_path.read_text())
     proxies = {proxy.view_id: proxy for proxy in config.proxies}
-    if view_id != DEFAULT_VIEW_ID or view_id not in proxies:
-        raise ValueError("MediaPipe primary baseline requires the approved static-c10379 view")
+    if view_id not in proxies:
+        raise ValueError(
+            f"view {view_id} is not a proxy of {config_path.name} "
+            f"(available: {', '.join(sorted(proxies))})"
+        )
     proxy = proxies[view_id]
     requested_frames = round(seconds * proxy.fps)
     if requested_frames > proxy.frame_count:
@@ -564,6 +631,19 @@ def run(args: argparse.Namespace) -> Path:
         args.run_id
         or f"mediapipe-hands-static-{args.seconds:g}s-{datetime.now(UTC):%Y%m%dt%H%M%Sz}"
     )
+    roi: NormalizedRoi | None = args.roi
+    roi_source = "fixed_workspace_crop" if roi is not None else None
+    if args.roi_from_dataset_2d:
+        roi = dataset_hand_roi(
+            repository_root,
+            args.view,
+            frame_count=requested_frames,
+            margin=args.roi_margin,
+        )
+        roi_source = (
+            "dataset_landmarks2d_union_over_run_plus_margin "
+            f"(margin {args.roi_margin:g}, confidence >= 0.5)"
+        )
     run_directory = (repository_root / args.output_root / run_id).resolve()
     run_directory.mkdir(parents=True, exist_ok=False)
     observations, measurements = _detect(
@@ -574,7 +654,7 @@ def run(args: argparse.Namespace) -> Path:
         fps=proxy.fps,
         source_offset_seconds=config.proxy_timing.source_seconds_for_frame(ClockName.ANALYSIS, 0),
         input_mirrored=args.input_mirrored,
-        roi=args.roi,
+        roi=roi,
         roi_upscale=args.roi_upscale,
         include_full_frame=args.include_full_frame,
         min_detection_confidence=args.min_detection_confidence,
@@ -594,7 +674,8 @@ def run(args: argparse.Namespace) -> Path:
         "analysis_fps": proxy.fps,
         "num_hands": 2,
         "input_mirrored": args.input_mirrored,
-        "roi": ",".join(str(value) for value in args.roi) if args.roi else None,
+        "roi": ",".join(str(value) for value in roi) if roi else None,
+        "roi_source": roi_source,
         "roi_upscale": args.roi_upscale,
         "include_full_frame": args.include_full_frame,
         "handedness_vote_frames": HANDEDNESS_VOTE_FRAMES,
@@ -695,11 +776,20 @@ def main() -> None:
         type=parse_roi,
         help="Normalized inference crop as x,y,width,height; outputs map to the full frame",
     )
+    parser.add_argument(
+        "--roi-from-dataset-2d",
+        action="store_true",
+        help=(
+            "Derive the ROI from the Assembly101 dataset 2D hand landmarks of this view "
+            "(union over the run plus --roi-margin); replaces --roi"
+        ),
+    )
+    parser.add_argument("--roi-margin", type=float, default=0.05)
     parser.add_argument("--roi-upscale", type=float, default=1.0)
     parser.add_argument(
         "--include-full-frame",
         action="store_true",
-        help="Fuse full-frame and ROI detections; requires --roi",
+        help="Fuse full-frame and ROI detections; requires --roi or --roi-from-dataset-2d",
     )
     parser.add_argument("--min-detection-confidence", type=float, default=0.5)
     parser.add_argument("--min-presence-confidence", type=float, default=0.5)
@@ -707,8 +797,12 @@ def main() -> None:
     args = parser.parse_args()
     if args.roi_upscale < 1:
         parser.error("--roi-upscale must be at least 1")
-    if args.include_full_frame and args.roi is None:
-        parser.error("--include-full-frame requires --roi")
+    if args.include_full_frame and args.roi is None and not args.roi_from_dataset_2d:
+        parser.error("--include-full-frame requires --roi or --roi-from-dataset-2d")
+    if args.roi is not None and args.roi_from_dataset_2d:
+        parser.error("--roi and --roi-from-dataset-2d are exclusive")
+    if not 0 <= args.roi_margin < 0.5:
+        parser.error("--roi-margin must be in [0, 0.5)")
     for name in (
         "min_detection_confidence",
         "min_presence_confidence",
