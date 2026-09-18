@@ -20,6 +20,7 @@ import rerun as rr
 import rerun.blueprint as rrb
 from PIL import Image, ImageDraw
 
+from . import mask_cache
 from .exploratory_comparison import (
     METHOD_COLORS,
     _drop_dtw_text,
@@ -28,7 +29,6 @@ from .exploratory_comparison import (
     _log_nlf_body,
     validate_artifact_fingerprint,
 )
-from .exporter import _rgba_mask_png
 from .fine_substep_contract import load_contract as load_fine_substep_contract
 from .fine_substep_contract import substep_for_frame
 from .four_part_contract import ANALYSIS_FPS, FRAME_COUNT, TARGETS, load_contract
@@ -260,13 +260,15 @@ def _mask_for_part(
     item = next((item for item in observation.objects if item.label == part and item.mask), None)
     if item is None or item.mask is None:
         return None
-    path = (run_directory / item.mask.uri).resolve()
-    if not path.is_relative_to(run_directory) or not path.is_file():
-        raise FileNotFoundError(f"reference mask is unavailable: {item.mask.uri}")
-    with Image.open(path) as image:
-        mask = np.asarray(image.convert("L"), dtype=np.uint8) > 0
+    cache = mask_cache.cache_for(run_directory)
+    try:
+        mask = cache.mask(item.mask.uri)
+    except (FileNotFoundError, ValueError) as error:
+        raise FileNotFoundError(f"reference mask is unavailable: {item.mask.uri}") from error
     if mask.shape != (dimensions[1], dimensions[0]):
-        raise ValueError(f"reference mask does not match the source pixels: {path}")
+        raise ValueError(
+            f"reference mask does not match the source pixels: {run_directory / item.mask.uri}"
+        )
     return mask
 
 
@@ -892,13 +894,16 @@ def _log_reference_masks(
         "rear_body": (255, 190, 45),
         "cabin": (255, 95, 100),
     }
+    cache = mask_cache.cache_for(directory)
     for part in TARGETS:
-        mask = _mask_for_part(observation, part, directory, dimensions)
-        if mask is not None:
+        item = next(
+            (item for item in observation.objects if item.label == part and item.mask), None
+        )
+        if item is not None and item.mask is not None:
             rr.log(
                 f"{masks_root}/{part}",
                 rr.EncodedImage(
-                    contents=_rgba_mask_png(mask, colors[part]),
+                    contents=cache.rgba_png(item.mask.uri, colors[part]),
                     media_type="image/png",
                     opacity=0.35,
                     draw_order=1.0,

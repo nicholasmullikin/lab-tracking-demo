@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 import argparse
-import io
 import json
 from pathlib import Path
 
 import numpy as np
 import rerun as rr
 import rerun.blueprint as rrb
-from PIL import Image
 
+from . import mask_cache
 from .fixtures import synthetic_run_manifest
 from .schemas import ClockName, EncodedAssetInput, FrameObservations, RunManifest
 
@@ -128,18 +127,14 @@ def _load_binary_masks(
 ) -> list[tuple[str, np.ndarray]]:
     """Read this frame's external binary masks, checking each stays inside the artifact root."""
     mask_root = mask_artifact_root.resolve()
+    cache = mask_cache.cache_for(mask_root)
     masks: list[tuple[str, np.ndarray]] = []
     expected_shape: tuple[int, int] | None = None
     for object_ in observation.objects:
         if object_.mask is None:
             continue
         mask_path = (mask_root / object_.mask.uri).resolve()
-        if not mask_path.is_relative_to(mask_root):
-            raise ValueError(f"mask reference escapes mask artifact root: {object_.mask.uri}")
-        if not mask_path.is_file():
-            raise FileNotFoundError(f"referenced mask is unavailable: {mask_path}")
-        with Image.open(mask_path) as mask_file:
-            binary_mask = np.asarray(mask_file.convert("L"), dtype=np.uint8) > 0
+        binary_mask = cache.mask(object_.mask.uri)
         if expected_shape is None:
             height, width = binary_mask.shape
             if video_dimensions is not None and (width, height) != video_dimensions:
@@ -169,17 +164,8 @@ def _segmentation_image(
 
 
 def _rgba_mask_png(binary_mask: np.ndarray, color: tuple[int, int, int]) -> bytes:
-    """Encode a binary mask as a PNG cut-out: object color where set, fully transparent elsewhere.
-
-    Masks are large flat regions, so even the fastest zlib level shrinks them to tens of
-    kilobytes. Speed matters more than the last few percent because this runs per object
-    per frame.
-    """
-    rgba = np.zeros((*binary_mask.shape, 4), dtype=np.uint8)
-    rgba[binary_mask] = (*color, 255)
-    buffer = io.BytesIO()
-    Image.fromarray(rgba, mode="RGBA").save(buffer, format="PNG", compress_level=1)
-    return buffer.getvalue()
+    """Encode a cut-out: the object colour where the mask is set, transparent elsewhere."""
+    return mask_cache.encode_rgba_mask_png(binary_mask, color)
 
 
 def _log_masks(
@@ -203,14 +189,18 @@ def _log_masks(
     )
     if mask_artifact_root is None:
         return
+    cache = mask_cache.cache_for(mask_artifact_root.resolve())
     masks = _load_binary_masks(
         observation, mask_artifact_root=mask_artifact_root, video_dimensions=video_dimensions
     )
+    references = {
+        object_.object_id: object_.mask.uri for object_ in observation.objects if object_.mask
+    }
     for object_id, binary_mask in masks:
         rr.log(
             f"{view_root}/{MASKS_PATH}/{object_id}",
             rr.EncodedImage(
-                contents=_rgba_mask_png(binary_mask, annotations[object_id][2]),
+                contents=cache.rgba_png(references[object_id], annotations[object_id][2]),
                 media_type="image/png",
                 opacity=MASK_OPACITY,
                 draw_order=1.0,

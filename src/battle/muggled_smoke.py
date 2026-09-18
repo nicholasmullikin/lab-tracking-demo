@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from . import mask_cache
 from .exporter import export_run
 from .schemas import (
     AdapterMetadata,
@@ -1113,6 +1114,18 @@ def _load_multi_keyframe_correction_schedule(
     )
 
 
+def _write_mask_cache_sidecar(run_directory: Path) -> None:
+    """Pack this run's masks so review builders skip re-decoding every PNG.
+
+    This runs after inference on the CPU and is never load-bearing: a run that cannot
+    write its cache is still complete, and builders fall back to the PNGs.
+    """
+    try:
+        mask_cache.write_sidecar(run_directory, mask_cache.logged_colors_by_uri(run_directory))
+    except Exception as error:  # noqa: BLE001 - a cache is an optimisation, not a result
+        print(f"mask cache sidecar skipped: {type(error).__name__}: {error}")
+
+
 def _create_bounded_rerun_video(
     *, proxy_path: Path, output_path: Path, run_directory: Path, frame_count: int
 ) -> Path:
@@ -2071,6 +2084,7 @@ def run_smoke(args: argparse.Namespace) -> Path:
                 ),
                 mask_artifact_root=run_directory,
             )
+            _write_mask_cache_sidecar(run_directory)
             method_statuses.append(
                 MethodStatus(
                     method_name="rerun-g3-candidate-export"

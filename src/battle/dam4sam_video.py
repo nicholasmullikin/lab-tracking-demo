@@ -12,6 +12,7 @@ from pathlib import Path
 
 import cv2
 
+from . import mask_cache
 from .exporter import export_run
 from .schemas import (
     AdapterMetadata,
@@ -434,6 +435,7 @@ def run(args: argparse.Namespace) -> Path:
             ),
             mask_artifact_root=run_directory,
         )
+        mask_cache.write_sidecar(run_directory, mask_cache.logged_colors_by_uri(run_directory))
     return manifest_path
 
 

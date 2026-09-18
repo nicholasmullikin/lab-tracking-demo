@@ -1351,6 +1351,26 @@ uv run pytest
 uv run battle-export-fixture --output artifacts/synthetic_fixture.rrd
 ```
 
+### Mask cache
+
+A review package walks the same masks three times: contact geometry, segmentation
+triggers, then the RGBA cut-outs the viewer draws. `src/battle/mask_cache.py` keeps one
+bounded in-memory cache per run directory and can persist `native/mask_cache.npz`,
+holding the bit-packed masks plus the cut-outs each mask is actually logged with. Each
+entry records its source PNG's size and modification time, so a rewritten mask falls
+back to the PNG instead of serving a stale cut-out.
+
+The SAM3 smoke and the SAM2-family video adapters write the sidecar after inference.
+Write one for any other run with:
+
+```bash
+uv run battle-cache-masks runs/<run-id>
+```
+
+For the 1,800-frame first-minute package this took the rebuild from about 85 s to 60 s
+through the shared in-memory cache, and to about 44 s with the sidecar present; the
+recording holds the same rows, in fewer and larger chunks.
+
 ### Test tiers
 
 The suite is tiered so the default run needs nothing but this repository. Tests that
