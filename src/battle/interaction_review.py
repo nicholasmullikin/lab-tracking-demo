@@ -81,9 +81,10 @@ DEFAULT_SOURCES = {
         "mediapipe", Path("runs/mediapipe-hands-static-20s-fused-dedup-th035-20260916t0428z")
     ),
     "wilor": SourceSpec("wilor", Path("runs/wilor-hands-static-20s-audited-source-state")),
-    "stabilized_wilor": SourceSpec(
-        "stabilized_wilor", Path("runs/wilor-hands-stabilized-20s-overnight-v2-r3")
-    ),
+    # v5 rebuild of the 20 s layer with the same bounded low-confidence lane-continuation gate
+    # as the first-minute layer; `runs/wilor-hands-stabilized-20s-overnight-v2-r3` is the
+    # pre-gate layer the earlier v2/v3 packages were built from.
+    "stabilized_wilor": SourceSpec("stabilized_wilor", Path("runs/wilor-hands-stabilized-20s-v5")),
     "boxmot": SourceSpec("boxmot", Path("runs/boxmot-yolo-static-20s-20260916t0445z")),
     "kineo": SourceSpec("kineo", Path("runs/kineo-nlf-fused-20s-overnight-v3")),
     "drop_dtw": SourceSpec("drop_dtw", Path("runs/drop-dtw-static-20s-pinned-openclip-rerun")),
