@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from conftest import require_artifact
 
 from battle.fixtures import synthetic_run_manifest
 from battle.interaction_review import (
@@ -442,11 +443,10 @@ def _rrd_row_counts(rrd_path: Path) -> tuple[dict[str, int], str]:
     return counts, printed
 
 
+@pytest.mark.real_data
 def test_exported_v4_rrd_carries_navigation_entities_and_blueprint_views() -> None:
     """Integration check against the ignored, rebuilt package (skipped when absent)."""
-    rrd_path = Path(V4_OUTPUT_ROOT) / V4_OUTPUT_NAME
-    if not rrd_path.is_file():
-        pytest.skip(f"{rrd_path} is not built in this checkout")
+    rrd_path = require_artifact(Path(V4_OUTPUT_ROOT) / V4_OUTPUT_NAME)
     counts, printed = _rrd_row_counts(rrd_path)
     roots = {path.split("/metadata/")[0] for path in counts if "/metadata/navigation/" in path}
     assert len(roots) == 1, roots
@@ -571,10 +571,10 @@ def test_hand_logging_keeps_2d_archetypes_out_of_the_3d_context_root(tmp_path) -
     ],
     ids=["first_minute_v4", "first_20s_v3"],
 )
+@pytest.mark.real_data
 def test_exported_rrd_spatial_roots_do_not_mix_2d_and_3d_archetypes(rrd_path: Path) -> None:
     """Integration check against the ignored, rebuilt packages (skipped when absent)."""
-    if not rrd_path.is_file():
-        pytest.skip(f"{rrd_path} is not built in this checkout")
+    require_artifact(rrd_path)
     _, printed = _rrd_row_counts(rrd_path)
     archetypes = _archetypes_by_entity(printed)
     three_d = {e: n for e, n in archetypes.items() if f"/{_3D_VIEW_ROOT}/" in e}

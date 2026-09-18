@@ -6,16 +6,15 @@ import base64
 import hashlib
 import io
 import json
-import shutil
 import subprocess
-import threading
 import urllib.error
 import urllib.request
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import numpy as np
 import pytest
+from conftest import require_executable
+from conftest import serve as shared_serve
 from PIL import Image
 from test_muggled_calibration_web import make_workspace, post_json
 
@@ -33,7 +32,6 @@ from battle.calibration_view_filters import (
     settings_key,
     unavailable_operator_ids,
 )
-from battle.muggled_calibration_web import make_handler
 
 EXPECTED_ORDER = (
     "brightness",
@@ -85,9 +83,7 @@ def directory_fingerprint(root: Path) -> dict[str, str]:
 
 
 def serve(workspace):
-    server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(workspace))
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    return server, f"http://127.0.0.1:{server.server_port}"
+    return shared_serve(workspace)
 
 
 def test_pipeline_declares_every_requested_control_in_a_fixed_order() -> None:
@@ -741,13 +737,12 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 """
 
 
+@pytest.mark.slow
 def test_headless_ui_renders_view_aids_without_touching_the_decode_request(
     tmp_path: Path,
 ) -> None:
     pytest.importorskip("vigra")
-    node = shutil.which("node")
-    if node is None:
-        pytest.skip("node is required for the view-aid UI regression test")
+    node = require_executable("node", "the view-aid UI regression test")
     workspace = make_workspace(tmp_path)
     write_fixture_frame(workspace, source_frame())
     workspace.add_or_update_prompt(

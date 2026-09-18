@@ -11,10 +11,10 @@ import threading
 import time
 import urllib.error
 import urllib.request
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
+from conftest import require_executable, serve
 
 from battle.muggled_calibration import (
     build_manifest,
@@ -25,7 +25,6 @@ from battle.muggled_calibration_web import (
     CANDIDATE_REVIEW_LOCK_REASON,
     WorkerClient,
     Workspace,
-    make_handler,
 )
 from battle.muggled_calibration_web import make_workspace as create_workspace
 from battle.muggled_smoke import load_manual_seed_target_config, sha256_file
@@ -284,7 +283,9 @@ def test_editing_an_accepted_live_prompt_invalidates_its_stale_choice(tmp_path: 
     assert not edited.selected_for_finalization
 
 
+@pytest.mark.slow
 def test_completed_live_decode_job_history_is_bounded(tmp_path: Path) -> None:
+    """Queues 40 decode jobs through the fixture decoder's per-batch sleep."""
     workspace = make_workspace(tmp_path)
     prompt = workspace.add_or_update_prompt(
         {
@@ -532,9 +533,7 @@ def test_calibration_ui_exposes_one_tracking_plan_action() -> None:
 
 def test_calibration_canvas_maps_css_and_dpr_to_model_pixels() -> None:
     """Exercise move and zoom without a browser or a real calibration workspace."""
-    node = shutil.which("node")
-    if node is None:
-        pytest.skip("node is required for the calibration canvas regression test")
+    node = require_executable("node", "the calibration canvas regression test")
     root = Path(__file__).parents[1]
     script = r"""
 const fs = require("node:fs");
@@ -819,9 +818,7 @@ def test_point_prompt_provenance_survives_finalization_and_locks_rejection(tmp_p
 
 def test_calibration_binary_mask_overlay_only_tints_positive_pixels() -> None:
     """A decoded grayscale zero pixel must not receive the selected target tint."""
-    node = shutil.which("node")
-    if node is None:
-        pytest.skip("node is required for the calibration canvas regression test")
+    node = require_executable("node", "the calibration canvas regression test")
     root = Path(__file__).parents[1]
     script = r"""
 const fs = require("node:fs");
@@ -917,9 +914,7 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 def test_calibration_canvas_switches_active_candidate_with_numeric_keys() -> None:
     """Render only the active mask and persist a numeric candidate acceptance."""
-    node = shutil.which("node")
-    if node is None:
-        pytest.skip("node is required for the calibration canvas regression test")
+    node = require_executable("node", "the calibration canvas regression test")
     root = Path(__file__).parents[1]
     script = r"""
 const fs = require("node:fs");
@@ -1052,9 +1047,7 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 
 def test_calibration_ui_rejects_hides_and_restores_a_candidate() -> None:
-    node = shutil.which("node")
-    if node is None:
-        pytest.skip("node is required for the calibration review regression test")
+    node = require_executable("node", "the calibration review regression test")
     root = Path(__file__).parents[1]
     script = r"""
 const fs = require("node:fs");
@@ -1182,9 +1175,7 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 def test_web_review_renders_all_four_configured_target_groups_headlessly() -> None:
     """Keep four decoded groups visible after the frame-0 review view loads."""
-    node = shutil.which("node")
-    if node is None:
-        pytest.skip("node is required for the calibration review regression test")
+    node = require_executable("node", "the calibration review regression test")
     root = Path(__file__).parents[1]
     script = r"""
 const fs = require("node:fs");
@@ -1469,10 +1460,7 @@ def test_http_rejection_persists_retains_artifact_excludes_proposals_and_can_und
     tmp_path: Path,
 ) -> None:
     workspace = make_workspace(tmp_path)
-    server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(workspace))
-    thread = __import__("threading").Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    base = f"http://127.0.0.1:{server.server_port}"
+    server, base = serve(workspace)
     try:
         (candidate,) = decode_candidates(workspace, [(0, "left_hand")])
         post_json(
@@ -1547,10 +1535,7 @@ def test_rejected_candidate_causes_finalization_validation_without_writing_plan(
 
 def test_http_rejected_candidate_cannot_create_correction_schedule(tmp_path: Path) -> None:
     workspace = make_correction_workspace(tmp_path)
-    server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(workspace))
-    thread = __import__("threading").Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    base = f"http://127.0.0.1:{server.server_port}"
+    server, base = serve(workspace)
     targets = ("left_hand", "right_hand", "yellow_toy_top", "black_toy_top_base")
     try:
         candidates = decode_candidates(
@@ -1661,10 +1646,7 @@ def test_worker_client_uses_persistent_no_gpu_jsonl_fixture(tmp_path: Path) -> N
 
 def test_static_and_state_routes_are_available_without_a_model(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
-    server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(workspace))
-    thread = __import__("threading").Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    base = f"http://127.0.0.1:{server.server_port}"
+    server, base = serve(workspace)
     try:
         assert b"Rapid SAM3 calibration" in urllib.request.urlopen(f"{base}/").read()
         state = json.loads(urllib.request.urlopen(f"{base}/api/state").read())
@@ -1693,10 +1675,7 @@ def test_no_worker_frame_preview_uses_local_ffmpeg_without_enabling_decode(
 ) -> None:
     workspace = make_workspace(tmp_path)
     workspace.decoder = None
-    server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(workspace))
-    thread = __import__("threading").Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    base = f"http://127.0.0.1:{server.server_port}"
+    server, base = serve(workspace)
 
     def fake_ffmpeg(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         assert command[0] == "ffmpeg"
@@ -1788,10 +1767,7 @@ def test_main_closes_the_workspace_on_keyboard_interrupt(
 
 def test_http_proposal_requires_human_accepted_frame_zero_candidate(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
-    server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(workspace))
-    thread = __import__("threading").Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    base = f"http://127.0.0.1:{server.server_port}"
+    server, base = serve(workspace)
 
     def request(path: str, body: dict[str, object]) -> dict[str, object]:
         value = urllib.request.Request(
@@ -1848,10 +1824,7 @@ def test_http_proposal_requires_human_accepted_frame_zero_candidate(tmp_path: Pa
 
 def test_http_finalize_tracking_plan_with_only_initial_masks(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
-    server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(workspace))
-    thread = __import__("threading").Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    base = f"http://127.0.0.1:{server.server_port}"
+    server, base = serve(workspace)
     try:
         (candidate,) = decode_candidates(workspace, [(0, "left_hand")])
         workspace.accept_candidate(candidate.candidate_id, 0, eligible=True)
@@ -1874,10 +1847,7 @@ def test_http_finalize_tracking_plan_with_only_initial_masks(tmp_path: Path) -> 
 
 def test_http_finalize_tracking_plan_with_later_corrections(tmp_path: Path) -> None:
     workspace = make_correction_workspace(tmp_path)
-    server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(workspace))
-    thread = __import__("threading").Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    base = f"http://127.0.0.1:{server.server_port}"
+    server, base = serve(workspace)
     targets = ("left_hand", "right_hand", "yellow_toy_top", "black_toy_top_base")
     try:
         candidates = decode_candidates(
@@ -1908,10 +1878,7 @@ def test_http_finalize_tracking_plan_rejects_missing_required_initial_target(
     tmp_path: Path,
 ) -> None:
     workspace = make_correction_workspace(tmp_path)
-    server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(workspace))
-    thread = __import__("threading").Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    base = f"http://127.0.0.1:{server.server_port}"
+    server, base = serve(workspace)
     try:
         candidates = decode_candidates(
             workspace,
@@ -1973,10 +1940,7 @@ def test_web_create_proposal_uses_configured_target_policy_without_ui_shape_erro
         "config_id": "e4-left-hand-right-hand-yellow-toy-top-black-toy-top-base",
         "required_target_count": 4,
     }
-    server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(workspace))
-    thread = __import__("threading").Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    base = f"http://127.0.0.1:{server.server_port}"
+    server, base = serve(workspace)
 
     def request(path: str, body: dict[str, object]) -> dict[str, object]:
         value = urllib.request.Request(
@@ -2252,9 +2216,7 @@ function mountDocument() {
 
 def test_calibration_panels_apply_markup_defaults_and_remember_state() -> None:
     """Fresh profiles follow the markup defaults; a stored choice wins on the next load."""
-    node = shutil.which("node")
-    if node is None:
-        pytest.skip("node is required for the calibration panel regression test")
+    node = require_executable("node", "the calibration panel regression test")
     static = Path(__file__).parents[1] / "src/battle/static/calibration"
     completed = subprocess.run(
         [
@@ -2341,10 +2303,7 @@ def test_finalized_plan_refuses_selection_until_it_is_reopened(tmp_path: Path) -
     """The lock explains itself, survives the attempt intact, and reopening lifts it."""
     workspace = make_workspace(tmp_path)
     workspace.decoder = MultiMaskFixtureDecoder()
-    server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(workspace))
-    thread = __import__("threading").Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    base = f"http://127.0.0.1:{server.server_port}"
+    server, base = serve(workspace)
     proposal_path = tmp_path / "proposed_tracking_prompt.json"
     try:
         (candidate,) = decode_candidates(workspace, [(0, "left_hand")])
@@ -2502,9 +2461,7 @@ def test_calibration_ui_puts_the_plan_lock_above_every_collapsible_panel() -> No
 
 def test_calibration_ui_offers_only_the_role_each_keyframe_can_play() -> None:
     """Later-keyframe cards expose corrections, never a dead frame-0 eligibility control."""
-    node = shutil.which("node")
-    if node is None:
-        pytest.skip("node is required for the calibration review regression test")
+    node = require_executable("node", "the calibration review regression test")
     root = Path(__file__).parents[1]
     script = r"""
 const fs = require("node:fs");
@@ -2674,9 +2631,7 @@ const reload = async () => {
 
 def test_calibration_ui_shows_the_plan_lock_and_reopens_for_editing() -> None:
     """A finalized plan disables review with a reason; Reopen restores mask selection."""
-    node = shutil.which("node")
-    if node is None:
-        pytest.skip("node is required for the calibration plan-lock regression test")
+    node = require_executable("node", "the calibration plan-lock regression test")
     root = Path(__file__).parents[1]
     script = r"""
 const fs = require("node:fs");

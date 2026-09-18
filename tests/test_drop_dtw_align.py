@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from pathlib import Path
+import pytest
+from conftest import require_artifact
 
 from battle.assembly101_gt_transcript import parse_coarse_transcript
 
 
+@pytest.mark.real_data
 def test_parse_coarse_transcript_returns_overlapping_steps() -> None:
-    labels_path = Path(
+    labels_path = require_artifact(
         "data/raw/assembly101/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532/"
         "annotations/coarse-annotations/coarse_labels/"
         "assembly_nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532.txt"

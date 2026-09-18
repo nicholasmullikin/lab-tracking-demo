@@ -1351,6 +1351,21 @@ uv run pytest
 uv run battle-export-fixture --output artifacts/synthetic_fixture.rrd
 ```
 
+### Test tiers
+
+The suite is tiered so the default run needs nothing but this repository. Tests that
+read the ignored `data/`, `runs/`, or `models/` trees carry `real_data` and are
+deselected by default; they name the missing path when the artifact is absent instead of
+failing. `gpu` is reserved for checks that need a CUDA device and local weights.
+
+```bash
+uv run pytest                                        # default tier, no ignored artifacts
+uv run pytest -m "not real_data and not gpu and not slow"  # fast loop
+uv run pytest -n auto                                # same tier across cores
+uv run pytest -m real_data                           # artifact integration checks
+uv run pytest -m gpu                                 # device-bound checks
+```
+
 The exporter writes already-normalized observations only: it never performs inference.
 It can log an input video once when an approved local proxy is supplied, while mask
 locations remain external/native artifact references. When a mask artifact root is

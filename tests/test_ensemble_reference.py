@@ -457,14 +457,16 @@ def provenance_parts() -> tuple[str, ...]:
     return ("chassis", "interior", "rear_body", "cabin")
 
 
+@pytest.mark.real_data
 def test_built_ensemble_run_matches_its_policy_and_sidecar() -> None:
     """Integration check against the ignored, built ensemble run (skipped when absent)."""
+    from conftest import require_artifact
+
     from battle.ensemble_reference import OUTPUT_ROOT, PROVENANCE_NAME, load_sidecar
     from battle.schemas import RunManifest
 
     run = Path(OUTPUT_ROOT)
-    if not (run / PROVENANCE_NAME).is_file():
-        pytest.skip(f"{run} is not built in this checkout")
+    require_artifact(run / PROVENANCE_NAME)
     sidecar = load_sidecar(run)
     manifest = RunManifest.model_validate_json((run / "manifest.json").read_text())
     assert manifest.ensemble_reference is not None

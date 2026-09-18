@@ -52,6 +52,7 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "pytest==9.1.1",
+    "pytest-xdist==3.8.0",
     "ruff==0.16.6",
 ]
 
@@ -64,3 +65,12 @@ select = ["E", "F", "I", "UP"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The default tier must pass in a fresh clone, so runs that need the ignored
+# data/runs/models trees or a GPU are opt-in. Passing -m on the command line
+# replaces this expression: `-m real_data`, `-m gpu`, or `-m "not slow"`.
+addopts = "-m 'not real_data and not gpu'"
+markers = [
+    "real_data: reads ignored data/, runs/, or models/ artifacts",
+    "slow: spends seconds in node, vigra, or ffmpeg subprocesses",
+    "gpu: needs a CUDA device and local model weights",
+]

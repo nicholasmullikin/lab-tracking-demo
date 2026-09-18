@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib
 import subprocess
 import time
 from collections import Counter, deque
@@ -14,7 +15,6 @@ from pathlib import Path
 from typing import Any
 
 import cv2
-import mediapipe as mp
 
 from .exporter import export_run
 from .schemas import (
@@ -358,6 +358,8 @@ def _detect(
     min_presence_confidence: float,
     min_tracking_confidence: float,
 ) -> tuple[tuple[FrameObservations, ...], RuntimeMeasurements]:
+    import mediapipe as mp  # Deferred: its audio tasks pull in sounddevice.
+
     start = time.perf_counter()
     first_output_seconds: float | None = None
     observations: list[FrameObservations] = []
@@ -649,7 +651,7 @@ def run(args: argparse.Namespace) -> Path:
         ),
         adapter=AdapterMetadata(
             name="mediapipe-hand-landmarker",
-            version=mp.__version__,
+            version=importlib.import_module("mediapipe").__version__,
             implementation_basis="MediaPipe Tasks Hand Landmarker VIDEO mode",
             external_source_uri="https://github.com/google-ai-edge/mediapipe",
         ),

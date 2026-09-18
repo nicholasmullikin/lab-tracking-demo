@@ -56,31 +56,11 @@ def test_comparison_blueprint_is_pinned_for_both_views() -> None:
     assert blueprint is not None
 
 
-def test_video_export_embeds_time_aligned_frames_in_the_observation_view(tmp_path: Path) -> None:
+def test_video_export_embeds_time_aligned_frames_in_the_observation_view(
+    tmp_path: Path, synthetic_video: Path
+) -> None:
     """Exercise the RRD structure that a viewer needs to show an overlay."""
-    video_path = tmp_path / "input.mp4"
-    subprocess.run(
-        [
-            "ffmpeg",
-            "-y",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-f",
-            "lavfi",
-            "-i",
-            "color=c=black:s=16x8:r=30",
-            "-frames:v",
-            "3",
-            "-an",
-            "-c:v",
-            "libx264",
-            "-pix_fmt",
-            "yuv420p",
-            str(video_path),
-        ],
-        check=True,
-    )
+    video_path = synthetic_video
     manifest = synthetic_run_manifest()
     clip = manifest.clip.model_copy(update={"views": ("ego-e4",)})
     observations = tuple(
@@ -130,30 +110,10 @@ def test_video_export_embeds_time_aligned_frames_in_the_observation_view(tmp_pat
     assert "analysis frame" in printed
 
 
-def test_comparison_export_embeds_synchronized_ego_and_static_views(tmp_path: Path) -> None:
-    video_path = tmp_path / "input.mp4"
-    subprocess.run(
-        [
-            "ffmpeg",
-            "-y",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-f",
-            "lavfi",
-            "-i",
-            "color=c=black:s=16x8:r=30",
-            "-frames:v",
-            "3",
-            "-an",
-            "-c:v",
-            "libx264",
-            "-pix_fmt",
-            "yuv420p",
-            str(video_path),
-        ],
-        check=True,
-    )
+def test_comparison_export_embeds_synchronized_ego_and_static_views(
+    tmp_path: Path, synthetic_video: Path
+) -> None:
+    video_path = synthetic_video
     ego_manifest = synthetic_run_manifest()
     static_manifest = ego_manifest.model_copy(
         update={

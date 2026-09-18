@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import pytest
+from conftest import require_artifact
 
 from battle.fine_substep_contract import load_contract
 from battle.fine_substep_pipeline import (
@@ -39,14 +41,17 @@ def test_sample_frame_indices_default_three_fps() -> None:
     assert len(frames) == 60
 
 
+@pytest.mark.real_data
 def test_build_crop_sample_prefers_wilor_over_mediapipe() -> None:
     wilor = FrameObservations.model_validate_json(
-        Path("runs/wilor-hands-static-20s-audited-source-state/observations.jsonl")
+        require_artifact("runs/wilor-hands-static-20s-audited-source-state/observations.jsonl")
         .read_text()
         .splitlines()[0]
     )
     mediapipe = FrameObservations.model_validate_json(
-        Path("runs/mediapipe-hands-static-20s-fused-dedup-th035-20260916t0428z/observations.jsonl")
+        require_artifact(
+            "runs/mediapipe-hands-static-20s-fused-dedup-th035-20260916t0428z/observations.jsonl"
+        )
         .read_text()
         .splitlines()[0]
     )
@@ -55,9 +60,12 @@ def test_build_crop_sample_prefers_wilor_over_mediapipe() -> None:
     assert sample.mediapipe_fallback_used is False
 
 
+@pytest.mark.real_data
 def test_build_crop_sample_falls_back_to_mediapipe() -> None:
     mediapipe = FrameObservations.model_validate_json(
-        Path("runs/mediapipe-hands-static-20s-fused-dedup-th035-20260916t0428z/observations.jsonl")
+        require_artifact(
+            "runs/mediapipe-hands-static-20s-fused-dedup-th035-20260916t0428z/observations.jsonl"
+        )
         .read_text()
         .splitlines()[0]
     )
@@ -127,18 +135,27 @@ def test_evaluate_against_agent_labels_reports_checkpoints() -> None:
     assert len(report["checkpoints"]) == len(contract.checkpoints)
 
 
+@pytest.mark.real_data
 def test_build_crop_manifest_from_real_runs() -> None:
     repo = Path(".")
     wilor = load_observations(
-        repo / "runs/wilor-hands-static-20s-audited-source-state/observations.jsonl"
+        require_artifact(
+            repo / "runs/wilor-hands-static-20s-audited-source-state/observations.jsonl"
+        )
     )
     mediapipe = load_observations(
-        repo / "runs/mediapipe-hands-static-20s-fused-dedup-th035-20260916t0428z/observations.jsonl"
+        require_artifact(
+            repo
+            / "runs/mediapipe-hands-static-20s-fused-dedup-th035-20260916t0428z/observations.jsonl"
+        )
     )
     parts = load_observations(
-        repo
-        / "runs/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260916t023700z"
-        / "observations.jsonl"
+        require_artifact(
+            repo
+            / "runs"
+            / "muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260916t023700z"
+            / "observations.jsonl"
+        )
     )
     samples = build_crop_manifest([0, 30, 300], wilor=wilor, mediapipe=mediapipe, parts=parts)
     assert len(samples) == 3

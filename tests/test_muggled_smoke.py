@@ -510,8 +510,14 @@ def _hybrid_worker_payload() -> dict[str, object]:
     }
 
 
+@pytest.mark.real_data
 def test_static_hybrid_contract_loads_reviewed_mask_with_manifest_provenance() -> None:
+    from conftest import require_artifact
+
     root = Path(__file__).parents[1]
+    require_artifact(
+        root / "runs/muggledsam-sam3-static-black-toy-top-base-calibration-20260914t022125z"
+    )
     g2_path = root / "configs/clips/assembly101_nusar_9033_g2.json"
     g2 = G2PreprocessingManifest.model_validate_json(g2_path.read_text())
     proxy = next(item for item in g2.proxies if item.view_id == "static-c10379")
@@ -544,8 +550,14 @@ def test_static_hybrid_contract_loads_reviewed_mask_with_manifest_provenance() -
     assert persisted["ground_truth_accuracy_claim"] is False
 
 
+@pytest.mark.real_data
 def test_full_hybrid_approval_binds_exact_reviewed_smoke_evidence() -> None:
+    from conftest import require_artifact
+
     root = Path(__file__).parents[1]
+    require_artifact(
+        root / "runs/muggledsam-sam3-static-black-toy-top-base-calibration-20260914t022125z"
+    )
     g2_path = root / "configs/clips/assembly101_nusar_9033_g2.json"
     g2 = G2PreprocessingManifest.model_validate_json(g2_path.read_text())
     proxy = next(item for item in g2.proxies if item.view_id == "static-c10379")

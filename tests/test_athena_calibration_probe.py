@@ -3,10 +3,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from battle.athena_calibration_probe import probe_archive
 
 
+@pytest.mark.slow
 def test_probe_archive_writes_member_inventory(tmp_path: Path) -> None:
+    """Range-probes the remote archive, so it needs the network rather than a GPU."""
     output_path = tmp_path / "probe.json"
     payload = probe_archive(
         repo="cvml-nus/assembly101",
