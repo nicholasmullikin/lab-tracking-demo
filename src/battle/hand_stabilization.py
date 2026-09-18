@@ -17,11 +17,18 @@ from .schemas import FrameObservations, NormalizedBox, NormalizedPoint, PerFrame
 
 DEFAULT_FRAME_COUNT = 600
 WILOR_MIN_CONFIDENCE = 0.55
+# A partially visible hand (a few fingers) often keeps a real WiLoR detection just under the
+# primary gate. Such detections are accepted only while they continue a lane that was
+# accepted at full confidence within MAX_FALLBACK_GAP frames, for at most
+# MAX_CONTINUATION_STREAK consecutive frames, and they are tagged distinctly.
+WILOR_CONTINUATION_MIN_CONFIDENCE = 0.35
+MAX_CONTINUATION_STREAK = 5
 MEDIAPIPE_MIN_CONFIDENCE = 0.85
 MAX_FALLBACK_GAP = 5
 MAX_LANE_DISTANCE = 0.16
 MIN_HAND_AREA = 0.0004
 MAX_HAND_AREA = 0.22
+DEDUP_WRIST_DISTANCE = 0.035
 
 
 @dataclass(frozen=True)
@@ -73,10 +80,58 @@ def _deduplicate(hands: tuple[PerFrameHand, ...]) -> list[PerFrameHand]:
     for hand in sorted(hands, key=lambda item: (-item.confidence, item.hand_id)):
         if hand.confidence < WILOR_MIN_CONFIDENCE or not _valid_shape(hand):
             continue
-        if any(float(np.linalg.norm(_wrist(hand) - _wrist(other))) < 0.035 for other in kept):
+        if any(
+            float(np.linalg.norm(_wrist(hand) - _wrist(other))) < DEDUP_WRIST_DISTANCE
+            for other in kept
+        ):
             continue
         kept.append(hand)
     return kept
+
+
+def _continuation_candidates(
+    hands: tuple[PerFrameHand, ...],
+    kept: list[PerFrameHand],
+    active: dict[str, tuple[PerFrameHand, np.ndarray, int]],
+    streaks: dict[str, int],
+    frame: int,
+    parts: FrameObservations | None,
+) -> dict[str, str]:
+    """Return {raw hand id: lane} for sub-gate WiLoR detections that continue a live lane.
+
+    Nothing here invents a position: every accepted hand is a real WiLoR detection on this
+    frame.  It only relaxes the confidence gate to WILOR_CONTINUATION_MIN_CONFIDENCE when the
+    wrist stays within MAX_LANE_DISTANCE of a lane accepted within MAX_FALLBACK_GAP frames and
+    that lane has not already run MAX_CONTINUATION_STREAK consecutive relaxed frames.
+    """
+
+    accepted: dict[str, str] = {}
+    taken: list[PerFrameHand] = list(kept)
+    for hand in sorted(hands, key=lambda item: (-item.confidence, item.hand_id)):
+        if not WILOR_CONTINUATION_MIN_CONFIDENCE <= hand.confidence < WILOR_MIN_CONFIDENCE:
+            continue
+        if not _valid_shape(hand) or not _workspace_supported(hand, parts):
+            continue
+        if any(
+            float(np.linalg.norm(_wrist(hand) - _wrist(other))) < DEDUP_WRIST_DISTANCE
+            for other in taken
+        ):
+            continue
+        nearest = sorted(
+            (
+                (float(np.linalg.norm(_wrist(hand) - _wrist(previous))), lane)
+                for lane, (previous, _, seen) in active.items()
+                if frame - seen <= MAX_FALLBACK_GAP
+                and streaks.get(lane, 0) < MAX_CONTINUATION_STREAK
+                and lane not in accepted.values()
+            ),
+            key=lambda item: (item[0], item[1]),
+        )
+        if not nearest or nearest[0][0] > MAX_LANE_DISTANCE:
+            continue
+        accepted[hand.hand_id] = nearest[0][1]
+        taken.append(hand)
+    return accepted
 
 
 def _workspace_distance(point: np.ndarray, parts: FrameObservations | None) -> float | None:
@@ -172,7 +227,9 @@ def stabilize(
     output: list[FrameObservations] = []
     provenance: list[HandProvenance] = []
     active: dict[str, tuple[PerFrameHand, np.ndarray, int]] = {}
+    continuation_streaks: dict[str, int] = {}
     fallback_frames = raw_frames = smoothed_frames = missing_frames = 0
+    continuation_instances = 0
     for frame in range(frame_count):
         raw = wilor[frame]
         candidates = _deduplicate(raw.hands)
@@ -182,6 +239,10 @@ def stabilize(
         supported = [hand for hand in candidates if _workspace_supported(hand, parts.get(frame))]
         if len(candidates) > 2 and len(supported) >= 2:
             candidates = supported
+        continuation = _continuation_candidates(
+            raw.hands, candidates, active, continuation_streaks, frame, parts.get(frame)
+        )
+        candidates = [*candidates, *(hand for hand in raw.hands if hand.hand_id in continuation)]
         source = "wilor"
         if not candidates:
             forward = next(
@@ -215,12 +276,17 @@ def stabilize(
                 ),
                 key=lambda item: (item[0], item[1]),
             )
-            lane = (
-                nearest[0][1]
-                if nearest and nearest[0][0] <= MAX_LANE_DISTANCE
-                else f"lane-{frame}-{index}"
-            )
+            continued_lane = continuation.get(hand.hand_id)
+            if continued_lane is not None and continued_lane in available:
+                lane = continued_lane
+            else:
+                lane = (
+                    nearest[0][1]
+                    if nearest and nearest[0][0] <= MAX_LANE_DISTANCE
+                    else f"lane-{frame}-{index}"
+                )
             previous = active.get(lane)
+            reason = "accepted_after_gates"
             if previous is not None and source == "wilor":
                 value, velocity = _smoothed_hand(hand, previous[0], previous[1])
                 state = "smoothed"
@@ -229,6 +295,13 @@ def stabilize(
                 value = hand
                 velocity = np.zeros(2)
                 state = "raw" if source == "wilor" else "fallback"
+            if continued_lane is not None:
+                state = "low_confidence_continuation"
+                reason = "wilor_confidence_below_gate_within_active_lane"
+                continuation_streaks[lane] = continuation_streaks.get(lane, 0) + 1
+                continuation_instances += 1
+            else:
+                continuation_streaks[lane] = 0
             rendered.append(value.model_copy(update={"hand_id": f"stabilized-{lane}"}))
             active[lane] = (hand, velocity, frame)
             available.pop(lane, None)
@@ -238,7 +311,7 @@ def stabilize(
                     f"stabilized-{lane}",
                     source,
                     state,
-                    "accepted_after_gates",
+                    reason,
                     hand.hand_id,
                 )
             )
@@ -258,7 +331,10 @@ def stabilize(
         "mediapipe_fallback_frames": fallback_frames,
         "missing_frames": missing_frames,
         "smoothed_hand_instances": smoothed_frames,
+        "low_confidence_continuation_instances": continuation_instances,
         "wilor_min_confidence": WILOR_MIN_CONFIDENCE,
+        "wilor_continuation_min_confidence": WILOR_CONTINUATION_MIN_CONFIDENCE,
+        "max_continuation_streak_frames": MAX_CONTINUATION_STREAK,
         "mediapipe_min_confidence": MEDIAPIPE_MIN_CONFIDENCE,
         "max_fallback_gap_frames": MAX_FALLBACK_GAP,
     }

@@ -93,7 +93,8 @@ FIRST_MINUTE_SOURCES = {
         "mediapipe", Path("runs/mediapipe-hands-static-60s-fused-dedup-th035-20260916t0430z")
     ),
     "wilor": SourceSpec("wilor", Path("runs/wilor-hands-static-60s-overnight-v2")),
-    "stabilized_wilor": SourceSpec("stabilized_wilor", Path("runs/wilor-hands-stabilized-60s-v4")),
+    # v5 adds the bounded low-confidence lane-continuation gate for finger-only hands.
+    "stabilized_wilor": SourceSpec("stabilized_wilor", Path("runs/wilor-hands-stabilized-60s-v5")),
     "boxmot": SourceSpec("boxmot", Path("runs/boxmot-yolo-static-60s-v4-postreboot")),
     "kineo": SourceSpec("kineo", Path("runs/kineo-nlf-fused-60s-v4")),
 }

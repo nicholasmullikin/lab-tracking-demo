@@ -72,8 +72,11 @@ def run(args: argparse.Namespace) -> Path:
             ),
             "postprocessor_policy": (
                 "WiLoR confidence>=0.55, deduplicate; evidence-defined part-workspace "
-                "gate; MediaPipe confidence>=0.85 fallback only for <=5-frame WiLoR gaps; "
-                "One-Euro wrist/palm smoothing (min_cutoff=1.5,beta=0.007,d_cutoff=1.0). "
+                "gate; real WiLoR detections with confidence in [0.35,0.55) accepted only "
+                "while continuing a lane accepted within 5 frames, for at most 5 consecutive "
+                "frames, tagged low_confidence_continuation; MediaPipe confidence>=0.85 "
+                "fallback only for <=5-frame WiLoR gaps; One-Euro wrist/palm smoothing "
+                "(min_cutoff=1.5,beta=0.007,d_cutoff=1.0). "
                 f"Applied independently across exactly {frame_count} source-aligned rows."
             ),
         }

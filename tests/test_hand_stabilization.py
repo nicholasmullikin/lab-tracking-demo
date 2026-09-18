@@ -59,6 +59,33 @@ def test_mediapipe_fallback_requires_short_future_wilor_gap() -> None:
     assert MAX_FALLBACK_GAP == 5
 
 
+def test_sub_gate_wilor_detection_continues_a_live_lane_for_a_bounded_streak() -> None:
+    wilor = _rows(())
+    for frame in range(3):
+        wilor[frame] = wilor[frame].model_copy(update={"hands": (_hand(0.5),)})
+    for frame in range(3, 12):
+        wilor[frame] = wilor[frame].model_copy(
+            update={"hands": (_hand(0.5 + 0.002 * frame, confidence=0.45),)}
+        )
+    # A lone sub-gate detection far from any lane never starts a hand on its own.
+    wilor[300] = wilor[300].model_copy(update={"hands": (_hand(0.2, confidence=0.45),)})
+
+    result = stabilize(wilor, _rows(()), _rows(()))
+    by_frame = {item.analysis_frame_index: item for item in result.provenance}
+
+    assert by_frame[2].state == "smoothed"
+    assert all(by_frame[frame].state == "low_confidence_continuation" for frame in range(3, 8))
+    assert all(
+        by_frame[frame].reason == "wilor_confidence_below_gate_within_active_lane"
+        for frame in range(3, 8)
+    )
+    assert by_frame[8].state == "missing"  # streak cap of five relaxed frames
+    assert by_frame[300].state == "missing"
+    assert result.metrics["low_confidence_continuation_instances"] == 5
+    assert result.metrics["wilor_continuation_min_confidence"] == 0.35
+    assert result.observations[3].hands[0].hand_id == result.observations[2].hands[0].hand_id
+
+
 def test_wrist_jitter_is_zero_without_consecutive_hands() -> None:
     observations = tuple(_rows(()).values())
     assert wrist_jitter(observations) == 0.0

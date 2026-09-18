@@ -8,6 +8,7 @@ context, never a joint tracker or an action prediction.
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 import rerun as rr
@@ -71,6 +72,18 @@ coarse Assembly101 GT transcript (same weak-supervision basis, no model alignmen
 per-frame navigation document and the coarse GT segment index time series. It is navigation
 context only, never a prediction or an accuracy claim.
 """
+
+
+HAND_LAYER_STATES = ("low_confidence_continuation", "fallback", "missing")
+
+
+def _hand_layer_state_counts(provenance_path: Path) -> dict[tuple[int, str], int]:
+    """Per-frame counts of the stabilized layer's explicit non-primary hand states."""
+    counts: dict[tuple[int, str], int] = {}
+    for item in json.loads(provenance_path.read_text(encoding="utf-8")):
+        key = (int(item["analysis_frame_index"]), str(item["state"]))
+        counts[key] = counts.get(key, 0) + 1
+    return counts
 
 
 def _output_paths(root: Path) -> tuple[Path, Path, Path, Path]:
@@ -155,11 +168,16 @@ partial Kineo NLF body context are separate/toggleable evidence layers.
   with a warning but all contact fields are `invalid_mask`.
 - Frame ~370: the interior mask briefly grows into the chassis and recedes on its own (human
   observation); no correction was attempted there.
-- Stabilized WiLoR preserves raw/smoothed/fallback/missing per-hand provenance. MediaPipe is a
-  short-gap fallback only; its IDs are neither identities nor action labels.
+- Stabilized WiLoR (v5) preserves raw/smoothed/low_confidence_continuation/fallback/missing
+  per-hand provenance. `low_confidence_continuation` marks a real WiLoR detection with
+  confidence in [0.35,0.55) accepted only while it continues a lane accepted within 5 frames,
+  for at most 5 consecutive frames (finger-only views); nothing is held or extrapolated.
+  MediaPipe is a short-gap fallback only; its IDs are neither identities nor action labels.
+  The per-frame counts of these states are plotted in the disagreement time series.
 - BoxMOT is independent YOLO/BotSort person context only. Kineo is NLF-only 2D body/crop
-  context with source-aligned BoxMOT fallback and <=5-frame interpolation; it is not hands,
-  metric 3D, SfM, or BVH.
+  context with source-aligned BoxMOT fallback and <=5-frame interpolation; it is not a hand
+  method (human feedback compared it with WiLoR on hands: no Kineo hand output exists in
+  this pipeline), nor metric 3D, SfM, or BVH.
 - The checked-in 11-step agent-authored navigation timeline covers only `[0,600)`. Coarse
   Assembly101 GT over the full minute is weak navigation context, explicitly not prediction.
   No extra fine action labels were promoted beyond visually reviewed evidence.
@@ -247,6 +265,9 @@ def build_first_minute_review(
         episodes,
         frame_count=FRAME_COUNT,
         source_start_seconds=SOURCE_START_SECONDS,
+    )
+    hand_states = _hand_layer_state_counts(
+        sources["stabilized_wilor"].run_directory / "hand_provenance.json"
     )
     root = (repository_root / output_root).resolve()
     rrd_path, index_path, guide_path, sheet_path = _output_paths(root)
@@ -336,6 +357,14 @@ def build_first_minute_review(
         ),
         coverage={
             "reference_part_mask_frames": FRAME_COUNT,
+            "stabilized_low_confidence_continuation_instances": sum(
+                count
+                for (_, state), count in hand_states.items()
+                if state == "low_confidence_continuation"
+            ),
+            "stabilized_missing_frames": sum(
+                count for (_, state), count in hand_states.items() if state == "missing"
+            ),
             "mediapipe_hand_frames": sum(
                 bool(item.hands) for item in sources["mediapipe"].observations.values()
             ),
@@ -438,6 +467,11 @@ def build_first_minute_review(
             f"{entity}/diagnostics/segmentation_contact_eligible",
             rr.Scalars([float(eligible)]),
         )
+        for state in HAND_LAYER_STATES:
+            rr.log(
+                f"{entity}/diagnostics/hand_disagreement/stabilized_{state}_count",
+                rr.Scalars([hand_states.get((frame, state), 0)]),
+            )
         substep = substep_for_frame(fine_contract, frame) if frame < 600 else None
         if substep is not None:
             rr.log(
