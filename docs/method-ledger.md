@@ -291,6 +291,10 @@ What the plan said, what happened instead, and why, in one line each.
   remains the named second wave.
 - `yellow_toy_top` leaves the frame at ~216.2 s in every arm; its coverage numbers
   describe the scene, not the tracker.
+- Focused static reference, frames 1024-1171: the interior slot leaks onto the visible black
+  chassis while the grey block is hidden; a credible chassis+interior correction at leak onset
+  (1020) did not hold (Sep 17–18 entry). Options needing human sign-off: a hidden-object
+  (empty mask) interior correction semantics, or accepting the gap as `not_contact_eligible`.
 
 ### Sep 13: fixed two-timestamp QA infrastructure
 
@@ -1425,3 +1429,67 @@ this comparison makes no accuracy or cross-method identity claim.
   `runs/interaction-review-first-minute-v4-local` is the superseded build a viewer may still
   hold open. `docs/qa/interaction-review-first-minute-v4r2.agent-review.json` lists the agent
   findings and the two agent-proposed correction rows; all human decisions remain pending.
+
+### Sep 17–18: leak-onset correction attempt, 20 s v5 hand layer, DAM4SAM first minute
+
+- Visibility review of the reference run over 1000-1180 (every 4 frames plus every frame
+  1015-1040, zoomed raw and gamma-lifted crops, coordinate grids at 1020/1024; sheets under
+  `runs/muggledsam-sam3-four-part-focused-corrections-agent-leak-20260918t004115z/agent_review/`,
+  summary in `visibility_findings.json`): the black chassis is clearly visible through the whole
+  1020-1171 window (rotated to its underside from ~1024, partly under the fingers 1064-1171,
+  never hidden). The grey interior block is partially visible only until ~1022 as the matte
+  block protruding below the chassis plate between the two underside posts, the same surface the
+  human accepted at frame 900 (1,084 px); from ~1024 the region under the tracked interior mask
+  is the chassis's own lower body, and a lighter grey inner surface reappears at the left of the
+  object from ~1128 (first boxable at 1172, as recorded earlier).
+- Leak-onset correction attempt (not adopted): agent corrections at frame 1020, chassis
+  `t001020-b02` candidate 0 (6,876 px, box 808,418,978,486 with background points on the
+  protruding block and the finger) and interior `t001020-b04` candidate 0 (1,152 px on the
+  protruding block), 12 px mutual overlap, rationales in `agent_acceptances.jsonl`. Chassis
+  reached seven later keyframes, so
+  `configs/muggledsam_static_four_part_reassembly_focused_correction_policy_v4.json`
+  (`policy_version` 4, eight later keyframes per target; the schema now caps v3 at six and v4
+  at eight) was added and the schedule finalized under it. Rerun
+  `muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260918t004350z`: 2,781
+  frames in 181.6 s, 2,210,630,656 bytes peak VRAM, 11,061 masks, corrections at
+  327/900/1020/1172/1235/1800/2700 with 1020 and 1172 agent-selected. Against the reference
+  (`compare_1000_1300.txt`): identical before 1020; interior IoU to the old run 0.901 over
+  1020-1070 and 0.980 over 1070-1110 (the interior slot re-leaks onto the chassis from
+  ~1036-1046 along the same trajectory); chassis mean area 1,338 vs 609 px over 1110-1172 but
+  still <600 px on 29 frames; the reviewed 1172-1235 interior changed (IoU 0.770, mean 2,325 vs
+  3,089 px). Conclusion: the memory reset with a credible chassis mask does not stop the leak,
+  because the interior's refreshed memory is a block that disappears four frames later and the
+  slot latches onto the black body. The 001210z run remains the v4 reference; `contact_eligible`
+  stays `[0,1020)` and `[1172,1200)`; no interior mask was invented for 1024-1171. A
+  hidden-object (empty mask) interior correction would need new schedule/worker semantics and
+  human sign-off.
+- 20 s v3 package on the v5 gate: `runs/wilor-hands-stabilized-20s-v5` applies the bounded
+  `low_confidence_continuation` gate to the 20 s WiLoR/MediaPipe inputs (same corrected
+  023700z parts run). Against `overnight-v2-r3`: missing frames 45 -> 29, MediaPipe fallback
+  frames 32 -> 10, WiLoR-primary frames 523 -> 561, stabilized hand frames 555 -> 571,
+  stabilized instances 772 -> 939 (190 continuation), short 1-4 frame per-lane gaps 46 -> 35,
+  <=2-frame lanes 4 -> 0, wrist jitter 0.002775 -> 0.002697 (raw 0.003228).
+  `battle-build-interaction-review` now defaults to the v5 layer;
+  `runs/interaction-review-overnight-v3` was rebuilt in place (audits and the final agent
+  review preserved; `rerun rrd print` confirmed the stabilized rows).
+- DAM4SAM first minute: `battle-four-part-segmentation dam4sam --frame-count 1800` extends the
+  arm to frames `[0,1800)` from the same four reviewed frame-0 seeds (the contract itself is
+  unchanged; the run metadata records 60 s).
+  `runs/dam4sam-four-part-reviewed-seed-60s-20260918t005416z`: 1,800 frames in 238.8 s,
+  7,316,468,224 bytes peak VRAM, coverage
+  chassis/interior/cabin 1,800 and rear_body 1,780, DRM additions 49/77/72/54.
+  `battle-segmentation-disagreement` (per-frame per-target IoU, episodes = IoU<0.5 for >=5
+  consecutive frames, a mask missing on one side counts as 0, missing on both is neutral)
+  versus the corrected SAM3 reference, written to
+  `disagreement_vs_corrected_sam3.json` in that run: mean IoU cabin 0.968, rear_body 0.786,
+  chassis 0.678, interior 0.553; 16 episodes. Largest: interior `[707,1072)` (DAM4SAM's
+  independent interior stream merged onto the black chassis body, ~6.6k px vs SAM3's
+  human-corrected ~1.4k), rear_body `[1522,1661)` (DAM4SAM mostly lost it, 20 missing frames),
+  chassis `[570,706)`, interior `[1117,1252)`, chassis `[1055,1172)` (DAM4SAM keeps a ~8.3k px
+  chassis mask where the reference has lost the chassis), chassis `[327,364)` (starts at the
+  human correction the reference applies and DAM4SAM does not). This is cross-method
+  disagreement between two uncorrected/corrected trackers, not accuracy; neither run is ground
+  truth.
+- `docs/qa/interaction-review-first-minute-v4r3.agent-review.json` records the findings and the
+  two not-selected agent candidates; all human decisions remain pending. GPU checked before and
+  after every GPU command (nvidia-smi, current-boot kernel journal): no NVRM/Xid faults.

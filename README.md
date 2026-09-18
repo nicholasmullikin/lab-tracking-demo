@@ -1039,7 +1039,7 @@ stabilized layer. Raw WiLoR and MediaPipe remain separately toggleable evidence;
 silently interpolated. Build the layer and package without opening a viewer:
 
 ```bash
-uv run battle-stabilize-wilor --output-root runs/wilor-hands-stabilized-20s-overnight-v2-r3
+uv run battle-stabilize-wilor --output-root runs/wilor-hands-stabilized-20s-overnight-v2-r3  # pre-gate layer; v5 below
 uv run battle-kineo-nlf --seconds 20 --rtmlib-bbox-detection-frame-step 1 \
   --run-id kineo-nlf-headless-20s-frame-step-1-overnight-v2 \
   --sequence-name assembly101_focused_static_20s_step1_overnight_v2
@@ -1134,6 +1134,42 @@ the agent-proposed correction rows. What changed:
 - `battle-build-interaction-review-v4` accepts an empty existing output root and needs
   `--overwrite` to replace an existing package; `runs/interaction-review-first-minute-v4-local`
   is an older, superseded build kept only because a viewer may still have it open.
+
+##### Sep 17–18 follow-up: leak onset, 20 s hand layer, DAM4SAM first minute
+
+- **Leak-onset correction (not adopted).** Dense 1000-1180 evidence sheets show the black
+  chassis clearly visible through 1020-1171 and the grey interior block partially visible only
+  until ~1022 (the block protruding under the chassis plate, as the human accepted at 900). Agent
+  corrections at frame 1020 (chassis 6,876 px, interior 1,152 px on that block) under policy v4
+  (`..._correction_policy_v4.json`, eight later keyframes; the schema caps v3 at six) were rerun
+  as `runs/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260918t004350z`.
+  The interior slot re-leaks onto the chassis from ~1036-1046 along the same trajectory, so the
+  memory reset alone does not hold; the 001210z run stays the reference and `contact_eligible`
+  stays `[0,1020)` and `[1172,1200)`. Evidence and metrics live under
+  `runs/muggledsam-sam3-four-part-focused-corrections-agent-leak-20260918t004115z/agent_review/`.
+- **20 s hand layer.** `runs/wilor-hands-stabilized-20s-v5` applies the same
+  `low_confidence_continuation` gate as the 60 s layer (missing frames 45 -> 29, MediaPipe
+  fallback 32 -> 10, short per-lane gaps 46 -> 35); `battle-build-interaction-review` defaults
+  to it and `runs/interaction-review-overnight-v3` was rebuilt in place.
+- **DAM4SAM first minute.** `battle-four-part-segmentation dam4sam --frame-count 1800` runs the
+  arm over `[0,1800)` from the same reviewed frame-0 seeds. `battle-segmentation-disagreement`
+  computes per-frame per-target IoU between two runs and lists episodes with IoU < 0.5 for at
+  least five consecutive frames (a mask missing on one side counts as 0; missing on both is
+  neutral). This is **cross-method disagreement, not accuracy**: neither run is ground truth, and
+  the corrected SAM3 reference carries human/agent corrections that the DAM4SAM arm does not.
+  Against `runs/dam4sam-four-part-reviewed-seed-60s-20260918t005416z`: mean IoU cabin 0.968,
+  rear_body 0.786, chassis 0.678, interior 0.553, 16 episodes (largest: interior `[707,1072)`,
+  rear_body `[1522,1661)`, chassis `[570,706)`, interior `[1117,1252)`, chassis `[1055,1172)`).
+
+```bash
+uv run battle-stabilize-wilor --output-root runs/wilor-hands-stabilized-20s-v5
+uv run battle-build-interaction-review --output-root runs/interaction-review-overnight-v3
+uv run battle-four-part-segmentation dam4sam --frame-count 1800 --run-id dam4sam-four-part-reviewed-seed-60s-<utc>
+uv run battle-segmentation-disagreement \
+  --run-a runs/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260918t001210z --label-a corrected_sam3 \
+  --run-b runs/dam4sam-four-part-reviewed-seed-60s-<utc> --label-b dam4sam_60s \
+  --end-frame-exclusive 1800 --output runs/dam4sam-four-part-reviewed-seed-60s-<utc>/disagreement_vs_corrected_sam3.json
+```
 
 ```bash
 uv run battle-muggled-agent-correction derive \

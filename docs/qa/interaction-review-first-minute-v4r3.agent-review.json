@@ -1,0 +1,60 @@
+{
+  "schema_version": "1.0",
+  "manifest_kind": "overnight_interaction_review_record",
+  "provenance_tag": "agent_authored_visual_review",
+  "human_feedback": [
+    "Around frames 1100 - 1200 we swap identities of chassis and interior as a hand sweeps across the view of the part"
+  ],
+  "agent_findings": [
+    {
+      "analysis_frame_index": 1020,
+      "subject": "chassis/interior visibility over 1000-1180 on the reference run",
+      "finding": "Dense evidence sheets (every 4 frames 1000-1180 plus every frame 1015-1040, zoomed raw and gamma-lifted crops) show the black chassis body clearly visible through the whole 1020-1171 window: rotated to its underside from ~1024 and partly under the fingers 1064-1171, never hidden. The grey interior block is partially visible only until ~1022 as the matte block protruding below the chassis plate between the two underside posts (the same surface the human accepted at frame 900); from ~1024 the region under the tracked interior mask is the chassis's own lower body, and a lighter grey inner surface reappears at the left/middle of the object from ~1128 (boxable at 1172). Sheets: runs/muggledsam-sam3-four-part-focused-corrections-agent-leak-20260918t004115z/agent_review/.",
+      "evidence_kind": "generated_contact_sheet",
+      "disposition": "agent_authored_visual_review"
+    },
+    {
+      "analysis_frame_index": 1046,
+      "subject": "leak-onset correction attempt (not adopted)",
+      "finding": "Agent corrections at frame 1020 (chassis t001020-b02 candidate 0, 6876 px; interior t001020-b04 candidate 0, 1152 px on the protruding block; 12 px mutual overlap) were finalized under policy v4 and rerun as runs/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260918t004350z (2781 frames, 181.6 s, 2.21 GB peak VRAM). The interior slot re-leaks onto the chassis from ~1036-1046 along the same trajectory (interior IoU to the reference 0.90 over 1020-1070 and 0.98 over 1070-1110); chassis mean area 1338 vs 609 px over 1110-1172 but still <600 px on 29 frames; the reviewed 1172-1235 interior changed (IoU 0.77, mean 2325 vs 3089 px). The memory reset does not stop the leak because the interior's fresh memory is a block that disappears four frames later. The 001210z run stays the v4 reference; contact_eligible stays [0,1020) and [1172,1200).",
+      "evidence_kind": "derived_metric",
+      "disposition": "agent_authored_visual_review"
+    },
+    {
+      "analysis_frame_index": 0,
+      "subject": "20 s v3 package rebuilt on the v5 stabilized hand layer",
+      "finding": "runs/wilor-hands-stabilized-20s-v5 applies the same bounded low-confidence lane-continuation gate as the first-minute layer. Against overnight-v2-r3: missing frames 45 -> 29, MediaPipe fallback frames 32 -> 10, WiLoR-primary frames 523 -> 561, stabilized hand frames 555 -> 571, stabilized hand instances 772 -> 939 (190 tagged low_confidence_continuation), short 1-4 frame per-lane gaps 46 -> 35, <=2-frame lanes 4 -> 0, wrist jitter 0.002775 -> 0.002697 (raw 0.003228). runs/interaction-review-overnight-v3 was rebuilt in place; audits and the final agent review were preserved.",
+      "evidence_kind": "derived_metric",
+      "disposition": "agent_authored_visual_review"
+    },
+    {
+      "analysis_frame_index": 1055,
+      "subject": "DAM4SAM first-minute arm versus the corrected SAM3 reference (cross-method disagreement, not accuracy)",
+      "finding": "runs/dam4sam-four-part-reviewed-seed-60s-20260918t005416z (same reviewed frame-0 seeds, frames [0,1800), 238.8 s, 7.32 GB peak VRAM, coverage 1800/1800/1780/1800, DRM additions 49/77/72/54). battle-segmentation-disagreement: mean IoU cabin 0.968, rear_body 0.786, chassis 0.678, interior 0.553; 16 episodes with IoU<0.5 for >=5 frames, the largest interior [707,1072) (DAM4SAM's independent interior stream merged onto the black chassis body, ~6.6k px vs SAM3's human-corrected ~1.4k), rear_body [1522,1661) (DAM4SAM mostly lost it, 20 missing frames), chassis [570,706), interior [1117,1252) and chassis [1055,1172) where DAM4SAM keeps a ~8.3k px chassis mask while the SAM3 reference has lost the chassis. Neither run is ground truth.",
+      "evidence_kind": "derived_metric",
+      "disposition": "agent_authored_visual_review"
+    }
+  ],
+  "correction_candidates": [
+    {
+      "analysis_frame_index": 1020,
+      "target_id": "chassis",
+      "source_method": "baseline_sam3",
+      "provenance": "agent_authored_visual_review",
+      "state": "not_selected",
+      "rationale_fingerprint": "runs/muggledsam-sam3-four-part-focused-corrections-agent-leak-20260918t004115z/agent_acceptances.jsonl#t001020-b02",
+      "semantic_claim": "Box prompt over the chassis plate with background points on the protruding interior block and the finger yields the black chassis body (6876 px); rerun was not adopted because the interior slot re-leaked from ~1046."
+    },
+    {
+      "analysis_frame_index": 1020,
+      "target_id": "interior",
+      "source_method": "baseline_sam3",
+      "provenance": "agent_authored_visual_review",
+      "state": "not_selected",
+      "rationale_fingerprint": "runs/muggledsam-sam3-four-part-focused-corrections-agent-leak-20260918t004115z/agent_acceptances.jsonl#t001020-b04",
+      "semantic_claim": "Small box on the block protruding below the chassis plate yields a 1152 px mask consistent with the human-accepted frame-900 interior; the block is hidden from ~1024 and no later interior mask was invented before 1172."
+    }
+  ],
+  "human_decisions_pending": true,
+  "ground_truth_accuracy_claim": false
+}
