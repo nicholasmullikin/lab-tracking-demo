@@ -398,6 +398,9 @@ class ReviewMetricsManifest(VersionedModel):
     source_interval: TimeInterval
     v4_index: ArtifactFingerprint
     config: ArtifactFingerprint
+    # Set when the part masks were read from a run other than the v4 index's reference (a
+    # tracker-policy arm under comparison); the hand, Kineo and contact inputs stay the index's.
+    reference_run_override: ArtifactFingerprint | None = None
     input_artifacts: tuple[ArtifactFingerprint, ...] = Field(min_length=1)
     claim_boundaries: tuple[str, ...] = Field(min_length=1)
     part_area_medians: dict[str, float]

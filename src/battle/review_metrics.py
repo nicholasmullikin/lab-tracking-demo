@@ -1801,8 +1801,15 @@ def build_review_metrics(
     v4_index_path: Path = V4_INDEX_PATH,
     write_rrd: bool = True,
     overwrite: bool = False,
+    reference_run: Path | None = None,
 ) -> Path:
-    """Compute every metric in one CPU pass over retained artifacts and write the package."""
+    """Compute every metric in one CPU pass over retained artifacts and write the package.
+
+    `reference_run` swaps the part masks for those of any four-part C10379 run over the same
+    first minute (a tracker-policy arm, for instance) while every other input still comes
+    from the v4 index; the manifest records the override so the package cannot be mistaken
+    for the review reference's metrics.
+    """
     repository_root = repository_root.resolve()
     config_file = (repository_root / config_path).resolve()
     config = load_config(config_file)
@@ -1823,7 +1830,18 @@ def build_review_metrics(
         index.reference_segmentation_method,
         Path(index.reference_segmentation_manifest.uri).parent,
     )
-    for spec in (*specs.values(), reference_spec):
+    indexed_specs = [*specs.values(), reference_spec]
+    reference_override: ArtifactFingerprint | None = None
+    if reference_run is not None:
+        override_directory = (repository_root / reference_run).resolve()
+        reference_spec = review.SourceSpec(
+            f"override:{override_directory.name}", override_directory
+        )
+        reference_override = _file_fingerprint(
+            override_directory / "manifest.json", repository_root
+        )
+        indexed_specs = list(specs.values())
+    for spec in indexed_specs:
         for name in ("manifest.json", "observations.jsonl"):
             _verify_against_index(index, repository_root, (spec.run_directory / name).as_posix())
     sources = {
@@ -2011,6 +2029,7 @@ def build_review_metrics(
         ),
         v4_index=_file_fingerprint(index_file, repository_root),
         config=config_fingerprint(config_file, repository_root),
+        reference_run_override=reference_override,
         input_artifacts=tuple({(a.uri, a.sha256): a for a in artifacts}.values()),
         claim_boundaries=CLAIM_BOUNDARIES,
         part_area_medians={part: _r(value, 1) for part, value in medians.items()},
@@ -2082,6 +2101,14 @@ def main() -> None:
     parser.add_argument("--v4-index", type=Path, default=V4_INDEX_PATH)
     parser.add_argument("--skip-rrd", action="store_true", help="Do not write the metric RRD.")
     parser.add_argument("--overwrite", action="store_true", help="Replace an existing package.")
+    parser.add_argument(
+        "--reference-run",
+        type=Path,
+        help=(
+            "Take the part masks from this four-part C10379 run instead of the v4 reference; "
+            "the package then measures that run and says so."
+        ),
+    )
     args = parser.parse_args()
     print(
         build_review_metrics(
@@ -2091,6 +2118,7 @@ def main() -> None:
             v4_index_path=args.v4_index,
             write_rrd=not args.skip_rrd,
             overwrite=args.overwrite,
+            reference_run=args.reference_run,
         )
     )
 
