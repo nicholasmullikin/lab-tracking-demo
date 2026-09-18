@@ -1101,7 +1101,7 @@ def _blueprint(
                 rrb.Spatial3DView(
                     origin=f"{root}/contexts/wilor_camera_relative_non_metric_3d",
                     name="WiLoR camera-relative non-metric 3D",
-                    contents="$origin/**",
+                    contents="$origin/camera_relative_3d/**",
                 ),
                 rrb.TextDocumentView(origin=f"{root}/{REVIEW_NOTES}", name="Review guide"),
                 rrb.TextDocumentView(
@@ -1500,6 +1500,7 @@ def build_interaction_review(
             dimensions=dimensions,
             color=METHOD_COLORS["wilor"],
             include_3d=True,
+            include_2d=False,
         )
         _log_context_boxes(
             root, "boxmot_worker_context", sources["boxmot"].observations[frame], dimensions

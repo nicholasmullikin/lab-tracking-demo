@@ -443,6 +443,7 @@ def build_first_minute_review(
             dimensions=dimensions,
             color=review.METHOD_COLORS["wilor"],
             include_3d=True,
+            include_2d=False,
         )
         review._log_context_boxes(
             entity, "boxmot_worker_context", sources["boxmot"].observations[frame], dimensions

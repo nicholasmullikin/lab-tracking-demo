@@ -457,10 +457,19 @@ def _log_hands(
     dimensions: tuple[int, int],
     color: tuple[int, int, int],
     include_3d: bool,
+    include_2d: bool = True,
 ) -> None:
+    """Log hand overlays; 2D pixel archetypes and 3D camera-relative pose stay separable.
+
+    A root that only feeds a `Spatial3DView` must pass `include_2d=False`: 2D archetypes
+    under a 3D view root need a pinhole ancestor and otherwise surface as viewer errors.
+    """
+    if not include_2d and not include_3d:
+        raise ValueError("hand logging must include at least one of 2D or 3D")
     hands_root = f"{root}/hands"
     if not observation.hands:
-        rr.log(hands_root, rr.Clear(recursive=True))
+        if include_2d:
+            rr.log(hands_root, rr.Clear(recursive=True))
         if include_3d:
             rr.log(f"{root}/camera_relative_3d", rr.Clear(recursive=True))
         return
@@ -481,26 +490,29 @@ def _log_hands(
             three_d.extend(pose)
             three_d_labels.extend(f"{hand.hand_id}: {name}" for name in HAND_LANDMARK_NAMES)
             three_d_strips.extend([[pose[a], pose[b]] for a, b in HAND_CONNECTIONS])
-    rr.log(
-        f"{hands_root}/landmarks",
-        rr.Points2D(positions, labels=labels, colors=[color] * len(positions), radii=2.5),
-    )
-    rr.log(
-        f"{hands_root}/skeletons", rr.LineStrips2D(strips, colors=[color] * len(strips), radii=1.5)
-    )
-    mins = [[hand.box.x * width, hand.box.y * height] for hand in observation.hands]
-    sizes = [[hand.box.width * width, hand.box.height * height] for hand in observation.hands]
-    rr.log(
-        f"{hands_root}/boxes",
-        rr.Boxes2D(
-            mins=mins,
-            sizes=sizes,
-            labels=[
-                f"{hand.hand_id}: {hand.side} ({hand.confidence:.2f})" for hand in observation.hands
-            ],
-            colors=[color] * len(mins),
-        ),
-    )
+    if include_2d:
+        rr.log(
+            f"{hands_root}/landmarks",
+            rr.Points2D(positions, labels=labels, colors=[color] * len(positions), radii=2.5),
+        )
+        rr.log(
+            f"{hands_root}/skeletons",
+            rr.LineStrips2D(strips, colors=[color] * len(strips), radii=1.5),
+        )
+        mins = [[hand.box.x * width, hand.box.y * height] for hand in observation.hands]
+        sizes = [[hand.box.width * width, hand.box.height * height] for hand in observation.hands]
+        rr.log(
+            f"{hands_root}/boxes",
+            rr.Boxes2D(
+                mins=mins,
+                sizes=sizes,
+                labels=[
+                    f"{hand.hand_id}: {hand.side} ({hand.confidence:.2f})"
+                    for hand in observation.hands
+                ],
+                colors=[color] * len(mins),
+            ),
+        )
     if include_3d:
         three_d_root = f"{root}/camera_relative_3d"
         if three_d:

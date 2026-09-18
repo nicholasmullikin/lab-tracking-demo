@@ -430,6 +430,112 @@ def test_exported_v4_rrd_carries_navigation_entities_and_blueprint_views() -> No
     assert printed.count("ViewBlueprint:display_name") == len(expected_views)
 
 
+_CHUNK_COLUMNS = re.compile(
+    r"^Chunk\(\S+\) with \d+ rows? \([^)]*\) - (/\S+) - data columns: \[([^\]]*)\]", re.MULTILINE
+)
+_3D_VIEW_ROOT = "contexts/wilor_camera_relative_non_metric_3d"
+_2D_VIEW_ROOTS = (
+    "primary/",
+    "comparison/",
+    "contexts/kineo_nlf_body_context",
+    "contexts/boxmot_worker_context",
+)
+
+
+def _archetypes_by_entity(printed: str) -> dict[str, set[str]]:
+    """Archetype names (e.g. `Boxes2D`) logged per entity path in a `rerun rrd print` dump."""
+    archetypes: dict[str, set[str]] = {}
+    for entity, columns in _CHUNK_COLUMNS.findall(printed):
+        names = {column.split(":", 1)[0] for column in columns.split() if ":" in column}
+        archetypes.setdefault(entity, set()).update(names)
+    return archetypes
+
+
+def _assert_spatial_dimensionality(archetypes: dict[str, set[str]]) -> None:
+    """2D archetypes need a pinhole ancestor in a 3D view, so the roots must not mix."""
+    for entity, names in archetypes.items():
+        if f"/{_3D_VIEW_ROOT}/" in entity:
+            assert not {n for n in names if n.endswith("2D")}, (entity, names)
+        if any(f"/{root}" in entity for root in _2D_VIEW_ROOTS):
+            assert not {n for n in names if n.endswith("3D")}, (entity, names)
+
+
+def test_hand_logging_keeps_2d_archetypes_out_of_the_3d_context_root(tmp_path) -> None:
+    import rerun as rr
+
+    from battle.exploratory_comparison import _log_hands
+    from battle.schemas import CameraRelativePoint3D, NormalizedBox, NormalizedPoint, PerFrameHand
+
+    hand = PerFrameHand(
+        hand_id="hand-0",
+        side="left",
+        confidence=0.9,
+        landmarks=tuple(NormalizedPoint(x=0.5, y=0.5) for _ in range(21)),
+        box=NormalizedBox(x=0.4, y=0.4, width=0.2, height=0.2),
+        model_side="left",
+        model_handedness_confidence=0.9,
+        joints_3d_camera_relative=tuple(
+            CameraRelativePoint3D(x=0.0, y=0.0, z=0.5) for _ in range(21)
+        ),
+    )
+    observation = FrameObservations(
+        view_id="static-c10379", analysis_frame_index=0, source_seconds=0.0, hands=(hand,)
+    )
+    rrd_path = tmp_path / "hands.rrd"
+    rr.init("battle-test-hands", recording_id="hands-test")
+    rr.save(rrd_path)
+    rr.set_time("analysis_frame", sequence=0)
+    root = "world/clip/review"
+    _log_hands(
+        f"{root}/{_3D_VIEW_ROOT}",
+        observation,
+        dimensions=(1280, 720),
+        color=(255, 128, 0),
+        include_3d=True,
+        include_2d=False,
+    )
+    _log_hands(
+        f"{root}/primary/stabilized_wilor/render",
+        observation,
+        dimensions=(1280, 720),
+        color=(255, 128, 0),
+        include_3d=False,
+    )
+    rr.disconnect()
+    with pytest.raises(ValueError, match="at least one"):
+        _log_hands(
+            root, observation, dimensions=(1280, 720), color=(0, 0, 0), include_3d=False,
+            include_2d=False,
+        )
+
+    _, printed = _rrd_row_counts(rrd_path)
+    archetypes = _archetypes_by_entity(printed)
+    three_d = {e: n for e, n in archetypes.items() if f"/{_3D_VIEW_ROOT}/" in e}
+    assert three_d, archetypes
+    assert set().union(*three_d.values()) == {"Points3D", "LineStrips3D"}
+    assert archetypes[f"/{root}/primary/stabilized_wilor/render/hands/boxes"] == {"Boxes2D"}
+    _assert_spatial_dimensionality(archetypes)
+
+
+@pytest.mark.parametrize(
+    "rrd_path",
+    [
+        Path(V4_OUTPUT_ROOT) / V4_OUTPUT_NAME,
+        Path("runs/interaction-review-overnight-v3/interaction_review.rrd"),
+    ],
+    ids=["first_minute_v4", "first_20s_v3"],
+)
+def test_exported_rrd_spatial_roots_do_not_mix_2d_and_3d_archetypes(rrd_path: Path) -> None:
+    """Integration check against the ignored, rebuilt packages (skipped when absent)."""
+    if not rrd_path.is_file():
+        pytest.skip(f"{rrd_path} is not built in this checkout")
+    _, printed = _rrd_row_counts(rrd_path)
+    archetypes = _archetypes_by_entity(printed)
+    three_d = {e: n for e, n in archetypes.items() if f"/{_3D_VIEW_ROOT}/" in e}
+    assert any("Points3D" in names for names in three_d.values()), three_d
+    _assert_spatial_dimensionality(archetypes)
+
+
 def test_drop_dtw_bookmarks_use_only_declared_matched_frames(tmp_path) -> None:
     alignment = tmp_path / "alignment.json"
     alignment.write_text(
