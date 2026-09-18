@@ -40,6 +40,7 @@ battle-build-four-part-segmentation-comparison = "battle.four_part_comparison:ma
 battle-segmentation-disagreement = "battle.segmentation_disagreement:main"
 battle-build-interaction-review = "battle.interaction_review:main"
 battle-build-interaction-review-v4 = "battle.interaction_review_v4:main"
+battle-review-metrics = "battle.review_metrics:main"
 battle-prepare-human-qa = "battle.human_qa:main"
 battle-human-qa-candidates = "battle.human_qa:candidate_main"
 

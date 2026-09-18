@@ -1192,6 +1192,57 @@ uv run battle-stabilize-wilor --wilor-run runs/wilor-hands-static-60s-overnight-
 uv run battle-build-interaction-review-v4 --overwrite
 ```
 
+### First-minute review metrics (label-free triggers)
+
+`battle-review-metrics` turns the v4 first-minute inputs into per-frame proxy metrics and a
+ranked list of review triggers without running any model or touching the GPU:
+
+```bash
+uv run battle-review-metrics
+uv run rerun rrd print runs/review-metrics-first-minute-v1/review_metrics_first_minute_v1.rrd
+```
+
+It locates every input through the v4 index (`runs/interaction-review-first-minute-v4-local/`),
+re-verifies the declared SHA-256 of each manifest/observation file plus the bounded video before
+use, and writes `metrics.json` (typed, NaN-free records; absence is always an explicit state),
+`triggers.json` (ranked episodes with frame ranges, type, score, and a one-line rationale),
+per-episode contact sheets for the top 12 episodes (source frame + mask overlays + stabilized
+hand boxes, with before/after context for short episodes), `metrics_report.md`, and an
+inference-free RRD whose scalar time series share the v4 `analysis_frame` / `analysis_time` /
+`source_time` clocks and clip root so it can be opened next to the v4 recording.
+
+Metrics (all label-free proxies, never accuracy):
+
+- **Segmentation identity swap** per part pair and frame: IoU, centroid distance, and a swap score
+  = max(label-exchange IoU against the other part's previous mask, same-frame IoU weighted by both
+  masks being large, absorption of a collapsing part's footprint by an enlarged neighbor). A
+  **label-crossing** heuristic fires when the centroid difference vector reverses over 10 frames
+  while both areas stay ≥30 % of their medians. **Area anomalies** flag sustained runs ≥1.75× or
+  ≤0.35× a part's own median area.
+- **Appearance consistency**: per-mask median HSV and mean Lab, Lab distance from the same part
+  on frame 0, a robust per-part z of that distance, the fraction of mask pixels inside a yellow
+  band derived from the frame-0 `rear_body`/`cabin` masks (recorded, not hardcoded), and the
+  fraction covered by stabilized-hand boxes. Leakage = unusual color drift (robust z ≥3 and
+  distance ≥18) or a dark part turning yellow; hand overlap is context only.
+- **Mask growth vs hand proximity**: frame-to-frame and 15-frame windowed area ratios, centroid
+  velocity, and hand-box overlap, classifying growth events as `hand_capture_suspect` or
+  `unexplained`.
+- **Hands**: for frames where the stabilized layer is `missing`, a skin-color proxy near the last
+  known pose (band calibrated from confident raw WiLoR boxes, checked against the frame
+  background) plus last-pose fingertips-in-frame; re-entry jump after each gap in hand scales;
+  nearest-wrist jitter normalized by hand scale, summarized per agent substep over `[0,600)` and
+  per coarse GT phase over the minute.
+- **Contacts**: debounced interval durations from the v4 index, sub-5-frame flicker count, and
+  consistency against `configs/review_metrics/first_minute_v1.json`, which encodes the expected
+  touched parts per substep as `agent_authored_assumption` records.
+- **Kineo**: mean joint confidence and joint jitter grouped by fused-box provenance
+  (`detected_native` / `boxmot_fallback` / `interpolated` / `held` / `missing`).
+
+Scores are in threshold units and are comparable only within a type, so the global rank
+interleaves types (round *k* holds the *k*-th strongest episode of every type). Every threshold is
+applied uniformly to the whole minute. The report ends with a clearly marked GPU follow-up (60 s
+DAM4SAM disagreement) that this CPU-only pass does not run.
+
 ### Four-part segmentation comparison
 
 `configs/four_part_segmentation_comparison.json` is the checked-in fair-comparison
