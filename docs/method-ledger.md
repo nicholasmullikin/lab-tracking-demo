@@ -1928,3 +1928,26 @@ this comparison makes no accuracy or cross-method identity claim.
 - **Open.** The offsets are per-camera constants for this recording; nothing was checked about
   drift within the 92.7 s window beyond the three-chunk agreement. Track 1 consumes
   `clock_rules.json` and the camera files through `multiview_geometry.CameraRig`.
+
+### Sep 18: overnight GPU queue runner
+
+- **What.** `scripts/overnight_queue.py` (logic in `battle.overnight_queue`, so it is unit
+  tested) runs a JSON job list strictly serially under
+  `systemd-inhibit --what=sleep:idle --why="battle overnight"`; before each job it requires
+  `nvidia-smi` to answer and `journalctl -k --since <queue start>` to carry no `NVRM`/`Xid`
+  line, kills a job that exceeds its timeout together with its process group, appends one JSON
+  line per event to `runs/overnight-multicam-20260918/queue.log`, keeps each job's combined
+  output under `logs/`, and stops at the first GPU error, non-zero exit, timeout or spawn
+  failure unless `--continue-on-failure` is given (later jobs are logged as `skipped` with the
+  reason). Job states: `succeeded`, `failed`, `timed_out`, `blocked_gpu`, `skipped`,
+  `spawn_failed`.
+- **Checks.** Ten default-tier tests drive the state machine with fake commands and a fake GPU
+  check (serial order and full event log, stop-on-first-failure with skips, continue-on-failure,
+  timeout kill in under 10 s with a shortened grace, GPU-gate block before the job starts, spawn
+  failure as a recorded state, the `NVRM|Xid` pattern, spec round trip with interpreter prefix,
+  `--dry-run`, and the CLI without inhibit/GPU check). One real smoke (`echo queue-ok`) ran under
+  the inhibitor with the live GPU check (`NVIDIA GeForce RTX 5070 Ti, 1197 MiB, 50 C`, no
+  kernel errors) and is the first record in the overnight queue log. CPU only; no model ran.
+- **Boundary.** The runner knows nothing about what the jobs do or produce; it only sequences
+  them and records their exit. It does not resume a partially run list; re-run with a trimmed
+  job file.

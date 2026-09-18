@@ -1591,6 +1591,37 @@ uv run python scripts/prune_runs.py --json
 It deletes nothing. The last line is a `rm -rf` to review and run by hand, because a run
 cited only from an uncommitted note is still evidence.
 
+### Overnight GPU queue
+
+`scripts/overnight_queue.py` (runner in `battle.overnight_queue`) runs a JSON job list
+strictly serially so only one process touches the GPU at a time:
+
+```bash
+cat > runs/overnight-multicam-20260918/jobs.json <<'EOF'
+{"jobs": [
+  {"name": "mediapipe-c10095", "interpreter": ["uv", "run"],
+   "argv": ["battle-mediapipe-hands", "--view", "static-c10095"],
+   "cwd": "/home/nick/src/battle", "timeout_s": 1800, "env": {"CUDA_VISIBLE_DEVICES": "0"}}
+]}
+EOF
+uv run scripts/overnight_queue.py runs/overnight-multicam-20260918/jobs.json --dry-run
+uv run scripts/overnight_queue.py runs/overnight-multicam-20260918/jobs.json
+uv run scripts/overnight_queue.py jobs.json --continue-on-failure   # keep going past failures
+```
+
+Each job has `name`, `argv`, `cwd`, `timeout_s`, and optional `env` (merged over the current
+environment) and `interpreter` (prepended to `argv`, e.g. `["uv", "run"]` or a venv python).
+The queue re-executes itself under `systemd-inhibit --what=sleep:idle --why="battle overnight"`
+(`--no-inhibit` to skip). Before every job it checks that `nvidia-smi` answers and that
+`journalctl -k --since <queue start>` has no `NVRM`/`Xid` line (`--no-gpu-check` for CPU-only
+lists); a failed check blocks the job and stops the queue. A job past its timeout is killed
+with its whole process group (SIGTERM, then SIGKILL after 10 s). Events go to
+`runs/overnight-multicam-20260918/queue.log` as JSON lines (`queue_start`, `gpu_check`,
+`job_start`, `job_end`, `job_blocked`, `job_skipped`, `queue_end`) and each job's combined
+stdout/stderr to `logs/<index>_<name>.log` beside it. The queue stops at the first non-zero
+exit, timeout, spawn failure or GPU error unless `--continue-on-failure` is given; jobs after
+the stop are logged as `skipped` with the reason. Exit code 0 only when every job succeeded.
+
 The exporter writes already-normalized observations only: it never performs inference.
 It can log an input video once when an approved local proxy is supplied, while mask
 locations remain external/native artifact references. When a mask artifact root is
