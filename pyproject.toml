@@ -10,6 +10,7 @@ dependencies = [
     "numpy>=2.5.3",
     "pillow>=12.3.0",
     "pydantic==2.13.5",
+    "pyyaml>=6.0.3",
     "rerun-sdk==0.37.1",
 ]
 
@@ -36,6 +37,7 @@ battle-athena-hands = "battle.athena_hands:main"
 battle-hands-2d-check = "battle.athena_hands:check_main"
 battle-build-athena-hands-review = "battle.athena_hands_review:main"
 battle-kineo-nlf = "battle.kineo_nlf:main"
+battle-kineo-multiview = "battle.kineo_multiview:main"
 battle-kineo-fusion = "battle.kineo_fusion:main"
 battle-build-exploratory-comparison = "battle.exploratory_comparison:main"
 battle-four-part-segmentation = "battle.four_part_segmentation:main"

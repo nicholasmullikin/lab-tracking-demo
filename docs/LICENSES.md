@@ -73,7 +73,9 @@ inputs outside Git.
   caveat.
 - **Kineo:** research/evaluation terms per upstream README; its checkout was dirty during the
   NLF-only partial smoke. The readable PKLs are person-centric outputs without SfM, metric
-  world scale, BVH, or hand-part claims.
+  world scale, BVH, or hand-part claims. The Sep 18 multi-view arms (`battle-kineo-multiview`)
+  stay under the same research/evaluation terms; their inputs and every comparison number
+  derive from Assembly101 video, extrinsics and poses and inherit CC BY-NC 4.0.
 
 ## Dependency and future-model review
 

@@ -267,6 +267,19 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
 - Native PKLs under ignored `runs/kineo/infer_nlf_headless_only/`; normalized runs under
   `runs/kineo-nlf-headless-*` and `runs/kineo-nlf-fused-*`. Both remain NLF-only partial evidence,
   not a full Kineo integration.
+- **Sep 18, Track 4 (`battle-kineo-multiview`).** Same checkout, pinned
+  `03b36e31c79bd40bc8bb1ce4c9c08907140952dd`, working tree dirty: `M kineo/pipeline/stages/rerun_export.py`,
+  `M kineo/pipeline/stages/sfm_camera_extrinsics_initialization.py` (two-line guard on graph
+  edges without point pairs), `M pixi.lock`, `M pyproject.toml`, `?? kineo/demo/rerun_export.py`;
+  dirty-tree fingerprint (SHA-256 of `git status --short` + `git diff --stat`)
+  `64a2ff02a2b83df4a231dcff29bf571208128c1e6e9d280a8d6b8aa6bb2878eb`, recorded per run in
+  `prepare.json`. Nothing in the checkout was edited for this track; the generated YAMLs live in
+  the run directories, the runner is `scripts/kineo_multiview_runner.py` (battle-owned, executed
+  with `pixi run python` from the Kineo checkout). Models: `checkpoints/nlf_l_multi_0.3.2.torchscript`
+  (SHA-256 `52bee28edb6ea9148691331df87cfc238d7e3d9134dc60104a5aaed282a9ddad`), MoGe
+  `Ruicheng/moge-2-vitl` (self-calibration arm only), rtmlib YOLOX-tiny (openmmlab URL),
+  `body_models/smplx/SMPLX_NEUTRAL.npz` (self-calibration arm only). Inputs are the eight
+  static G1 proxies trimmed to 1,800 frames (fingerprints in `prepare.json`).
 
 ## Candidate source: FineBio
 

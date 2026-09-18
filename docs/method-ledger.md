@@ -2192,3 +2192,98 @@ this comparison makes no accuracy or cross-method identity claim.
 - **Open.** Per-view weights (ego especially) and a tighter ego filter; WiLoR arm pending GPU;
   the thumb correspondence; a per-frame time interpolation of views to the reference pose frame
   would remove the 16.7 ms residual for fast motion.
+
+### Sep 18: Track 4 preparation, Kineo on all eight static views (CPU only, GPU jobs queued)
+
+- **Claim boundary first.** The self-calibration arm compares Kineo's estimated extrinsics with
+  the dataset's shipped extrinsics after a similarity alignment of camera centres: a calibration
+  comparison against dataset context, not pose accuracy, and the only place in the pass where the
+  dataset extrinsics act as a reference for a method. Wrist numbers in both arms compare Kineo's
+  SMPL-X body wrists with the dataset hand-tracker wrists: cross-source disagreement between two
+  estimates. Intrinsics are fitted estimates. Ego cameras are excluded (Kineo assumes static
+  cameras). Kineo research/evaluation-only, Assembly101 CC BY-NC 4.0. Tonight: CPU only, the
+  GPU was never touched (every pixi check ran with `CUDA_VISIBLE_DEVICES=""`); no model ran; no
+  viewer opened.
+- **What exists now (`battle-kineo-multiview`, module `kineo_multiview.py`, review
+  `kineo_multiview_review.py`, runner `scripts/kineo_multiview_runner.py`).** `prepare --arm
+  selfcal|known` wrote `runs/kineo-multiview-{selfcal,known}-first-minute-20260918/` in 27-29 s
+  each: eight 1,800-frame trims (`trims/<view>_first_minute_1800f.mp4`, libx264 crf 18, frame
+  counts verified with `ffprobe -count_frames`), the generated Kineo YAML, the dataset cameras
+  as Kineo annotation PKLs (+ JSON twins), `queue_job.json`, `prepare.json`, and the queue
+  files `runs/overnight-multicam-20260918/jobs_t4_kineo_{known,selfcal}.json` (1800 s / 3600 s
+  timeouts, 5400 s together inside the plan's 2 h box; `--dry-run` clean). `validate` then ran
+  the runner's `--validate-only` path under pixi: both YAMLs load and resolve, all 21 (selfcal)
+  / 7 (known) stage classes import, every runtime-config dataclass instantiates, constructor
+  signatures and model paths check, 14 (selfcal) / 5 (known) model-free stages were fully
+  instantiated, the GT PKLs load through `CameraIntrinsicsAnnotations.from_dict` /
+  `CameraExtrinsicsAnnotations.from_dict` (`brown_conrady`, `resolution_hw [720, 1280]`, eight
+  view ids), and cv2 reports 1,800 frames for every trim. Not instantiated in the dry run:
+  rtmlib (its `YOLOX(..., device="cuda")` opens an ONNX Runtime CUDA session in `__init__`), MoGe,
+  NLF detection/fitting, background subtraction and MoGe scene reconstruction, all of which load
+  models in their constructors; signatures and file paths only.
+- **Decisions.** (1) *Offsets by trimming, not `camera_temporal`.* The reference is C10379
+  (latest-starting camera, +9 pose frames); every other view's trim starts at
+  `floor((17649 - view.pose_frame(0)) / 2 + 0.5)` proxy frames: C10095 2 (residual 0), C10115 2
+  (-1 pose frame), C10118 2 (-1), C10119 1 (0), C10390 1 (0), C10395 2 (-1), C10404 2 (-1), so
+  trimmed frame q shows pose frame 17649 + 2q in every view to within 16.7 ms, the same rule and
+  residual Track 3b used, and Kineo frame q == analysis frame q of the dataset reference window
+  (`hands.jsonl`). The measured offsets say the earlier-started cameras must *skip* frames; a
+  formula shifting the later-started ones would have doubled the error. Kineo's
+  `global_time_resampling` supports a `camera_temporal` annotation (seconds per view, then a
+  50 Hz resample with linear interpolation of 2D keypoints), but only through `annotations`, its
+  resampled global timeline would no longer index the dataset frames, and the identity path
+  (zero offsets, identical frame counts) is the one its benchmarks exercise; the trim leaves the
+  residual explicit in `prepare.json` instead. (2) *Metres.* The known-arm extrinsics are the
+  inverted dataset `camera_to_world` (nearest proper rotation first; the JSON rotations are
+  orthonormal to ~1e-7 and Kineo inverts by transposition) with `t / 1000`, so Kineo's world is
+  the dataset world in metres and its metre-scaled defaults (SMPL, Rerun radii, z clipping)
+  apply; `evaluate` multiplies back by 1000 with identity rotation. (3) *GT in both arms.* The
+  same PKLs go to `gt_annotations` in the self-calibration arm, where no estimation stage reads
+  them (only `rerun_export`, which similarity-aligns its own recording and logs the dataset
+  cameras); the exported `camera_extrinsics.pkl` stays Kineo's unaligned estimate and battle does
+  its own Umeyama. (4) *Known arm stage list*: `transfer_gt_annotations` (order 0) then rtmlib,
+  NLF, time resampling, MVS triangulation, Rerun (`log_pred_smpl`/world reconstruction off),
+  annotations export; MoGe intrinsics, pairs sampling, SfM, BA sampling, BA 1-3, SMPL scale,
+  scale application, reorientation, BA history, SMPL fitting, background subtraction, scene
+  reconstruction and BVH removed. Feasible without editing Kineo: the stock CLI's only obstacle is
+  `gt_annotations={}` (`kineo/demo/offline/demo.py:72`), which the battle runner replaces.
+- **Evaluate / rerun (CPU, ready).** `evaluate <run_dir>` reads the exported PKLs through a
+  restricted unpickler (builtins + a stand-in for `CameraDistortionModel`, everything else
+  refused), Umeyama-aligns Kineo camera centres to the dataset's (selfcal) or applies the fixed
+  1000 (known), reports scale, camera-centre RMS, per-camera rotation/translation error, the
+  wrist disagreement per side (median/p90/mean, swapped-side-closer fraction) against
+  `runs/assembly101-reference-first-minute-v1/hands.jsonl` (confidence >= 0.5), Kineo's own
+  `global_scale`, its stage timings, and the five measures (coverage = frames with body 3D /
+  both wrists; time to first 3D output = cumulative stage time through MVS triangulation;
+  runtime = queue `job_end.duration_s`; VRAM = torch `max_memory_reserved` from the runner's
+  `kineo_runtime.json`, which excludes ONNX Runtime; ID resets n/a with one `best_bbox_only`
+  subject). Output `manifest.json` (typed) + `body_aligned_mm.npz`; `rerun <run_dir>` writes
+  `comparison.rrd` (dataset frusta as in `_log_assembly101_static`, aligned Kineo frusta with
+  magenta labels, Kineo 55-joint body in green, dataset hands, wrist series). Both were exercised
+  end to end on a synthetic Kineo export built from the real rig and the real dataset wrists
+  under a random similarity (scale 1000): recovered scale 1000.000, camera errors < 1e-3 deg /
+  mm, wrist medians < 1e-6 mm, 1,800/1,800 frames, RRD written.
+- **Tests (`tests/test_kineo_multiview.py`, 18 default + 3 `real_data`).** Intrinsics
+  scaling, world-to-camera inversion against `inv(C2W)`, Umeyama recovering a known similarity
+  (with and without scale, refusing < 3 points), geodesic angle, start frames on a four-camera
+  fixture (+5/+6/+7/+9 -> 2/2/1/0 with the half-frame residual), GT annotation dicts (proxy
+  scale, metres, brown_conrady, ego refusal) round-tripping through the unpickler, selfcal and
+  known YAML generation from a stock-shaped fixture (SAM2 removed, rtmlib inserted, stage
+  order, transfer at order 0, export paths, missing-stage refusal, YAML round trip, stock not
+  mutated), synthetic PKLs matching Kineo's `to_dict` field names (enum pickled under Kineo's
+  module path) parsed to arrays with the 1024 vertices dropped, unpickler refusal, alignment
+  recovering scale/rotation with zero errors and flagging a perturbed camera, the known arm's
+  fixed scale, wrist statistics with side swaps and absences, queue job validating against
+  `QueueSpec`, runner view parsing and shared model-free list, queue-log record selection;
+  `real_data`: both prepared run directories (start frames, 1,800 verified frames, YAML, git
+  head, queue spec, validation report, GT centres round trip to the rig within 1e-6 mm) and the
+  synthetic end-to-end evaluate + rerun above. Suite: 403 default tests pass; the two
+  `real_data` failures in the tree belong to the concurrent multiview worker's in-flight v4
+  rebuild and seed-transfer manifests, not to this track.
+- **Not run.** Both GPU jobs (waiting for the queue owner). The evaluation numbers, the five
+  measures and the native `.rrd`/`.bvh` fingerprints therefore do not exist yet; when the jobs
+  finish: `uv run battle-kineo-multiview evaluate runs/kineo-multiview-<arm>-first-minute-20260918`
+  then `rerun`. Known risks for the night: MoGe loads `Ruicheng/moge-2-vitl` from the HF cache
+  (the Sep 17 NLF smoke used the same id); the 8-view SfM/BA on 1,800 frames is the part most
+  likely to approach the 3600 s box; `background_subtraction`/`moge_scene_reconstruction` are
+  kept for the stock stage list and could be dropped from the YAML if the box is tight.

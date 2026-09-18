@@ -1743,6 +1743,58 @@ locations remain external/native artifact references. When a mask artifact root 
 supplied, the referenced PNGs are also embedded as colored translucent segmentation
 overlays in the RRD.
 
+### Kineo, properly multi-camera (Sep 18, Track 4)
+
+`battle-kineo-multiview` runs Kineo on all eight static views of the first minute in two arms
+and compares the result with the dataset's cameras and hands. `prepare` is CPU-only and writes
+everything the GPU job needs into `runs/kineo-multiview-<arm>-first-minute-20260918/`: per-view
+1,800-frame trims whose start frames absorb the measured per-view clock offsets (reference
+C10379, the latest-starting camera; C10095 skips 2 frames, C10119/C10390 1, the +6 views 2 with
+a -1 pose-frame = 16.7 ms residual), the generated headless Kineo YAML (`rtmlib`
+`best_bbox_only` instead of the SAM2 GUI stage, `shared_intrinsics: false`, exports into the run
+directory), the dataset cameras as Kineo annotation PKLs (`K` scaled by 2/3 to the proxies,
+world-to-camera OpenCV `R, t` in metres from the inverted `camera_to_world`), a typed
+`prepare.json` with the Kineo dirty-tree fingerprint and model hashes, and a queue job under
+`runs/overnight-multicam-20260918/jobs_t4_kineo_<arm>.json`. The `selfcal` arm keeps Kineo's
+full offline stage list (SfM, three bundle-adjustment passes, triangulation, SMPL scale,
+reorientation, SMPL fitting, BVH, Rerun); the `known` arm injects the cameras with
+`transfer_gt_annotations` and removes every estimation stage, so Kineo only detects and
+triangulates. The job runs `scripts/kineo_multiview_runner.py` under Kineo's pixi environment
+(the stock CLI passes `gt_annotations={}`; the runner passes our PKLs). `validate` is a CPU dry
+run of the YAML in that environment with CUDA hidden: every stage class imports, every runtime
+config instantiates, constructor signatures and model paths check out, the model-free stages
+are fully instantiated, the GT PKLs load through Kineo's annotation classes and the trims share
+one frame count.
+
+```bash
+uv run battle-kineo-multiview prepare --arm selfcal        # ~30 s, CPU
+uv run battle-kineo-multiview prepare --arm known
+uv run battle-kineo-multiview validate runs/kineo-multiview-selfcal-first-minute-20260918
+uv run battle-kineo-multiview validate runs/kineo-multiview-known-first-minute-20260918
+# GPU, one at a time through the queue (1800 s box for known, 3600 s for selfcal)
+uv run scripts/overnight_queue.py runs/overnight-multicam-20260918/jobs_t4_kineo_known.json
+uv run scripts/overnight_queue.py runs/overnight-multicam-20260918/jobs_t4_kineo_selfcal.json
+# CPU, after the jobs: manifest.json + body_aligned_mm.npz, then comparison.rrd
+uv run battle-kineo-multiview evaluate runs/kineo-multiview-selfcal-first-minute-20260918
+uv run battle-kineo-multiview evaluate runs/kineo-multiview-known-first-minute-20260918
+uv run battle-kineo-multiview rerun runs/kineo-multiview-selfcal-first-minute-20260918
+```
+
+`evaluate` reads Kineo's exported `camera_extrinsics.pkl`, `camera_intrinsics.pkl`,
+`keypoints_3d.pkl` and `stage_timings.pkl` through a restricted unpickler (lists, scalars and
+the distortion enum only). For `selfcal` it similarity-aligns Kineo's camera centres to the
+dataset's (Umeyama with scale) and reports the recovered scale (mm per Kineo unit), the
+camera-centre RMS and per-camera rotation (deg) and translation (mm) error after alignment; for
+`known` the scale is the fixed 1000 and the per-camera rows are a round-trip check. Both arms
+compare Kineo's SMPL-X `left_wrist`/`right_wrist` with the dataset hand wrists per frame
+(median, p90, mean mm, and how often the opposite dataset side would have been closer). The
+manifest carries the five pre-accuracy measures (coverage, time to first 3D output from
+Kineo's stage timings, runtime from the queue log, torch peak VRAM from the runner, ID resets
+n/a) and the claim boundaries: calibration comparison against dataset context, not pose
+accuracy; wrists are cross-source disagreement; ego cameras excluded; CC BY-NC 4.0. `rerun`
+writes `comparison.rrd` with the dataset and aligned Kineo cameras, the Kineo body and the
+dataset hands in one world-mm view plus a wrist-disagreement time panel.
+
 ## Rerun hierarchy
 
 The fixture exporter records the following stable hierarchy:
