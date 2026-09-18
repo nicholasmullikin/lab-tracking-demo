@@ -1199,12 +1199,14 @@ ranked list of review triggers without running any model or touching the GPU:
 
 ```bash
 uv run battle-review-metrics
-uv run rerun rrd print runs/review-metrics-first-minute-v1/review_metrics_first_minute_v1.rrd
+uv run rerun rrd print runs/review-metrics-first-minute-v2/review_metrics_first_minute.rrd
 ```
 
-It locates every input through the v4 index (`runs/interaction-review-first-minute-v4-local/`),
-re-verifies the declared SHA-256 of each manifest/observation file plus the bounded video before
-use, and writes `metrics.json` (typed, NaN-free records; absence is always an explicit state),
+It locates every input through the v4 index (`runs/interaction-review-first-minute-v4/`; the
+reference segmentation run is read from the index rather than hardcoded, so the metrics always
+measure the masks the review package displays), re-verifies the declared SHA-256 of each
+manifest/observation file plus the bounded video before use, and writes `metrics.json` (typed,
+NaN-free records; absence is always an explicit state),
 `triggers.json` (ranked episodes with frame ranges, type, score, and a one-line rationale),
 per-episode contact sheets for the top 12 episodes (source frame + mask overlays + stabilized
 hand boxes, with before/after context for short episodes), `metrics_report.md`, and an

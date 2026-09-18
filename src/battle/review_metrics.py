@@ -62,13 +62,16 @@ from .schemas import (
 )
 
 FRAME_COUNT = 1800
-OUTPUT_ROOT = Path("runs/review-metrics-first-minute-v1")
+OUTPUT_ROOT = Path("runs/review-metrics-first-minute-v2")
 CONFIG_PATH = Path("configs/review_metrics/first_minute_v1.json")
-V4_INDEX_PATH = Path("runs/interaction-review-first-minute-v4-local/interaction_review_index.json")
+V4_INDEX_PATH = Path("runs/interaction-review-first-minute-v4/interaction_review_index.json")
 METRICS_NAME = "metrics.json"
 TRIGGERS_NAME = "triggers.json"
 REPORT_NAME = "metrics_report.md"
-RRD_NAME = "review_metrics_first_minute_v1.rrd"
+RRD_NAME = "review_metrics_first_minute.rrd"
+# Reference segmentation methods the metrics accept; the run directory itself always comes
+# from the v4 index so the metrics measure exactly the masks the review package displays.
+ACCEPTED_REFERENCE_METHODS = ("baseline_sam3", "ensemble_reference")
 SHEET_DIR = "contact_sheets"
 OVERVIEW_SHEET_NAME = "top_episodes_contact_sheet.png"
 PART_PAIRS: tuple[tuple[str, str], ...] = tuple(combinations(TARGETS, 2))
@@ -1480,13 +1483,28 @@ def _episode_refs(episodes: Sequence[ReviewTriggerEpisode]) -> str:
     )
 
 
+def _eligibility_description(index: InteractionReviewIndexManifest) -> str:
+    """Describe the index's contact-eligible frame intervals; falls back to the v4 constant."""
+    eligible = [
+        f"[{item.start_frame},{item.end_frame_exclusive})"
+        for item in index.segmentation_validity_intervals
+        if item.state == "contact_eligible"
+    ]
+    if not eligible:
+        return f"`[0,{SEGMENTATION_CONTACT_ELIGIBLE_THROUGH})`"
+    return " and ".join(f"`{item}`" for item in eligible)
+
+
 def _report(
     manifest: ReviewMetricsManifest,
     config: ReviewMetricsConfig,
     sheet_paths: Sequence[Path],
     output_root: Path,
     repository_root: Path,
+    *,
+    eligibility: str | None = None,
 ) -> str:
+    eligibility = eligibility or f"`[0,{SEGMENTATION_CONTACT_ELIGIBLE_THROUGH})`"
     episodes = manifest.episodes
     counts: dict[str, int] = defaultdict(int)
     for item in episodes:
@@ -1603,7 +1621,7 @@ def _report(
         "## Contact candidates",
         "",
         f"{contacts.interval_count} debounced intervals on contact-eligible frames "
-        f"`[0,{SEGMENTATION_CONTACT_ELIGIBLE_THROUGH})`; {contacts.sub_5_frame_count} shorter "
+        f"{eligibility}; {contacts.sub_5_frame_count} shorter "
         f"than 5 frames; duration median {contacts.duration_median}, p90 {contacts.duration_p90}, "
         f"max {contacts.duration_max}. Histogram: {contacts.duration_histogram}. Against "
         f"agent-assumed expected parts: {contacts.expected_count} expected, "
@@ -1792,11 +1810,18 @@ def build_review_metrics(
     index = InteractionReviewIndexManifest.model_validate_json(
         index_file.read_text(encoding="utf-8")
     )
-    if index.frame_count != FRAME_COUNT or index.reference_segmentation_method != "baseline_sam3":
-        raise ValueError("review metrics require the corrected-SAM3 first-minute v4 index")
+    if (
+        index.frame_count != FRAME_COUNT
+        or index.reference_segmentation_method not in ACCEPTED_REFERENCE_METHODS
+    ):
+        raise ValueError(
+            "review metrics require a first-minute v4 index whose reference is one of "
+            f"{ACCEPTED_REFERENCE_METHODS}"
+        )
     specs = dict(review.FIRST_MINUTE_SOURCES)
     reference_spec = review.SourceSpec(
-        "baseline_sam3", review.REFERENCE_SEGMENTATIONS["baseline_sam3"]
+        index.reference_segmentation_method,
+        Path(index.reference_segmentation_manifest.uri).parent,
     )
     for spec in (*specs.values(), reference_spec):
         for name in ("manifest.json", "observations.jsonl"):
@@ -2034,7 +2059,15 @@ def build_review_metrics(
         encoding="utf-8",
     )
     (root / REPORT_NAME).write_text(
-        _report(manifest, config, sheet_paths, output_root, repository_root), encoding="utf-8"
+        _report(
+            manifest,
+            config,
+            sheet_paths,
+            output_root,
+            repository_root,
+            eligibility=_eligibility_description(index),
+        ),
+        encoding="utf-8",
     )
     metrics_path = root / METRICS_NAME
     metrics_path.write_text(manifest.model_dump_json(indent=1) + "\n", encoding="utf-8")

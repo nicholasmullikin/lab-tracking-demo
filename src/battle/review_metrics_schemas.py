@@ -80,7 +80,7 @@ class StabilizedHandProvenanceRow(VersionedModel):
     analysis_frame_index: int = Field(ge=0, lt=1800)
     output_hand_id: str
     source: Literal["wilor", "mediapipe_fallback", "missing"]
-    state: Literal["raw", "smoothed", "fallback", "missing"]
+    state: Literal["raw", "smoothed", "low_confidence_continuation", "fallback", "missing"]
     reason: str = Field(min_length=1)
     raw_hand_id: str | None = None
 
