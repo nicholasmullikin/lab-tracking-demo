@@ -1628,3 +1628,74 @@ this comparison makes no accuracy or cross-method identity claim.
   fallback, ineligible/late intervals, summary + validity rationales, provenance RRD entities,
   per-part contact eligibility, the spatial-root archetype checks, and an integration check of
   the built ensemble run.
+
+### Sep 17: Assembly101 poses, extrinsics and fine-grained annotations (selective acquisition)
+
+- **Gate crossed on request.** This is the first pose or annotation data pulled into the project;
+  it was fetched for this recording only, at the user's explicit ask, and lives under ignored
+  `data/raw/assembly101/<recording>/` with a full report
+  (`selective_poses_annotations_acquisition_report.md`) and `acquisition_manifest.json`. Nothing
+  here has been used by any run, builder, or review package yet. Licence remains CC BY-NC 4.0.
+- **What was fetched.** The ten `AssemblyPoses.zip` members for the recording via HTTP Range
+  (~420 MB compressed; the 72 GB archive was never downloaded): `landmarks2D`/`landmarks3D`,
+  `hand_bboxes`, `hand_confidences`, fixed/ego extrinsics and positions, `timestamp`, `xf_transf`.
+  Fine-grained annotations were streamed from the split CSVs and only this recording's rows kept
+  (432 segments x 12 views; the segment set is view-independent). TSM/DINOv2 features were
+  inspected and skipped: single-LMDB archives of 20-51 GB per view, and DINOv2 exists only for
+  C10119.
+- **Conventions verified on the data.** Pose files are keyed by 60 fps pose frame; hand `"0"` is
+  left, `"1"` right; 21 joints in the MS-G3D order (tips 0-4, wrist 5, palm 20); `landmarks3D` is
+  world-frame millimetres with a fixed-scale hand model; `landmarks2D` is raw sensor pixels
+  (1920x1080 static, 636x480 ego) and is an exact projection of the 3D (reprojection RMS
+  0.0001 px), so it carries no independent detection signal; `camera_extrinsics_*` are
+  camera-to-world.
+- **Clock finding.** Proxy frame p is raw frame 17640 + 2p. The ego view HMC_21110305 has no
+  offset to the pose clock. The static C10379 video **lags the pose clock by 9 pose frames
+  (~150 ms, +-1)**, established by two independent image metrics and a zoomed overlay; use
+  `pose = 17649 + 2p` for the static proxy. Every static-vs-ego comparison built so far assumed
+  zero relative offset; this is a correction to apply, not yet applied.
+- **Intrinsics.** The archive ships none. Fitting the dataset's own 2D/3D landmark pairs with the
+  provided extrinsics recovers a 5-parameter Brown model for C10379 to numerical precision
+  (fx ~ fy ~ 1250.7 px on 1920x1080, principal point (954.0, 528.6), k1 -0.130); scale K by 2/3
+  for the 720p proxy. Ego HMC_21110305 fits a rational model (fx ~ 189 on 636x480). These are
+  estimates derived from the dataset's internal projection, not an official calibration file,
+  but they remove ATHENA's stated blocker in practice.
+- **Fine-grained segments in the 60 s window.** 27 segments (7 overlapping two-hand pairs)
+  including `position interior` 96-323 and 518-697, `screw chassis with screwdriver` 424-483,
+  737-1079 and 1668-1800, `position rear body` 1321-1518, and pick-up/put-down/inspect steps.
+  This is the substructure the human review found missing inside coarse `screw chassis`
+  (318-1031) and is the intended replacement for the agent-authored substep track.
+
+### Sep 17: faster test and iteration cycle (plan executed, four tiers)
+
+- **Claim boundary.** No perception result changed. Every commit in this pass is infrastructure;
+  the one GPU run (the resume equivalence test) reproduced an existing run bit-for-bit.
+- **Tier 1, tests** (`8239888`). `real_data`, `slow` and `gpu` markers; `addopts` deselects
+  `real_data` and `gpu` by default; shared `tests/conftest.py` (`require_artifact`,
+  `require_executable`, a 10 ms-poll `serve` helper, session-scoped synthetic video);
+  `pytest-xdist`. Default tier 18.5 s -> 8.2 s (324 passed, 11 deselected); `-m "not slow"`
+  3.4 s; `-m real_data` 1.75 s; `-n auto` 5.2 s.
+- **Tier 2, builders** (`51cc7ef`, `d87961a`, `b99c2da`). One bounded LRU `MaskCache` per run
+  directory shared by the exporter and review passes, persisted as `native/mask_cache.npz`
+  (bit-packed masks + RGBA PNG bytes) and written by every mask-producing worker
+  (`battle-cache-masks` for old runs); a stat-keyed SHA-256 `digest_cache` and an `ffprobe`
+  `media_probe` cache; fingerprinting only referenced masks; a stamp-cached ffmpeg trim;
+  `PhaseTimer` with `--quiet`, `--overwrite`, `--layers`, `--verify-fingerprints` on the
+  builders; `mask_summary` plus one distance map per part per frame in the contact pass.
+  `battle-build-interaction-review-v4` 85 s -> 18.8 s with identical row counts (RRD shrank
+  63.6 -> 51.4 MB from chunk packing, not data).
+- **Tier 3, SAM3 resume** (`a6dfe1c`, `ab5bb86`). The worker writes tracker state
+  (`prompt_memories`, `frame_memories`) to `native/checkpoints/f{idx:06d}.pt` at every
+  correction keyframe and every N frames, keyed by a stream identity; `--resume-from-checkpoint`
+  restores it. `battle-muggled-smoke --resume-run <prior> --resume-at k` copies
+  `observations.jsonl` rows and masks for `[0,k)` verbatim and steps only the tail;
+  `StreamContinuityPolicy` gains `mode: checkpoint_resumed` with `resumed_from_run`,
+  `resumed_at_frame` and `checkpoint_fingerprint`. Continuity claims for resumed runs must say:
+  bit-identical to the prior run before `k`, a resumed stream after. The `gpu` test resumed
+  the focused static run at 1172 and matched a continuous run byte-for-byte; worker inference
+  191.1 s -> 112.2 s for the 2,781-frame clip. `battle-muggled-agent-correction decode-batch`
+  reuses one warm worker across a JSON plan of decode requests instead of reloading the model
+  per call.
+- **Tier 4, hygiene** (`da800fe`). `scripts/prune_runs.py` lists run directories that no
+  tracked file or other run manifest cites (dry-run only, never deletes); README documents the
+  test tiers and when to run each.
