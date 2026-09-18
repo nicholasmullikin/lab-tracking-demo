@@ -113,16 +113,30 @@ def load_camera_estimate(path: Path) -> Assembly101CameraModel:
     return Assembly101CameraModel.model_validate_json(path.read_text(encoding="utf-8"))
 
 
-def world_to_camera(camera: Assembly101CameraModel) -> tuple[np.ndarray, np.ndarray]:
-    """Rodrigues rotation and translation for `cv2.projectPoints` from the shipped pose."""
-    extrinsic = np.linalg.inv(np.asarray(camera.camera_to_world, dtype=np.float64))
+def world_to_camera(
+    camera: Assembly101CameraModel, camera_to_world: np.ndarray | None = None
+) -> tuple[np.ndarray, np.ndarray]:
+    """Rodrigues rotation and translation for `cv2.projectPoints` from a camera-to-world pose.
+
+    Static views carry their pose; ego views must be given this frame's pose from
+    `camera_extrinsics_ego`.
+    """
+    if camera_to_world is None:
+        if camera.camera_to_world is None:
+            raise ValueError(f"{camera.view_key} has per-frame extrinsics; pass camera_to_world")
+        camera_to_world = np.asarray(camera.camera_to_world, dtype=np.float64)
+    extrinsic = np.linalg.inv(np.asarray(camera_to_world, dtype=np.float64))
     rotation, _ = cv2.Rodrigues(extrinsic[:3, :3])
     return rotation, extrinsic[:3, 3].copy()
 
 
-def project_world_points(points_world_mm: np.ndarray, camera: Assembly101CameraModel) -> np.ndarray:
+def project_world_points(
+    points_world_mm: np.ndarray,
+    camera: Assembly101CameraModel,
+    camera_to_world: np.ndarray | None = None,
+) -> np.ndarray:
     """Project (N, 3) world-mm joints to raw sensor pixels of the camera's view."""
-    rotation, translation = world_to_camera(camera)
+    rotation, translation = world_to_camera(camera, camera_to_world)
     projected, _ = cv2.projectPoints(
         np.asarray(points_world_mm, dtype=np.float64).reshape(-1, 1, 3),
         rotation,

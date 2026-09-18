@@ -1842,3 +1842,89 @@ this comparison makes no accuracy or cross-method identity claim.
   static/ego correspondence audit and an ATHENA triangulation trial now that the intrinsics
   blocker is gone in practice. Hidden-interior semantics for `[1024,1172)` and the pending
   human QA dispositions are unchanged.
+
+### Sep 18: Track 0 of the overnight multicam pass (all static views, per-view clocks, per-view cameras)
+
+- **Claim boundary first.** Everything in this track is external review context: the dataset's
+  poses and extrinsics are the dataset's, the fitted intrinsics are estimates of the dataset's
+  own internal projection (the archive ships none), the measured clock offsets describe when
+  each camera's video started relative to the pose clock. None of it is ground truth for any
+  method compared here and no accuracy number rests on it; CC BY-NC 4.0 attribution applies.
+  CPU only; no model ran; no viewer opened.
+- **Acquisition (new module `assembly101_fetch_view.py`, CLI `battle-fetch-assembly101-view`).**
+  For each of C10095, C10115, C10118, C10119, C10390, C10395, C10404 the pinned Hugging Face
+  file resolves to a signed CDN URL that answers Range requests; ffmpeg reads it through a local
+  counting proxy, seeks to source 294.000 s and writes, from one decode, the 60 fps trim at
+  sensor resolution (`<view>_rgb_294.000-386.700_raw60.mp4`, 5,562 frames) and the standard
+  1280x720 CFR-30 proxy (2,781 frames, identical filter chain and encoder settings to the C10379
+  proxy). Two requests per view (3,145,728 B for the moov atom at the head; one open-ended range
+  for the mdat window). Coverage: 7/7 remote views, 12/12 views with trims (the local C10379 and
+  four HMC recordings ran through the same recipe; their pinned proxies were kept and three new
+  954x720 HMC proxies at 294.000 s were added). Bytes: 1,852,833,792 B total, 10.4-11.0 % of each
+  file, never the whole file. Time to first output: 53 s for the first view (C10095, network +
+  encode); runtime 45-90 s per remote view, ~19 s per local trim; the whole set finished in
+  under 5 min with three fetches in parallel. VRAM n/a. Frame alignment verified on C10379
+  (local full file): trim frame t = raw frame 17640 + t and proxy frame p = trim frame 2p by
+  downscaled MAE minimum. Report + manifest under the ignored raw tree
+  (`static_views_focused_acquisition_report.md`, `..._manifest.json`, per-view JSON records);
+  G1 entry in `docs/SOURCES.md` with byte ranges, sizes and SHA-256s. The tracked eight-view clip
+  config is `configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_all_static_g2.json`
+  (view ids `static-c10095` ...; remote raw sources cite the `hf://` path and the LFS etag,
+  which is the file's SHA-256). The single-view focused config was deliberately not extended:
+  `interaction_review`, `exploratory_comparison` and `kineo_fusion` assert
+  `clip.views == ("static-c10379",)` on run manifests that embed it.
+- **Per-view clock offsets (new module `assembly101_clock_offset.py`, CLI
+  `battle-assembly101-clock-offset`).** Port of the Sep 17 ad-hoc scans onto the 60 fps trims and
+  the dataset's own 2D landmarks: three metrics (YCrCb skin-mask hit rate for RGB views,
+  Gaussian-smoothed Sobel gradient magnitude, frame-to-frame absolute difference) sampled at
+  the five fingertips of hands with confidence >= 0.7 moving faster than 5 px/frame (3 for ego),
+  velocity-weighted, three 30 s chunks, offsets -6..+15, parabolic sub-frame peak. A chunk
+  whose maximum sits on the edge of the range or whose z-prominence is below 1.2 is reported but
+  not counted; each metric votes with the median of its informative chunks; the rule is the
+  rounded mean of the metric medians, uncertainty the largest metric deviation (never below
+  one frame); metrics disagreeing by more than two frames make the view ambiguous with no rule.
+  Coverage: 12/12 views scanned, 5,400 frames each, none ambiguous. Runtime 47-51 s per static
+  view, 8-9 s per ego view (429 s total, first output = end of the first view). Result: the
+  static cameras do not share one offset. C10095 +5 (+-1, sub-frame +4.96), C10115 +6 (+-1,
+  +5.65), C10118 +6 (+-2, +5.85), C10119 +7 (+-1, +6.83), **C10379 +9 (+-1, +8.51)**, C10390 +7
+  (+-1, +6.67), C10395 +6 (+-2, +6.48), C10404 +6 (+-1, +6.26); all four HMC cameras 0 (+-1;
+  sub-frame +0.38, -0.02, -0.11, -0.44). The C10379 regression check therefore agrees with the
+  committed +9 rule, with the honest caveat that its sub-frame estimate is 8.5: the true lag sits
+  between eight and nine 60 fps frames and either integer is within the stated +-1. Tracked
+  summary `configs/assembly101/clock_rules.json`; per-view curves under
+  `runs/assembly101-clock-offsets/`. Two curve-level findings worth keeping: a gradient chunk
+  can produce a ramp with its maximum on the range edge (C10395 chunk 0 at -6), which is why
+  edge maxima are excluded; and the +9 offset previously measured for C10379 is the largest of
+  the eight, so applying it to another static camera would have been wrong by up to four frames
+  (67 ms).
+- **Per-view cameras (new module `assembly101_camera_fit.py`, CLI
+  `battle-fit-assembly101-camera`).** Generalisation of `intrinsics2.py`: 112 frame groups every
+  50 pose frames over [17640, 23202), hands with confidence >= 0.8, joints inside the image;
+  `cv2.calibrateCamera` full Brown for static views, rational model (`CALIB_RATIONAL_MODEL`,
+  zero tangential) with per-frame `camera_extrinsics_ego` for the HMC cameras; each result is
+  verified by re-projecting the dataset 3D through the *shipped* extrinsics with the fitted
+  intrinsics. Static RMS through the shipped pose: C10095 0.00039 px, C10115 0.00096, C10118
+  0.00062, C10119 0.00027, C10379 0.00028 (identical parameters to the checked-in file), C10390
+  0.00062, C10395 0.00021, C10404 0.00228 (max 0.0029); 4,388-4,389 points each. Ego: e3
+  HMC_21110305 0.275 px (max 0.93, 4,229 points), e4 HMC_21179183 0.305 px (max 1.32, 4,192
+  points), e2 HMC_21176623 5.06 px (max 19.0, only 1,120 points / 54 frames), e1 HMC_21176875
+  4.06 px (max 5.3, 1,532 points / 61 frames). OpenCV 5's fisheye model was tried for the ego
+  cameras and is far worse (27-33 px through the shipped pose), so the rational model stays; the
+  e1/e2 residuals reflect how rarely those cameras see the hands, and their estimates are
+  labelled accordingly in `fit_notes`. Runtime 4.5 s for all twelve fits (2.3 s of it loading the
+  pose members). `Assembly101CameraModel` gained `distortion_model` (`brown` | `rational`),
+  `extrinsics_kind` (`fixed` | `per_frame_ego`, ego models carry no constant pose),
+  `fit_frame_count`, the shipped-pose residual and `fit_notes`; the existing C10379 file loads
+  unchanged and was not rewritten (built runs fingerprint it). Twelve
+  `configs/assembly101/<view>_camera_estimate.json` files are checked in.
+- **Tests.** `tests/test_assembly101_acquisition.py`: ffmpeg command shape (single seek, split
+  filter graph, trim-only variant), the counting proxy against an in-process Range server,
+  sub-frame peak / edge / flat curve handling, the metric-median decision with an outlier chunk
+  and the ambiguity rule, a synthetic 60 fps trim whose known offset (3 and 11) is recovered end
+  to end, `rescore` round trip, camera-model validators and legacy-file compatibility, a
+  synthetic Brown recovery through a given pose, and default-tier checks that the twelve tracked
+  camera files and the tracked clock rules are complete; `real_data` checks the acquired windows
+  and that the on-disk scans match the tracked rules.
+- **Open.** The offsets are per-camera constants for this recording; nothing was checked about
+  drift within the 92.7 s window beyond the three-chunk agreement. Track 1 consumes
+  `clock_rules.json` and the camera files through `multiview_geometry.CameraRig`.

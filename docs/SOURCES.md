@@ -146,6 +146,47 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
   any method; no accuracy claim rests on it. TSM/DINOv2 features were inspected and not
   downloaded (bulk LMDB archives; DINOv2 only exists for view C10119).
 
+## Approved local source: Assembly101 all static views, focused window (G1, Sep 18)
+
+- Status: `approved` (overnight multicam plan, user-approved) for the focused window only:
+  source interval 294.000–386.700 s / raw 60 fps frames `[17640, 23202)` of the seven static
+  views not previously on disk. Same dataset/revision (`cvml-nus/assembly101` @
+  `bfc15ea5e3f0bc8f8c232af6c1b45aa137a9d967`), CC BY-NC 4.0, same unresolved use decision
+  as the original G2 pair.
+- Access method: `battle-fetch-assembly101-view`, Sep 18 2026. `hf_hub_url` +
+  `get_hf_file_metadata` resolve the pinned file to a signed CDN URL; ffmpeg reads it through
+  a local counting proxy that forwards HTTP Range requests (`-ss 294 -t 92.7`, one decode,
+  two encodes). The full files were never downloaded. Per view: two requests
+  (`bytes=0-`, 3,145,728 B for the moov atom; one open-ended range for the mdat window).
+- Assets (HF path `recordings/<recording>/<view>_rgb.mp4`; the HF LFS etag is the file's
+  SHA-256; "bytes" is what the proxy delivered to ffmpeg):
+
+  | view | HF size (B) | full-file SHA-256 (etag) | mdat range start | bytes transferred | raw60 trim SHA-256 | 720p proxy SHA-256 |
+  |---|---:|---|---:|---:|---|---|
+  | C10095 | 2,462,520,301 | `ab9bea9b24d95db6364f7addac1839bfa4ecc48c9f7b10e4eef913e48b7eb052` | 779,920,264 | 256,901,120 | `c01909c59a14acd2efec3b7e41329517be8d79b68a114839bb4940d1e99fe9d6` | `a791ef14094f565d0de7322b5dd4cd721ec6f60bb8b2099fb8d1119da6f262bb` |
+  | C10115 | 2,631,101,730 | see manifest | 820,987,888 | 277,872,640 | `fe26926894e8db2ee159c562b0cbe4ec6a2326e813a96cb91d64e222fcc79191` | see clip config |
+  | C10118 | 4,000,615,566 | see manifest | 1,246,098,998 | 428,867,584 | `8e80c266d833822758a6598a5c0047b15ec3a6244cae1a214dd5e22945d8c4b9` | see clip config |
+  | C10119 | 2,133,892,339 | see manifest | 663,479,796 | 228,589,568 | `cc6182ea38048d114a48e727c85a94cc1d5b93e157f04e9d0715df4563898765` | see clip config |
+  | C10390 | 1,876,452,183 | see manifest | 591,470,811 | 198,180,864 | `77075620643eb122239cc8d60ee118359b85cc6f3287643ec88c8f629419ad47` | see clip config |
+  | C10395 | 2,613,875,251 | see manifest | 817,254,675 | 286,261,248 | `1b16c70c8acd475400aad9263e403c73cad8880b592edd1f9412f64bf089935c` | see clip config |
+  | C10404 | 1,628,339,186 | see manifest | 507,404,173 | 176,160,768 | `fd8e19e61645bcd625fb7f96c8038ca441b10beb31e2d652dd86acf2699445a6` | see clip config |
+
+  Total 1,852,833,792 B. Every full-file SHA-256 (etag) and proxy SHA-256 is in the tracked
+  `configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_all_static_g2.json`
+  (`raw_source.checksum_sha256` / `checksum_sha256`), and all measured facts (sizes, frame
+  counts, ranges, ffmpeg version) in the ignored
+  `data/raw/assembly101/<recording>/static_views_focused_acquisition_report.md` +
+  `static_views_focused_acquisition_manifest.json`.
+- Local storage class: ignored `data/derived/assembly101/<recording>/` (`*_raw60.mp4` trims,
+  1920x1080 60 fps, libx264 crf 18; `*_1280x720_30fps.mp4` proxies). The trims of C10379 and
+  the four HMC cameras, plus 954x720 proxies at 294.000 s for HMC_21176623/21176875/21179183,
+  were made from the recordings already on disk with the same recipe.
+- Derived, checked in: `configs/assembly101/<view>_camera_estimate.json` for all eight static
+  and four ego views (estimates of the dataset's internal projection, provenance
+  `estimated_from_dataset_landmark_projection`) and `configs/assembly101/clock_rules.json`
+  (per-view video-vs-pose offsets measured by `battle-assembly101-clock-offset`). Review
+  context only; no accuracy claim rests on any of it.
+
 ## External source: Grounded-SAM-2
 
 - Checkout: `/home/nick/src/Grounded-SAM-2` @ `b7a9c29f196edff0eb54dbe14588d7ae5e3dde28`

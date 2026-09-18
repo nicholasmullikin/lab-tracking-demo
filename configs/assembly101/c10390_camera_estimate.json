@@ -1,0 +1,67 @@
+{
+  "schema_version": "1.0",
+  "view_key": "C10390:rgb",
+  "raw_image_size": [
+    1920,
+    1080
+  ],
+  "intrinsic_matrix": [
+    [
+      1246.678832121777,
+      0.0,
+      944.6531029327546
+    ],
+    [
+      0.0,
+      1246.9143160371732,
+      526.9552982620953
+    ],
+    [
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "distortion": [
+    -0.1283244131125326,
+    0.12219717100883701,
+    0.000023132040848896394,
+    0.0005426923911721058,
+    -0.017427163594455872
+  ],
+  "distortion_model": "brown",
+  "extrinsics_kind": "fixed",
+  "camera_to_world": [
+    [
+      0.9951313734054565,
+      -0.09645003825426102,
+      -0.020271066576242447,
+      84.22968292236328
+    ],
+    [
+      -0.07702839374542236,
+      -0.6328181028366089,
+      -0.7704594731330872,
+      990.4637451171875
+    ],
+    [
+      0.061482954770326614,
+      0.7682698965072632,
+      -0.6371665000915527,
+      886.3668823242188
+    ],
+    [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "provenance": "estimated_from_dataset_landmark_projection",
+  "fit_rms_pixels": 0.00003681282191797249,
+  "fit_point_count": 4389,
+  "fit_frame_count": 112,
+  "shipped_extrinsics_rms_pixels": 0.000619039312080524,
+  "shipped_extrinsics_max_pixels": 0.0007357373713419907,
+  "fit_notes": "112 frame groups every 50 pose frames in [17640, 23202), hands with confidence >= 0.8, joints inside the image; cv2.calibrateCamera brown with camera_extrinsics_fixed"
+}

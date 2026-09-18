@@ -1244,6 +1244,53 @@ uv run battle-build-interaction-review-v4 --overwrite
 uv run pytest -m real_data tests/test_assembly101_reference.py
 ```
 
+#### All eight static views: focused window, per-view clock offsets, per-view cameras (Sep 18)
+
+Track 0 of the overnight multicam pass puts every static camera of the pinned recording on
+the same footing as C10379, for the focused window only (source 294.000-386.700 s). Nothing
+here is an accuracy claim: dataset poses/extrinsics are external context, the fitted
+intrinsics are estimates of the dataset's internal projection, CC BY-NC 4.0 applies.
+
+- **Acquisition.** `battle-fetch-assembly101-view --view C10095` resolves the signed CDN URL
+  of the pinned revision and points ffmpeg at a local counting proxy, so only the moov atom and
+  the window's byte range are transferred (~10.5 % of each 1.6-4.0 GB file, 1.85 GB in total
+  for the seven new views). One decode writes both `<view>_rgb_294.000-386.700_raw60.mp4`
+  (sensor resolution, 60 fps, 5,562 frames, for clock scans) and the standard
+  `<view>_rgb_294.000-386.700_1280x720_30fps.mp4` proxy (same filter chain and encoder as the
+  C10379 proxy). `--local` runs the same recipe on recordings already on disk (used for the
+  C10379 and HMC trims). `scripts/create_assembly101_all_static_focused_proxies.sh` runs all
+  of it idempotently; `--write-report` writes the ignored acquisition report/manifest and the
+  tracked eight-view clip config
+  `configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_all_static_g2.json`
+  (the single-view focused config is unchanged because several review builders assert
+  `clip.views == ("static-c10379",)`).
+- **Clock offsets.** `battle-assembly101-clock-offset --view C10095` ports the Sep 17 offset
+  scan: three metrics (skin-mask hit rate for RGB views, fingertip gradient magnitude, frame
+  difference) sampled at the dataset's projected fingertips of moving hands, three 30 s chunks,
+  candidate offsets -6..+15 pose frames, sub-frame peak by parabolic interpolation. Each metric
+  votes with the median of its informative chunks; metrics disagreeing by more than two frames
+  mark the view ambiguous (no rule is forced). Per-view results go to
+  `runs/assembly101-clock-offsets/<view>.json`; `--write-config` collects them into the
+  tracked `configs/assembly101/clock_rules.json`. The static cameras do **not** share one
+  offset: C10095 +5, C10115 +6, C10118 +6, C10119 +7, C10379 +9, C10390 +7, C10395 +6,
+  C10404 +6 pose frames (+-1, +-2 for C10118/C10395); all four ego cameras 0 (+-1).
+- **Cameras.** `battle-fit-assembly101-camera --all` generalises the C10379 fit: Brown model
+  for static views (`cv2.calibrateCamera` on dataset 3D/2D pairs, verified by re-projecting
+  through the shipped extrinsics: 0.0002-0.002 px RMS), rational model with per-frame
+  `camera_extrinsics_ego` for the HMC cameras (0.27/0.31 px for e3/e4; 4-5 px for e1/e2, which
+  barely see the hands). Written to `configs/assembly101/<view>_camera_estimate.json`; the
+  schema gained `distortion_model`, `extrinsics_kind` and the shipped-pose residual, and the
+  existing C10379 file still loads unchanged.
+
+```bash
+scripts/create_assembly101_all_static_focused_proxies.sh
+uv run battle-assembly101-clock-offset --view C10095 --view C10115 --view C10118 --view C10119 \
+  --view C10379 --view C10390 --view C10395 --view C10404 \
+  --view HMC_21110305 --view HMC_21176623 --view HMC_21176875 --view HMC_21179183 --write-config
+uv run battle-fit-assembly101-camera --all
+uv run pytest -q tests/test_assembly101_acquisition.py
+```
+
 ### First-minute review metrics (label-free triggers)
 
 `battle-review-metrics` turns the v4 first-minute inputs into per-frame proxy metrics and a

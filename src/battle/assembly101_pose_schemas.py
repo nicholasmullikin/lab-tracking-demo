@@ -108,24 +108,57 @@ class Assembly101ClockRule(VersionedModel):
         )
 
 
+DistortionModelName = Literal["brown", "rational"]
+ExtrinsicsKind = Literal["fixed", "per_frame_ego"]
+BROWN_COEFFICIENTS = 5
+RATIONAL_COEFFICIENTS = 8
+
+
 class Assembly101CameraModel(VersionedModel):
-    """Estimated pinhole + Brown distortion for one static view at raw sensor resolution.
+    """Estimated pinhole + distortion for one view at raw sensor resolution.
 
     The dataset ships extrinsics only.  These intrinsics were recovered by fitting the
     dataset's own 2D landmarks against its 3D landmarks through the shipped camera-to-world
     pose, so they reproduce the dataset's internal projection, not a physical calibration.
+
+    Static views use OpenCV's five-coefficient Brown model and carry their constant
+    `camera_to_world`.  Ego views need the eight-coefficient rational model and have no
+    constant pose: `camera_to_world` is `None` and the per-frame pose comes from the dataset's
+    `camera_extrinsics_ego` member (see `multiview_geometry.CameraRig`).
     """
 
     view_key: str = Field(min_length=1)
     raw_image_size: tuple[int, int]
     intrinsic_matrix: tuple[tuple[float, float, float], ...] = Field(min_length=3, max_length=3)
-    distortion: tuple[float, float, float, float, float]
-    camera_to_world: tuple[tuple[float, float, float, float], ...] = Field(
-        min_length=4, max_length=4
+    distortion: tuple[float, ...] = Field(min_length=BROWN_COEFFICIENTS, max_length=14)
+    distortion_model: DistortionModelName = "brown"
+    extrinsics_kind: ExtrinsicsKind = "fixed"
+    camera_to_world: tuple[tuple[float, float, float, float], ...] | None = Field(
+        default=None, min_length=4, max_length=4
     )
     provenance: Literal["estimated_from_dataset_landmark_projection"]
     fit_rms_pixels: float = Field(ge=0)
     fit_point_count: int = Field(ge=1)
+    fit_frame_count: int | None = Field(default=None, ge=1)
+    shipped_extrinsics_rms_pixels: float | None = Field(default=None, ge=0)
+    shipped_extrinsics_max_pixels: float | None = Field(default=None, ge=0)
+    fit_notes: str | None = None
+
+    @model_validator(mode="after")
+    def require_consistent_model(self) -> Assembly101CameraModel:
+        expected = BROWN_COEFFICIENTS if self.distortion_model == "brown" else RATIONAL_COEFFICIENTS
+        if len(self.distortion) != expected:
+            raise ValueError(
+                f"{self.distortion_model} distortion needs {expected} coefficients, "
+                f"got {len(self.distortion)}"
+            )
+        if (self.extrinsics_kind == "fixed") != (self.camera_to_world is not None):
+            raise ValueError("fixed extrinsics need camera_to_world; per-frame ego views omit it")
+        return self
+
+    @property
+    def is_ego(self) -> bool:
+        return self.extrinsics_kind == "per_frame_ego"
 
 
 class Assembly101Point3D(VersionedModel):
