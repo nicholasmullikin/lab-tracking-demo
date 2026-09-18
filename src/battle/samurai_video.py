@@ -35,9 +35,7 @@ from .schemas import (
     TimeInterval,
 )
 
-DEFAULT_CONFIG = Path(
-    "configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_g2.json"
-)
+DEFAULT_CONFIG = Path("configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_g2.json")
 DEFAULT_VIEW_ID = "static-c10379"
 DEFAULT_SECONDS = 10.0
 MIN_SECONDS = 1.0
@@ -46,9 +44,7 @@ SAMURAI_PYTHON = Path("/home/nick/.pyenv/versions/samurai/bin/python")
 SAMURAI_ROOT = Path("/home/nick/src/samurai")
 SAMURAI_REVISION = "76ba195984892b0d1e3db5d9c90bb62175680a"
 SAM2_CHECKPOINT = SAMURAI_ROOT / "sam2" / "checkpoints" / "sam2.1_hiera_tiny.pt"
-SAM2_CHECKPOINT_SHA256 = (
-    "7402e0d864fa82708a20fbd15bc84245c2f26dff0eb43a4b5b93452deb34be69"
-)
+SAM2_CHECKPOINT_SHA256 = "7402e0d864fa82708a20fbd15bc84245c2f26dff0eb43a4b5b93452deb34be69"
 SAM2_CONFIG = "configs/samurai/sam2.1_hiera_t.yaml"
 INIT_BBOX_XYWH = (881, 446, 152, 129)
 METHOD_NAME = "samurai_sam2_video_smoke"
@@ -288,9 +284,7 @@ def run(args: argparse.Namespace) -> Path:
         run_directory=run_directory,
         proxy_path=proxy_path,
         view_id=args.view,
-        source_offset_seconds=config.proxy_timing.source_seconds_for_frame(
-            ClockName.ANALYSIS, 0
-        ),
+        source_offset_seconds=config.proxy_timing.source_seconds_for_frame(ClockName.ANALYSIS, 0),
         max_frames=requested_frames,
         analysis_fps=float(proxy.fps),
     )
@@ -372,9 +366,7 @@ def run(args: argparse.Namespace) -> Path:
         ),
     )
     worker_state = (
-        MethodState.SUCCEEDED
-        if worker_result.get("state") == "succeeded"
-        else MethodState.FAILED
+        MethodState.SUCCEEDED if worker_result.get("state") == "succeeded" else MethodState.FAILED
     )
     method_statuses = (
         MethodStatus(
@@ -384,9 +376,7 @@ def run(args: argparse.Namespace) -> Path:
             artifact_uri=relative_uri(observations_path, repository_root),
             measured_on=f"{args.view}; approved {args.seconds:g}-second proxy prefix",
             blocker=(
-                str(worker_result.get("reason"))
-                if worker_state is MethodState.FAILED
-                else None
+                str(worker_result.get("reason")) if worker_state is MethodState.FAILED else None
             ),
         ),
         MethodStatus(

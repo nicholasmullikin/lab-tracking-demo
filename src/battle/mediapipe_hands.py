@@ -40,9 +40,7 @@ from .schemas import (
     VideoProxy,
 )
 
-DEFAULT_CONFIG = Path(
-    "configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_g2.json"
-)
+DEFAULT_CONFIG = Path("configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_g2.json")
 DEFAULT_MODEL = Path("models/mediapipe/hand_landmarker_float16_v1.task")
 DEFAULT_MODEL_URI = (
     "https://storage.googleapis.com/mediapipe-models/hand_landmarker/"
@@ -118,14 +116,7 @@ def parse_roi(value: str) -> NormalizedRoi:
     if len(roi) != 4:
         raise argparse.ArgumentTypeError("ROI must be x,y,width,height")
     x, y, width, height = roi
-    if (
-        x < 0
-        or y < 0
-        or width <= 0
-        or height <= 0
-        or x + width > 1
-        or y + height > 1
-    ):
+    if x < 0 or y < 0 or width <= 0 or height <= 0 or x + width > 1 or y + height > 1:
         raise argparse.ArgumentTypeError("ROI must be a positive rectangle inside [0, 1]²")
     return x, y, width, height
 
@@ -137,8 +128,7 @@ def remap_landmarks(
         return landmarks
     x, y, width, height = roi
     return tuple(
-        NormalizedPoint(x=x + point.x * width, y=y + point.y * height)
-        for point in landmarks
+        NormalizedPoint(x=x + point.x * width, y=y + point.y * height) for point in landmarks
     )
 
 
@@ -210,8 +200,7 @@ def fuse_hand_candidates(
         wrist = points[0]
         box = _landmark_box(points)
         if any(
-            (wrist.x - existing[0][0].x) ** 2 + (wrist.y - existing[0][0].y) ** 2
-            <= 0.06**2
+            (wrist.x - existing[0][0].x) ** 2 + (wrist.y - existing[0][0].y) ** 2 <= 0.06**2
             or _box_iou(box, _landmark_box(existing[0])) >= 0.8
             for existing in selected
         ):
@@ -226,8 +215,7 @@ def fuse_hand_candidates(
         wrist = points[0]
         box = _landmark_box(points)
         if any(
-            (wrist.x - existing[0][0].x) ** 2 + (wrist.y - existing[0][0].y) ** 2
-            <= 0.12**2
+            (wrist.x - existing[0][0].x) ** 2 + (wrist.y - existing[0][0].y) ** 2 <= 0.12**2
             or _box_iou(box, _landmark_box(existing[0])) >= 0.5
             for existing in selected
         ):
@@ -243,8 +231,7 @@ def canonical_hand_ids(
 ) -> tuple[tuple[str, HandSide], ...]:
     """Expose frame-local detection IDs without claiming identity through occlusion."""
     return tuple(
-        (f"hand-detection-{index}", side)
-        for index, (_, side) in enumerate(assignments, start=1)
+        (f"hand-detection-{index}", side) for index, (_, side) in enumerate(assignments, start=1)
     )
 
 
@@ -257,9 +244,7 @@ class _HandTrack:
         default_factory=lambda: deque(maxlen=HANDEDNESS_VOTE_FRAMES)
     )
 
-    def update(
-        self, *, wrist: tuple[float, float], frame_index: int, side: HandSide
-    ) -> HandSide:
+    def update(self, *, wrist: tuple[float, float], frame_index: int, side: HandSide) -> HandSide:
         self.wrist = wrist
         self.last_frame = frame_index
         self.side_votes.append(side)
@@ -390,16 +375,12 @@ def _detect(
                     raise RuntimeError(f"video decode ended before frame {frame_index}")
                 rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
                 candidate_sets: list[tuple[HandCandidate, ...]] = []
-                for landmarker, inference_roi in zip(
-                    landmarkers, inference_regions, strict=True
-                ):
+                for landmarker, inference_roi in zip(landmarkers, inference_regions, strict=True):
                     inference_frame, actual_roi = _prepare_inference_frame(
                         rgb, roi=inference_roi, upscale=roi_upscale
                     )
                     image = mp.Image(image_format=mp.ImageFormat.SRGB, data=inference_frame)
-                    result = landmarker.detect_for_video(
-                        image, round(frame_index * 1000 / fps)
-                    )
+                    result = landmarker.detect_for_video(image, round(frame_index * 1000 / fps))
                     point_sets = tuple(
                         remap_landmarks(
                             tuple(
@@ -414,9 +395,7 @@ def _detect(
                         for landmarks in result.hand_landmarks
                     )
                     model_sides = tuple(
-                        _side(categories[0].category_name)
-                        if categories
-                        else HandSide.UNKNOWN
+                        _side(categories[0].category_name) if categories else HandSide.UNKNOWN
                         for categories in result.handedness
                     )
                     confidences = tuple(
@@ -482,9 +461,7 @@ def _detect(
 
 
 def _write_observations(path: Path, observations: tuple[FrameObservations, ...]) -> None:
-    path.write_text(
-        "".join(observation.model_dump_json() + "\n" for observation in observations)
-    )
+    path.write_text("".join(observation.model_dump_json() + "\n" for observation in observations))
 
 
 def _bounded_video(proxy_path: Path, output_path: Path, frame_count: int) -> Path:
@@ -595,9 +572,7 @@ def run(args: argparse.Namespace) -> Path:
         view_id=args.view,
         frame_count=requested_frames,
         fps=proxy.fps,
-        source_offset_seconds=config.proxy_timing.source_seconds_for_frame(
-            ClockName.ANALYSIS, 0
-        ),
+        source_offset_seconds=config.proxy_timing.source_seconds_for_frame(ClockName.ANALYSIS, 0),
         input_mirrored=args.input_mirrored,
         roi=args.roi,
         roi_upscale=args.roi_upscale,
@@ -684,9 +659,7 @@ def run(args: argparse.Namespace) -> Path:
             source_duration_seconds=args.seconds,
             covered_intervals=(TimeInterval(start_seconds=0.0, end_seconds=args.seconds),),
         ),
-        chunk_policy=ChunkContinuityPolicy(
-            overlap_seconds=0.0, max_allowed_gap_seconds=0.0
-        ),
+        chunk_policy=ChunkContinuityPolicy(overlap_seconds=0.0, max_allowed_gap_seconds=0.0),
         method_statuses=method_statuses,
         observations=observations,
         mediapipe_hands=metadata,

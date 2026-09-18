@@ -35,9 +35,7 @@ from .schemas import (
     TimeInterval,
 )
 
-DEFAULT_CONFIG = Path(
-    "configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_g2.json"
-)
+DEFAULT_CONFIG = Path("configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_g2.json")
 DEFAULT_VIEW_ID = "static-c10379"
 DEFAULT_SECONDS = 10.0
 MIN_SECONDS = 1.0
@@ -47,9 +45,7 @@ DAM4SAM_ROOT = Path("/home/nick/src/DAM4SAM")
 DAM4SAM_REVISION = "9c954504b39ebca4c412f207be0787c26bfac85a"
 DAM4SAM_CONFIG = DAM4SAM_ROOT / "dam4sam_config.yaml"
 SAM2_CHECKPOINT = DAM4SAM_ROOT / "checkpoints" / "sam2.1_hiera_tiny.pt"
-SAM2_CHECKPOINT_SHA256 = (
-    "7402e0d864fa82708a20fbd15bc84245c2f26dff0eb43a4b5b93452deb34be69"
-)
+SAM2_CHECKPOINT_SHA256 = "7402e0d864fa82708a20fbd15bc84245c2f26dff0eb43a4b5b93452deb34be69"
 SAM2_CONFIG = "sam21pp_hiera_t.yaml"
 TRACKER_NAME = "sam21pp-T"
 INIT_BBOX_XYWH = (881, 446, 152, 129)
@@ -276,9 +272,7 @@ def run(args: argparse.Namespace) -> Path:
         run_directory=run_directory,
         proxy_path=proxy_path,
         view_id=args.view,
-        source_offset_seconds=config.proxy_timing.source_seconds_for_frame(
-            ClockName.ANALYSIS, 0
-        ),
+        source_offset_seconds=config.proxy_timing.source_seconds_for_frame(ClockName.ANALYSIS, 0),
         max_frames=requested_frames,
         analysis_fps=float(proxy.fps),
     )
@@ -374,9 +368,7 @@ def run(args: argparse.Namespace) -> Path:
         ),
     )
     worker_state = (
-        MethodState.SUCCEEDED
-        if worker_result.get("state") == "succeeded"
-        else MethodState.FAILED
+        MethodState.SUCCEEDED if worker_result.get("state") == "succeeded" else MethodState.FAILED
     )
     method_statuses = (
         MethodStatus(
@@ -386,9 +378,7 @@ def run(args: argparse.Namespace) -> Path:
             artifact_uri=relative_uri(observations_path, repository_root),
             measured_on=f"{args.view}; approved {args.seconds:g}-second proxy prefix",
             blocker=(
-                str(worker_result.get("reason"))
-                if worker_state is MethodState.FAILED
-                else None
+                str(worker_result.get("reason")) if worker_state is MethodState.FAILED else None
             ),
         ),
         MethodStatus(

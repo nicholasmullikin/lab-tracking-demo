@@ -115,9 +115,7 @@ def test_second_correction_policy_version_allows_five_later_keyframes() -> None:
         Path(__file__).parents[1]
         / "configs/muggledsam_static_four_part_reassembly_focused_correction_policy_v2.json"
     )
-    policy = MuggledSAMMultiKeyframeCorrectionPolicy.model_validate_json(
-        policy_path.read_text()
-    )
+    policy = MuggledSAMMultiKeyframeCorrectionPolicy.model_validate_json(policy_path.read_text())
 
     assert policy.policy_version == "2"
     assert policy.maximum_later_correction_keyframes_per_target == 5
@@ -193,9 +191,7 @@ def _smoke_metadata_payload(*, analysis_fps: object, frame_count: int) -> dict[s
 
 
 @pytest.mark.parametrize(("analysis_fps", "frame_count"), [(30, 300), (60, 600)])
-def test_smoke_frame_count_matches_analysis_clock(
-    analysis_fps: int, frame_count: int
-) -> None:
+def test_smoke_frame_count_matches_analysis_clock(analysis_fps: int, frame_count: int) -> None:
     smoke = SmokeRunMetadata.model_validate(
         _smoke_metadata_payload(analysis_fps=analysis_fps, frame_count=frame_count)
     )

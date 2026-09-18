@@ -121,9 +121,7 @@ def main() -> None:
                     "annotation_start_frame": step["annotation_start_frame"],
                     "annotation_end_frame": step["annotation_end_frame"],
                     "matched_analysis_frames": matched_indices,
-                    "matched_seconds": [
-                        round(index / video_fps, 3) for index in matched_indices
-                    ],
+                    "matched_seconds": [round(index / video_fps, 3) for index in matched_indices],
                 }
             )
         artifact = {

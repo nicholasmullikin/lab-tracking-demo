@@ -54,13 +54,15 @@ def run(args: argparse.Namespace) -> None:
             frames = _load_frames(capture, int(batch[0]["frame_idx"]), len(batch))
             boxes = [
                 torch.tensor(
-                    [[
-                        item["xyxy"][0],
-                        item["xyxy"][1],
-                        item["xyxy"][2] - item["xyxy"][0],
-                        item["xyxy"][3] - item["xyxy"][1],
-                        item["score"],
-                    ]],
+                    [
+                        [
+                            item["xyxy"][0],
+                            item["xyxy"][1],
+                            item["xyxy"][2] - item["xyxy"][0],
+                            item["xyxy"][3] - item["xyxy"][1],
+                            item["score"],
+                        ]
+                    ],
                     dtype=torch.float32,
                     device="cuda",
                 )
@@ -74,16 +76,22 @@ def run(args: argparse.Namespace) -> None:
                 use_half_precision=True,
             )
             for index, item in enumerate(batch):
-                xy = torch.cat(
-                    [result["joints2d"][index][0], result["vertices2d"][index][0]], dim=0
-                ).cpu().tolist()
-                scores = torch.cat(
-                    [
-                        result["joints_confidences"][index][0],
-                        result["vertices_confidences"][index][0],
-                    ],
-                    dim=0,
-                ).cpu().tolist()
+                xy = (
+                    torch.cat([result["joints2d"][index][0], result["vertices2d"][index][0]], dim=0)
+                    .cpu()
+                    .tolist()
+                )
+                scores = (
+                    torch.cat(
+                        [
+                            result["joints_confidences"][index][0],
+                            result["vertices_confidences"][index][0],
+                        ],
+                        dim=0,
+                    )
+                    .cpu()
+                    .tolist()
+                )
                 output.append(
                     {
                         "view_id": item["view_id"],
@@ -100,9 +108,7 @@ def run(args: argparse.Namespace) -> None:
             start = end
     finally:
         capture.release()
-    args.output.write_bytes(
-        pickle.dumps({"metadata": template["metadata"], "annotations": output})
-    )
+    args.output.write_bytes(pickle.dumps({"metadata": template["metadata"], "annotations": output}))
     print(f"nlf_elapsed_seconds={time.perf_counter() - started:.3f}")
 
 

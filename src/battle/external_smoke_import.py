@@ -45,18 +45,14 @@ from .schemas import (
     TimeInterval,
 )
 
-DEFAULT_CONFIG = Path(
-    "configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_g2.json"
-)
+DEFAULT_CONFIG = Path("configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_g2.json")
 DEFAULT_SOURCE_OFFSET_SECONDS = 294.0
 DEFAULT_DAM4SAM_NATIVE = Path("runs/dam4sam-static-20s-smoke-20260916t0520z/masks")
 DEFAULT_KINEO_NATIVE = Path(
-    "runs/kineo/infer_nlf_headless_only/offline_demo/annotations/"
-    "assembly101_focused_static_20s"
+    "runs/kineo/infer_nlf_headless_only/offline_demo/annotations/assembly101_focused_static_20s"
 )
 DEFAULT_GROUNDED_SAM2_NATIVE = Path(
-    "runs/grounded-sam2-static-frame0-smoke-20260916t0450z/"
-    "grounded_sam2_hf_model_demo_results.json"
+    "runs/grounded-sam2-static-frame0-smoke-20260916t0450z/grounded_sam2_hf_model_demo_results.json"
 )
 DEFAULT_SMOKE_VIDEO = Path("data/derived/assembly101/smoke_frames/focused_static_20s.mp4")
 DEFAULT_SMOKE_IMAGE = Path("data/derived/assembly101/smoke_frames/focused_static_frame0.jpg")
@@ -136,9 +132,7 @@ def _write_native_index(
     return _fingerprint(output_path, repository_root)
 
 
-def _bounded_clip(
-    config: G2PreprocessingManifest, frame_count: int
-) -> tuple[object, float]:
+def _bounded_clip(config: G2PreprocessingManifest, frame_count: int) -> tuple[object, float]:
     analysis_fps = config.proxy_timing.clocks.fps_for(ClockName.ANALYSIS)
     return _clip_for_duration(config, frame_count / analysis_fps), analysis_fps
 

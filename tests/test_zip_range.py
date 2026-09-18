@@ -34,9 +34,7 @@ def test_read_remote_zip_member_decompresses_payload() -> None:
     payload = _build_zip_bytes()
     reader = _MemoryRangeReader(payload)
     member = next(
-        member
-        for member in list_remote_zip_members(reader)
-        if member.filename.endswith("json")
+        member for member in list_remote_zip_members(reader) if member.filename.endswith("json")
     )
     raw = read_remote_zip_member(reader, member)
     assert raw == b'{"value": 42}'

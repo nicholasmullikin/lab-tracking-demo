@@ -35,9 +35,7 @@ from .schemas import (
     TimeInterval,
 )
 
-DEFAULT_CONFIG = Path(
-    "configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_g2.json"
-)
+DEFAULT_CONFIG = Path("configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_g2.json")
 DEFAULT_VIEW_ID = "static-c10379"
 DEFAULT_SECONDS = 10.0
 MIN_SECONDS = 1.0
@@ -46,9 +44,7 @@ GROUNDED_SAM2_PYTHON = Path("/home/nick/.pyenv/versions/grounded_sam2/bin/python
 GROUNDED_SAM2_ROOT = Path("/home/nick/src/Grounded-SAM-2")
 GROUNDED_SAM2_REVISION = "b7a9c29f196edff0eb54dbe14588d7ae5e3dde28"
 SAM2_CHECKPOINT = GROUNDED_SAM2_ROOT / "checkpoints" / "sam2.1_hiera_tiny.pt"
-SAM2_CHECKPOINT_SHA256 = (
-    "7402e0d864fa82708a20fbd15bc84245c2f26dff0eb43a4b5b93452deb34be69"
-)
+SAM2_CHECKPOINT_SHA256 = "7402e0d864fa82708a20fbd15bc84245c2f26dff0eb43a4b5b93452deb34be69"
 SAM2_CONFIG = "configs/sam2.1/sam2.1_hiera_t.yaml"
 GROUNDING_MODEL_ID = "IDEA-Research/grounding-dino-tiny"
 GROUNDING_MODEL_REVISION = "a2bb814dd30d776dcf7e30523b00659f4f141c71"
@@ -281,10 +277,7 @@ def run(args: argparse.Namespace) -> Path:
         view_id=args.view,
         seconds=args.seconds,
     )
-    run_id = (
-        args.run_id
-        or f"{METHOD_NAME}-{args.seconds:g}s-{datetime.now(UTC):%Y%m%dt%H%M%Sz}"
-    )
+    run_id = args.run_id or f"{METHOD_NAME}-{args.seconds:g}s-{datetime.now(UTC):%Y%m%dt%H%M%Sz}"
     run_directory = (repository_root / args.output_root / run_id).resolve()
     run_directory.mkdir(parents=True, exist_ok=False)
     worker_path = Path(__file__).with_name("grounding_dino_sam2_video_worker.py")
@@ -293,9 +286,7 @@ def run(args: argparse.Namespace) -> Path:
         run_directory=run_directory,
         proxy_path=proxy_path,
         view_id=args.view,
-        source_offset_seconds=config.proxy_timing.source_seconds_for_frame(
-            ClockName.ANALYSIS, 0
-        ),
+        source_offset_seconds=config.proxy_timing.source_seconds_for_frame(ClockName.ANALYSIS, 0),
         max_frames=requested_frames,
         analysis_fps=float(proxy.fps),
     )
@@ -384,9 +375,7 @@ def run(args: argparse.Namespace) -> Path:
         ),
     )
     worker_state = (
-        MethodState.SUCCEEDED
-        if worker_result.get("state") == "succeeded"
-        else MethodState.FAILED
+        MethodState.SUCCEEDED if worker_result.get("state") == "succeeded" else MethodState.FAILED
     )
     method_statuses = (
         MethodStatus(
@@ -396,9 +385,7 @@ def run(args: argparse.Namespace) -> Path:
             artifact_uri=relative_uri(observations_path, repository_root),
             measured_on=f"{args.view}; approved {args.seconds:g}-second proxy prefix",
             blocker=(
-                str(worker_result.get("reason"))
-                if worker_state is MethodState.FAILED
-                else None
+                str(worker_result.get("reason")) if worker_state is MethodState.FAILED else None
             ),
         ),
         MethodStatus(

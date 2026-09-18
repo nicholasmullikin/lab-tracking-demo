@@ -135,9 +135,7 @@ def _muggledsam_prompt_arguments(
         or any(len(point) != 2 for point in fg_points)
         or any(len(point) != 2 for point in bg_points)
     ):
-        raise ValueError(
-            "batch_decode requires boxes as Nx2x2 and fg_points/bg_points as Nx2"
-        )
+        raise ValueError("batch_decode requires boxes as Nx2x2 and fg_points/bg_points as Nx2")
     values = [
         coordinate
         for collection in (boxes, fg_points, bg_points)
@@ -392,9 +390,7 @@ def _candidate_review_panel(
     import cv2
     import numpy as np
 
-    human_selection = _human_selection_caption(
-        human_selected_candidate_index, human_accepted
-    )
+    human_selection = _human_selection_caption(human_selected_candidate_index, human_accepted)
     panel_width, panel_height = 940, 424
     view_width, view_height = 446, 300
     panel = np.full((panel_height, panel_width, 3), (30, 30, 30), dtype=np.uint8)
@@ -598,9 +594,7 @@ def render_final_selected_seed_review(
     header_height, card_header_height, gutter = 102, 28, 12
     footer_height = max(48, 24 * len(excluded) + 24)
     sheet_height = (
-        header_height
-        + len(selected) * (card_header_height + panel_height + gutter)
-        + footer_height
+        header_height + len(selected) * (card_header_height + panel_height + gutter) + footer_height
     )
     sheet = np.full((sheet_height, panel_width, 3), (16, 16, 16), dtype=np.uint8)
     cv2.putText(

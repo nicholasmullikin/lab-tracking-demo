@@ -325,8 +325,7 @@ def normalize_settings(raw: object) -> dict[str, dict[str, Any]]:
     """Clamp, snap, and order every control so unknown input cannot reach an operator."""
     given = raw if isinstance(raw, Mapping) else {}
     return {
-        operator.id: operator.normalize(given.get(operator.id))
-        for operator in VIEW_FILTER_PIPELINE
+        operator.id: operator.normalize(given.get(operator.id)) for operator in VIEW_FILTER_PIPELINE
     }
 
 
@@ -380,9 +379,7 @@ def describe_pipeline() -> dict[str, Any]:
 
 def _require_vigra(operator: ViewFilterOperator) -> Any:
     if _vigra is None:
-        raise ViewFilterError(
-            f"{operator.label} needs VIGRA. {vigra_unavailable_reason()}"
-        )
+        raise ViewFilterError(f"{operator.label} needs VIGRA. {vigra_unavailable_reason()}")
     return _vigra
 
 
@@ -402,13 +399,11 @@ def _numpy_gaussian(gray: np.ndarray, sigma: float) -> np.ndarray:
     kernel /= kernel.sum()
     padded = np.pad(gray, ((0, 0), (radius, radius)), mode="reflect")
     rows = sum(
-        kernel[index] * padded[:, index : index + gray.shape[1]]
-        for index in range(kernel.size)
+        kernel[index] * padded[:, index : index + gray.shape[1]] for index in range(kernel.size)
     )
     padded = np.pad(rows, ((radius, radius), (0, 0)), mode="reflect")
     return sum(
-        kernel[index] * padded[index : index + gray.shape[0], :]
-        for index in range(kernel.size)
+        kernel[index] * padded[index : index + gray.shape[0], :] for index in range(kernel.size)
     ).astype(np.float32)
 
 
@@ -472,14 +467,10 @@ def _edge_mask(
         )
         return np.asarray(edges) > 0
     if operator.id == "shen_castan":
-        edges = vigra.analysis.shenCastanEdgeImage(
-            tagged, scale, float(options["threshold"]), 1
-        )
+        edges = vigra.analysis.shenCastanEdgeImage(tagged, scale, float(options["threshold"]), 1)
         return np.asarray(edges) > 0
     if operator.id == "zero_crossings":
-        laplacian = np.asarray(
-            vigra.filters.laplacianOfGaussian(tagged, scale), dtype=np.float32
-        )
+        laplacian = np.asarray(vigra.filters.laplacianOfGaussian(tagged, scale), dtype=np.float32)
         jump = float(options["threshold"])
         mask = np.zeros(laplacian.shape, dtype=bool)
         right = laplacian[:, :-1] * laplacian[:, 1:] < 0
@@ -692,9 +683,7 @@ def render_view(
         )
     results = _evaluate(jobs)
 
-    pixels = np.repeat(
-        np.clip(base, 0, 255).astype(np.uint8)[:, :, None], 3, axis=2
-    )
+    pixels = np.repeat(np.clip(base, 0, 255).astype(np.uint8)[:, :, None], 3, axis=2)
     for operator in VIEW_FILTER_PIPELINE:
         if operator.stage != "edge" or operator.id not in results:
             continue
@@ -707,9 +696,7 @@ def render_view(
     for operator in VIEW_FILTER_PIPELINE:
         if operator.stage != "corner" or operator.id not in results:
             continue
-        corners.append(
-            {"id": operator.id, "color": operator.color, "points": results[operator.id]}
-        )
+        corners.append({"id": operator.id, "color": operator.color, "points": results[operator.id]})
         applied.append(operator.id)
         backends[operator.id] = operator.backend
 

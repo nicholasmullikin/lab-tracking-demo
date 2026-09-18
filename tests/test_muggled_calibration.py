@@ -263,9 +263,10 @@ def test_muggledsam_box_foreground_background_prompt_shapes_are_passed_unchanged
             return "encoded"
 
     model = SpyInteractiveModel()
-    assert _encode_muggledsam_prompts(
-        model, boxes=boxes, fg_points=foreground, bg_points=background
-    ) == "encoded"
+    assert (
+        _encode_muggledsam_prompts(model, boxes=boxes, fg_points=foreground, bg_points=background)
+        == "encoded"
+    )
     assert model.calls == [(boxes, foreground, background)]
 
 
@@ -324,9 +325,12 @@ def test_finalized_review_renders_accepted_selection_and_preserves_exclusion() -
     )
 
     assert records == [(selected, proposal["seeds"][0])]
-    assert _human_selection_caption(
-        selected["human_selected_candidate_index"], selected["human_accepted"]
-    ) == "Human selection: accepted candidate 1"
+    assert (
+        _human_selection_caption(
+            selected["human_selected_candidate_index"], selected["human_accepted"]
+        )
+        == "Human selection: accepted candidate 1"
+    )
     assert preserved_exclusions == [excluded]
 
 
@@ -457,8 +461,7 @@ def test_four_target_config_finalization_requires_four_new_human_selected_masks(
     root = Path(__file__).parents[1]
     config_path = root / "configs/clips/assembly101_nusar_9033_ego_viewpoint_screen_g2.json"
     target_config_path = (
-        root
-        / "configs/"
+        root / "configs/"
         "muggledsam_e4_left_hand_right_hand_yellow_toy_top_black_toy_top_base_manual_seed.json"
     )
     targets = ("left_hand", "right_hand", "yellow_toy_top", "black_toy_top_base")
@@ -508,8 +511,7 @@ def test_correction_schedule_requires_frame_zero_and_rejects_duplicate_slots(
     root = Path(__file__).parents[1]
     config_path = root / "configs/clips/assembly101_nusar_9033_ego_viewpoint_screen_g2.json"
     target_config_path = (
-        root
-        / "configs/"
+        root / "configs/"
         "muggledsam_e4_left_hand_right_hand_yellow_toy_top_black_toy_top_base_manual_seed.json"
     )
     policy_path = root / "configs/muggledsam_e4_four_target_keyframe_correction_policy.json"

@@ -22,15 +22,9 @@ def test_unmirrored_camera_swaps_mediapipe_selfie_handedness() -> None:
 def test_track_assigner_keeps_nearby_wrist_id_and_temporally_votes_side() -> None:
     assigner = HandTrackAssigner()
 
-    first = assigner.assign(
-        frame_index=0, wrists=((0.2, 0.3),), sides=(HandSide.LEFT,)
-    )
-    second = assigner.assign(
-        frame_index=1, wrists=((0.21, 0.31),), sides=(HandSide.RIGHT,)
-    )
-    third = assigner.assign(
-        frame_index=2, wrists=((0.22, 0.32),), sides=(HandSide.LEFT,)
-    )
+    first = assigner.assign(frame_index=0, wrists=((0.2, 0.3),), sides=(HandSide.LEFT,))
+    second = assigner.assign(frame_index=1, wrists=((0.21, 0.31),), sides=(HandSide.RIGHT,))
+    third = assigner.assign(frame_index=2, wrists=((0.22, 0.32),), sides=(HandSide.LEFT,))
 
     assert first == (("hand-1", HandSide.LEFT),)
     assert second == (("hand-1", HandSide.RIGHT),)
@@ -74,14 +68,11 @@ def test_roi_landmarks_map_back_to_full_frame_coordinates() -> None:
 def test_two_pass_fusion_keeps_best_duplicate_and_distinct_second_hand() -> None:
     def hand(x: float, y: float) -> tuple[NormalizedPoint, ...]:
         return tuple(
-            NormalizedPoint(x=x + index * 0.001, y=y + index * 0.001)
-            for index in range(21)
+            NormalizedPoint(x=x + index * 0.001, y=y + index * 0.001) for index in range(21)
         )
 
     fused = fuse_hand_candidates(
-        (
-            (hand(0.60, 0.50), HandSide.LEFT, 0.8),
-        ),
+        ((hand(0.60, 0.50), HandSide.LEFT, 0.8),),
         (
             (hand(0.61, 0.51), HandSide.LEFT, 0.95),
             (hand(0.82, 0.60), HandSide.RIGHT, 0.7),

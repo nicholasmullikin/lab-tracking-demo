@@ -75,10 +75,7 @@ def _draw_hands(
     image: np.ndarray, observation: FrameObservations, color: tuple[int, int, int]
 ) -> None:
     for hand in observation.hands:
-        points = [
-            (round(point.x * 319), round(point.y * 179))
-            for point in hand.landmarks
-        ]
+        points = [(round(point.x * 319), round(point.y * 179)) for point in hand.landmarks]
         for first, second in HAND_CONNECTIONS:
             cv2.line(image, points[first], points[second], color, 1, cv2.LINE_AA)
         cv2.circle(image, points[0], 3, color, -1, cv2.LINE_AA)

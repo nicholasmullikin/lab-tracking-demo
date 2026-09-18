@@ -33,9 +33,7 @@ from .schemas import (
     TimeInterval,
 )
 
-DEFAULT_CONFIG = Path(
-    "configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_g2.json"
-)
+DEFAULT_CONFIG = Path("configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_g2.json")
 DEFAULT_VIEW_ID = "static-c10379"
 DEFAULT_SECONDS = 20.0
 MAX_SECONDS = 60.0
@@ -255,8 +253,7 @@ def run(args: argparse.Namespace) -> Path:
         seconds=args.seconds,
     )
     run_id = (
-        args.run_id
-        or f"boxmot-yolo-static-{args.seconds:g}s-{datetime.now(UTC):%Y%m%dt%H%M%Sz}"
+        args.run_id or f"boxmot-yolo-static-{args.seconds:g}s-{datetime.now(UTC):%Y%m%dt%H%M%Sz}"
     )
     run_directory = (repository_root / args.output_root / run_id).resolve()
     run_directory.mkdir(parents=True, exist_ok=False)
@@ -266,9 +263,7 @@ def run(args: argparse.Namespace) -> Path:
         run_directory=run_directory,
         proxy_path=proxy_path,
         view_id=args.view,
-        source_offset_seconds=config.proxy_timing.source_seconds_for_frame(
-            ClockName.ANALYSIS, 0
-        ),
+        source_offset_seconds=config.proxy_timing.source_seconds_for_frame(ClockName.ANALYSIS, 0),
         detector_path=detector_path,
         max_frames=requested_frames,
         analysis_fps=float(proxy.fps),
@@ -305,9 +300,7 @@ def run(args: argparse.Namespace) -> Path:
             runtime_settings[key] = json.dumps(value, sort_keys=True)
     runtime_settings["analysis_fps"] = proxy.fps
     runtime_settings["frames_with_tracks"] = worker_result.get("frames_with_tracks")
-    runtime_settings["total_track_observations"] = worker_result.get(
-        "total_track_observations"
-    )
+    runtime_settings["total_track_observations"] = worker_result.get("total_track_observations")
     metadata = BoxMOTRunMetadata(
         requested_analysis_frame_range=FrameRange(
             start_frame=0, end_frame_exclusive=requested_frames
@@ -350,9 +343,7 @@ def run(args: argparse.Namespace) -> Path:
         ),
     )
     worker_state = (
-        MethodState.SUCCEEDED
-        if worker_result.get("state") == "succeeded"
-        else MethodState.FAILED
+        MethodState.SUCCEEDED if worker_result.get("state") == "succeeded" else MethodState.FAILED
     )
     method_statuses = (
         MethodStatus(
@@ -362,9 +353,7 @@ def run(args: argparse.Namespace) -> Path:
             artifact_uri=relative_uri(observations_path, repository_root),
             measured_on=f"{args.view}; approved {args.seconds:g}-second proxy prefix",
             blocker=(
-                str(worker_result.get("reason"))
-                if worker_state is MethodState.FAILED
-                else None
+                str(worker_result.get("reason")) if worker_state is MethodState.FAILED else None
             ),
         ),
         MethodStatus(

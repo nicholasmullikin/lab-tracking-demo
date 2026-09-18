@@ -173,9 +173,7 @@ def _merge_static_hands(static: RunManifest, hands: RunManifest) -> RunManifest:
             or abs(hand_observation.source_seconds - static_observation.source_seconds) > 1e-6
         ):
             raise ValueError("MediaPipe and static SAM3 observations are not frame-aligned")
-        observations.append(
-            static_observation.model_copy(update={"hands": hand_observation.hands})
-        )
+        observations.append(static_observation.model_copy(update={"hands": hand_observation.hands}))
     return static.model_copy(
         update={
             "run_id": f"{static.run_id}--{hands.run_id}",

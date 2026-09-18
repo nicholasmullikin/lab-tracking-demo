@@ -162,9 +162,8 @@ def selected_frame_budget(args: argparse.Namespace, analysis_fps: float) -> int:
         return FOUR_PART_PILOT_FRAMES
     if getattr(args, "four_part_static_full", False):
         return FOUR_PART_FULL_FRAMES
-    if (
-        getattr(args, "four_part_static_focused", False)
-        or getattr(args, "four_part_ego_focused", False)
+    if getattr(args, "four_part_static_focused", False) or getattr(
+        args, "four_part_ego_focused", False
     ):
         return FOUR_PART_FOCUSED_FRAMES
     return smoke_frame_count(analysis_fps)
@@ -227,18 +226,10 @@ def require_four_part_full_range(view_id: str, start_frame: int, max_frames: int
     return FrameRange(start_frame=start_frame, end_frame_exclusive=FOUR_PART_FULL_FRAMES)
 
 
-def require_four_part_focused_range(
-    view_id: str, start_frame: int, max_frames: int
-) -> FrameRange:
+def require_four_part_focused_range(view_id: str, start_frame: int, max_frames: int) -> FrameRange:
     """Permit only the separated-to-assembled focused four-part proxy."""
-    if (
-        view_id != "static-c10379"
-        or start_frame != 0
-        or max_frames != FOUR_PART_FOCUSED_FRAMES
-    ):
-        raise ValueError(
-            "focused four-part run permits only static-c10379 proxy frames [0, 2781)"
-        )
+    if view_id != "static-c10379" or start_frame != 0 or max_frames != FOUR_PART_FOCUSED_FRAMES:
+        raise ValueError("focused four-part run permits only static-c10379 proxy frames [0, 2781)")
     return FrameRange(start_frame=start_frame, end_frame_exclusive=FOUR_PART_FOCUSED_FRAMES)
 
 
@@ -246,11 +237,7 @@ def require_four_part_ego_focused_range(
     view_id: str, start_frame: int, max_frames: int
 ) -> FrameRange:
     """Permit only the focused monochrome ego four-part proxy."""
-    if (
-        view_id != "ego-hmc21110305"
-        or start_frame != 0
-        or max_frames != FOUR_PART_FOCUSED_FRAMES
-    ):
+    if view_id != "ego-hmc21110305" or start_frame != 0 or max_frames != FOUR_PART_FOCUSED_FRAMES:
         raise ValueError(
             "focused ego four-part run permits only ego-hmc21110305 proxy frames [0, 2781)"
         )
@@ -1799,9 +1786,7 @@ def run_smoke(args: argparse.Namespace) -> Path:
         if is_four_part_full
         else require_four_part_focused_range(proxy.view_id, args.start_frame, args.max_frames)
         if is_four_part_focused
-        else require_four_part_ego_focused_range(
-            proxy.view_id, args.start_frame, args.max_frames
-        )
+        else require_four_part_ego_focused_range(proxy.view_id, args.start_frame, args.max_frames)
         if is_four_part_ego_focused
         else require_smoke_range(args.start_frame, args.max_frames, analysis_fps)
     )

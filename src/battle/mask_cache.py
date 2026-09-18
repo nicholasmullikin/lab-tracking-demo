@@ -238,9 +238,7 @@ def logged_colors_by_uri(run_directory: Path) -> dict[str, tuple[Color, ...]]:
 
     observations = tuple(
         FrameObservations.model_validate_json(line)
-        for line in (run_directory / "observations.jsonl")
-        .read_text(encoding="utf-8")
-        .splitlines()
+        for line in (run_directory / "observations.jsonl").read_text(encoding="utf-8").splitlines()
         if line.strip()
     )
     manifest_path = run_directory / "manifest.json"

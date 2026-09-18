@@ -28,9 +28,7 @@ from .schemas import (
     TimeInterval,
 )
 
-DEFAULT_CONFIG = Path(
-    "configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_g2.json"
-)
+DEFAULT_CONFIG = Path("configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_g2.json")
 DEFAULT_LABELS = Path(
     "data/raw/assembly101/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532/"
     "annotations/coarse-annotations/coarse_labels/"
@@ -144,10 +142,7 @@ def run(args: argparse.Namespace) -> Path:
             "cannot run Drop-DTW weak supervision"
         )
 
-    run_id = (
-        args.run_id
-        or f"drop-dtw-static-{args.seconds:g}s-{datetime.now(UTC):%Y%m%dt%H%M%Sz}"
-    )
+    run_id = args.run_id or f"drop-dtw-static-{args.seconds:g}s-{datetime.now(UTC):%Y%m%dt%H%M%Sz}"
     run_directory = (repository_root / args.output_root / run_id).resolve()
     run_directory.mkdir(parents=True, exist_ok=False)
     transcript_path = run_directory / "gt_transcript.json"
@@ -232,10 +227,7 @@ def run(args: argparse.Namespace) -> Path:
             source="measured",
         ),
         openclip_checkpoint_fingerprint=ArtifactFingerprint(
-            uri=(
-                f"hf://{OPENCLIP_REPOSITORY}@{OPENCLIP_REVISION}/"
-                "open_clip_model.safetensors"
-            ),
+            uri=(f"hf://{OPENCLIP_REPOSITORY}@{OPENCLIP_REVISION}/open_clip_model.safetensors"),
             sha256=sha256_file(checkpoint_path),
             source="measured",
         ),

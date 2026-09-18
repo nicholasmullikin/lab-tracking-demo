@@ -45,9 +45,7 @@ def _smoke(run_root: Path, *extra: str) -> Path:
 
 def _frames(run: Path) -> dict[int, dict]:
     rows = (run / "observations.jsonl").read_text(encoding="utf-8").splitlines()
-    return {
-        json.loads(row)["analysis_frame_index"]: json.loads(row) for row in rows if row.strip()
-    }
+    return {json.loads(row)["analysis_frame_index"]: json.loads(row) for row in rows if row.strip()}
 
 
 def _mask_digests(run: Path, row: dict) -> tuple[str, ...]:

@@ -139,7 +139,7 @@ def main() -> None:
                     pred_mask = np.asarray(outputs["pred_mask"], dtype=bool)
                     if not pred_mask.any():
                         raise RuntimeError(f"empty mask on analysis frame {frame_idx}")
-                    mask_png = (pred_mask.astype(np.uint8) * 255)
+                    mask_png = pred_mask.astype(np.uint8) * 255
                     mask_name = f"{frame_idx:05d}.png"
                     cv2.imwrite(str(masks_dir / mask_name), mask_png)
                     unique_mask_hashes.add(hashlib.sha256(mask_png.tobytes()).hexdigest())

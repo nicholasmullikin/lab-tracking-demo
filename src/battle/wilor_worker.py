@@ -198,9 +198,7 @@ def main() -> None:
                                 keypoints_2d, frame_width, frame_height
                             )
                             side = _side(is_right)
-                            confidence = min(
-                                max(detector_confidences[hand_index + slot], 0.0), 1.0
-                            )
+                            confidence = min(max(detector_confidences[hand_index + slot], 0.0), 1.0)
                             hand_id = f"hand-detection-{len(hands) + 1}"
                             joints_payload = [
                                 {"x": float(point[0]), "y": float(point[1]), "z": float(point[2])}

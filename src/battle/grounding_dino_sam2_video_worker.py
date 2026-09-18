@@ -181,7 +181,7 @@ def main() -> None:
                     if mask.ndim == 3:
                         mask = mask.squeeze(0)
                     mask_bool = np.asarray(mask, dtype=bool)
-                    mask_png = (mask_bool.astype(np.uint8) * 255)
+                    mask_png = mask_bool.astype(np.uint8) * 255
                     mask_name = f"{frame_idx:05d}.png"
                     cv2.imwrite(str(masks_dir / mask_name), mask_png)
                     unique_mask_hashes.add(hashlib.sha256(mask_png.tobytes()).hexdigest())
@@ -212,8 +212,7 @@ def main() -> None:
                 payload = {
                     "view_id": args.view_id,
                     "analysis_frame_index": frame_idx,
-                    "source_seconds": args.source_offset_seconds
-                    + frame_idx / args.analysis_fps,
+                    "source_seconds": args.source_offset_seconds + frame_idx / args.analysis_fps,
                     "objects": objects,
                 }
                 observations_file.write(json.dumps(payload) + "\n")

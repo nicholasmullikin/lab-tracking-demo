@@ -253,17 +253,14 @@ def render_synchronized_candidate_sheet(
 
     from PIL import Image, ImageDraw, ImageFont
 
-    frame_range, analysis_fps, source_offset_seconds, scale = (
-        _synchronized_candidate_contract(runs)
-    )
+    frame_range, analysis_fps, source_offset_seconds, scale = _synchronized_candidate_contract(runs)
     frame_indices = evenly_spaced_frame_indices(frame_range, count)
     relative_seconds = tuple(
         scale * (frame_index - frame_range.start_frame) / analysis_fps
         for frame_index in frame_indices
     )
     source_seconds = tuple(
-        source_offset_seconds + scale * frame_index / analysis_fps
-        for frame_index in frame_indices
+        source_offset_seconds + scale * frame_index / analysis_fps for frame_index in frame_indices
     )
 
     frames_by_run = []
@@ -468,9 +465,7 @@ def prepare_pending_record(
 
     source_timestamps = (easy_source_seconds, hard_source_seconds)
     analysis_indices = _checkpoint_indices(run, source_timestamps)
-    _verify_fingerprinted_file(
-        run.config_fingerprint, repository_root, label="run configuration"
-    )
+    _verify_fingerprinted_file(run.config_fingerprint, repository_root, label="run configuration")
 
     evidence_path = (
         run.run_directory

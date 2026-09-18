@@ -54,10 +54,7 @@ def video_info(video_path: Path, *, verify: bool = False) -> VideoInfo:
     if not verify and sidecar.is_file():
         try:
             stored = json.loads(sidecar.read_text(encoding="utf-8"))
-            if (
-                stored["size_bytes"] == status.st_size
-                and stored["mtime_ns"] == status.st_mtime_ns
-            ):
+            if stored["size_bytes"] == status.st_size and stored["mtime_ns"] == status.st_mtime_ns:
                 return (
                     int(stored["frame_count"]),
                     int(stored["fps"]),

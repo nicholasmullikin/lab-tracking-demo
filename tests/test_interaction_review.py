@@ -559,7 +559,11 @@ def test_hand_logging_keeps_2d_archetypes_out_of_the_3d_context_root(tmp_path) -
     rr.disconnect()
     with pytest.raises(ValueError, match="at least one"):
         _log_hands(
-            root, observation, dimensions=(1280, 720), color=(0, 0, 0), include_3d=False,
+            root,
+            observation,
+            dimensions=(1280, 720),
+            color=(0, 0, 0),
+            include_3d=False,
             include_2d=False,
         )
 

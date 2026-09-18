@@ -327,9 +327,7 @@ def _log_hands(
         return
     rr.log(
         f"{metrics_root}/mean_handedness_confidence",
-        rr.Scalars(
-            [sum(hand.confidence for hand in observation.hands) / len(observation.hands)]
-        ),
+        rr.Scalars([sum(hand.confidence for hand in observation.hands) / len(observation.hands)]),
     )
 
     colors = {
@@ -349,13 +347,9 @@ def _log_hands(
     joints_3d_strip_colors = []
     for hand in observation.hands:
         color = colors[str(hand.side)]
-        positions = [
-            [landmark.x * width, landmark.y * height] for landmark in hand.landmarks
-        ]
+        positions = [[landmark.x * width, landmark.y * height] for landmark in hand.landmarks]
         landmark_positions.extend(positions)
-        landmark_labels.extend(
-            f"{hand.hand_id}: {name}" for name in HAND_LANDMARK_NAMES
-        )
+        landmark_labels.extend(f"{hand.hand_id}: {name}" for name in HAND_LANDMARK_NAMES)
         landmark_colors.extend([color] * len(positions))
         strips.extend([[positions[start], positions[end]] for start, end in HAND_CONNECTIONS])
         strip_colors.extend([color] * len(HAND_CONNECTIONS))
@@ -364,9 +358,7 @@ def _log_hands(
                 [joint.x, joint.y, joint.z] for joint in hand.joints_3d_camera_relative
             ]
             joints_3d_positions.extend(joint_positions)
-            joints_3d_labels.extend(
-                f"{hand.hand_id}: {name}" for name in HAND_LANDMARK_NAMES
-            )
+            joints_3d_labels.extend(f"{hand.hand_id}: {name}" for name in HAND_LANDMARK_NAMES)
             joints_3d_colors.extend([color] * len(joint_positions))
             joints_3d_strips.extend(
                 [[joint_positions[start], joint_positions[end]] for start, end in HAND_CONNECTIONS]
@@ -391,12 +383,10 @@ def _log_hands(
         rr.Boxes2D(
             mins=[[hand.box.x * width, hand.box.y * height] for hand in observation.hands],
             sizes=[
-                [hand.box.width * width, hand.box.height * height]
-                for hand in observation.hands
+                [hand.box.width * width, hand.box.height * height] for hand in observation.hands
             ],
             labels=[
-                f"{hand.hand_id}: {hand.side} ({hand.confidence:.2f})"
-                for hand in observation.hands
+                f"{hand.hand_id}: {hand.side} ({hand.confidence:.2f})" for hand in observation.hands
             ],
             colors=[colors[str(hand.side)] for hand in observation.hands],
             draw_order=2.0,
@@ -522,9 +512,7 @@ def pinned_comparison_blueprint(
     """Build a pinned side-by-side layout sharing the analysis-time timeline."""
     root = f"world/{clip_id}/synchronized_ego_static_comparison"
 
-    def spatial_view(
-        view_id: str, label: str, dimensions: tuple[int, int]
-    ) -> rrb.Spatial2DView:
+    def spatial_view(view_id: str, label: str, dimensions: tuple[int, int]) -> rrb.Spatial2DView:
         return rrb.Spatial2DView(
             origin=f"{root}/views/{view_id}",
             contents=_spatial_view_contents(),
@@ -730,9 +718,7 @@ def export_synchronized_comparison(
         static_video_dimensions=static_video_dimensions,
         ego_label=ego_label,
         static_label=static_label,
-        has_static_hands=any(
-            observation.hands for observation in static_manifest.observations
-        ),
+        has_static_hands=any(observation.hands for observation in static_manifest.observations),
     )
     rr.init(
         f"battle-synchronized-ego-static-comparison-{ego_manifest.clip.clip_id}",
@@ -818,9 +804,7 @@ def export_synchronized_comparison(
             analysis_seconds=analysis_seconds,
             segmentation_frame_period=segmentation_frame_period,
         )
-        _log_tracker_diagnostics(
-            ego_observation, view_root=ego_root, annotations=ego_annotations
-        )
+        _log_tracker_diagnostics(ego_observation, view_root=ego_root, annotations=ego_annotations)
         _log_tracker_diagnostics(
             static_observation, view_root=static_root, annotations=static_annotations
         )

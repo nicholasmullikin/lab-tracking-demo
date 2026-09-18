@@ -95,9 +95,7 @@ def summarize_arm(run_directory: Path) -> dict[str, Any]:
             if measurements.get("gpu_peak_vram_bytes")
             else None
         ),
-        "per_target": {
-            target: _target_summary(observations, target) for target in TARGETS
-        },
+        "per_target": {target: _target_summary(observations, target) for target in TARGETS},
     }
 
 

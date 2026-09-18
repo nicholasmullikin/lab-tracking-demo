@@ -124,8 +124,7 @@ def main() -> None:
     if unreferenced:
         print("\nReview this list, then delete by hand if you agree:")
         print(
-            "  rm -rf "
-            + " \\\n        ".join(str(args.runs_root / name) for name in unreferenced)
+            "  rm -rf " + " \\\n        ".join(str(args.runs_root / name) for name in unreferenced)
         )
 
 

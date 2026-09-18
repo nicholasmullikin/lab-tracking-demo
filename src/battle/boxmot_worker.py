@@ -153,9 +153,7 @@ def main() -> None:
                 }
                 observations_file.write(json.dumps(observation) + "\n")
                 frames_processed += 1
-                peak_vram_bytes = max(
-                    peak_vram_bytes, int(torch.cuda.max_memory_allocated(device))
-                )
+                peak_vram_bytes = max(peak_vram_bytes, int(torch.cuda.max_memory_allocated(device)))
 
         capture.release()
     except Exception as error:  # noqa: BLE001 - worker must persist failure state

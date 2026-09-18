@@ -93,9 +93,7 @@ def test_pending_human_qa_record_is_valid_and_unattributed() -> None:
 
 
 def test_candidate_grid_includes_evenly_spaced_completed_run_endpoints() -> None:
-    indices = evenly_spaced_frame_indices(
-        FrameRange(start_frame=0, end_frame_exclusive=5400), 12
-    )
+    indices = evenly_spaced_frame_indices(FrameRange(start_frame=0, end_frame_exclusive=5400), 12)
 
     assert indices == (0, 491, 982, 1472, 1963, 2454, 2945, 3436, 3927, 4417, 4908, 5399)
 
@@ -162,9 +160,7 @@ def test_non_pending_human_qa_requires_reviewer_attribution() -> None:
         ("pass", "fail", "fail"),
     ],
 )
-def test_human_qa_aggregate_status_is_conservative(
-    easy: str, hard: str, overall: str
-) -> None:
+def test_human_qa_aggregate_status_is_conservative(easy: str, hard: str, overall: str) -> None:
     payload = _record_payload(
         easy_disposition=easy,
         hard_disposition=hard,

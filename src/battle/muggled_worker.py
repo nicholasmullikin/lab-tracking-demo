@@ -813,9 +813,7 @@ def run(args: argparse.Namespace) -> int:
             )
         checkpoint_directory = run_directory / "native" / "checkpoints"
 
-        def save_checkpoint(
-            frame_index: int, prompt_memories: Any, frame_memories: Any
-        ) -> None:
+        def save_checkpoint(frame_index: int, prompt_memories: Any, frame_memories: Any) -> None:
             """Persist the state that is ready to process `frame_index`.
 
             Naming a checkpoint by the frame it has not yet stepped is what lets a rerun
@@ -858,9 +856,7 @@ def run(args: argparse.Namespace) -> int:
                     prompt_memories = deque([initial_memory], maxlen=MAX_PROMPT_MEMORY)
                     frame_memories = deque([], maxlen=MAX_FRAME_MEMORY)
                 else:
-                    prompt_memories = deque(
-                        resumed["prompt_memories"], maxlen=MAX_PROMPT_MEMORY
-                    )
+                    prompt_memories = deque(resumed["prompt_memories"], maxlen=MAX_PROMPT_MEMORY)
                     frame_memories = deque(resumed["frame_memories"], maxlen=MAX_FRAME_MEMORY)
                     # Decode, without encoding, up to the resumed frame: seeking a
                     # long-GOP proxy by index is not frame-exact in every backend.
