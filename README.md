@@ -1487,6 +1487,41 @@ gate starves without corrections (53-67 % of chassis/interior frames withheld) a
 camera C10395; higher encoder sides (1008, 1280) rewrite the trajectory outside the windows, so
 720 stays. Every number is label-free disagreement, not accuracy.
 
+#### Human review anchors (Sep 18, prepared, not labelled)
+
+The label-free ablation cannot rank the arms inside the windows where the reference is itself
+wrong, so the next evidence is human: one accepted mask per visible part, or an explicit
+**hidden** mark, on 13 anchor frames of the focused C10379 first minute (300, 370, 400, 600, 650,
+700, 900, 1050, 1100, 1150, 1200, 1500, 1700; interior flagged `hidden_prompt` on 1050/1100/1150).
+The list is typed in `configs/qa/first_minute_review_anchors.json` (`ReviewAnchorConfig` in
+`review_anchors.py`) with its claim boundary: `human_review_anchor` masks are review evidence for
+scoring arms against each other, not a dataset, not ground truth, no accuracy claim; CC BY-NC 4.0.
+The calibration workspace gained a per-cell **hidden** button (`hidden_targets` on the manifest,
+`POST /api/hidden-targets[/clear]`), so "reviewed and absent" is never confused with "not
+labelled"; accepting a mask on a cell clears its hidden mark and a hidden mark refuses while an
+accepted mask exists. `battle-muggled-calibration-web --resume` now keeps the persisted frames
+when `--timestamps` is omitted.
+
+```bash
+uv run battle-anchor-export prepare            # once: runs/human-review-anchors-first-minute/ (done Sep 18)
+uv run battle-muggled-calibration-web \
+  --config configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_g2.json \
+  --view static-c10379 \
+  --manual-seed-target-config configs/muggledsam_static_four_part_reassembly_focused_manual_seed.json \
+  --output-dir runs/human-review-anchors-first-minute --resume   # prints http://127.0.0.1:8765/
+uv run battle-anchor-export export             # anchors/anchor_masks.json + docs/qa/...human-record.json
+uv run battle-anchor-iou --anchors runs/human-review-anchors-first-minute \
+  --run runs/sam3-policy-ablation-20260918/arms/xg-r720-sched --run reference=<reference run> \
+  --output runs/sam3-policy-ablation-20260918/anchor_iou.json   # + anchor_iou.md table
+```
+
+`battle-anchor-iou` scores any run directory (or an `arms/<arm>/` directory holding one run):
+IoU and area ratio per accepted anchor, a run mask on a hidden part counted as a false positive
+with its area, a missing run mask as IoU 0 and flagged, unlabeled anchors skipped and counted;
+per-part and per-window (`[279,408)`, `[573,722)`, `[1020,1172)`) means over the anchor frames
+inside each. The per-frame procedure, timing (~1 h) and the full post-labelling commands are in
+`runs/human-review-anchors-first-minute/README.md`. Nothing has been labelled by the agent.
+
 ### First-minute review metrics (label-free triggers)
 
 `battle-review-metrics` turns the v4 first-minute inputs into per-frame proxy metrics and a

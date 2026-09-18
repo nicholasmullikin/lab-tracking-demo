@@ -160,6 +160,12 @@ function moveBox(box, dx, dy) {
   return {x1: box.x1 + offsetX, y1: box.y1 + offsetY, x2: box.x2 + offsetX, y2: box.y2 + offsetY};
 }
 function pending() { return state.manifest.workspace.pending_boxes; }
+function hiddenMarks() { return state.manifest.hidden_targets || []; }
+function hiddenMarkFor(target, time) {
+  return hiddenMarks().find((item) => (
+    item.intended_target === target && Math.abs(item.frame.proxy_seconds - time) <= 1e-9
+  )) || null;
+}
 function promptPoints(item, kind) {
   return item?.[kind === "foreground" ? "pixel_fg_points" : "pixel_bg_points"] || [];
 }
@@ -990,6 +996,7 @@ function candidatesSignature() {
     ]),
     [...state.pendingCandidateSelections],
     planLocked(),
+    hiddenMarks().map((item) => [item.intended_target, item.frame.proxy_seconds]),
     state.manifest.candidates.map((item) => [
       item.candidate_id, item.intended_target, item.rejected, item.human_accepted,
       item.human_selected_candidate_index, item.selected_for_finalization,
@@ -1030,20 +1037,23 @@ function renderCandidateStatusTable(host, locked, lockReason) {
         item.intended_target === target && Math.abs(item.frame.proxy_seconds - time) <= 1e-9
       ));
       const item = accepted || preview || rejected || null;
+      const hidden = accepted ? null : hiddenMarkFor(target, time);
       const isInitial = frameIndex === 0;
       const scheduled = accepted && (
         isInitial ? accepted.selected_for_finalization : accepted.selected_for_correction
       );
-      const done = Boolean(accepted);
+      const done = Boolean(accepted) || Boolean(hidden);
       const status = accepted
         ? "✓ Done"
-        : preview
-          ? "◐ Preview"
-          : pendingPrompt
-            ? "○ Editing"
-            : rejected
-              ? "× Rejected"
-              : "○ Not done";
+        : hidden
+          ? "— Hidden"
+          : preview
+            ? "◐ Preview"
+            : pendingPrompt
+              ? "○ Editing"
+              : rejected
+                ? "× Rejected"
+                : "○ Not done";
       const wrapper = document.createElement("span");
       wrapper.className = `status-cell ${done ? "done" : preview || accepted ? "preview" : ""}${
         state.label === target && Math.abs(activeTimestamp() - time) <= 1e-9 ? " active" : ""}`;
@@ -1052,6 +1062,8 @@ function renderCandidateStatusTable(host, locked, lockReason) {
       select.textContent = status;
       select.title = accepted
         ? `Accepted${scheduled ? isInitial ? " as the initial mask" : " and scheduled as the correction" : ""}. Show it on the canvas.`
+        : hidden
+          ? "Marked hidden by the reviewer: no visible surface on this frame, so no mask. Show the frame."
         : item
           ? "Show this target and candidate on the canvas."
         : "Show this target and frame on the canvas.";
@@ -1071,6 +1083,17 @@ function renderCandidateStatusTable(host, locked, lockReason) {
         clear.onclick = (event) => {
           event.stopPropagation();
           return unacceptCandidate(accepted);
+        };
+        wrapper.append(clear);
+      } else if (hidden) {
+        const clear = document.createElement("button");
+        clear.className = "status-clear";
+        clear.textContent = "×";
+        clear.title = locked ? lockReason : "Clear the hidden mark (the cell returns to not done).";
+        clear.disabled = locked;
+        clear.onclick = (event) => {
+          event.stopPropagation();
+          return clearHiddenTarget(target, time);
         };
         wrapper.append(clear);
       } else if (preview) {
@@ -1097,6 +1120,22 @@ function renderCandidateStatusTable(host, locked, lockReason) {
         };
         wrapper.append(restore);
       }
+      if (!accepted && !hidden) {
+        // The explicit "nothing to draw" answer, so a reviewed-but-absent part is never
+        // confused with a part nobody looked at.
+        const hide = document.createElement("button");
+        hide.className = "status-hide";
+        hide.textContent = "hidden";
+        hide.title = locked
+          ? lockReason
+          : `Mark ${target.replaceAll("_", " ")} hidden on frame ${frameIndex}: the part is not visible, so no mask is expected.`;
+        hide.disabled = locked;
+        hide.onclick = (event) => {
+          event.stopPropagation();
+          return markTargetHidden(target, time);
+        };
+        wrapper.append(hide);
+      }
       cell.append(wrapper);
       row.append(cell);
     }
@@ -1110,11 +1149,12 @@ function renderCandidates() {
   candidatesRendered = signature;
   const locked = planLocked(), lockReason = planLockReason();
   const active = state.manifest.candidates.filter((item) => !item.rejected);
-  const completedCells = new Set(
-    active
+  const completedCells = new Set([
+    ...active
       .filter((item) => item.human_accepted)
       .map((item) => `${item.frame.analysis_frame_index}:${item.intended_target}`),
-  ).size;
+    ...hiddenMarks().map((item) => `${item.frame.analysis_frame_index}:${item.intended_target}`),
+  ]).size;
   const totalCells = state.manifest.requested_proxy_timestamps_seconds.length * labels().length;
   setPanelSummary(
     "candidates",
@@ -1163,6 +1203,26 @@ async function restoreCandidate(item) {
   try {
     await api(`/api/candidates/${item.candidate_id}/restore`, {method: "POST", body: "{}"});
     setStatus(`Restored ${item.candidate_id} to normal review.`);
+    await refresh();
+  } catch (error) { setStatus(error.message, true); }
+}
+async function markTargetHidden(target, time) {
+  if (planLocked()) return setStatus(planLockReason(), true);
+  try {
+    await api("/api/hidden-targets", {
+      method: "POST", body: JSON.stringify({timestamp: time, intended_target: target}),
+    });
+    setStatus(`Marked ${target.replaceAll("_", " ")} hidden at ${time.toFixed(3)} s; no mask is expected there.`);
+    await refresh();
+  } catch (error) { setStatus(error.message, true); }
+}
+async function clearHiddenTarget(target, time) {
+  if (planLocked()) return setStatus(planLockReason(), true);
+  try {
+    await api("/api/hidden-targets/clear", {
+      method: "POST", body: JSON.stringify({timestamp: time, intended_target: target}),
+    });
+    setStatus(`Cleared the hidden mark for ${target.replaceAll("_", " ")} at ${time.toFixed(3)} s.`);
     await refresh();
   } catch (error) { setStatus(error.message, true); }
 }

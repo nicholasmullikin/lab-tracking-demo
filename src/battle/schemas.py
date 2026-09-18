@@ -941,6 +941,20 @@ def _require_normalized_prompt_points(
                 raise ValueError(f"{item_name} normalized {kind} point must match its pixel point")
 
 
+class MuggledSAMCalibrationHiddenTarget(VersionedModel):
+    """A human's explicit statement that a target is not visible on a calibration frame.
+
+    A hidden mark is review evidence in its own right (the reviewer looked and found no
+    visible surface), distinct from a cell that was simply never labelled. It never enters
+    a proposal or correction schedule: those need masks, and this says there is none.
+    """
+
+    intended_target: str = Field(min_length=1)
+    frame: CalibrationFrameReference
+    state: Literal["hidden"] = "hidden"
+    marked_by: Literal["human"] = "human"
+
+
 class MuggledSAMSupersededTrackingPlan(VersionedModel):
     """A finalized plan a human reopened for further editing.
 
@@ -992,6 +1006,8 @@ class MuggledSAMBoxCalibrationManifest(VersionedModel):
     # Set when a calibration was copied from a finalized one so extra later-frame
     # corrections could be added without rewriting the original's fingerprinted manifest.
     derived_from_calibration: ArtifactFingerprint | None = None
+    # Frame/target cells a human explicitly marked as not visible (no mask to draw).
+    hidden_targets: tuple[MuggledSAMCalibrationHiddenTarget, ...] = ()
 
     @field_validator("requested_proxy_timestamps_seconds")
     @classmethod
@@ -1128,6 +1144,41 @@ class MuggledSAMBoxCalibrationManifest(VersionedModel):
             raise ValueError("superseded plan revisions must be increasing and unique")
         if revisions and max(revisions) > self.plan_revision:
             raise ValueError("a superseded plan cannot claim a revision the plan never reached")
+        return self
+
+    @model_validator(mode="after")
+    def require_consistent_hidden_targets(self) -> MuggledSAMBoxCalibrationManifest:
+        cells = [
+            (mark.frame.analysis_frame_index, mark.intended_target) for mark in self.hidden_targets
+        ]
+        if len(set(cells)) != len(cells):
+            raise ValueError("a target can be marked hidden at most once per frame")
+        accepted = {
+            (candidate.frame.analysis_frame_index, candidate.intended_target)
+            for candidate in self.candidates
+            if candidate.human_accepted and not candidate.rejected
+        }
+        for mark in self.hidden_targets:
+            frame = mark.frame
+            expected_seconds = frame.analysis_frame_index / self.proxy_fps
+            if frame.analysis_frame_index >= self.proxy_frame_count:
+                raise ValueError("hidden target frame must be inside the proxy")
+            if (
+                abs(frame.proxy_seconds - expected_seconds) > 1e-9
+                or abs(frame.analysis_seconds - expected_seconds) > 1e-9
+                or abs(frame.source_seconds - (self.source_offset_seconds + expected_seconds))
+                > 1e-9
+            ):
+                raise ValueError("hidden target time must match its analysis frame")
+            if not any(
+                abs(frame.proxy_seconds - timestamp) <= 1e-9
+                for timestamp in self.requested_proxy_timestamps_seconds
+            ):
+                raise ValueError("hidden target must use a requested proxy timestamp")
+            if (frame.analysis_frame_index, mark.intended_target) in accepted:
+                raise ValueError(
+                    "a target cannot be both hidden and have an accepted mask on one frame"
+                )
         return self
 
 

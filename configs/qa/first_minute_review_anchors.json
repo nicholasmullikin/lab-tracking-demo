@@ -1,0 +1,215 @@
+{
+  "schema_version": "1.0",
+  "manifest_kind": "human_review_anchor_config",
+  "config_id": "first-minute-review-anchors-c10379",
+  "anchor_kind": "human_review_anchor",
+  "clip_config": "configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_g2.json",
+  "view_id": "static-c10379",
+  "manual_seed_target_config": "configs/muggledsam_static_four_part_reassembly_focused_manual_seed.json",
+  "analysis_fps": 30,
+  "source_offset_seconds": 294.0,
+  "targets": [
+    "chassis",
+    "interior",
+    "rear_body",
+    "cabin"
+  ],
+  "frames": [
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 300,
+      "proxy_seconds": 10.0,
+      "source_seconds": 304.0,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 370,
+      "proxy_seconds": 12.333333333333334,
+      "source_seconds": 306.3333333333333,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 400,
+      "proxy_seconds": 13.333333333333334,
+      "source_seconds": 307.3333333333333,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 600,
+      "proxy_seconds": 20.0,
+      "source_seconds": 314.0,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 650,
+      "proxy_seconds": 21.666666666666668,
+      "source_seconds": 315.6666666666667,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 700,
+      "proxy_seconds": 23.333333333333332,
+      "source_seconds": 317.3333333333333,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 900,
+      "proxy_seconds": 30.0,
+      "source_seconds": 324.0,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1050,
+      "proxy_seconds": 35.0,
+      "source_seconds": 329.0,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "hidden_prompt",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": "interior may be occluded here; choose hidden or draw the visible surface"
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1100,
+      "proxy_seconds": 36.666666666666664,
+      "source_seconds": 330.6666666666667,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "hidden_prompt",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": "interior may be occluded here; choose hidden or draw the visible surface"
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1150,
+      "proxy_seconds": 38.333333333333336,
+      "source_seconds": 332.3333333333333,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "hidden_prompt",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": "interior may be occluded here; choose hidden or draw the visible surface"
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1200,
+      "proxy_seconds": 40.0,
+      "source_seconds": 334.0,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1500,
+      "proxy_seconds": 50.0,
+      "source_seconds": 344.0,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1700,
+      "proxy_seconds": 56.666666666666664,
+      "source_seconds": 350.6666666666667,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null
+    }
+  ],
+  "windows": {
+    "279-408": [
+      279,
+      408
+    ],
+    "573-722": [
+      573,
+      722
+    ],
+    "1020-1172": [
+      1020,
+      1172
+    ]
+  },
+  "hidden_prompt_interval": [
+    1024,
+    1172
+  ],
+  "claim_boundary": "human_review_anchor masks are review evidence for scoring tracker arms against each other on a handful of frames; they are not a dataset, not ground truth, and support no accuracy claim. A human chose one SAM3 image-decoder mask per visible part, or marked the part hidden; the mask boundary is the decoder's, the choice is the human's.",
+  "license": "CC BY-NC 4.0 (Assembly101 source frames); anchor masks and marks are derived from those frames and inherit the same non-commercial terms",
+  "provenance": {
+    "schema_version": "1.0",
+    "author": null,
+    "reviewed_at": null,
+    "tool": "battle-muggled-calibration-web",
+    "notes": null
+  }
+}

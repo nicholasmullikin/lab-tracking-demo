@@ -61,6 +61,7 @@ from .muggled_smoke import (
 from .schemas import (
     MuggledSAMBoxCalibrationManifest,
     MuggledSAMCalibrationCandidate,
+    MuggledSAMCalibrationHiddenTarget,
     MuggledSAMCalibrationPendingBox,
     MuggledSAMManualSeedTargetConfig,
     MuggledSAMMultiKeyframeCorrectionPolicy,
@@ -625,6 +626,71 @@ class Workspace:
                 "proxy_seconds": frame.proxy_seconds,
             }
 
+    def _hidden_cell(self, timestamp: float, intended_target: str) -> tuple[Any, str]:
+        frame = frame_reference(
+            timestamp,
+            fps=self.manifest.proxy_fps,
+            source_offset_seconds=self.manifest.source_offset_seconds,
+            frame_count=self.manifest.proxy_frame_count,
+        )
+        if not self._is_requested_calibration_frame(frame.analysis_frame_index):
+            raise ValueError(
+                "this frame is browse-only; hidden marks are limited to configured "
+                "calibration frames"
+            )
+        target = intended_target.strip()
+        if not target:
+            raise ValueError("intended_target is required")
+        return frame, target
+
+    def mark_target_hidden(self, timestamp: float, intended_target: str) -> dict[str, Any]:
+        """Record that a human looked at this frame and found the target not visible.
+
+        This is the explicit alternative to accepting a mask: the cell is reviewed, and
+        the review says there is nothing to draw. It refuses while an accepted mask
+        exists for the cell so the two statements can never coexist silently.
+        """
+        with self.lock:
+            self._require_draft_candidate_review()
+            frame, target = self._hidden_cell(timestamp, intended_target)
+            if any(
+                candidate.human_accepted
+                and not candidate.rejected
+                and candidate.intended_target == target
+                and candidate.frame.analysis_frame_index == frame.analysis_frame_index
+                for candidate in self.manifest.candidates
+            ):
+                raise ValueError("unaccept the accepted mask before marking this target hidden")
+            mark = MuggledSAMCalibrationHiddenTarget(intended_target=target, frame=frame)
+            others = tuple(
+                item
+                for item in self.manifest.hidden_targets
+                if not (
+                    item.intended_target == target
+                    and item.frame.analysis_frame_index == frame.analysis_frame_index
+                )
+            )
+            self._persist(self.manifest.model_copy(update={"hidden_targets": (*others, mark)}))
+            return mark.model_dump(mode="json")
+
+    def clear_hidden_target(self, timestamp: float, intended_target: str) -> None:
+        with self.lock:
+            self._require_draft_candidate_review()
+            frame, target = self._hidden_cell(timestamp, intended_target)
+            remaining = tuple(
+                item
+                for item in self.manifest.hidden_targets
+                if not (
+                    item.intended_target == target
+                    and item.frame.analysis_frame_index == frame.analysis_frame_index
+                )
+            )
+            if len(remaining) == len(self.manifest.hidden_targets):
+                raise KeyError(
+                    f"{target} is not marked hidden on frame {frame.analysis_frame_index}"
+                )
+            self._persist(self.manifest.model_copy(update={"hidden_targets": remaining}))
+
     def delete_prompt(self, box_id: str) -> None:
         with self.lock:
             self._require_draft_candidate_review()
@@ -1057,7 +1123,21 @@ class Workspace:
                 }
             )
             candidates[candidates.index(candidate)] = accepted
-            self._persist(self.manifest.model_copy(update={"candidates": tuple(candidates)}))
+            # Accepting a mask is the human saying the part is visible here, which
+            # supersedes any earlier hidden mark on the same cell.
+            hidden_targets = tuple(
+                item
+                for item in self.manifest.hidden_targets
+                if not (
+                    item.intended_target == candidate.intended_target
+                    and item.frame.analysis_frame_index == candidate.frame.analysis_frame_index
+                )
+            )
+            self._persist(
+                self.manifest.model_copy(
+                    update={"candidates": tuple(candidates), "hidden_targets": hidden_targets}
+                )
+            )
 
     def unaccept_candidate(self, candidate_id: str) -> None:
         """Explicitly clear a human choice before a candidate can be rejected."""
@@ -1483,6 +1563,16 @@ def make_handler(workspace: Workspace) -> type[BaseHTTPRequestHandler]:
                     )
                 elif self.path == "/api/prompts":
                     _json(self, HTTPStatus.CREATED, workspace.add_or_update_prompt(body))
+                elif self.path == "/api/hidden-targets":
+                    workspace.mark_target_hidden(
+                        float(body["timestamp"]), str(body["intended_target"])
+                    )
+                    _json(self, HTTPStatus.CREATED, workspace.snapshot())
+                elif self.path == "/api/hidden-targets/clear":
+                    workspace.clear_hidden_target(
+                        float(body["timestamp"]), str(body["intended_target"])
+                    )
+                    _json(self, HTTPStatus.OK, workspace.snapshot())
                 elif self.path == "/api/workspace":
                     workspace.set_active_timestamp(float(body["timestamp"]))
                     _json(self, HTTPStatus.OK, workspace.snapshot())
@@ -1583,7 +1673,6 @@ def make_handler(workspace: Workspace) -> type[BaseHTTPRequestHandler]:
 
 
 def make_workspace(args: argparse.Namespace, repository_root: Path) -> Workspace:
-    timestamps = parse_timestamps(args.timestamps)
     view_id = getattr(args, "view", "ego-hmc21179183")
     output_directory = (
         args.output_dir.resolve()
@@ -1599,6 +1688,12 @@ def make_workspace(args: argparse.Namespace, repository_root: Path) -> Workspace
         manifest = MuggledSAMBoxCalibrationManifest.model_validate_json(manifest_path.read_text())
         if manifest.base_g2_config_sha256 != sha256_file(args.config):
             raise ValueError("cannot resume: selected G2 configuration fingerprint changed")
+        # A resumed workspace keeps the frames it persisted unless the caller names some.
+        timestamps = (
+            manifest.requested_proxy_timestamps_seconds
+            if args.timestamps is None
+            else parse_timestamps(args.timestamps)
+        )
         configured_frames = {round(timestamp * manifest.proxy_fps) for timestamp in timestamps}
         persisted_frames = {
             round(timestamp * manifest.proxy_fps)
@@ -1609,6 +1704,11 @@ def make_workspace(args: argparse.Namespace, repository_root: Path) -> Workspace
         if manifest.view_id != view_id:
             raise ValueError("cannot resume with a different --view")
     else:
+        timestamps = parse_timestamps(
+            ",".join(map(str, DEFAULT_TIMESTAMPS_SECONDS))
+            if args.timestamps is None
+            else args.timestamps
+        )
         if output_directory.exists():
             raise ValueError(f"output directory exists; use --resume: {output_directory}")
         output_directory.mkdir(parents=True)
@@ -1714,7 +1814,15 @@ def main() -> None:
     )
     parser.add_argument("--run-root", type=Path, default=Path("runs"))
     parser.add_argument("--output-dir", type=Path)
-    parser.add_argument("--timestamps", default=",".join(map(str, DEFAULT_TIMESTAMPS_SECONDS)))
+    parser.add_argument(
+        "--timestamps",
+        default=None,
+        help=(
+            "Comma-separated proxy seconds of the calibration frames "
+            f"(default {','.join(map(str, DEFAULT_TIMESTAMPS_SECONDS))}; with --resume the "
+            "persisted frames)."
+        ),
+    )
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)

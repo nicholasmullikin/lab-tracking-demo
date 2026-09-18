@@ -1,0 +1,399 @@
+{
+  "schema_version": "1.0",
+  "manifest_kind": "human_review_anchor_record",
+  "anchor_kind": "human_review_anchor",
+  "author": null,
+  "reviewed_at": null,
+  "config": {
+    "schema_version": "1.0",
+    "uri": "configs/qa/first_minute_review_anchors.json",
+    "sha256": "4bf48e58e707ac2265357afaa85e0236d29792b25309cf981ec3eb1dee52cb60",
+    "source": "measured"
+  },
+  "mask_set": {
+    "schema_version": "1.0",
+    "uri": "runs/human-review-anchors-first-minute/anchors/anchor_masks.json",
+    "sha256": "d39774ffb54b5967549a32e85a4e88156ed030e8c09c2783587a282504427f46",
+    "source": "measured"
+  },
+  "calibration_manifest": {
+    "schema_version": "1.0",
+    "uri": "runs/human-review-anchors-first-minute/calibration_manifest.json",
+    "sha256": "c8b703907eb51a4d29a2a323e6f52c5660a08524cdcbf550a6142d0cfdd9efe1",
+    "source": "measured"
+  },
+  "counts": {
+    "labeled": 0,
+    "hidden": 0,
+    "unlabeled": 52
+  },
+  "anchors": [
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 300,
+      "target": "chassis",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 300,
+      "target": "interior",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 300,
+      "target": "rear_body",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 300,
+      "target": "cabin",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 370,
+      "target": "chassis",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 370,
+      "target": "interior",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 370,
+      "target": "rear_body",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 370,
+      "target": "cabin",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 400,
+      "target": "chassis",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 400,
+      "target": "interior",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 400,
+      "target": "rear_body",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 400,
+      "target": "cabin",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 600,
+      "target": "chassis",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 600,
+      "target": "interior",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 600,
+      "target": "rear_body",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 600,
+      "target": "cabin",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 650,
+      "target": "chassis",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 650,
+      "target": "interior",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 650,
+      "target": "rear_body",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 650,
+      "target": "cabin",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 700,
+      "target": "chassis",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 700,
+      "target": "interior",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 700,
+      "target": "rear_body",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 700,
+      "target": "cabin",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 900,
+      "target": "chassis",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 900,
+      "target": "interior",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 900,
+      "target": "rear_body",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 900,
+      "target": "cabin",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1050,
+      "target": "chassis",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1050,
+      "target": "interior",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1050,
+      "target": "rear_body",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1050,
+      "target": "cabin",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1100,
+      "target": "chassis",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1100,
+      "target": "interior",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1100,
+      "target": "rear_body",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1100,
+      "target": "cabin",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1150,
+      "target": "chassis",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1150,
+      "target": "interior",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1150,
+      "target": "rear_body",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1150,
+      "target": "cabin",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1200,
+      "target": "chassis",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1200,
+      "target": "interior",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1200,
+      "target": "rear_body",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1200,
+      "target": "cabin",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1500,
+      "target": "chassis",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1500,
+      "target": "interior",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1500,
+      "target": "rear_body",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1500,
+      "target": "cabin",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1700,
+      "target": "chassis",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1700,
+      "target": "interior",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1700,
+      "target": "rear_body",
+      "state": "unlabeled",
+      "mask_sha256": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1700,
+      "target": "cabin",
+      "state": "unlabeled",
+      "mask_sha256": null
+    }
+  ],
+  "claim_boundary": "human_review_anchor masks are review evidence for scoring tracker arms against each other on a handful of frames; they are not a dataset, not ground truth, and support no accuracy claim. A human chose one SAM3 image-decoder mask per visible part, or marked the part hidden; the mask boundary is the decoder's, the choice is the human's.",
+  "license": "CC BY-NC 4.0 (Assembly101 source frames); anchor masks and marks are derived from those frames and inherit the same non-commercial terms",
+  "notes": "Skeleton written by battle-anchor-export; author and reviewed_at stay null until the human who labelled fills them in."
+}

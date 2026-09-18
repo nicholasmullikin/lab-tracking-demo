@@ -3002,4 +3002,96 @@ this comparison makes no accuracy or cross-method identity claim.
   passed, `real_data` 38 passed. Ruff clean.
 - **Not done, by instruction.** The anchor-frame labelling set-up (`x-anchor-setup`) and the
   labels themselves; no reference was swapped; the v4 package and the contact eligibility are
-  unchanged.
+  unchanged. (The set-up followed in the next section; the labels are still the human's.)
+
+### Sep 18: human review anchors (labeling run prepared, not labelled)
+
+- **Claim boundary first.** Nothing in this section is a label. The agent prepared a labelling
+  session and the tooling around it; no mask was drawn, accepted or marked hidden, and the
+  workspace manifest holds zero candidates and zero hidden marks. What the human will produce
+  are `human_review_anchor` masks: review evidence for scoring tracker arms against each other
+  on 13 frames, not a dataset, not ground truth, and no accuracy claim (the boundary is SAM3's
+  image decoder's, the choice is the human's). CC BY-NC 4.0 covers the frames and everything
+  derived from them. GPU use in this step was one MuggledSAM worker process spawned by the
+  calibration workspace for its live decode (1.2 GiB, `cuda:0`), started and stopped during the
+  verification below; no tracking ran.
+- **Anchor list** (`configs/qa/first_minute_review_anchors.json`, typed `ReviewAnchorConfig`
+  in the new `review_anchors.py`, `VersionedModel` style): the focused C10379 clip
+  (`assembly101_nusar_9033_four_part_reassembly_focused_g2.json`, view `static-c10379`),
+  analysis frames 300, 370, 400, 600, 650, 700, 900, 1050, 1100, 1150, 1200, 1500, 1700 with
+  proxy seconds `f/30` and source seconds `294 + f/30`, targets chassis / interior / rear_body /
+  cabin, `expected_visible` all `visible` except the interior on the three frames inside
+  `[1024,1172)` (1050, 1100, 1150), which is `hidden_prompt`: the human must answer explicitly
+  there, a mask of what is visible or a hidden mark. The config carries the three review windows,
+  the claim boundary and license text, and `provenance.author` / `reviewed_at` left null. The
+  validator pins the clocks and that `hidden_prompt` is used exactly on the frames inside the
+  declared interval.
+- **Hidden affordance (added; it did not exist).** The calibration workspace could accept,
+  unaccept, reject and restore masks but had no way to say "reviewed, and the part is not
+  visible", so an unlabelled cell and an absent part looked the same. Added the smallest thing:
+  `MuggledSAMCalibrationHiddenTarget` (`intended_target`, `frame`, `state="hidden"`,
+  `marked_by="human"`) and `hidden_targets` on `MuggledSAMBoxCalibrationManifest` (default
+  empty, so every existing manifest still loads; validator: one mark per cell, on a configured
+  frame, clock-consistent, never coexisting with an accepted mask on the same cell);
+  `Workspace.mark_target_hidden` / `clear_hidden_target` behind `POST /api/hidden-targets` and
+  `POST /api/hidden-targets/clear` (browse-only frames refused, plan lock respected; accepting a
+  mask on a cell removes its hidden mark, marking hidden while an accepted mask exists is
+  refused with "unaccept the accepted mask"); in `app.js` a small **hidden** button in every
+  not-done cell of the *Decoder candidate review* status table, a **— Hidden** state with `×`
+  to clear, and hidden cells counted in `n/52 done`. Hidden marks never enter a proposal or
+  correction schedule. Also `--timestamps` on `battle-muggled-calibration-web` now defaults to
+  the persisted frames under `--resume` (previously the default `0,10,30,50` made resuming any
+  workspace without frame 0 impossible without retyping every timestamp).
+- **Workspace** `runs/human-review-anchors-first-minute/` (`battle-anchor-export prepare`): a
+  plain calibration workspace whose 13 configured frames are the anchors, targets from the
+  focused four-part policy, plus `anchor_session.json` naming the config and target policy it
+  serves. **Frame 0 was not needed and not pre-populated**: the workspace only requires frame-0
+  masks to finalize a plan, which this session never does, so `add_or_update_prompt` and
+  acceptance work on every anchor frame from the first load (`preview_1100.png` shows frame
+  1100 loaded as a *Calibration frame*). Nothing was derived from the 20260916t022433z
+  calibration.
+- **Export and scorer.** `battle-anchor-export export` reads the workspace, and for each of the
+  52 cells writes `labeled` (the human-selected candidate's PNG copied byte for byte to
+  `anchors/masks/f<frame>_<part>.png`, SHA-256, area, source candidate id and index), `hidden`,
+  or `unlabeled`, into `anchors/anchor_masks.json` (`ReviewAnchorMaskSet`, fingerprinting the
+  config and the calibration manifest) and the committed skeleton
+  `docs/qa/first-minute-review-anchors.human-record.json` (`ReviewAnchorHumanRecord`: author
+  and reviewed_at null, the per-cell states and SHA-256s, counts, claim boundary). Run once now
+  in the unlabelled state: 0 labeled / 0 hidden / 52 unlabeled. `battle-anchor-iou --anchors
+  <workspace> --run <run or arms/<arm>> ... --output <json>` scores each run at each cell:
+  labeled anchor with a run mask -> IoU and area ratio (run / anchor; masks of another size are
+  resized nearest and flagged); labeled anchor without a run mask -> IoU 0, `run_mask_missing`;
+  hidden anchor with a run mask -> `hidden_false_positive` with its area, without ->
+  `hidden_correct`; unlabeled -> skipped and counted. Report `AnchorIoUReport` plus a markdown
+  table (rows = arms; columns = per-part mean IoU, overall, per-window means over the anchor
+  frames inside `[279,408)` = {300, 370, 400}, `[573,722)` = {600, 650, 700}, `[1020,1172)` =
+  {1050, 1100, 1150}, missing count, hidden false positives with area, scored / unlabeled).
+  Run masks are read through `mask_cache.cache_for(run_dir).mask(uri)` from
+  `observations.jsonl`; the twelve `runs/sam3-policy-ablation-20260918/arms/*/` directories and
+  the reference run are accepted as given (smoke-run on the unlabelled set: every cell skipped,
+  as it should be).
+- **Verification without labelling.** Server started headlessly with the worker (URL printed,
+  no window), `GET /api/state` showed `worker_online`, the four targets and exactly the 13
+  frames; `GET /api/frame` extracted all 13 frames (`results/frames/frame-000300.jpg` ...
+  `frame-001700.jpg`); `POST /api/workspace` accepted each anchor frame and refused frame 0 as
+  browse-only; the served page (Cursor browser tab, loopback) listed 13 filmstrip buttons, `0/52
+  done`, and a **hidden** button in all 52 cells, including the interior on 1050 / 1100 / 1150;
+  frame 1100 loaded as *Calibration frame* (`preview_1100.png`). Server and worker were stopped
+  (port 8765 free, no GPU process left); the manifest afterwards: 0 candidates, 0 hidden marks,
+  0 pending prompts (only `active_proxy_timestamp_seconds` moved to 36.667 s by the frame click).
+- **Tests.** `tests/test_review_anchors.py` (12): the committed config equals the builder and
+  has the 13 frames with `hidden_prompt` exactly on 1050/1100/1150; config validators;
+  `score_cell` on synthetic masks (perfect, disjoint, larger, missing, empty, hidden-correct,
+  hidden-false-positive, unlabeled skip, resize); `score_runs` on two synthetic arms with the
+  markdown table; `prepare_workspace` configures exactly the anchor frames; export with one
+  accepted, one hidden and fifty unlabeled cells then scores 1.0 against a run reproducing the
+  mask; hidden-target schema round trip (duplicate, wrong clock, legacy manifests without the
+  field); `real_data`: the reference run as its own anchor set scores 1.0 and the xg arm reads
+  through the real layout. `tests/test_muggled_calibration_web.py` +2: the HTTP hidden-mark
+  lifecycle (browse-only refusal, idempotent mark, superseded by acceptance, refused while
+  accepted, clear, clear-again 404 semantics) and `--resume` without `--timestamps`.
+- **Next (the human's).** Label per `runs/human-review-anchors-first-minute/README.md` (~1 h),
+  then `battle-anchor-export export` and `battle-anchor-iou ... --output
+  runs/sam3-policy-ablation-20260918/anchor_iou.json`; the agent appends the IoU columns to the
+  ablation table. `off-r720-sched` and the reference must score identically (they are byte-equal
+  over the first minute), which is the built-in check that the scorer read the right masks.

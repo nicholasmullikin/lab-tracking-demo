@@ -1510,6 +1510,96 @@ def test_http_rejection_persists_retains_artifact_excludes_proposals_and_can_und
         workspace.close()
 
 
+def test_http_hidden_target_marks_persist_and_yield_to_accepted_masks(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    server, base = serve(workspace)
+    try:
+        with pytest.raises(urllib.error.HTTPError) as browse_only:
+            post_json(base, "/api/hidden-targets", {"timestamp": 5.0, "intended_target": "x"})
+        assert "browse-only" in browse_only.value.read().decode()
+
+        marked = post_json(
+            base, "/api/hidden-targets", {"timestamp": 10.0, "intended_target": "left_hand"}
+        )
+        (mark,) = marked["manifest"]["hidden_targets"]
+        assert mark["intended_target"] == "left_hand"
+        assert mark["frame"]["analysis_frame_index"] == 300
+        assert mark["state"] == "hidden" and mark["marked_by"] == "human"
+        persisted = json.loads(workspace.manifest_path.read_text())
+        assert len(persisted["hidden_targets"]) == 1
+        # Marking the same cell twice is idempotent, not a duplicate.
+        again = post_json(
+            base, "/api/hidden-targets", {"timestamp": 10.0, "intended_target": "left_hand"}
+        )
+        assert len(again["manifest"]["hidden_targets"]) == 1
+
+        # Accepting a mask on the same cell supersedes the hidden mark.
+        (candidate,) = decode_candidates(workspace, [(10.0, "left_hand")])
+        accepted = post_json(
+            base,
+            f"/api/candidates/{candidate.candidate_id}/accept",
+            {"candidate_index": 0, "eligible": False},
+        )
+        assert accepted["manifest"]["hidden_targets"] == []
+        # ...and a hidden mark refuses while an accepted mask exists.
+        with pytest.raises(urllib.error.HTTPError) as conflict:
+            post_json(
+                base, "/api/hidden-targets", {"timestamp": 10.0, "intended_target": "left_hand"}
+            )
+        assert "unaccept the accepted mask" in conflict.value.read().decode()
+
+        post_json(base, f"/api/candidates/{candidate.candidate_id}/unaccept", {})
+        post_json(base, "/api/hidden-targets", {"timestamp": 10.0, "intended_target": "left_hand"})
+        cleared = post_json(
+            base, "/api/hidden-targets/clear", {"timestamp": 10.0, "intended_target": "left_hand"}
+        )
+        assert cleared["manifest"]["hidden_targets"] == []
+        with pytest.raises(urllib.error.HTTPError) as absent:
+            post_json(
+                base,
+                "/api/hidden-targets/clear",
+                {"timestamp": 10.0, "intended_target": "left_hand"},
+            )
+        assert "is not marked hidden" in absent.value.read().decode()
+    finally:
+        server.shutdown()
+        server.server_close()
+        workspace.close()
+
+
+def test_resume_without_timestamps_keeps_the_persisted_frames(tmp_path: Path) -> None:
+    root = Path(__file__).parents[1]
+    output_directory = tmp_path / "anchor-like-workspace"
+    args = argparse.Namespace(
+        timestamps="10,12.333333333,20",
+        output_dir=output_directory,
+        run_root=tmp_path,
+        resume=False,
+        config=root / "configs/clips/assembly101_nusar_9033_ego_viewpoint_screen_g2.json",
+        manual_seed_target_config=None,
+        correction_policy=None,
+        no_worker=True,
+    )
+    create_workspace(args, root).close()
+    args.resume = True
+    args.timestamps = None
+    resumed = create_workspace(args, root)
+    try:
+        assert [round(t * 30) for t in resumed.manifest.requested_proxy_timestamps_seconds] == [
+            300,
+            370,
+            600,
+        ]
+    finally:
+        resumed.close()
+    fresh = argparse.Namespace(**{**vars(args), "resume": False, "output_dir": tmp_path / "d"})
+    workspace = create_workspace(fresh, root)
+    try:
+        assert workspace.manifest.requested_proxy_timestamps_seconds == (0.0, 10.0, 30.0, 50.0)
+    finally:
+        workspace.close()
+
+
 def test_rejected_candidate_causes_finalization_validation_without_writing_plan(
     tmp_path: Path,
 ) -> None:

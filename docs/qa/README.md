@@ -84,3 +84,16 @@ uv run python -c 'from pathlib import Path; from battle.schemas import FixedTime
 
 These dispositions are a semantic sanity gate only. They are not ground truth, and every
 record fixes `ground_truth_accuracy_claim` to `false`.
+
+## Human review anchors (Sep 18)
+
+`first-minute-review-anchors.human-record.json` (`ReviewAnchorHumanRecord` in
+`battle.review_anchors`) is written by `battle-anchor-export export` from the gitignored
+workspace `runs/human-review-anchors-first-minute/`: one entry per anchor frame x part
+(13 x 4) with its state (`labeled`, `hidden`, `unlabeled`) and the SHA-256 of each accepted
+mask, plus fingerprints of the anchor config, the mask set and the calibration manifest.
+`author` and `reviewed_at` stay null until the human who labelled fills them in (via the
+`provenance` block of `configs/qa/first_minute_review_anchors.json` and a re-export, or
+directly). The committed file is currently the all-unlabelled skeleton. The masks themselves
+stay in `runs/`; they are `human_review_anchor` review evidence for scoring tracker arms, not a
+dataset and not ground truth.
