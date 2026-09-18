@@ -1,0 +1,139 @@
+{
+  "schema_version": "1.0",
+  "policy_id": "ensemble-reference-first-minute-v1",
+  "provenance_tag": "agent_authored_assumption",
+  "frame_count": 1800,
+  "primary": {
+    "schema_version": "1.0",
+    "label": "sam3_corrected",
+    "run_directory": "runs/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260918t001210z"
+  },
+  "fallback": {
+    "schema_version": "1.0",
+    "label": "dam4sam_fallback",
+    "run_directory": "runs/dam4sam-four-part-reviewed-seed-60s-20260918t005416z"
+  },
+  "rolling_median_window_frames": 300,
+  "rolling_median_min_samples": 30,
+  "contact_eligible_through_frame": 1200,
+  "late_ineligibility_rationale": "Late corrected-SAM3 overlays visibly cease to track stable part semantics from frame 1200 (rear-body label stays on the table piece while the body is attached); masks remain comparison evidence only. Retained from the v4 human/agent review.",
+  "targets": [
+    {
+      "schema_version": "1.0",
+      "target_id": "chassis",
+      "fallback_intervals": [
+        {
+          "schema_version": "1.0",
+          "start_frame": 1055,
+          "end_frame_exclusive": 1172,
+          "rationale": "battle-segmentation-disagreement episode chassis [1055,1172): corrected SAM3 loses the chassis (<600 px over ~1110-1166, label jumps to the yellow body 1074-1088) while DAM4SAM keeps a ~6-11k px chassis mask on the black plate; the agent-selected SAM3 correction restores the label at 1172."
+        }
+      ],
+      "rules": {
+        "schema_version": "1.0",
+        "area_fraction_of_rolling_median_below": 0.5,
+        "other_target_iou_above": 0.3,
+        "discontinuity_with_last_accepted": true,
+        "substitute_when_primary_missing": true
+      },
+      "sanity": {
+        "schema_version": "1.0",
+        "area_fraction_bounds": [0.4, 2.0],
+        "min_iou_with_last_accepted": 0.5,
+        "max_centroid_jump_pixels": 30.0,
+        "centroid_jump_pixels_per_frame": 5.0,
+        "max_continuity_allowance_pixels": 90.0
+      },
+      "hidden_intervals": [],
+      "not_contact_eligible_intervals": [
+        {
+          "schema_version": "1.0",
+          "start_frame": 1020,
+          "end_frame_exclusive": 1055,
+          "rationale": "Interior label starts leaking onto the chassis plate (interior area doubles over 1020-1044) so the chassis mask is undersized; DAM4SAM's chassis is equally undersized here (IoU >= 0.54 with SAM3, both streams shrinking), so no credible substitute exists and the earlier v4 onset decision is kept."
+        }
+      ]
+    },
+    {
+      "schema_version": "1.0",
+      "target_id": "interior",
+      "fallback_intervals": [],
+      "rules": {
+        "schema_version": "1.0",
+        "area_fraction_of_rolling_median_below": 0.5,
+        "other_target_iou_above": 0.3,
+        "discontinuity_with_last_accepted": true,
+        "substitute_when_primary_missing": true
+      },
+      "sanity": {
+        "schema_version": "1.0",
+        "area_fraction_bounds": [0.4, 2.0],
+        "min_iou_with_last_accepted": 0.5,
+        "max_centroid_jump_pixels": 30.0,
+        "centroid_jump_pixels_per_frame": 5.0,
+        "max_continuity_allowance_pixels": 90.0
+      },
+      "hidden_intervals": [
+        {
+          "schema_version": "1.0",
+          "start_frame": 1024,
+          "end_frame_exclusive": 1172,
+          "rationale": "Agent visibility label: the grey interior block protrudes below the chassis plate only until ~1022 (the surface the human accepted at frame 900); from ~1024 the region under the tracked interior mask is the chassis's own lower body and the block is hidden by the rotation until a lighter inner surface becomes boxable at 1172 (agent-selected SAM3 correction). Re-verified on zoomed source crops 1016-1034 (every frame 1020-1028) before adoption; the 1022-1024 onset is ambiguous by about two frames. DAM4SAM's interior stream is not a substitute: it merged onto the chassis body over [707,1072) and never separates the block."
+        }
+      ],
+      "not_contact_eligible_intervals": []
+    },
+    {
+      "schema_version": "1.0",
+      "target_id": "rear_body",
+      "fallback_intervals": [],
+      "rules": {
+        "schema_version": "1.0",
+        "area_fraction_of_rolling_median_below": 0.5,
+        "other_target_iou_above": 0.3,
+        "discontinuity_with_last_accepted": true,
+        "substitute_when_primary_missing": true
+      },
+      "sanity": {
+        "schema_version": "1.0",
+        "area_fraction_bounds": [0.4, 2.0],
+        "min_iou_with_last_accepted": 0.5,
+        "max_centroid_jump_pixels": 30.0,
+        "centroid_jump_pixels_per_frame": 5.0,
+        "max_continuity_allowance_pixels": 90.0
+      },
+      "hidden_intervals": [],
+      "not_contact_eligible_intervals": []
+    },
+    {
+      "schema_version": "1.0",
+      "target_id": "cabin",
+      "fallback_intervals": [],
+      "rules": {
+        "schema_version": "1.0",
+        "area_fraction_of_rolling_median_below": 0.5,
+        "other_target_iou_above": 0.3,
+        "discontinuity_with_last_accepted": true,
+        "substitute_when_primary_missing": true
+      },
+      "sanity": {
+        "schema_version": "1.0",
+        "area_fraction_bounds": [0.4, 2.0],
+        "min_iou_with_last_accepted": 0.5,
+        "max_centroid_jump_pixels": 30.0,
+        "centroid_jump_pixels_per_frame": 5.0,
+        "max_continuity_allowance_pixels": 90.0
+      },
+      "hidden_intervals": [],
+      "not_contact_eligible_intervals": []
+    }
+  ],
+  "no_blend": true,
+  "claim_boundaries": [
+    "The ensemble is a review reference assembled from retained runs; cross-method fallback is not accuracy and neither source run is ground truth.",
+    "Masks are copied whole from exactly one source per frame and target; no mask is blended, morphed or interpolated.",
+    "Fallback substitution happens only inside explicit agent-authored frame intervals, only when a policy rule fires, and only when the substitute passes the sanity bounds; every substitution and every declined attempt is recorded with a rationale.",
+    "Hidden intervals are agent-authored visibility labels (explicit empty masks) pending human confirmation; they are not tracker output.",
+    "Contact eligibility is per target: a mask is eligible only where it is sourced from SAM3 or DAM4SAM, passes sanity, lies before the late-degradation boundary, and is not inside an agent-labelled ineligible interval."
+  ]
+}

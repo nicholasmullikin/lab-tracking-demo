@@ -34,6 +34,7 @@ from battle.interaction_review import (
 )
 from battle.interaction_review_v4 import (
     COARSE_GT,
+    CORRECTED_SAM3_REFERENCE_SEGMENTATION,
     FINE_LABELS,
     FIRST_MINUTE_REFERENCE_SEGMENTATION,
     SEGMENTATION_CONTACT_ELIGIBLE_INTERVALS,
@@ -226,7 +227,8 @@ def test_v4_declares_first_minute_alignment_and_late_contact_cutoff() -> None:
     assert FIRST_MINUTE_FRAME_COUNT == 1800
     assert SEGMENTATION_CONTACT_ELIGIBLE_THROUGH == 1200
     assert SEGMENTATION_CONTACT_ELIGIBLE_INTERVALS == ((0, 1020), (1172, 1200))
-    assert FIRST_MINUTE_REFERENCE_SEGMENTATION.name.endswith("20260918t001210z")
+    assert CORRECTED_SAM3_REFERENCE_SEGMENTATION.name.endswith("20260918t001210z")
+    assert FIRST_MINUTE_REFERENCE_SEGMENTATION.name == "ensemble-reference-first-minute-v1"
 
 
 def test_contact_eligibility_intervals_yield_invalid_mask_inside_the_swap_gap() -> None:
@@ -254,7 +256,7 @@ def test_contact_eligibility_intervals_yield_invalid_mask_inside_the_swap_gap() 
     assert states[1200] == {"invalid_mask"}
     assert contact_eligible_frame(1172, ((0, 1020), (1172, 1200))) is True
     assert contact_eligible_frame(1100, ((0, 1020), (1172, 1200))) is False
-    with pytest.raises(ValueError, match="not both"):
+    with pytest.raises(ValueError, match="at most one"):
         _contacts(
             source,
             source,
@@ -263,6 +265,38 @@ def test_contact_eligibility_intervals_yield_invalid_mask_inside_the_swap_gap() 
             segmentation_contact_eligible_through=1200,
             segmentation_contact_eligible_intervals=((0, 1020),),
         )
+
+
+def test_per_part_contact_eligibility_yields_invalid_mask_only_for_ineligible_parts() -> None:
+    rows = {
+        frame: SimpleNamespace(hands=(_hand(0.5, 0.5),) if frame == 0 else (), objects=())
+        for frame in range(1800)
+    }
+    source = SimpleNamespace(observations=rows, run_directory=Path("."))
+
+    diagnostics, _ = _contacts(
+        source,
+        source,
+        (1280, 720),
+        frame_count=1800,
+        segmentation_contact_eligible_by_part={
+            "chassis": ((0, 1020), (1055, 1200)),
+            "interior": ((0, 1024), (1172, 1200)),
+            "rear_body": ((0, 1200),),
+            "cabin": ((0, 1200),),
+        },
+    )
+    by_frame_part = {
+        (item.analysis_frame_index, item.part_id): item.observation_state for item in diagnostics
+    }
+    # The hand lane exists only at frame 0, so eligible parts read missing_hand elsewhere.
+    assert by_frame_part[(1100, "chassis")] == "missing_hand"
+    assert by_frame_part[(1100, "interior")] == "invalid_mask"
+    assert by_frame_part[(1100, "rear_body")] == "missing_hand"
+    assert by_frame_part[(1030, "chassis")] == "invalid_mask"
+    assert by_frame_part[(1030, "interior")] == "invalid_mask"
+    assert by_frame_part[(1200, "cabin")] == "invalid_mask"
+    assert by_frame_part[(0, "interior")] == "missing_mask"
 
 
 def _blueprint_views(blueprint) -> list:
@@ -424,10 +458,22 @@ def test_exported_v4_rrd_carries_navigation_entities_and_blueprint_views() -> No
     for relative, _ in STATIC_TEXT_PANELS:
         assert counts[f"{root}/metadata/{relative.split('/', 1)[1]}"] >= 1
     assert counts[f"{root}/metadata/review_notes"] >= 1
+    index = json.loads((rrd_path.parent / "interaction_review_index.json").read_text())
+    ensemble = index["reference_segmentation_method"] == "ensemble_reference"
     expected_views = _blueprint_views(
-        _blueprint(root.lstrip("/"), (1280, 720), static_text_panels=STATIC_TEXT_PANELS)
+        _blueprint(
+            root.lstrip("/"),
+            (1280, 720),
+            static_text_panels=STATIC_TEXT_PANELS,
+            reference_provenance=ensemble,
+        )
     )
     assert printed.count("ViewBlueprint:display_name") == len(expected_views)
+    if ensemble:
+        for part in ("chassis", "interior", "rear_body", "cabin"):
+            assert counts[f"{root}/diagnostics/reference_provenance/{part}"] >= 1800
+            assert counts[f"{root}/diagnostics/segmentation_contact_eligible/{part}"] >= 1800
+        assert any("/primary/reference_provenance_overlay/chassis" in path for path in counts)
 
 
 _CHUNK_COLUMNS = re.compile(

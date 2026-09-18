@@ -13,13 +13,25 @@ from pathlib import Path
 
 import rerun as rr
 
+from . import ensemble_reference as ensemble
 from . import interaction_review as review
-from .exploratory_comparison import _file_fingerprint, _log_hands, _log_nlf_body
+from .ensemble_reference_schemas import (
+    PROVENANCE_CODES,
+    EnsembleProvenanceSidecar,
+    EnsembleReferencePolicy,
+)
+from .exploratory_comparison import (
+    _file_fingerprint,
+    _log_hands,
+    _log_nlf_body,
+    validate_artifact_fingerprint,
+)
 from .fine_substep_contract import load_contract as load_fine_substep_contract
 from .fine_substep_contract import substep_for_frame
-from .four_part_contract import ANALYSIS_FPS
+from .four_part_contract import ANALYSIS_FPS, TARGETS
 from .schemas import (
     ArtifactFingerprint,
+    FrameObservations,
     InteractionReviewIndexManifest,
     SegmentationValidityInterval,
     TimeInterval,
@@ -36,14 +48,21 @@ FINE_LABELS = Path("configs/fine_substeps/assembly101_focused_static_first_20s_a
 
 # Corrected focused SAM3 rerun whose schedule adds an agent-selected chassis/interior
 # correction at frame 1172 on top of the human-selected seeds and corrections. Frames before
-# 1172 are bit-identical to the earlier reference run.
-FIRST_MINUTE_REFERENCE_SEGMENTATION = Path(
+# 1172 are bit-identical to the earlier reference run. It is the ensemble's primary source and
+# remains available through `--reference` for a SAM3-only package.
+CORRECTED_SAM3_REFERENCE_SEGMENTATION = Path(
     "runs/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260918t001210z"
 )
+# Default reference: the per-target ensemble built by `battle-build-ensemble-reference`
+# (corrected SAM3 by default, DAM4SAM chassis fallback inside [1055,1172) where the policy
+# rules fire and the substitute passes sanity, explicit hidden interior over [1024,1172)).
+FIRST_MINUTE_REFERENCE_SEGMENTATION = ensemble.OUTPUT_ROOT
 # Contact geometry is measured only where the corrected masks keep stable part identities.
-# The human-reported chassis/interior swap was measured to start leaking at ~1020-1032 and
-# the chassis label is lost or swapped until the agent-selected correction at 1172; frames
-# from 1200 remain ineligible per the retained late-degradation review.
+# For a SAM3-only reference the human-reported chassis/interior swap was measured to start
+# leaking at ~1020-1032 and the chassis label is lost or swapped until the agent-selected
+# correction at 1172; frames from 1200 remain ineligible per the retained late-degradation
+# review. With the ensemble reference eligibility is per target and comes from the
+# provenance sidecar instead.
 SWAP_ONSET_FRAME = 1020
 SWAP_CORRECTION_FRAME = 1172
 SEGMENTATION_CONTACT_ELIGIBLE_THROUGH = 1200
@@ -75,6 +94,81 @@ context only, never a prediction or an accuracy claim.
 
 
 HAND_LAYER_STATES = ("low_confidence_continuation", "fallback", "missing")
+PROVENANCE_CODE_LEGEND = ", ".join(f"{code} {name}" for name, code in PROVENANCE_CODES.items())
+
+
+def _intervals_text(intervals: tuple[tuple[int, int], ...]) -> str:
+    return ", ".join(f"[{start},{end})" for start, end in intervals) or "none"
+
+
+def _reference_provenance_static(entity: str) -> None:
+    for part in TARGETS:
+        rr.log(
+            f"{entity}/{review.REFERENCE_PROVENANCE_SERIES}/{part}",
+            rr.SeriesLines(
+                names=f"{part} mask provenance ({PROVENANCE_CODE_LEGEND})",
+                colors=[ensemble.PART_COLORS[part]],
+            ),
+            static=True,
+        )
+
+
+def _log_reference_provenance_frame(
+    entity: str,
+    frame: int,
+    observation: FrameObservations,
+    provenance: dict[tuple[int, str], str],
+    eligibility: dict[str, tuple[tuple[int, int], ...]],
+    dimensions: tuple[int, int],
+) -> None:
+    """Colour-coded provenance layer: a scalar series per part plus a toggleable 2D overlay.
+
+    The overlay marks only frames whose mask did not come from the primary tracker (DAM4SAM
+    fallback boxes around the copied mask; hidden intervals clear the overlay) so a reviewer
+    can see at a glance which frames rest on cross-method fallback.
+    """
+    width, height = dimensions
+    for part in TARGETS:
+        state = provenance[(frame, part)]
+        rr.log(
+            f"{entity}/{review.REFERENCE_PROVENANCE_SERIES}/{part}",
+            rr.Scalars([PROVENANCE_CODES[state]]),
+        )
+        rr.log(
+            f"{entity}/diagnostics/segmentation_contact_eligible/{part}",
+            rr.Scalars([float(review.contact_eligible_frame(frame, eligibility.get(part, ())))]),
+        )
+        overlay = f"{entity}/{review.REFERENCE_PROVENANCE_OVERLAY}/{part}"
+        item = next((o for o in observation.objects if o.label == part), None)
+        if state == "dam4sam_fallback" and item is not None:
+            rr.log(
+                overlay,
+                rr.Boxes2D(
+                    mins=[[item.box.x * width, item.box.y * height]],
+                    sizes=[[item.box.width * width, item.box.height * height]],
+                    labels=[f"{part}: {state}"],
+                    colors=[ensemble.PROVENANCE_COLORS[state]],
+                    draw_order=2.0,
+                ),
+            )
+        else:
+            rr.log(overlay, rr.Clear(recursive=False))
+
+
+def _load_ensemble_context(
+    reference: review.LoadedSource, repository_root: Path
+) -> tuple[EnsembleProvenanceSidecar, EnsembleReferencePolicy] | None:
+    """Sidecar and policy for an ensemble reference; None for a plain SAM3 reference."""
+    metadata = reference.manifest.ensemble_reference
+    if metadata is None:
+        return None
+    sidecar = ensemble.load_sidecar(reference.run_directory)
+    policy_path = validate_artifact_fingerprint(
+        metadata.policy_fingerprint, repository_root, label="ensemble policy"
+    )
+    if sidecar.policy != metadata.policy_fingerprint:
+        raise ValueError("ensemble sidecar and manifest disagree on the policy fingerprint")
+    return sidecar, ensemble.load_policy(policy_path)
 
 
 def _hand_layer_state_counts(provenance_path: Path) -> dict[tuple[int, str], int]:
@@ -128,7 +222,64 @@ def _prepare_output_root(root: Path, *, overwrite: bool) -> None:
     root.mkdir(parents=True, exist_ok=True)
 
 
-def _guide(index: InteractionReviewIndexManifest, rrd_path: Path) -> str:
+def _reference_section(
+    index: InteractionReviewIndexManifest,
+    eligibility: dict[str, tuple[tuple[int, int], ...]],
+) -> str:
+    if index.reference_segmentation_method != "ensemble_reference":
+        return """- Corrected SAM3 stays the default segmentation display. It is a visible-surface
+  comparison layer, not semantic ground truth. Geometry/disagreement triggers are review
+  prompts only.
+- The reference run adds one agent-selected chassis/interior correction at frame 1172
+  (schedule rows tagged `selected_by: agent`, provenance `agent_authored_visual_review`); all
+  frame-0 seeds and every other correction remain the earlier human-selected masks, and
+  frames before 1172 are bit-identical to the previous reference.
+- `contact_eligible` covers only `[0,1020)` and `[1172,1200)`. Frames `[1020,1172)` hold the
+  human-reported chassis/interior swap (interior label leaks over the chassis from ~1020,
+  chassis label lost from ~1110, pure label swap 1167-1234 in the old run) and frames from
+  1200 keep the earlier late-degradation decision. On ineligible frames masks stay visible
+  with a warning but all contact fields are `invalid_mask`."""
+    counts = index.reference_provenance_counts or {}
+    per_part = "\n".join(
+        f"  - `{part}`: eligible {_intervals_text(eligibility.get(part, ()))}; masks "
+        + ", ".join(
+            f"{count} {name}" for name, count in counts.get(part, {}).items() if count
+        )
+        for part in TARGETS
+    )
+    return f"""- The default segmentation display is the **per-target ensemble review reference**
+  (`battle-build-ensemble-reference`): corrected SAM3 by default, the DAM4SAM arm's whole
+  mask substituted for one target only inside explicit policy intervals when a rule fires
+  (area below a fraction of the rolling median, overlap with another target, or
+  discontinuity with the last accepted mask) and the substitute passes sanity, and explicit
+  empty masks over agent-labelled hidden intervals. Masks are never blended. Cross-method
+  fallback is **not** accuracy; neither source run is ground truth; hidden intervals are
+  agent visibility labels pending human confirmation.
+- **Provenance layer.** `{review.REFERENCE_PROVENANCE_SERIES}/<part>` plots a per-part code
+  ({PROVENANCE_CODE_LEGEND}) on the time panel and
+  `{review.REFERENCE_PROVENANCE_OVERLAY}/<part>` draws a magenta box around every
+  DAM4SAM-sourced mask in the primary view (toggle it off in the blueprint tree). The
+  per-frame navigation document names each part's provenance and eligibility.
+- `contact_eligible` is now **per target**: a mask is eligible only where it is SAM3- or
+  DAM4SAM-sourced, passes sanity, lies before frame 1200, and is not inside an agent-labelled
+  ineligible interval. Ineligible parts yield `invalid_mask` contact rows.
+{per_part}"""
+
+
+def _guide(
+    index: InteractionReviewIndexManifest,
+    rrd_path: Path,
+    eligibility: dict[str, tuple[tuple[int, int], ...]] | None = None,
+) -> str:
+    eligibility = eligibility or {
+        part: SEGMENTATION_CONTACT_ELIGIBLE_INTERVALS for part in TARGETS
+    }
+    display = (
+        "the per-target ensemble reference (corrected SAM3 with provenance-tracked DAM4SAM "
+        "fallback and agent-labelled hidden intervals)"
+        if index.reference_segmentation_method == "ensemble_reference"
+        else "corrected focused SAM3"
+    )
     return f"""# First-minute interaction review (v4)
 
 Open exactly this recording:
@@ -138,7 +289,7 @@ rerun {rrd_path.as_posix()}
 ```
 
 This recording embeds one RGB asset spanning analysis frames `[0,1800)` / source
-294.000–354.000 s at 30 FPS. The default panel is corrected focused SAM3 plus the
+294.000–354.000 s at 30 FPS. The default panel is {display} plus the
 WiLoR-primary stabilized hand layer. Raw WiLoR, MediaPipe, BoxMOT person context, and
 partial Kineo NLF body context are separate/toggleable evidence layers.
 
@@ -155,17 +306,7 @@ partial Kineo NLF body context are separate/toggleable evidence layers.
 
 ## Validity and claim boundaries
 
-- Corrected SAM3 stays the default segmentation display. It is a visible-surface comparison
-  layer, not semantic ground truth. Geometry/disagreement triggers are review prompts only.
-- The reference run adds one agent-selected chassis/interior correction at frame 1172
-  (schedule rows tagged `selected_by: agent`, provenance `agent_authored_visual_review`); all
-  frame-0 seeds and every other correction remain the earlier human-selected masks, and
-  frames before 1172 are bit-identical to the previous reference.
-- `contact_eligible` covers only `[0,1020)` and `[1172,1200)`. Frames `[1020,1172)` hold the
-  human-reported chassis/interior swap (interior label leaks over the chassis from ~1020,
-  chassis label lost from ~1110, pure label swap 1167-1234 in the old run) and frames from
-  1200 keep the earlier late-degradation decision. On ineligible frames masks stay visible
-  with a warning but all contact fields are `invalid_mask`.
+{_reference_section(index, eligibility)}
 - Frame ~370: the interior mask briefly grows into the chassis and recedes on its own (human
   observation); no correction was attempted there.
 - Stabilized WiLoR (v5) preserves raw/smoothed/low_confidence_continuation/fallback/missing
@@ -220,67 +361,9 @@ def _log_static_documents(entity: str, *, guide: str, fine_contract: object) -> 
     review._log_navigation_static(entity)
 
 
-def build_first_minute_review(
-    *, repository_root: Path, output_root: Path = OUTPUT_ROOT, overwrite: bool = False
-) -> Path:
-    """Build a 1,800-row review package from retained, source-aligned artifacts."""
-
-    repository_root = repository_root.resolve()
-    sources = {
-        name: review._validate_run(spec, repository_root, frame_count=FRAME_COUNT)
-        for name, spec in review.FIRST_MINUTE_SOURCES.items()
-    }
-    reference = review._validate_run(
-        review.SourceSpec("baseline_sam3", FIRST_MINUTE_REFERENCE_SEGMENTATION),
-        repository_root,
-        frame_count=FRAME_COUNT,
-    )
-    review._validate_shared_sources([*sources.values(), reference])
-    video_path = sources["wilor"].run_directory / "input.mp4"
-    frames, fps, dimensions = review._video_info(video_path)
-    if (frames, fps, dimensions) != (FRAME_COUNT, ANALYSIS_FPS, review.DIMENSIONS):
-        raise ValueError(
-            f"expected one 1280x720 1800-frame 30-fps video, got {(frames, fps, dimensions)}"
-        )
-    contacts, events = review._contacts(
-        sources["stabilized_wilor"],
-        reference,
-        dimensions,
-        frame_count=FRAME_COUNT,
-        segmentation_contact_eligible_intervals=SEGMENTATION_CONTACT_ELIGIBLE_INTERVALS,
-    )
-    disagreements = review._disagreements(
-        sources["mediapipe"], sources["wilor"], dimensions, frame_count=FRAME_COUNT
-    )
-    triggers = review.segmentation_review_triggers(
-        reference, None, sources["stabilized_wilor"], dimensions, frame_count=FRAME_COUNT
-    )
-    episodes = review.cluster_segmentation_triggers(triggers)
-    moments = review.deterministic_pinned_moments(
-        disagreements,
-        contacts,
-        events,
-        sources["kineo"],
-        triggers,
-        episodes,
-        frame_count=FRAME_COUNT,
-        source_start_seconds=SOURCE_START_SECONDS,
-    )
-    hand_states = _hand_layer_state_counts(
-        sources["stabilized_wilor"].run_directory / "hand_provenance.json"
-    )
-    root = (repository_root / output_root).resolve()
-    rrd_path, index_path, guide_path, sheet_path = _output_paths(root)
-    _prepare_output_root(root, overwrite=overwrite)
-    artifacts = [
-        _file_fingerprint(video_path, repository_root),
-        *[item for source in [*sources.values(), reference] for item in source.artifacts],
-    ]
-    unique = tuple({(item.uri, item.sha256): item for item in artifacts}.values())
-    source_fingerprint = getattr(review._metadata(reference.manifest), "source_fingerprint")
-    if not isinstance(source_fingerprint, ArtifactFingerprint):
-        raise ValueError("reference segmentation must declare the source fingerprint")
-    validity = (
+def _sam3_validity_intervals() -> tuple[SegmentationValidityInterval, ...]:
+    """Frame-level eligibility retained for a corrected-SAM3-only reference."""
+    return (
         SegmentationValidityInterval(
             start_frame=0,
             end_frame_exclusive=SWAP_ONSET_FRAME,
@@ -327,6 +410,122 @@ def build_first_minute_review(
             provenance="agent_authored_visual_review",
         ),
     )
+
+
+def build_first_minute_review(
+    *,
+    repository_root: Path,
+    output_root: Path = OUTPUT_ROOT,
+    overwrite: bool = False,
+    reference_run: Path = FIRST_MINUTE_REFERENCE_SEGMENTATION,
+) -> Path:
+    """Build a 1,800-row review package from retained, source-aligned artifacts.
+
+    `reference_run` is the ensemble reference by default; a corrected-SAM3 run directory
+    (`CORRECTED_SAM3_REFERENCE_SEGMENTATION`) keeps the earlier frame-level eligibility.
+    """
+
+    repository_root = repository_root.resolve()
+    sources = {
+        name: review._validate_run(spec, repository_root, frame_count=FRAME_COUNT)
+        for name, spec in review.FIRST_MINUTE_SOURCES.items()
+    }
+    reference = review._validate_run(
+        review.SourceSpec("reference_segmentation", reference_run),
+        repository_root,
+        frame_count=FRAME_COUNT,
+    )
+    review._validate_shared_sources([*sources.values(), reference])
+    ensemble_context = _load_ensemble_context(reference, repository_root)
+    reference_method = "ensemble_reference" if ensemble_context else "baseline_sam3"
+    video_path = sources["wilor"].run_directory / "input.mp4"
+    frames, fps, dimensions = review._video_info(video_path)
+    if (frames, fps, dimensions) != (FRAME_COUNT, ANALYSIS_FPS, review.DIMENSIONS):
+        raise ValueError(
+            f"expected one 1280x720 1800-frame 30-fps video, got {(frames, fps, dimensions)}"
+        )
+    if ensemble_context is None:
+        eligibility = {part: SEGMENTATION_CONTACT_ELIGIBLE_INTERVALS for part in TARGETS}
+        provenance: dict[tuple[int, str], str] = {}
+        reference_artifacts: list[ArtifactFingerprint] = []
+        sidecar_fingerprint = None
+        provenance_counts = None
+    else:
+        sidecar, policy = ensemble_context
+        eligibility = ensemble.contact_eligible_intervals_by_part(sidecar)
+        provenance = {(r.analysis_frame_index, r.target_id): r.provenance for r in sidecar.frames}
+        metadata = reference.manifest.ensemble_reference
+        assert metadata is not None
+        for fingerprint in (
+            metadata.primary_run.manifest_fingerprint,
+            metadata.primary_run.observations_fingerprint,
+            metadata.fallback_run.manifest_fingerprint,
+            metadata.fallback_run.observations_fingerprint,
+        ):
+            validate_artifact_fingerprint(fingerprint, repository_root, label="ensemble source")
+        sidecar_fingerprint = _file_fingerprint(
+            reference.run_directory / ensemble.PROVENANCE_NAME, repository_root
+        )
+        reference_artifacts = [
+            metadata.policy_fingerprint,
+            metadata.primary_run.manifest_fingerprint,
+            metadata.primary_run.observations_fingerprint,
+            metadata.fallback_run.manifest_fingerprint,
+            metadata.fallback_run.observations_fingerprint,
+            sidecar_fingerprint,
+        ]
+        provenance_counts = {
+            item.target_id: dict(item.provenance_counts) for item in sidecar.summaries
+        }
+    contacts, events = review._contacts(
+        sources["stabilized_wilor"],
+        reference,
+        dimensions,
+        frame_count=FRAME_COUNT,
+        segmentation_contact_eligible_by_part=eligibility,
+    )
+    disagreements = review._disagreements(
+        sources["mediapipe"], sources["wilor"], dimensions, frame_count=FRAME_COUNT
+    )
+    triggers = review.segmentation_review_triggers(
+        reference, None, sources["stabilized_wilor"], dimensions, frame_count=FRAME_COUNT
+    )
+    episodes = review.cluster_segmentation_triggers(triggers)
+    moments = review.deterministic_pinned_moments(
+        disagreements,
+        contacts,
+        events,
+        sources["kineo"],
+        triggers,
+        episodes,
+        frame_count=FRAME_COUNT,
+        source_start_seconds=SOURCE_START_SECONDS,
+    )
+    hand_states = _hand_layer_state_counts(
+        sources["stabilized_wilor"].run_directory / "hand_provenance.json"
+    )
+    root = (repository_root / output_root).resolve()
+    rrd_path, index_path, guide_path, sheet_path = _output_paths(root)
+    _prepare_output_root(root, overwrite=overwrite)
+    artifacts = [
+        _file_fingerprint(video_path, repository_root),
+        *[item for source in [*sources.values(), reference] for item in source.artifacts],
+        *reference_artifacts,
+    ]
+    unique = tuple({(item.uri, item.sha256): item for item in artifacts}.values())
+    source_fingerprint = getattr(review._metadata(reference.manifest), "source_fingerprint")
+    if not isinstance(source_fingerprint, ArtifactFingerprint):
+        raise ValueError("reference segmentation must declare the source fingerprint")
+    validity = (
+        ensemble.validity_intervals_from_sidecar(*ensemble_context)
+        if ensemble_context is not None
+        else _sam3_validity_intervals()
+    )
+    eligibility_text = (
+        "; ".join(f"{part} {_intervals_text(eligibility[part])}" for part in TARGETS)
+        if ensemble_context is not None
+        else "[0,1020) and [1172,1200)"
+    )
     index = InteractionReviewIndexManifest(
         manifest_kind="interaction_review_first_minute_v4",
         comparison_id="interaction_review_first_minute_v4",
@@ -335,13 +534,15 @@ def build_first_minute_review(
         frame_count=FRAME_COUNT,
         analysis_fps=ANALYSIS_FPS,
         source_interval=TimeInterval(start_seconds=SOURCE_START_SECONDS, end_seconds=354.0),
-        reference_segmentation_method="baseline_sam3",
+        reference_segmentation_method=reference_method,  # type: ignore[arg-type]
         reference_segmentation_manifest=_file_fingerprint(
             reference.run_directory / "manifest.json", repository_root
         ),
+        reference_provenance_sidecar=sidecar_fingerprint,
+        reference_provenance_counts=provenance_counts,
         input_artifacts=unique,
         contact_heuristic=(
-            "On contact-eligible frames only ([0,1020) and [1172,1200)): wrist/palm or "
+            f"On contact-eligible frames per part only ({eligibility_text}): wrist/palm or "
             "fingertip inside a mask or <=12 pixels, with 2-frame start and 3-frame end "
             "debounce. Missing or invalid masks clear."
         ),
@@ -399,7 +600,10 @@ def build_first_minute_review(
         rr.TextDocument(index.model_dump_json(indent=2), media_type="application/json"),
         static=True,
     )
-    _log_static_documents(entity, guide=_guide(index, rrd_path), fine_contract=fine_contract)
+    guide = _guide(index, rrd_path, eligibility)
+    _log_static_documents(entity, guide=guide, fine_contract=fine_contract)
+    if ensemble_context is not None:
+        _reference_provenance_static(entity)
     trigger_counts = {
         frame: sum(item.analysis_frame_index == frame for item in triggers)
         for frame in range(FRAME_COUNT)
@@ -463,11 +667,20 @@ def build_first_minute_review(
             f"{entity}/diagnostics/segmentation_review_trigger/count",
             rr.Scalars([trigger_counts[frame]]),
         )
-        eligible = review.contact_eligible_frame(frame, SEGMENTATION_CONTACT_ELIGIBLE_INTERVALS)
+        eligible_parts = tuple(
+            part
+            for part in TARGETS
+            if review.contact_eligible_frame(frame, eligibility.get(part, ()))
+        )
+        eligible = bool(eligible_parts)
         rr.log(
             f"{entity}/diagnostics/segmentation_contact_eligible",
             rr.Scalars([float(eligible)]),
         )
+        if ensemble_context is not None:
+            _log_reference_provenance_frame(
+                entity, frame, reference.observations[frame], provenance, eligibility, dimensions
+            )
         for state in HAND_LAYER_STATES:
             rr.log(
                 f"{entity}/diagnostics/hand_disagreement/stabilized_{state}_count",
@@ -486,16 +699,35 @@ def build_first_minute_review(
             substep=substep,
             coarse_gt=review.coarse_gt_for_frame(COARSE_GT, frame),
             extra_lines=(
-                "- corrected SAM3 masks: "
-                + (
-                    "`contact_eligible`"
-                    if eligible
-                    else "`not_contact_eligible` (visible for comparison only; contact fields "
-                    "are `invalid_mask`)"
-                ),
+                (
+                    "- reference masks: "
+                    + (
+                        "`contact_eligible`"
+                        if eligible
+                        else "`not_contact_eligible` (visible for comparison only; contact "
+                        "fields are `invalid_mask`)"
+                    ),
+                )
+                if ensemble_context is None
+                else tuple(
+                    f"- `{part}` mask: `{provenance[(frame, part)]}`, "
+                    + (
+                        "`contact_eligible`"
+                        if part in eligible_parts
+                        else "`not_contact_eligible` (contact fields are `invalid_mask`)"
+                    )
+                    for part in TARGETS
+                )
             ),
         )
-    rr.send_blueprint(review._blueprint(entity, dimensions, static_text_panels=STATIC_TEXT_PANELS))
+    rr.send_blueprint(
+        review._blueprint(
+            entity,
+            dimensions,
+            static_text_panels=STATIC_TEXT_PANELS,
+            reference_provenance=ensemble_context is not None,
+        )
+    )
     rr.disconnect()
     sheet_moments = tuple(
         item
@@ -505,7 +737,7 @@ def build_first_minute_review(
     review._make_contact_sheet(
         video_path, sheet_path, sheet_moments, reference, sources["stabilized_wilor"]
     )
-    guide_path.write_text(_guide(index, rrd_path), encoding="utf-8")
+    guide_path.write_text(guide, encoding="utf-8")
     index_path.write_text(
         index.model_copy(
             update={
@@ -529,12 +761,22 @@ def main() -> None:
         action="store_true",
         help="Replace an existing package in --output-root (an empty directory never needs it).",
     )
+    parser.add_argument(
+        "--reference",
+        type=Path,
+        default=FIRST_MINUTE_REFERENCE_SEGMENTATION,
+        help=(
+            "Reference segmentation run directory: the ensemble reference by default, or the "
+            f"corrected SAM3 run {CORRECTED_SAM3_REFERENCE_SEGMENTATION} for a SAM3-only package."
+        ),
+    )
     args = parser.parse_args()
     print(
         build_first_minute_review(
             repository_root=args.repository_root,
             output_root=args.output_root,
             overwrite=args.overwrite,
+            reference_run=args.reference,
         )
     )
 

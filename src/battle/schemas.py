@@ -2118,6 +2118,65 @@ class FourPartSegmentationRunMetadata(VersionedModel):
         return self
 
 
+EnsembleMaskProvenance = Literal[
+    "sam3_corrected", "dam4sam_fallback", "hidden_agent_label", "missing"
+]
+
+
+class EnsembleSourceRunReference(VersionedModel):
+    """One retained segmentation run the ensemble reference copies masks from."""
+
+    label: Literal["sam3_corrected", "dam4sam_fallback"]
+    run_directory_uri: str = Field(min_length=1)
+    manifest_fingerprint: ArtifactFingerprint
+    observations_fingerprint: ArtifactFingerprint
+
+
+class EnsembleReferenceRunMetadata(VersionedModel):
+    """Provenance for a per-target ensemble review reference assembled from retained runs.
+
+    The ensemble copies whole masks (never blends them) from a primary run, substitutes a
+    fallback run's mask only where a checked-in policy rule fires and the substitute passes
+    sanity, and writes explicit empty masks for agent-labelled hidden intervals.  It is a
+    review reference; cross-method fallback is not an accuracy claim.
+    """
+
+    policy_fingerprint: ArtifactFingerprint
+    source_fingerprint: ArtifactFingerprint
+    proxy_fingerprint: ArtifactFingerprint
+    primary_run: EnsembleSourceRunReference
+    fallback_run: EnsembleSourceRunReference
+    requested_analysis_frame_range: FrameRange
+    view_id: str = Field(min_length=1)
+    target_order: tuple[
+        Literal["chassis"], Literal["interior"], Literal["rear_body"], Literal["cabin"]
+    ]
+    observations_uri: str = Field(min_length=1)
+    masks_uri: str = Field(min_length=1)
+    provenance_uri: str = Field(min_length=1)
+    provenance_counts: dict[str, dict[str, int]]
+    no_blend: Literal[True] = True
+    ground_truth_accuracy_claim: Literal[False] = False
+    claim_boundaries: tuple[str, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def require_distinct_labelled_runs(self) -> EnsembleReferenceRunMetadata:
+        if self.primary_run.label != "sam3_corrected":
+            raise ValueError("the ensemble primary run must be the corrected SAM3 reference")
+        if self.fallback_run.label != "dam4sam_fallback":
+            raise ValueError("the ensemble fallback run must be the DAM4SAM arm")
+        if self.primary_run.run_directory_uri == self.fallback_run.run_directory_uri:
+            raise ValueError("primary and fallback runs must differ")
+        if self.target_order != ("chassis", "interior", "rear_body", "cabin"):
+            raise ValueError("ensemble targets must keep the contract order")
+        for target, counts in self.provenance_counts.items():
+            if target not in self.target_order:
+                raise ValueError(f"provenance counts name an unknown target {target}")
+            if sum(counts.values()) != self.requested_analysis_frame_range.frame_count:
+                raise ValueError(f"provenance counts for {target} must cover every frame")
+        return self
+
+
 class RunManifest(VersionedModel):
     run_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]*$")
     clip: ClipManifest
@@ -2142,6 +2201,7 @@ class RunManifest(VersionedModel):
     dam4sam_video: Dam4samVideoRunMetadata | None = None
     four_part_segmentation: FourPartSegmentationRunMetadata | None = None
     external_partial: ExternalPartialRunMetadata | None = None
+    ensemble_reference: EnsembleReferenceRunMetadata | None = None
 
     @model_validator(mode="after")
     def require_monotonic_observations(self) -> RunManifest:
@@ -2387,7 +2447,13 @@ class SegmentationValidityInterval(VersionedModel):
     end_frame_exclusive: int = Field(gt=0, le=1800)
     state: Literal["contact_eligible", "not_contact_eligible"]
     rationale: str = Field(min_length=1)
-    provenance: Literal["agent_authored_visual_review", "human_feedback_report"]
+    provenance: Literal[
+        "agent_authored_visual_review", "human_feedback_report", "ensemble_reference_policy"
+    ]
+    target_id: Literal["chassis", "interior", "rear_body", "cabin"] | None = Field(
+        default=None,
+        description="Target the interval applies to; None means every reference target.",
+    )
 
     @model_validator(mode="after")
     def require_ordered_range(self) -> SegmentationValidityInterval:
@@ -2406,8 +2472,15 @@ class InteractionReviewIndexManifest(VersionedModel):
     frame_count: Literal[600, 1800]
     analysis_fps: Literal[30]
     source_interval: TimeInterval
-    reference_segmentation_method: Literal["reviewed_seed_sam2_control", "baseline_sam3"]
+    reference_segmentation_method: Literal[
+        "reviewed_seed_sam2_control", "baseline_sam3", "ensemble_reference"
+    ]
     reference_segmentation_manifest: ArtifactFingerprint
+    reference_provenance_sidecar: ArtifactFingerprint | None = Field(
+        default=None,
+        description="Per-frame, per-target mask provenance when the reference is an ensemble.",
+    )
+    reference_provenance_counts: dict[str, dict[str, int]] | None = None
     input_artifacts: tuple[ArtifactFingerprint, ...] = Field(min_length=1)
     contact_heuristic: str = Field(min_length=1)
     hand_matching_rule: str = Field(min_length=1)

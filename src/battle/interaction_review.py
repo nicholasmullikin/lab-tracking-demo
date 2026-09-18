@@ -117,6 +117,7 @@ def _metadata(manifest: RunManifest) -> object | None:
         "drop_dtw",
         "four_part_segmentation",
         "four_part_focused",
+        "ensemble_reference",
         "external_partial",
     ):
         if (value := getattr(manifest, name)) is not None:
@@ -585,24 +586,42 @@ def _contacts(
     frame_count: int = FRAME_COUNT,
     segmentation_contact_eligible_through: int | None = None,
     segmentation_contact_eligible_intervals: tuple[tuple[int, int], ...] | None = None,
+    segmentation_contact_eligible_by_part: dict[str, tuple[tuple[int, int], ...]] | None = None,
 ) -> tuple[tuple[InteractionContactDiagnostic, ...], tuple[InteractionContactEvent, ...]]:
     """Measure hand-to-part geometry on contact-eligible frames only.
 
-    Eligibility is either everything before `segmentation_contact_eligible_through` or the
-    union of half-open `segmentation_contact_eligible_intervals`; every other frame yields
-    explicit `invalid_mask` rows so no stale candidate can leak across an ineligible gap.
+    Eligibility is either everything before `segmentation_contact_eligible_through`, the
+    union of half-open `segmentation_contact_eligible_intervals`, or per-part intervals in
+    `segmentation_contact_eligible_by_part` (a part missing from the mapping is never
+    eligible); every other frame/part yields explicit `invalid_mask` rows so no stale
+    candidate can leak across an ineligible gap.
     """
-    if segmentation_contact_eligible_intervals is None:
-        segmentation_contact_eligible_intervals = (
-            ((0, segmentation_contact_eligible_through),)
-            if segmentation_contact_eligible_through is not None
-            else ((0, frame_count),)
+    given = [
+        option is not None
+        for option in (
+            segmentation_contact_eligible_through,
+            segmentation_contact_eligible_intervals,
+            segmentation_contact_eligible_by_part,
         )
-    elif segmentation_contact_eligible_through is not None:
-        raise ValueError("pass either a contact-eligible cutoff or explicit intervals, not both")
+    ]
+    if sum(given) > 1:
+        raise ValueError("pass at most one contact-eligibility specification")
+    if segmentation_contact_eligible_by_part is None:
+        if segmentation_contact_eligible_intervals is None:
+            segmentation_contact_eligible_intervals = (
+                ((0, segmentation_contact_eligible_through),)
+                if segmentation_contact_eligible_through is not None
+                else ((0, frame_count),)
+            )
+        segmentation_contact_eligible_by_part = {
+            part: segmentation_contact_eligible_intervals for part in TARGETS
+        }
+
+    def part_eligible(frame: int, part: str) -> bool:
+        return contact_eligible_frame(frame, segmentation_contact_eligible_by_part.get(part, ()))
 
     def eligible(frame: int) -> bool:
-        return contact_eligible_frame(frame, segmentation_contact_eligible_intervals)
+        return any(part_eligible(frame, part) for part in TARGETS)
 
     lanes = _spatial_lanes(mediapipe.observations, dimensions, frame_count=frame_count)
     lanes_seen = sorted(set(lanes.values()))
@@ -631,6 +650,16 @@ def _contacts(
             lane = lanes[(frame, hand_index)]
             for part, mask in masks.items():
                 key = (lane, part)
+                if not part_eligible(frame, part):
+                    draft.append(
+                        InteractionContactDiagnostic(
+                            analysis_frame_index=frame,
+                            hand_source_id=lane,
+                            part_id=part,
+                            observation_state="invalid_mask",
+                        )
+                    )
+                    continue
                 if mask is None:
                     draft.append(
                         InteractionContactDiagnostic(
@@ -673,7 +702,9 @@ def _contacts(
                             analysis_frame_index=frame,
                             hand_source_id=lane,
                             part_id=part,
-                            observation_state="missing_hand",
+                            observation_state=(
+                                "missing_hand" if part_eligible(frame, part) else "invalid_mask"
+                            ),
                         )
                     )
     debounced = {key: debounce_contact(values) for key, values in raw.items()}
@@ -1025,21 +1056,46 @@ def _log_navigation_frame(
     rr.log(f"{root}/{NAVIGATION_CURRENT}", rr.TextDocument(body, media_type="text/markdown"))
 
 
+REFERENCE_PROVENANCE_SERIES = "diagnostics/reference_provenance"
+REFERENCE_PROVENANCE_OVERLAY = "primary/reference_provenance_overlay"
+REFERENCE_PROVENANCE_PANEL_NAME = (
+    "Reference mask provenance per part (0 missing, 1 sam3, 2 dam4sam fallback, 3 hidden)"
+)
+
+
 def _blueprint(
     root: str,
     dimensions: tuple[int, int],
     *,
     static_text_panels: tuple[tuple[str, str], ...] = FIRST_20S_STATIC_TEXT_PANELS,
+    reference_provenance: bool = False,
 ) -> rrb.Blueprint:
+    """Shared review layout; `reference_provenance` adds the ensemble provenance layer/panel."""
     primary = rrb.Spatial2DView(
         origin=root,
-        name="Primary interaction: corrected SAM3 + stabilized WiLoR",
+        name=(
+            "Primary interaction: ensemble reference (provenance overlay) + stabilized WiLoR"
+            if reference_provenance
+            else "Primary interaction: corrected SAM3 + stabilized WiLoR"
+        ),
         contents=(
             "$origin/source/video",
             "$origin/primary/reference_four_part_segmentation/**",
+            *((f"$origin/{REFERENCE_PROVENANCE_OVERLAY}/**",) if reference_provenance else ()),
             "$origin/primary/stabilized_wilor/render/hands/**",
         ),
         visual_bounds=rrb.VisualBounds2D(x_range=[0, dimensions[0]], y_range=[0, dimensions[1]]),
+    )
+    provenance_views = (
+        (
+            rrb.TimeSeriesView(
+                origin=f"{root}/{REFERENCE_PROVENANCE_SERIES}",
+                name=REFERENCE_PROVENANCE_PANEL_NAME,
+                contents="$origin/**",
+            ),
+        )
+        if reference_provenance
+        else ()
     )
     comparison = rrb.Horizontal(
         rrb.Spatial2DView(
@@ -1082,6 +1138,7 @@ def _blueprint(
                             f"$origin/{NAVIGATION_COARSE_GT_INDEX.rsplit('/', 1)[1]}",
                         ),
                     ),
+                    *provenance_views,
                 ),
                 column_shares=[3, 2],
             ),
