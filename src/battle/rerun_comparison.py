@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import subprocess
 from pathlib import Path
 
+from . import digest_cache, media_probe
 from .exporter import export_synchronized_comparison
 from .schemas import (
     EncodedAssetInput,
@@ -47,11 +47,7 @@ def _load_manifest(run_directory: Path) -> RunManifest:
 
 
 def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as file:
-        while chunk := file.read(1024 * 1024):
-            digest.update(chunk)
-    return digest.hexdigest()
+    return digest_cache.sha256_file(path)
 
 
 def _relative_uri(path: Path, repository_root: Path) -> str:
@@ -236,25 +232,7 @@ def _create_first_minute_video(source: Path, output: Path) -> Path:
 
 
 def _video_frame_count(path: Path) -> int:
-    completed = subprocess.run(
-        [
-            "ffprobe",
-            "-v",
-            "error",
-            "-count_frames",
-            "-select_streams",
-            "v:0",
-            "-show_entries",
-            "stream=nb_read_frames",
-            "-of",
-            "default=noprint_wrappers=1:nokey=1",
-            str(path),
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    return int(completed.stdout.strip())
+    return media_probe.video_frame_count(path)
 
 
 def build_focused_first_minute_comparison(

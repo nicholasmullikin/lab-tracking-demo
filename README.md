@@ -1371,6 +1371,27 @@ For the 1,800-frame first-minute package this took the rebuild from about 85 s t
 through the shared in-memory cache, and to about 44 s with the sidecar present; the
 recording holds the same rows, in fewer and larger chunks.
 
+### Cached digests and probes
+
+Builders also stop re-reading unchanged inputs. `src/battle/digest_cache.py` remembers a
+file's SHA-256 against its size and modification time under `.cache/battle/`, and
+`src/battle/media_probe.py` stores the exact frame count beside each video rather than
+decoding the stream again with `ffprobe -count_frames`. The trimmed Rerun input video is
+reused when a stamp shows the same proxy and frame count.
+
+Both caches are keyed by stat metadata, not content, so a provenance-critical rebuild
+should re-read the bytes:
+
+```bash
+uv run battle-build-interaction-review-v4 --verify-fingerprints
+uv run battle-build-interaction-review --verify-fingerprints
+```
+
+The exploratory comparison now fingerprints the mask URIs its observations reference
+instead of every file beside them, so a rebuild is not charged for caches and sheets that
+no frame draws. That changes the recorded mask-tree digest for packages built before this
+revision.
+
 ### Test tiers
 
 The suite is tiered so the default run needs nothing but this repository. Tests that

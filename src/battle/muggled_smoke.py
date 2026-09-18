@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import subprocess
@@ -11,7 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from . import mask_cache
+from . import digest_cache, mask_cache
 from .exporter import export_run
 from .schemas import (
     AdapterMetadata,
@@ -86,12 +85,8 @@ DEFAULT_MODEL = MUGGLED_SAM_SOURCE / "model_weights" / "sam3.1_multiplex.pt"
 
 
 def sha256_file(path: Path) -> str:
-    """Hash a file incrementally, never loading media/configuration fully into memory."""
-    digest = hashlib.sha256()
-    with path.open("rb") as file:
-        while chunk := file.read(1024 * 1024):
-            digest.update(chunk)
-    return digest.hexdigest()
+    """Hash a file, reusing a cached digest while its size and mtime are unchanged."""
+    return digest_cache.sha256_file(path)
 
 
 def relative_uri(path: Path, repository_root: Path) -> str:
@@ -1126,10 +1121,39 @@ def _write_mask_cache_sidecar(run_directory: Path) -> None:
         print(f"mask cache sidecar skipped: {type(error).__name__}: {error}")
 
 
+def _bounded_video_stamp_path(output_path: Path) -> Path:
+    return output_path.with_suffix(f"{output_path.suffix}.source.json")
+
+
+def _reusable_bounded_video(proxy_path: Path, output_path: Path, frame_count: int) -> bool:
+    """Report whether a previously trimmed asset still describes this exact request.
+
+    The stamp records the source, its size and mtime, and the requested frame count, so
+    a re-encode is skipped only when the same proxy is trimmed the same way. Reading the
+    frame count back with ffprobe would cost a full decode of the file it is checking.
+    """
+    stamp_path = _bounded_video_stamp_path(output_path)
+    if not output_path.is_file() or not stamp_path.is_file():
+        return False
+    try:
+        stamp = json.loads(stamp_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    status = proxy_path.stat()
+    return stamp == {
+        "source": str(proxy_path.resolve()),
+        "source_size_bytes": status.st_size,
+        "source_mtime_ns": status.st_mtime_ns,
+        "frame_count": frame_count,
+    }
+
+
 def _create_bounded_rerun_video(
     *, proxy_path: Path, output_path: Path, run_directory: Path, frame_count: int
 ) -> Path:
     """Create the exact approved-range video asset embedded once in a Rerun recording."""
+    if _reusable_bounded_video(proxy_path, output_path, frame_count):
+        return output_path
     command = [
         "ffmpeg",
         "-y",
@@ -1161,6 +1185,20 @@ def _create_bounded_rerun_video(
             f"could not make the bounded {frame_count}-frame Rerun input video "
             f"(ffmpeg exit {completed.returncode})"
         )
+    status = proxy_path.stat()
+    _bounded_video_stamp_path(output_path).write_text(
+        json.dumps(
+            {
+                "source": str(proxy_path.resolve()),
+                "source_size_bytes": status.st_size,
+                "source_mtime_ns": status.st_mtime_ns,
+                "frame_count": frame_count,
+            },
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
     return output_path
 
 

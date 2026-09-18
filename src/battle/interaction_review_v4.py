@@ -418,6 +418,7 @@ def build_first_minute_review(
     output_root: Path = OUTPUT_ROOT,
     overwrite: bool = False,
     reference_run: Path = FIRST_MINUTE_REFERENCE_SEGMENTATION,
+    verify_fingerprints: bool = False,
 ) -> Path:
     """Build a 1,800-row review package from retained, source-aligned artifacts.
 
@@ -427,13 +428,19 @@ def build_first_minute_review(
 
     repository_root = repository_root.resolve()
     sources = {
-        name: review._validate_run(spec, repository_root, frame_count=FRAME_COUNT)
+        name: review._validate_run(
+            spec,
+            repository_root,
+            frame_count=FRAME_COUNT,
+            verify_fingerprints=verify_fingerprints,
+        )
         for name, spec in review.FIRST_MINUTE_SOURCES.items()
     }
     reference = review._validate_run(
         review.SourceSpec("reference_segmentation", reference_run),
         repository_root,
         frame_count=FRAME_COUNT,
+        verify_fingerprints=verify_fingerprints,
     )
     review._validate_shared_sources([*sources.values(), reference])
     ensemble_context = _load_ensemble_context(reference, repository_root)
@@ -770,6 +777,11 @@ def main() -> None:
             f"corrected SAM3 run {CORRECTED_SAM3_REFERENCE_SEGMENTATION} for a SAM3-only package."
         ),
     )
+    parser.add_argument(
+        "--verify-fingerprints",
+        action="store_true",
+        help="Re-read every input instead of trusting a digest cached against size and mtime.",
+    )
     args = parser.parse_args()
     print(
         build_first_minute_review(
@@ -777,6 +789,7 @@ def main() -> None:
             output_root=args.output_root,
             overwrite=args.overwrite,
             reference_run=args.reference,
+            verify_fingerprints=args.verify_fingerprints,
         )
     )
 

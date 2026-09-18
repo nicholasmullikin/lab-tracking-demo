@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,7 +19,7 @@ import rerun as rr
 import rerun.blueprint as rrb
 from PIL import Image, ImageDraw
 
-from . import mask_cache
+from . import mask_cache, media_probe
 from .exploratory_comparison import (
     METHOD_COLORS,
     _drop_dtw_text,
@@ -131,6 +130,7 @@ def _validate_run(
     *,
     frame_count: int = FRAME_COUNT,
     require_every_frame: bool = True,
+    verify_fingerprints: bool = False,
 ) -> LoadedSource:
     """Validate source/proxy fingerprints and exact source-time mapping before use."""
     run_directory = (repository_root / spec.run_directory).resolve()
@@ -154,7 +154,10 @@ def _validate_run(
         if not isinstance(fingerprint, ArtifactFingerprint):
             raise ValueError(f"{spec.method_id} has invalid {label} fingerprint")
         validate_artifact_fingerprint(
-            fingerprint, repository_root, label=f"{spec.method_id} {label}"
+            fingerprint,
+            repository_root,
+            label=f"{spec.method_id} {label}",
+            verify=verify_fingerprints,
         )
         artifacts.append(fingerprint)
     if source is None or proxy is None:
@@ -164,14 +167,20 @@ def _validate_run(
                 f"{spec.method_id} must declare source/proxy or a fingerprinted bounded input"
             )
         validate_artifact_fingerprint(
-            requested, repository_root, label=f"{spec.method_id} bounded input"
+            requested,
+            repository_root,
+            label=f"{spec.method_id} bounded input",
+            verify=verify_fingerprints,
         )
         artifacts.append(requested)
     for attribute in ("config_fingerprint", "requested_input_fingerprint"):
         if isinstance((fingerprint := getattr(metadata, attribute, None)), ArtifactFingerprint):
             if not fingerprint.uri.startswith("hf://"):
                 validate_artifact_fingerprint(
-                    fingerprint, repository_root, label=f"{spec.method_id} declared input"
+                    fingerprint,
+                    repository_root,
+                    label=f"{spec.method_id} declared input",
+                    verify=verify_fingerprints,
                 )
             artifacts.append(fingerprint)
     observations: dict[int, FrameObservations] = {}
@@ -227,31 +236,7 @@ def _validate_shared_sources(sources: list[LoadedSource]) -> None:
 
 
 def _video_info(video_path: Path) -> tuple[int, int, tuple[int, int]]:
-    completed = subprocess.run(
-        [
-            "ffprobe",
-            "-v",
-            "error",
-            "-count_frames",
-            "-select_streams",
-            "v:0",
-            "-show_entries",
-            "stream=width,height,avg_frame_rate,nb_read_frames",
-            "-of",
-            "json",
-            str(video_path),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    stream = json.loads(completed.stdout)["streams"][0]
-    numerator, denominator = stream["avg_frame_rate"].split("/")
-    return (
-        int(stream["nb_read_frames"]),
-        round(int(numerator) / int(denominator)),
-        (int(stream["width"]), int(stream["height"])),
-    )
+    return media_probe.video_info(video_path)
 
 
 def _mask_for_part(
@@ -1341,6 +1326,7 @@ def build_interaction_review(
     repository_root: Path,
     output_root: Path = OUTPUT_ROOT,
     reference_segmentation_method: str = "baseline_sam3",
+    verify_fingerprints: bool = False,
 ) -> Path:
     """Build and validate the review package without model inference."""
     if reference_segmentation_method not in REFERENCE_SEGMENTATIONS:
@@ -1352,7 +1338,12 @@ def build_interaction_review(
         repository_root, Path("configs/four_part_segmentation_comparison.json")
     )
     sources = {
-        name: _validate_run(spec, repository_root, require_every_frame=name != "drop_dtw")
+        name: _validate_run(
+            spec,
+            repository_root,
+            require_every_frame=name != "drop_dtw",
+            verify_fingerprints=verify_fingerprints,
+        )
         for name, spec in DEFAULT_SOURCES.items()
     }
     reference = _validate_run(
@@ -1360,6 +1351,7 @@ def build_interaction_review(
             reference_segmentation_method, REFERENCE_SEGMENTATIONS[reference_segmentation_method]
         ),
         repository_root,
+        verify_fingerprints=verify_fingerprints,
     )
     control = _validate_run(
         SourceSpec(
@@ -1367,6 +1359,7 @@ def build_interaction_review(
             REFERENCE_SEGMENTATIONS["reviewed_seed_sam2_control"],
         ),
         repository_root,
+        verify_fingerprints=verify_fingerprints,
     )
     _validate_shared_sources([*sources.values(), reference, control])
     if tuple(item.label for item in reference.observations[0].objects) != TARGETS:
@@ -1633,12 +1626,18 @@ def main() -> None:
         default="baseline_sam3",
         help="Reference part source; default is the corrected focused static SAM3 run.",
     )
+    parser.add_argument(
+        "--verify-fingerprints",
+        action="store_true",
+        help="Re-read every input instead of trusting a digest cached against size and mtime.",
+    )
     args = parser.parse_args()
     print(
         build_interaction_review(
             repository_root=args.repository_root,
             output_root=args.output_root,
             reference_segmentation_method=args.reference_segmentation,
+            verify_fingerprints=args.verify_fingerprints,
         )
     )
 

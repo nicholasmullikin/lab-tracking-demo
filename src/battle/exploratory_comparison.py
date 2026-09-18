@@ -19,6 +19,7 @@ import rerun as rr
 import rerun.blueprint as rrb
 from PIL import Image
 
+from . import digest_cache
 from .exporter import HAND_CONNECTIONS, HAND_LANDMARK_NAMES, _rgba_mask_png
 from .schemas import (
     ArtifactFingerprint,
@@ -153,13 +154,9 @@ class LoadedMethod:
     index_method: ExploratoryComparisonMethod
 
 
-def sha256_file(path: Path) -> str:
+def sha256_file(path: Path, *, verify: bool = False) -> str:
     """Return the content digest of one local artifact."""
-    digest = hashlib.sha256()
-    with path.open("rb") as file:
-        for chunk in iter(lambda: file.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+    return digest_cache.sha256_file(path, verify=verify)
 
 
 def _relative_uri(path: Path, repository_root: Path) -> str:
@@ -176,15 +173,29 @@ def _file_fingerprint(path: Path, repository_root: Path) -> ArtifactFingerprint:
     )
 
 
-def _tree_fingerprint(path: Path, repository_root: Path) -> ArtifactFingerprint:
-    """Fingerprint all referenced native masks without pretending they are one file."""
+def _mask_tree_fingerprint(
+    path: Path,
+    repository_root: Path,
+    referenced_uris: tuple[str, ...],
+    *,
+    verify: bool = False,
+) -> ArtifactFingerprint:
+    """Fingerprint the masks this comparison reads, not every file beside them.
+
+    Earlier revisions hashed the whole `native/masks` tree, which charged the build for
+    caches and contact sheets that no observation references. The digest now covers the
+    referenced URIs in sorted order, so it still changes whenever a drawn mask changes.
+    """
     if not path.is_dir():
         raise FileNotFoundError(f"referenced mask directory is unavailable: {path}")
     digest = hashlib.sha256()
-    for child in sorted(path.rglob("*")):
-        if child.is_file():
-            digest.update(_relative_uri(child, repository_root).encode())
-            digest.update(sha256_file(child).encode())
+    run_directory = path.parent.parent
+    for uri in sorted(set(referenced_uris)):
+        child = (run_directory / uri).resolve()
+        if not child.is_file():
+            raise FileNotFoundError(f"referenced mask is unavailable: {child}")
+        digest.update(_relative_uri(child, repository_root).encode())
+        digest.update(sha256_file(child, verify=verify).encode())
     return ArtifactFingerprint(
         uri=_relative_uri(path, repository_root),
         sha256=digest.hexdigest(),
@@ -193,15 +204,19 @@ def _tree_fingerprint(path: Path, repository_root: Path) -> ArtifactFingerprint:
 
 
 def validate_artifact_fingerprint(
-    fingerprint: ArtifactFingerprint, repository_root: Path, *, label: str
+    fingerprint: ArtifactFingerprint, repository_root: Path, *, label: str, verify: bool = False
 ) -> Path:
-    """Refuse a changed local source, proxy, config, or artifact before composition."""
+    """Refuse a changed local source, proxy, config, or artifact before composition.
+
+    `verify` re-reads the bytes instead of trusting a digest cached against the file's
+    size and modification time.
+    """
     if "://" in fingerprint.uri:
         return Path(fingerprint.uri)
     path = (repository_root / fingerprint.uri).resolve()
     if not path.is_file():
         raise FileNotFoundError(f"{label} is unavailable: {path}")
-    actual = sha256_file(path)
+    actual = sha256_file(path, verify=verify)
     if actual != fingerprint.sha256:
         raise ValueError(
             f"{label} fingerprint mismatch for {fingerprint.uri}: "
@@ -346,9 +361,17 @@ def _load_method(spec: MethodSpec, *, repository_root: Path, frame_count: int) -
         input_artifacts.append(
             _file_fingerprint(run_directory / spec.alignment_artifact, repository_root)
         )
-    if any(item.mask for observation in observations.values() for item in observation.objects):
+    referenced_masks = tuple(
+        item.mask.uri
+        for observation in observations.values()
+        for item in observation.objects
+        if item.mask
+    )
+    if referenced_masks:
         input_artifacts.append(
-            _tree_fingerprint(run_directory / "native" / "masks", repository_root)
+            _mask_tree_fingerprint(
+                run_directory / "native" / "masks", repository_root, referenced_masks
+            )
         )
     source_offset = manifest.clip.timing.source_seconds_for_frame(ClockName.ANALYSIS, 0)
     method = ExploratoryComparisonMethod(

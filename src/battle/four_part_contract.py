@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,17 +9,15 @@ from typing import Any
 
 from PIL import Image
 
+from . import digest_cache
+
 TARGETS = ("chassis", "interior", "rear_body", "cabin")
 FRAME_COUNT = 600
 ANALYSIS_FPS = 30
 
 
 def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as file:
-        for chunk in iter(lambda: file.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+    return digest_cache.sha256_file(path)
 
 
 def relative_uri(path: Path, repository_root: Path) -> str:
