@@ -3351,3 +3351,30 @@ this comparison makes no accuracy or cross-method identity claim.
   each with a README or summary. Not done here, by instruction: the memory arms (step 1b), DAM4SAM
   (step 2), scoring tables across all new runs and the ensemble v2 (step 3), README and review
   guide updates.
+
+### Sep 19: queue gap closed (a dead worker no longer counts as a succeeded job)
+
+- **The gap.** `battle-muggled-smoke` writes the run manifest whether or not the SAM3 worker
+  survived; a dead worker left `method_statuses[objects].state = failed` behind an exit code of
+  0, and `scripts/overnight_queue.py` reads exit 0 as `succeeded`. That is how seven 1280 view
+  jobs were reported "succeeded" in 0.4 s each on Sep 19 (`runs/sam3-views-r1280-20260919/failed-worker-edit-20260920t0156z/`).
+- **The fix (commit `7380a9e`).** The driver, not the queue: `battle-muggled-smoke` now reads
+  its own manifest after the run (`core_method_failure`), prints `core method failed: <blocker>`
+  to stderr and exits `3` (`CORE_METHOD_FAILED_EXIT_CODE`) when the `objects` method recorded
+  `failed`; the `Wrote MuggledSAM/SAM3 run: <dir>` line is still printed first so the run
+  directory stays findable. The queue is unchanged: a non-zero exit is already `failed` and
+  stops the queue under `continue_on_failure: false`. Nothing depended on the exit-0 behaviour:
+  the two GPU tests that invoke the CLI (`tests/test_worker_policy_gpu.py`,
+  `tests/test_worker_resume_gpu.py`) use `check=True` on runs that succeed, and no script chains
+  the command. `battle-four-part-segmentation` (SAM2 arms) already raised on a dead worker.
+  Tests: `tests/test_muggled_smoke.py` +2 (`core_method_failure` reads only the `objects` stage
+  and returns the blocker; the CLI exits 3 with the failed manifest and 0 with a succeeded one,
+  `run_smoke` monkeypatched). 49 pass in that file and `test_overnight_queue.py`; ruff clean.
+- **Frozen code for queued GPU jobs.** Every job in tonight's two queues
+  (`runs/sam3-memory-arms-20260919/jobs_1_memory_arms.json`,
+  `runs/dam4sam-arms-20260919/jobs_dam4sam_arms.json`) carries
+  `env.PYTHONPATH = <root>/code-snapshot-7380a9e/src`, a `git archive 7380a9e src/battle`
+  extracted into the run root (83 files, byte-equal to the committed tree; `battle.__file__`
+  resolves into the snapshot and the SAM3 worker is spawned from the snapshot's
+  `muggled_worker.py`, the SAM2 worker from its `four_part_video_worker.py`). Working-tree edits
+  during the queue cannot reach a GPU job; each root's README names the snapshot commit.
