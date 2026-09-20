@@ -1,0 +1,82 @@
+{
+  "manifest_kind": "assembly101_recording_selection",
+  "generated_on": "2026-09-20",
+  "purpose": "Track C, step C1: a second Assembly101 recording of the same toy as recording 1 by a different subject, with a contiguous ~60 s span whose coarse actions cover attach interior + screw chassis + attach body (the same four parts: chassis, interior, body/rear_body, cabin).",
+  "toy_id": "c02a",
+  "toy_id_source": "fine-grained-annotations CSV column toy_id for recording 1 (all rows c02a); the recording name carries it as `..._9033-c02a_9033_...`",
+  "recording_1": {
+    "recording_id": "nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532",
+    "subject_id": "9033",
+    "window_seconds": [
+      294.0,
+      386.7
+    ],
+    "first_minute_coarse_actions": [
+      "attach interior (291.2-304.6 s)",
+      "screw chassis (304.6-334.6 s)",
+      "attach body (334.6-345.2 s)",
+      "screw chassis (345.2-358.3 s)"
+    ]
+  },
+  "candidates_considered": "every assembly_* recording of toy c02a in annotations/coarse-annotations/coarse_seq_views.txt (4 recordings; 8 sequences counting disassembly)",
+  "chosen": {
+    "recording_id": "nusar-2021_action_both_9061-c02a_9061_user_id_2021-02-09_141537",
+    "label": "nusar_9061",
+    "subject_id": "9061",
+    "fetched_window_seconds": [
+      374.0,
+      454.0
+    ],
+    "core_span_seconds": [
+      384.0,
+      444.0
+    ],
+    "core_span_proxy_frames": [
+      300,
+      2100
+    ],
+    "coarse_actions_in_fetched_window": [
+      "unscrew chassis (371.3-375.7 s, clipped)",
+      "detach interior (375.7-376.5 s)",
+      "attempt to attach bumper (376.5-388.1 s)",
+      "attach interior (388.1-389.4 s)",
+      "screw chassis (389.4-398.7 s)",
+      "attach body (398.7-401.4 s)",
+      "attempt to attach bumper (401.4-408.4 s)",
+      "screw chassis (408.4-415.2 s)",
+      "attach bumper (415.2-425.4 s)",
+      "attempt to attach cabin (425.4-428.0 s)",
+      "unscrew chassis (428.0-432.9 s)",
+      "detach interior (432.9-434.7 s)",
+      "attach interior (434.7-439.0 s)",
+      "attach cabin (439.0-443.9 s)",
+      "detach bumper (443.9-448.5 s)",
+      "unscrew chassis (448.5-455.2 s, clipped)"
+    ],
+    "why": [
+      "Different subject (9061 vs 9033) on the same toy c02a; all 8 static views and all 4 ego views exist on the Hub at the pinned revision, and the ego camera ids (HMC_21110305/21176623/21176875/21179183) are the same physical cameras as recording 1, so the Track 6 e3/e4 choice transfers by camera id.",
+      "The core span reproduces recording 1's coarse chain attach interior -> screw chassis -> attach body -> screw chassis (388.1-415.2 s) and additionally contains a second interior detach/attach cycle and the cabin attach, so all four parts are handled inside the window.",
+      "Differences from recording 1 that make it a real generalization test and must be named: the subject is much faster (the chain takes 27 s, not 60 s); a fifth part, the bumper, is handled and attached inside the window (recording 1 attached it at 813 s); the roof was attached at 312-330 s before the window, so the cabin/roof appearance may differ from recording 1's window."
+    ],
+    "frame_0_note": "Proxy frame 0 = 374.000 s falls inside `unscrew chassis` (interior still in the chassis); the interior is detached at 375.7-376.5 s and all four parts are separate on the table from ~376.5 s (proxy frame ~75) until `attach interior` at 388.1 s (proxy frame 423). Seed-transfer workers should pick the seed frame from the contact sheet rather than assume frame 0."
+  },
+  "rejected": [
+    {
+      "recording_id": "nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-18_143949",
+      "reason": "same subject (9033) as recording 1; rejected by the different-subject requirement. Also uses a different ego headset (HMC_8434xxxx/8435xxxx ids)."
+    },
+    {
+      "recording_id": "nusar-2021_action_both_9084-c02a_9084_user_id_2021-02-25_140008",
+      "reason": "different subject, but no contiguous ~60 s span with attach interior + screw chassis + attach body: `attach interior` ends at 139.7 s and `attach body`/`screw chassis` run 191.4-214.7 s (51.7 s apart, with cabin work in between), and the ego cameras are a different headset (HMC_8434xxxx/8435xxxx), so the e3/e4 analogue by camera id does not exist."
+    },
+    {
+      "recording_id": "nusar-2021_action_both_9061-c02a_9061_user_id_2021-02-09_141537 (alternative span 300-360 s)",
+      "reason": "same recording, earlier span: attach interior 302.0-312.0 s, then attach roof, attempt to attach bumper, screw chassis 335.3-348.4 s and only an `attempt to attach body` (348.4-354.2 s); the body is never attached, and the roof attach dominates the middle of the span."
+    }
+  ],
+  "sources": {
+    "coarse_labels": "annotations/coarse-annotations/coarse_labels/assembly_<recording>.txt at cvml-nus/assembly101@bfc15ea5e3f0bc8f8c232af6c1b45aa137a9d967 (30 fps annotation frames)",
+    "hub_listing": "HfApi.list_repo_tree recordings/<recording> at the same revision (12 files for each candidate)",
+    "license": "CC BY-NC 4.0; dataset annotations are external context, not ground truth for any method here"
+  }
+}

@@ -3938,3 +3938,124 @@ this comparison makes no accuracy or cross-method identity claim.
 - **Deliverables.** The module, schemas, tests, the `--exclude-view` flag, the CLI entry, this
   entry, and `runs/multiview-reprompt-20260920/README.md` (ignored) with the exact plan / decode /
   run / anchor-iou commands for C10379 and the blocked C10119 set. Nothing on the GPU was run.
+
+### Sep 20: Track C1 of the multicam plan, a second recording fetched and prepared (`nusar_9061`)
+
+- **Claim boundary first.** Everything here is acquisition and dataset context: the second
+  recording's videos (trimmed windows only), the dataset's own poses, extrinsics, coarse and
+  fine-grained labels, fitted intrinsics that reproduce the dataset's internal projection, and
+  measured video-vs-pose clock offsets. No model ran, no GPU was used (`CUDA_VISIBLE_DEVICES=""`
+  throughout), nothing here is ground truth for any method and no accuracy claim rests on it.
+  CC BY-NC 4.0 attribution applies to every dataset asset named below.
+- **Choice** (`configs/assembly101/nusar_9061/recording_selection.json`). Toy id `c02a` comes
+  from the fine-grained CSV `toy_id` column of recording 1 (and the recording name). The
+  coarse-label set lists four assembly recordings of `c02a`; `nusar-2021_action_both_9061-c02a_9061_user_id_2021-02-09_141537`
+  (subject 9061) is the only different-subject recording whose coarse actions contain the
+  recording-1 chain attach interior -> screw chassis -> attach body -> screw chassis inside
+  one 60 s span (388.1-415.2 s) and whose ego cameras are the same headset serials as
+  recording 1. Rejected: `9033-..._2021-02-18` (same subject), `9084-...` (attach interior and
+  attach body 52 s apart with cabin work between; different headset serials), and the earlier
+  9061 span 300-360 s (body only "attempted", roof attach in the middle). Window fetched:
+  source **374.000-454.000 s** (raw frames `[22440, 27240)`, 4,800 trim / 2,400 proxy frames),
+  core span **384.000-444.000 s = proxy frames `[300, 2100)`**, 10 s margin each side. Named
+  differences from recording 1 that make it a real test: the subject is about twice as fast
+  (the chain takes 27 s), a fifth part (rear bumper) is handled and attached inside the window,
+  the roof was attached to the cabin before the window, and proxy frame 0 sits inside
+  `unscrew chassis` (all four parts are separate from about proxy frame 75, fine-grained `put
+  down chassis` 56-75, until `pick up interior` at 422).
+- **Registry** (new `assembly101_recordings.py`, tracked `configs/assembly101/recordings.json`).
+  One typed `Assembly101Recording` per recording carries the window, core span, views, and
+  every path the Track 0 tools used to hard-code; `RECORDING_1` is defined in code so all
+  existing constants (`RECORDING_ID`, `FOCUSED_START_SECONDS`, `WINDOW_START_POSE_FRAME`,
+  `CLOCK_RULES_CONFIG`, `CONFIG_ROOT`, ...) are unchanged and every module keeps its
+  recording-1 default; `--recording <label|id>` selects another. `assembly101_fetch_view`,
+  `assembly101_clock_offset`, `assembly101_camera_fit`, `assembly101_reference` and
+  `multiview_geometry.CameraRig.load` / `run_rig_check` took `recording=` parameters; a
+  clock-rule file or scan for the wrong recording is refused (`load_clock_rules_for`,
+  `write_clock_rules`).
+- **Acquisition.** Videos by `battle-fetch-assembly101-view --recording nusar_9061` (Track 0
+  recipe: signed CDN URL, counting proxy, HTTP Range, one decode -> 60 fps trim + 1280x720 /
+  954x720 CFR-30 proxy, libx264 crf 18, ffmpeg 8.1.2): eight static views plus HMC_21110305
+  (e3) and HMC_21179183 (e4), chosen by camera id because the Track 6 visibility audit needs
+  hulls that do not exist yet and recording 2 carries the same headset serials.
+  **1,870,659,584 B** for the videos (14-20 % of each file; per view 155-332 MB static, 17-20
+  MB ego; 22-68 s each, three in parallel, about 4 min wall). Poses and annotations by the new
+  `battle-fetch-assembly101-poses` (port of the Sep 17 scripts): ten `AssemblyPoses.zip`
+  members range-extracted with CRC-32 checks (281,494,021 compressed B; landmarks2D 682 MB
+  uncompressed), the three fine-grained split CSVs streamed with the full-file SHA-256 equal to
+  the LFS etag (3,516 rows for the recording = 293 segments x 12 views, all in `train`), the
+  coarse labels and four lookup tables with git-blob etags verified: **465,555,825 B**. Total
+  **2,336,215,409 B** (budget 2-3 GB). Video full-file checksums are the LFS etags recorded in
+  the clip configs (the files were never downloaded whole, so they cannot be re-hashed here).
+  The 2D-landmark window `assembly101_landmarks2D_60fps_frames_22440_27240.npz` covers all 12
+  views with no missing pose frame. On disk: 0.83 GB raw, 1.8 GB derived (ignored).
+- **Clip configs** (`G2PreprocessingManifest`, built from the acquisition records by
+  `write_recording_clip_configs`): `configs/clips/assembly101_nusar_9061_four_part_reassembly_focused_all_static_g2.json`
+  (eight views, asset C10379, source 374.000-454.000 s, raw `[22440, 27240)`, analysis
+  `[11220, 13620)`, proxy `[0, 2400)`, raw sources as `hf://` paths with the LFS etag) and
+  `..._ego_hmc_21110305_g2.json` / `..._ego_hmc_21179183_g2.json` (954x720). Gates read
+  `approved_by: user (Track C plan of Sep 20 ...)`: the plan, not a per-clip human look.
+- **Clock rules** (`battle-assembly101-clock-offset --recording nusar_9061`, three chunks of
+  1,600 frames since the trim is 80 s, otherwise the Sep 18 method; per-view curves under
+  `runs/assembly101-clock-offsets-nusar_9061/`, tracked summary
+  `configs/assembly101/clock_rules_nusar_9061.json`, 10/10 views with a rule). C10095 +5
+  (+-1, sub-frame +4.79), C10115 +6 (+-1, +5.66), **C10118 +5 (+-2, +4.94)**, C10119 +4 (+-1,
+  +4.48), **C10379 +6 (+-2, +5.81)**, C10390 +6 (+-1, +5.56), **C10395 +4 (+-2, +4.22)**,
+  C10404 +5 (+-1, +5.13), HMC_21110305 0 (+-1, +0.20), HMC_21179183 0 (+-1, -0.08). The three
+  bold views were **ambiguous under the Sep 18 rule**: their gradient metric sat 2.1-7 frames
+  from skin-hit and motion, which agreed with each other within 0.2-0.8 frame (C10379: skin
+  +5.41, motion +6.20, gradient +1.55 with one flat chunk; C10395: +4.90 / +3.53 / -2.12;
+  C10118: +5.05 / +4.82 / +6.96). One documented rule change, `decide_offset` majority
+  fallback: when three metrics vote and exactly one is the clear odd one out (the remaining
+  pair agrees within 2 frames and beats any alternative pair by more than 0.5 frame), the pair
+  decides, the dropped metric is named (`dropped_metric`, in the scan, the rule file and the
+  evidence text) and the uncertainty is floored at 2 frames. Two-metric disagreement and evenly
+  spread metrics stay ambiguous; no recording-1 decision changes (none was ambiguous). The
+  offsets differ from recording 1's (C10379 +9 -> +6, C10119 +7 -> +4): the lag is a
+  per-session start-time fact, which is why it is measured per recording.
+- **Cameras** (`battle-fit-assembly101-camera --recording nusar_9061 --all`, 96 frame groups
+  every 50 pose frames; `configs/assembly101/nusar_9061/<view>_camera_estimate.json`). Static
+  Brown fits reproduce the shipped 2D through the shipped pose at 0.0004-0.0015 px RMS
+  (C10095 0.00071, C10115 0.00039, C10118 0.00039, C10119 0.00104, C10379 0.00154, C10390
+  0.00113, C10395 0.00135, C10404 0.00066; max 0.0021), ego rational fits 0.165 px
+  (HMC_21110305, max 0.39) and 0.398 px (HMC_21179183, max 0.60). **Same physical rig as
+  recording 1, re-calibrated per session:** relative poses between static cameras agree with
+  recording 1 to 0.6-4.2 mm and 0.17-0.27 deg over 1.0-2.0 m baselines, the world frame moved
+  by one rigid transform (0.52 deg, 59 mm; per-camera residual 0.5-2.0 mm), focal lengths agree
+  within 1.7 px and principal points within 1-3 px (C10395 5.4 / 3.7 px), k1 within 0.003. The
+  ego intrinsics agree in focal length (0.6-0.7 px) but the rational coefficients differ
+  substantially (the model is ill-conditioned; only the projection is comparable). Consequence:
+  recording 1's camera files must not be reused for recording 2 (extrinsics differ); the
+  per-recording files are what the rig loads. Rig check (`battle-multiview-rig-check
+  --recording nusar_9061`, `runs/assembly101-multiview-rig-check-nusar_9061/report.json`,
+  1.9 s): eight-static triangulation median 0.0003 mm / p95 0.0004 mm over 8,064 points (rec 1:
+  0.0004 / 0.0004); C10379+C10395 0.0016 / 0.0044 mm; C10115+C10404 0.0007 / 0.0008 mm; statics
+  + e3 0.034 / 0.58 mm, max 9.1 mm (rec 1: 0.062 / 1.94, max 16.0); table plane residual RMS
+  12.9 mm (p95 25.6) over 2,400 of 48,000 fingertips, normal 8.2 deg from camera-down (rec 1:
+  10.0 mm, 3.5 deg).
+- **Reference window** (`battle-build-assembly101-reference --recording nusar_9061`,
+  `runs/assembly101-reference-nusar_9061-v1/{manifest.json,hands.jsonl}`, 2,400 frames on
+  C10379 with the +6 rule): dataset hands in 2400/2400 frames, both hands throughout, 4,781 of
+  4,800 hands fully inside the image; projection check vs shipped 2D 0.0010 px RMS (max 0.0016)
+  over 100,674 points (the last three proxy frames map past the fetched 2D window because of
+  the +6 offset and are skipped by the check, not by the window); 61 fine-grained segments,
+  among them `position interior` 438-462 and 1884-1949, `screw chassis with screwdriver`
+  0-52, 581-719 and 1119-1216, `position rear body` 752-809 and 940-1009, `position cabin`
+  1949-2027, and the rear-bumper steps that recording 1's window never had.
+- **Contact sheet** (new `battle-assembly101-contact-sheet`,
+  `data/derived/assembly101/<recording>/contact_sheet_374.000-454.000.png`, 2400x3228): one
+  row per fetched view, frames 0 / 600 / 1200 / 1800 / 2399, each labelled with view, proxy
+  frame, source time, core-or-margin and the coarse action. Same rig layout as recording 1 by
+  eye; C10379 is again the grazing camera closest to the operator and stays the primary view.
+- **Tests.** `tests/test_assembly101_recordings.py`, 13 default-tier tests (registry resolution
+  by label and id, recording-1 record reproduces the historical constants, recording-2 window
+  arithmetic, core-span validator, fetch and camera paths keyed by recording, clock rules by
+  recording with both refusals, chunk plan, the majority fallback and its two ambiguous
+  counter-cases, tracked recording-2 camera files and clip configs, contact-sheet frame
+  spacing, etag checks) and one `real_data` test over the fetched windows, scans, rig and
+  reference. Default tier 578 passed / 9 skipped; ruff clean on every touched file.
+- **Open.** The visibility audit for the ego choice was not run (no hulls yet); e1/e2 exist on
+  the Hub and can be fetched with the same command if C2 wants them. The +-2 rules of C10118,
+  C10379 and C10395 rest on two metrics; a zoomed overlay check like the Sep 17 one has not
+  been made for recording 2. The seed frame for C2 should be chosen from the contact sheet
+  (proxy frames about 75-420 show the four parts apart), not assumed to be frame 0.

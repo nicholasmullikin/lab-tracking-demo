@@ -25,32 +25,29 @@ import time
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import cv2
 import numpy as np
 from pydantic import Field
 
-from .assembly101_camera_fit import CONFIG_ROOT, PoseMembers, camera_estimate_path
+from .assembly101_camera_fit import PoseMembers, camera_estimate_path
 from .assembly101_clock_offset import (
-    CLOCK_RULES_CONFIG,
-    POSES_ROOT,
-    SHIPPED_2D_WINDOW,
-    WINDOW_FRAME_COUNT,
-    WINDOW_START_POSE_FRAME,
     Assembly101ClockRuleSet,
     is_ego,
     load_clock_rules,
     npz_key,
     view_key,
 )
-from .assembly101_fetch_view import EGO_VIEWS, RECORDING_ID, STATIC_VIEWS
+from .assembly101_fetch_view import EGO_VIEWS, STATIC_VIEWS
 from .assembly101_pose_schemas import Assembly101CameraModel, Assembly101ClockRule
+from .assembly101_recordings import RECORDING_1, Assembly101Recording, get_recording
 from .schemas import VersionedModel
 
 ALL_VIEWS: tuple[str, ...] = (*STATIC_VIEWS, *EGO_VIEWS)
 FINGERTIP_JOINTS: tuple[int, ...] = (0, 1, 2, 3, 4)
 DEFAULT_REPROJECTION_FILTER_PX = 30.0
-CHECK_OUTPUT_ROOT = Path("runs/assembly101-multiview-rig-check")
+CHECK_OUTPUT_ROOT = Path(RECORDING_1.rig_check_root)
 
 
 def _as_matrix(rows: Iterable[Iterable[float]]) -> np.ndarray:
@@ -172,16 +169,28 @@ class CameraRig:
         cls,
         repository_root: Path,
         *,
-        views: Iterable[str] = ALL_VIEWS,
-        config_root: Path = CONFIG_ROOT,
-        clock_rules_path: Path = CLOCK_RULES_CONFIG,
-        pose_frames: range | None = range(
-            WINDOW_START_POSE_FRAME, WINDOW_START_POSE_FRAME + WINDOW_FRAME_COUNT
-        ),
+        views: Iterable[str] | None = None,
+        config_root: Path | None = None,
+        clock_rules_path: Path | None = None,
+        pose_frames: range | None | Literal["window"] = "window",
+        recording: Assembly101Recording = RECORDING_1,
     ) -> CameraRig:
-        """Load the tracked estimates; ego poses are read for `pose_frames` only (None = all)."""
+        """Load the tracked estimates; ego poses are read for `pose_frames` only (None = all).
+
+        Defaults follow `recording` (recording 1 unless given): its views, its camera-estimate
+        directory, its clock-rule file and its fetched window of pose frames.
+        """
         repository_root = repository_root.resolve()
-        views = tuple(views)
+        views = tuple(views) if views is not None else recording.all_views
+        config_root = config_root if config_root is not None else Path(recording.camera_config_root)
+        clock_rules_path = (
+            clock_rules_path if clock_rules_path is not None else Path(recording.clock_rules_path)
+        )
+        if pose_frames == "window":
+            pose_frames = range(
+                recording.window_start_raw_frame,
+                recording.window_start_raw_frame + recording.window_raw_frame_count,
+            )
         cameras = {
             view: Assembly101CameraModel.model_validate_json(
                 (repository_root / camera_estimate_path(view, config_root)).read_text(
@@ -191,6 +200,10 @@ class CameraRig:
             for view in views
         }
         rules: Assembly101ClockRuleSet = load_clock_rules(repository_root, clock_rules_path)
+        if rules.recording_id != recording.recording_id:
+            raise ValueError(
+                f"{clock_rules_path} describes {rules.recording_id}, not {recording.recording_id}"
+            )
         clock_rules = {
             view: rules.views[view].clock_rule
             for view in views
@@ -199,9 +212,9 @@ class CameraRig:
         ego_poses: dict[int, dict[str, np.ndarray]] = {}
         if any(is_ego(view) for view in views):
             raw = json.loads(
-                (
-                    repository_root / POSES_ROOT / "camera_extrinsics_ego" / f"{RECORDING_ID}.json"
-                ).read_text(encoding="utf-8")
+                (repository_root / recording.poses_member("camera_extrinsics_ego")).read_text(
+                    encoding="utf-8"
+                )
             )
             keys = pose_frames if pose_frames is not None else [int(k) for k in raw]
             wanted = {view_key(view) for view in views if is_ego(view)}
@@ -552,23 +565,27 @@ def run_rig_check(
     repository_root: Path,
     *,
     frame_step: int = 25,
-    output_root: Path = CHECK_OUTPUT_ROOT,
+    output_root: Path | None = None,
+    recording: Assembly101Recording = RECORDING_1,
 ) -> RigCheckReport:
     """Project dataset 3D into every view, triangulate its 2D back, fit the table plane."""
     started = time.monotonic()
     repository_root = repository_root.resolve()
-    rig = CameraRig.load(repository_root)
-    members = PoseMembers(repository_root)
-    with np.load(repository_root / SHIPPED_2D_WINDOW) as archive:
+    output_root = output_root if output_root is not None else Path(recording.rig_check_root)
+    window_start = recording.window_start_raw_frame
+    window_count = recording.window_raw_frame_count
+    rig = CameraRig.load(repository_root, recording=recording)
+    members = PoseMembers(repository_root, recording)
+    with np.load(repository_root / recording.shipped_2d_window) as archive:
         landmarks2d = {
             view: np.asarray(archive[npz_key(view)], dtype=np.float64) for view in rig.views
         }
-    frames = list(
-        range(WINDOW_START_POSE_FRAME, WINDOW_START_POSE_FRAME + WINDOW_FRAME_COUNT, frame_step)
-    )
+    frames = list(range(window_start, window_start + window_count, frame_step))
 
     def hands(frame: int) -> list[tuple[int, np.ndarray]]:
         key = str(frame)
+        if key not in members.confidences or key not in members.landmarks3d:
+            return []
         return [
             (hand, np.asarray(members.landmarks3d[key][str(hand)], dtype=np.float64))
             for hand in (0, 1)
@@ -586,9 +603,10 @@ def run_rig_check(
                 continue
             used_frames += 1
             for hand, world in present:
-                shipped = landmarks2d[view][frame - WINDOW_START_POSE_FRAME, hand]
+                shipped = landmarks2d[view][frame - window_start, hand]
                 inside = (
-                    (shipped[:, 0] >= 0)
+                    np.isfinite(shipped).all(axis=1)
+                    & (shipped[:, 0] >= 0)
                     & (shipped[:, 0] < width)
                     & (shipped[:, 1] >= 0)
                     & (shipped[:, 1] < height)
@@ -622,13 +640,11 @@ def run_rig_check(
             for view in views:
                 width, height = rig.image_size(view)
                 pixels = np.concatenate(
-                    [
-                        landmarks2d[view][frame - WINDOW_START_POSE_FRAME, hand]
-                        for hand, _ in present
-                    ]
+                    [landmarks2d[view][frame - window_start, hand] for hand, _ in present]
                 ).copy()
                 outside = (
-                    (pixels[:, 0] < 0)
+                    ~np.isfinite(pixels).all(axis=1)
+                    | (pixels[:, 0] < 0)
                     | (pixels[:, 0] >= width)
                     | (pixels[:, 1] < 0)
                     | (pixels[:, 1] >= height)
@@ -650,19 +666,19 @@ def run_rig_check(
             mean_views_used=float(np.concatenate(counts).mean()),
         )
 
-    triangulation_checks = [
-        triangulation_check(rig.static_views),
-        triangulation_check(("C10379", "C10395")),
-        triangulation_check(("C10115", "C10404")),
-        triangulation_check((*rig.static_views, "HMC_21110305")),
-    ]
+    triangulation_checks = [triangulation_check(rig.static_views)]
+    for pair in (("C10379", "C10395"), ("C10115", "C10404")):
+        if all(view in rig.static_views for view in pair):
+            triangulation_checks.append(triangulation_check(pair))
+    if "HMC_21110305" in rig.ego_views:
+        triangulation_checks.append(triangulation_check((*rig.static_views, "HMC_21110305")))
     plane = rig.fit_table_plane(
         members.landmarks3d,
         members.confidences,
-        pose_frames=range(WINDOW_START_POSE_FRAME, WINDOW_START_POSE_FRAME + WINDOW_FRAME_COUNT),
+        pose_frames=range(window_start, window_start + window_count),
     )
     report = RigCheckReport(
-        recording_id=RECORDING_ID,
+        recording_id=recording.recording_id,
         views=rig.views,
         projection=tuple(projection_checks),
         triangulation=tuple(triangulation_checks),
@@ -686,10 +702,19 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repository-root", type=Path, default=Path.cwd())
     parser.add_argument("--frame-step", type=int, default=25)
-    parser.add_argument("--output-root", type=Path, default=CHECK_OUTPUT_ROOT)
+    parser.add_argument("--output-root", type=Path, help="default: the recording's rig_check_root")
+    parser.add_argument(
+        "--recording",
+        help="Registry label or recording id (configs/assembly101/recordings.json); "
+        "default: recording 1.",
+    )
     args = parser.parse_args()
+    recording = get_recording(args.recording, args.repository_root)
     report = run_rig_check(
-        args.repository_root, frame_step=args.frame_step, output_root=args.output_root
+        args.repository_root,
+        frame_step=args.frame_step,
+        output_root=args.output_root,
+        recording=recording,
     )
     for check in report.projection:
         print(

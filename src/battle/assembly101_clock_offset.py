@@ -32,22 +32,32 @@ import numpy as np
 from pydantic import Field
 
 from . import digest_cache
-from .assembly101_fetch_view import RECORDING_ID, raw60_path, video_name
+from .assembly101_fetch_view import raw60_path, video_name
 from .assembly101_pose_schemas import Assembly101ClockRule
+from .assembly101_recordings import RECORDING_1, Assembly101Recording, get_recording
 from .schemas import ArtifactFingerprint, VersionedModel
 
-RAW_ROOT = Path("data/raw/assembly101") / RECORDING_ID
-POSES_ROOT = RAW_ROOT / "AssemblyPoses_selective/assembly101_camera_and_hand_poses"
-SHIPPED_2D_WINDOW = (
-    Path("data/derived/assembly101")
-    / RECORDING_ID
-    / "assembly101_landmarks2D_60fps_frames_17640_23202.npz"
-)
-OUTPUT_ROOT = Path("runs/assembly101-clock-offsets")
-WINDOW_START_POSE_FRAME = 17640
-WINDOW_FRAME_COUNT = 5562
+# Recording-1 constants, kept for every caller written before the recording registry existed.
+RAW_ROOT = RECORDING_1.raw_root
+POSES_ROOT = RECORDING_1.poses_root
+SHIPPED_2D_WINDOW = RECORDING_1.shipped_2d_window
+OUTPUT_ROOT = Path(RECORDING_1.clock_scan_root)
+WINDOW_START_POSE_FRAME = RECORDING_1.window_start_raw_frame
+WINDOW_FRAME_COUNT = RECORDING_1.window_raw_frame_count
 CHUNK_FRAMES = 1800
 CHUNK_STARTS: tuple[int, ...] = (0, 1800, 3600)
+
+
+def chunk_plan(frame_count: int) -> tuple[tuple[int, ...], int]:
+    """Three chunks per trim: the Sep 18 30 s chunks when the trim allows, else thirds."""
+    if frame_count >= CHUNK_STARTS[-1] + CHUNK_FRAMES:
+        return CHUNK_STARTS, CHUNK_FRAMES
+    third = frame_count // 3
+    if third < 300:
+        raise ValueError(f"trim of {frame_count} frames is too short for three offset chunks")
+    return (0, third, 2 * third), third
+
+
 OFFSETS: tuple[int, ...] = tuple(range(-6, 16))
 FINGERTIPS: tuple[int, ...] = (0, 1, 2, 3, 4)
 CONFIDENCE_FLOOR = 0.7
@@ -113,6 +123,7 @@ class Assembly101ClockOffsetScan(VersionedModel):
     ambiguous: bool
     evidence: str = Field(min_length=1)
     clock_rule: Assembly101ClockRule | None
+    dropped_metric: str | None = None
     runtime_seconds: float = Field(ge=0)
     time_to_first_output_seconds: float = Field(ge=0)
     claim_boundaries: tuple[str, ...] = Field(min_length=1)
@@ -170,6 +181,8 @@ def summarize_curve(
     chunk_start: int,
     values: list[float],
     counts: list[int],
+    *,
+    window_start_pose_frame: int = WINDOW_START_POSE_FRAME,
 ) -> OffsetCurve:
     array = np.asarray(values, dtype=np.float64)
     best = int(np.argmax(array))
@@ -190,7 +203,7 @@ def summarize_curve(
         metric=metric,
         chunk_index=chunk_index,
         chunk_start_trim_frame=chunk_start,
-        chunk_start_pose_frame=WINDOW_START_POSE_FRAME + chunk_start,
+        chunk_start_pose_frame=window_start_pose_frame + chunk_start,
         offsets=OFFSETS,
         values=tuple(float(v) for v in values),
         sample_counts=tuple(int(c) for c in counts),
@@ -211,6 +224,7 @@ def scan_video(
     velocity_floor: float,
     chunk_starts: tuple[int, ...] = CHUNK_STARTS,
     chunk_frames: int = CHUNK_FRAMES,
+    window_start_pose_frame: int = WINDOW_START_POSE_FRAME,
 ) -> tuple[list[OffsetCurve], int]:
     """Evaluate every metric on every chunk; `landmarks` is (F, 2, 21, 2) raw pixels."""
     metrics: tuple[MetricName, ...] = (
@@ -255,7 +269,9 @@ def scan_video(
                         ).mean()
                         / 2
                     )
-                    if velocity < velocity_floor:
+                    if not np.isfinite(velocity) or velocity < velocity_floor:
+                        continue
+                    if not np.all(np.isfinite(points)):
                         continue
                     xs = np.rint(points[:, 0]).astype(int)
                     ys = np.rint(points[:, 1]).astype(int)
@@ -270,7 +286,16 @@ def scan_video(
                         sampler.add("skin_hit", offset, float((skin[ys, xs] > 0).mean()), velocity)
         for metric in metrics:
             values, counts = sampler.curve(metric)
-            curves.append(summarize_curve(metric, chunk_index, chunk_start, values, counts))
+            curves.append(
+                summarize_curve(
+                    metric,
+                    chunk_index,
+                    chunk_start,
+                    values,
+                    counts,
+                    window_start_pose_frame=window_start_pose_frame,
+                )
+            )
     capture.release()
     return curves, frames_scanned
 
@@ -282,6 +307,39 @@ class OffsetDecision(VersionedModel):
     ambiguous: bool
     metric_medians: dict[str, float]
     evidence: str
+    dropped_metric: str | None = None
+
+
+# When three metrics vote and exactly one sits outside the agreement of the other two, that
+# metric is dropped and the rule carries at least this uncertainty (Sep 20, recording 2).
+MAJORITY_FALLBACK_MIN_UNCERTAINTY = 2
+
+
+MAJORITY_TIE_FRAMES = 0.5
+
+
+def _majority_metrics(medians: dict[str, float]) -> tuple[str, dict[str, float]] | None:
+    """The metric whose removal leaves the other two agreeing best, if that choice is clear.
+
+    Needs three voting metrics; the remaining pair must agree within `DISAGREEMENT_FRAMES`,
+    and if two different drops both achieve that, the tighter pair wins only when it is
+    tighter by more than `MAJORITY_TIE_FRAMES`.
+    """
+    if len(medians) < 3:
+        return None
+    candidates: list[tuple[float, str, dict[str, float]]] = []
+    for dropped in medians:
+        rest = {m: v for m, v in medians.items() if m != dropped}
+        spread = max(rest.values()) - min(rest.values())
+        if spread <= DISAGREEMENT_FRAMES:
+            candidates.append((spread, dropped, rest))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: item[0])
+    if len(candidates) > 1 and candidates[1][0] - candidates[0][0] <= MAJORITY_TIE_FRAMES:
+        return None
+    _, dropped, rest = candidates[0]
+    return dropped, rest
 
 
 def decide_offset(curves: list[OffsetCurve]) -> OffsetDecision:
@@ -290,8 +348,11 @@ def decide_offset(curves: list[OffsetCurve]) -> OffsetDecision:
     Each metric votes with the median of its informative chunk peaks, so one odd chunk cannot
     move the answer.  The integer offset is the rounded mean of those medians; the uncertainty
     is the largest deviation of a metric median from it, never below one frame.  Metrics whose
-    medians differ by more than `DISAGREEMENT_FRAMES` do not get a rule.  Chunks farther than
-    `OUTLIER_FRAMES` from the answer are named in the evidence.
+    medians differ by more than `DISAGREEMENT_FRAMES` do not get a rule, unless three metrics
+    voted and exactly one of them is the odd one out: then the two that agree decide, the
+    dropped metric is named, and the uncertainty is at least
+    `MAJORITY_FALLBACK_MIN_UNCERTAINTY`.  Chunks farther than `OUTLIER_FRAMES` from the answer
+    are named in the evidence.
     """
     per_metric: dict[str, list[float]] = {}
     for curve in curves:
@@ -315,32 +376,51 @@ def decide_offset(curves: list[OffsetCurve]) -> OffsetDecision:
             evidence=f"No informative chunk in any metric. {peaks_text}",
         )
     ordered = sorted(medians.values())
+    dropped: str | None = None
+    voting = medians
+    minimum_uncertainty = 1
     if ordered[-1] - ordered[0] > DISAGREEMENT_FRAMES:
-        return OffsetDecision(
-            chosen_subframe=None,
-            chosen=None,
-            uncertainty=None,
-            ambiguous=True,
-            metric_medians=medians,
-            evidence=(
-                f"Metric medians disagree by {ordered[-1] - ordered[0]:.1f} frames "
-                f"({', '.join(f'{m} {v:+.2f}' for m, v in medians.items())}); ambiguous. "
-                f"{peaks_text}"
-            ),
-        )
-    mean = float(np.mean(list(medians.values())))
+        majority = _majority_metrics(medians)
+        if majority is None:
+            return OffsetDecision(
+                chosen_subframe=None,
+                chosen=None,
+                uncertainty=None,
+                ambiguous=True,
+                metric_medians=medians,
+                evidence=(
+                    f"Metric medians disagree by {ordered[-1] - ordered[0]:.1f} frames "
+                    f"({', '.join(f'{m} {v:+.2f}' for m, v in medians.items())}); ambiguous. "
+                    f"{peaks_text}"
+                ),
+            )
+        dropped, voting = majority
+        minimum_uncertainty = MAJORITY_FALLBACK_MIN_UNCERTAINTY
+    mean = float(np.mean(list(voting.values())))
     chosen = int(round(mean))
-    uncertainty = max(1, int(np.ceil(max(abs(m - chosen) for m in medians.values()) - 1e-9)))
-    informative_count = sum(len(peaks) for peaks in per_metric.values())
+    uncertainty = max(
+        minimum_uncertainty,
+        int(np.ceil(max(abs(m - chosen) for m in voting.values()) - 1e-9)),
+    )
+    informative_count = sum(len(per_metric[m]) for m in voting)
     outliers = [
         f"{c.metric}/chunk{c.chunk_index} ({c.peak_offset_subframe:+.2f})"
         for c in curves
-        if c.informative and abs(c.peak_offset_subframe - chosen) > OUTLIER_FRAMES
+        if c.informative
+        and c.metric in voting
+        and abs(c.peak_offset_subframe - chosen) > OUTLIER_FRAMES
     ]
     evidence = (
         f"Chosen {chosen:+d} pose frames (+-{uncertainty}; mean of metric medians {mean:+.2f}: "
-        + ", ".join(f"{m} {v:+.2f}" for m, v in medians.items())
-        + f") from {informative_count} informative chunk peaks over {len(per_metric)} metrics"
+        + ", ".join(f"{m} {v:+.2f}" for m, v in voting.items())
+        + f") from {informative_count} informative chunk peaks over {len(voting)} metrics"
+        + (
+            f"; the {dropped} metric ({medians[dropped]:+.2f}) disagreed with the other two by "
+            f"more than {DISAGREEMENT_FRAMES} frames and was dropped (majority fallback, "
+            f"uncertainty floored at {MAJORITY_FALLBACK_MIN_UNCERTAINTY})"
+            if dropped is not None
+            else ""
+        )
         + (f"; flat or edge chunks ignored: {', '.join(flat)}" if flat else "")
         + (f"; outlier chunks: {', '.join(outliers)}" if outliers else "")
         + f". {peaks_text}"
@@ -352,6 +432,7 @@ def decide_offset(curves: list[OffsetCurve]) -> OffsetDecision:
         ambiguous=False,
         metric_medians=medians,
         evidence=evidence,
+        dropped_metric=dropped,
     )
 
 
@@ -365,15 +446,18 @@ def _fingerprint(path: Path, repository_root: Path) -> ArtifactFingerprint:
     )
 
 
-def load_window_confidences(confidences_path: Path) -> np.ndarray:
+def load_window_confidences(
+    confidences_path: Path,
+    window_start_pose_frame: int = WINDOW_START_POSE_FRAME,
+    window_frame_count: int = WINDOW_FRAME_COUNT,
+) -> np.ndarray:
+    """(F, 2) dataset hand confidences for the window; a pose frame the file lacks is zero."""
     raw = json.loads(confidences_path.read_text(encoding="utf-8"))
-    return np.array(
-        [
-            [raw[str(k)]["0"], raw[str(k)]["1"]]
-            for k in range(WINDOW_START_POSE_FRAME, WINDOW_START_POSE_FRAME + WINDOW_FRAME_COUNT)
-        ],
-        dtype=np.float64,
-    )
+    rows = []
+    for k in range(window_start_pose_frame, window_start_pose_frame + window_frame_count):
+        entry = raw.get(str(k))
+        rows.append([entry["0"], entry["1"]] if entry is not None else [0.0, 0.0])
+    return np.array(rows, dtype=np.float64)
 
 
 def run_scan(
@@ -381,29 +465,41 @@ def run_scan(
     *,
     repository_root: Path,
     video_path: Path | None = None,
-    shipped_2d_window: Path = SHIPPED_2D_WINDOW,
+    shipped_2d_window: Path | None = None,
+    recording: Assembly101Recording = RECORDING_1,
 ) -> Assembly101ClockOffsetScan:
     repository_root = repository_root.resolve()
     started = time.monotonic()
-    video = repository_root / (video_path or raw60_path(view))
-    window = repository_root / shipped_2d_window
-    confidences_path = repository_root / POSES_ROOT / "hand_confidences" / f"{RECORDING_ID}.json"
+    window_start = recording.window_start_raw_frame
+    window_count = recording.window_raw_frame_count
+    video = repository_root / (video_path or raw60_path(view, recording=recording))
+    window = repository_root / (
+        shipped_2d_window if shipped_2d_window is not None else recording.shipped_2d_window
+    )
+    confidences_path = repository_root / recording.poses_member("hand_confidences")
     with np.load(window) as archive:
         key = npz_key(view)
         if key not in archive.files:
             raise KeyError(f"{window} has no array {key}")
         landmarks = np.asarray(archive[key], dtype=np.float64)
         frames = np.asarray(archive["frames"])
-    if int(frames[0]) != WINDOW_START_POSE_FRAME or landmarks.shape[0] != WINDOW_FRAME_COUNT:
-        raise ValueError("shipped 2D window does not cover pose frames [17640, 23202)")
-    confidences = load_window_confidences(confidences_path)
+    if int(frames[0]) != window_start or landmarks.shape[0] != window_count:
+        raise ValueError(
+            f"shipped 2D window does not cover pose frames "
+            f"[{window_start}, {window_start + window_count})"
+        )
+    confidences = load_window_confidences(confidences_path, window_start, window_count)
     ego = is_ego(view)
+    chunk_starts, chunk_frames = chunk_plan(window_count)
     curves, frames_scanned = scan_video(
         video,
         landmarks,
         confidences,
         rgb=not ego,
         velocity_floor=EGO_VELOCITY_FLOOR if ego else STATIC_VELOCITY_FLOOR,
+        chunk_starts=chunk_starts,
+        chunk_frames=chunk_frames,
+        window_start_pose_frame=window_start,
     )
     first_output = time.monotonic() - started
     decision = decide_offset(curves)
@@ -411,7 +507,7 @@ def run_scan(
     if decision.chosen is not None and decision.uncertainty is not None:
         rule = Assembly101ClockRule(
             view_key=view_key(view),
-            proxy_start_raw_frame=WINDOW_START_POSE_FRAME,
+            proxy_start_raw_frame=window_start,
             raw_frames_per_proxy_frame=2,
             pose_offset_frames=decision.chosen,
             pose_fps=60,
@@ -421,7 +517,7 @@ def run_scan(
         )
     return Assembly101ClockOffsetScan(
         manifest_kind="assembly101_clock_offset_scan",
-        recording_id=RECORDING_ID,
+        recording_id=recording.recording_id,
         view=view,
         view_key=view_key(view),
         video=_fingerprint(video, repository_root),
@@ -436,6 +532,7 @@ def run_scan(
         ambiguous=decision.ambiguous,
         evidence=decision.evidence,
         clock_rule=rule,
+        dropped_metric=decision.dropped_metric,
         runtime_seconds=time.monotonic() - started,
         time_to_first_output_seconds=first_output,
         claim_boundaries=CLAIM_BOUNDARIES,
@@ -444,6 +541,7 @@ def run_scan(
 
 def rescore(scan: Assembly101ClockOffsetScan) -> Assembly101ClockOffsetScan:
     """Re-derive peaks and the decision from stored curve values (the video is not re-read)."""
+    window_start = scan.curves[0].chunk_start_pose_frame - scan.curves[0].chunk_start_trim_frame
     curves = [
         summarize_curve(
             curve.metric,
@@ -451,6 +549,7 @@ def rescore(scan: Assembly101ClockOffsetScan) -> Assembly101ClockOffsetScan:
             curve.chunk_start_trim_frame,
             list(curve.values),
             list(curve.sample_counts),
+            window_start_pose_frame=window_start,
         )
         for curve in scan.curves
     ]
@@ -459,7 +558,7 @@ def rescore(scan: Assembly101ClockOffsetScan) -> Assembly101ClockOffsetScan:
     if decision.chosen is not None and decision.uncertainty is not None:
         rule = Assembly101ClockRule(
             view_key=scan.view_key,
-            proxy_start_raw_frame=WINDOW_START_POSE_FRAME,
+            proxy_start_raw_frame=window_start,
             raw_frames_per_proxy_frame=2,
             pose_offset_frames=decision.chosen,
             pose_fps=60,
@@ -477,6 +576,7 @@ def rescore(scan: Assembly101ClockOffsetScan) -> Assembly101ClockOffsetScan:
             "ambiguous": decision.ambiguous,
             "evidence": decision.evidence,
             "clock_rule": rule,
+            "dropped_metric": decision.dropped_metric,
         }
     )
 
@@ -498,6 +598,7 @@ class Assembly101ViewClock(VersionedModel):
     chosen_offset_subframe: float | None
     clock_rule: Assembly101ClockRule | None
     scan: ArtifactFingerprint
+    dropped_metric: str | None = None
 
 
 class Assembly101ClockRuleSet(VersionedModel):
@@ -518,19 +619,28 @@ class Assembly101ClockRuleSet(VersionedModel):
         return entry.clock_rule
 
 
-CLOCK_RULES_CONFIG = Path("configs/assembly101/clock_rules.json")
+CLOCK_RULES_CONFIG = Path(RECORDING_1.clock_rules_path)
 
 
 def write_clock_rules(
     repository_root: Path,
     *,
-    scan_root: Path = OUTPUT_ROOT,
-    output: Path = CLOCK_RULES_CONFIG,
+    scan_root: Path | None = None,
+    output: Path | None = None,
+    recording: Assembly101Recording = RECORDING_1,
 ) -> Path:
+    """Collect every scan of one recording into that recording's tracked clock-rule file."""
     repository_root = repository_root.resolve()
+    scan_root = scan_root if scan_root is not None else Path(recording.clock_scan_root)
+    output = output if output is not None else Path(recording.clock_rules_path)
     views: dict[str, Assembly101ViewClock] = {}
     for path in sorted((repository_root / scan_root).glob("*.json")):
         scan = load_scan(path)
+        if scan.recording_id != recording.recording_id:
+            raise ValueError(
+                f"{path} scans {scan.recording_id}, not {recording.recording_id}; refusing to "
+                "mix recordings in one clock-rule file"
+            )
         views[scan.view] = Assembly101ViewClock(
             view=scan.view,
             view_key=scan.view_key,
@@ -538,13 +648,14 @@ def write_clock_rules(
             chosen_offset_subframe=scan.chosen_offset_subframe,
             clock_rule=scan.clock_rule,
             scan=_fingerprint(path, repository_root),
+            dropped_metric=scan.dropped_metric,
         )
     if not views:
         raise FileNotFoundError(f"no scans under {repository_root / scan_root}")
     rules = Assembly101ClockRuleSet(
         manifest_kind="assembly101_clock_rules",
-        recording_id=RECORDING_ID,
-        window_start_pose_frame=WINDOW_START_POSE_FRAME,
+        recording_id=recording.recording_id,
+        window_start_pose_frame=recording.window_start_raw_frame,
         views=views,
         claim_boundaries=CLAIM_BOUNDARIES,
     )
@@ -562,19 +673,42 @@ def load_clock_rules(
     )
 
 
+def load_clock_rules_for(
+    recording: Assembly101Recording, repository_root: Path
+) -> Assembly101ClockRuleSet:
+    """The tracked clock rules of one recording, checked to be about that recording."""
+    rules = load_clock_rules(repository_root, Path(recording.clock_rules_path))
+    if rules.recording_id != recording.recording_id:
+        raise ValueError(
+            f"{recording.clock_rules_path} describes {rules.recording_id}, "
+            f"not {recording.recording_id}"
+        )
+    if rules.window_start_pose_frame != recording.window_start_raw_frame:
+        raise ValueError(
+            f"{recording.clock_rules_path} starts at pose frame {rules.window_start_pose_frame}, "
+            f"the registry window at {recording.window_start_raw_frame}"
+        )
+    return rules
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--view", action="append", default=[], help="e.g. C10095, HMC_21179183")
     parser.add_argument(
+        "--recording",
+        help="Registry label or recording id (configs/assembly101/recordings.json); "
+        "default: recording 1.",
+    )
+    parser.add_argument(
         "--write-config",
         action="store_true",
-        help=f"Collect every scan under the output root into {CLOCK_RULES_CONFIG}.",
+        help="Collect every scan under the output root into the recording's clock-rule file.",
     )
     parser.add_argument(
         "--video", type=Path, help="60 fps trim to scan (default: the focused trim)"
     )
     parser.add_argument("--repository-root", type=Path, default=Path.cwd())
-    parser.add_argument("--output-root", type=Path, default=OUTPUT_ROOT)
+    parser.add_argument("--output-root", type=Path, help="default: the recording's clock_scan_root")
     parser.add_argument(
         "--rescore",
         action="store_true",
@@ -583,12 +717,21 @@ def main() -> None:
     args = parser.parse_args()
     if not args.view and not args.write_config:
         parser.error("pass --view and/or --write-config")
+    recording = get_recording(args.recording, args.repository_root)
+    output_root = (
+        args.output_root if args.output_root is not None else Path(recording.clock_scan_root)
+    )
     for view in args.view:
-        output = args.repository_root.resolve() / scan_path(view, args.output_root)
+        output = args.repository_root.resolve() / scan_path(view, output_root)
         if args.rescore:
             result = rescore(load_scan(output))
         else:
-            result = run_scan(view, repository_root=args.repository_root, video_path=args.video)
+            result = run_scan(
+                view,
+                repository_root=args.repository_root,
+                video_path=args.video,
+                recording=recording,
+            )
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(result.model_dump_json(indent=2) + "\n", encoding="utf-8")
         state = (
@@ -607,7 +750,7 @@ def main() -> None:
                 f" prominence {curve.prominence:.2f}{'' if curve.informative else ' (flat)'}"
             )
     if args.write_config:
-        target = write_clock_rules(args.repository_root, scan_root=args.output_root)
+        target = write_clock_rules(args.repository_root, scan_root=output_root, recording=recording)
         rules = Assembly101ClockRuleSet.model_validate_json(target.read_text(encoding="utf-8"))
         print(f"wrote {target} with {len(rules.views)} views")
 

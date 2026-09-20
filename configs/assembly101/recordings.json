@@ -1,0 +1,91 @@
+{
+  "schema_version": "1.0",
+  "manifest_kind": "assembly101_recordings",
+  "hf_dataset": "cvml-nus/assembly101",
+  "hf_revision": "bfc15ea5e3f0bc8f8c232af6c1b45aa137a9d967",
+  "default_label": "nusar_9033",
+  "recordings": [
+    {
+      "schema_version": "1.0",
+      "recording_id": "nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532",
+      "label": "nusar_9033",
+      "toy_id": "c02a",
+      "subject_id": "9033",
+      "window_start_seconds": 294.0,
+      "window_duration_seconds": 92.7,
+      "core_start_seconds": 294.0,
+      "core_duration_seconds": 60.0,
+      "static_views": [
+        "C10095",
+        "C10115",
+        "C10118",
+        "C10119",
+        "C10379",
+        "C10390",
+        "C10395",
+        "C10404"
+      ],
+      "ego_views": [
+        "HMC_21110305",
+        "HMC_21176623",
+        "HMC_21176875",
+        "HMC_21179183"
+      ],
+      "ego_views_on_hub": [
+        "HMC_21110305",
+        "HMC_21176623",
+        "HMC_21176875",
+        "HMC_21179183"
+      ],
+      "primary_static_view": "C10379",
+      "clock_rules_path": "configs/assembly101/clock_rules.json",
+      "camera_config_root": "configs/assembly101",
+      "clock_scan_root": "runs/assembly101-clock-offsets",
+      "rig_check_root": "runs/assembly101-multiview-rig-check",
+      "reference_root": "runs/assembly101-reference-first-minute-v1",
+      "all_static_clip_config": "configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_all_static_g2.json",
+      "fine_grained_split": "train",
+      "note": "Recording 1 (Sep 15-19): focused four-part reassembly window, all twelve views; the first minute is the human-reviewed comparison window."
+    },
+    {
+      "schema_version": "1.0",
+      "recording_id": "nusar-2021_action_both_9061-c02a_9061_user_id_2021-02-09_141537",
+      "label": "nusar_9061",
+      "toy_id": "c02a",
+      "subject_id": "9061",
+      "window_start_seconds": 374.0,
+      "window_duration_seconds": 80.0,
+      "core_start_seconds": 384.0,
+      "core_duration_seconds": 60.0,
+      "static_views": [
+        "C10095",
+        "C10115",
+        "C10118",
+        "C10119",
+        "C10379",
+        "C10390",
+        "C10395",
+        "C10404"
+      ],
+      "ego_views": [
+        "HMC_21110305",
+        "HMC_21179183"
+      ],
+      "ego_views_on_hub": [
+        "HMC_21110305",
+        "HMC_21176623",
+        "HMC_21176875",
+        "HMC_21179183"
+      ],
+      "primary_static_view": "C10379",
+      "clock_rules_path": "configs/assembly101/clock_rules_nusar_9061.json",
+      "camera_config_root": "configs/assembly101/nusar_9061",
+      "clock_scan_root": "runs/assembly101-clock-offsets-nusar_9061",
+      "rig_check_root": "runs/assembly101-multiview-rig-check-nusar_9061",
+      "reference_root": "runs/assembly101-reference-nusar_9061-v1",
+      "all_static_clip_config": "configs/clips/assembly101_nusar_9061_four_part_reassembly_focused_all_static_g2.json",
+      "fine_grained_split": null,
+      "note": "Recording 2 (Track C, Sep 20): same toy c02a, subject 9061; 80 s window 374.000-454.000 s with the 60 s core span 384.000-444.000 s (proxy frames [300, 2100)) whose coarse actions run attach interior -> screw chassis -> attach body -> attempt to attach bumper -> screw chassis -> attach bumper -> attempt to attach cabin -> unscrew chassis -> detach interior -> attach interior -> attach cabin; the two ego views are the e3/e4 camera ids Track 6 found useful on recording 1."
+    }
+  ]
+}

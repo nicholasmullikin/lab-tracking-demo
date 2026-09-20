@@ -1,0 +1,262 @@
+{
+  "schema_version": "1.0",
+  "manifest_kind": "assembly101_clock_rules",
+  "recording_id": "nusar-2021_action_both_9061-c02a_9061_user_id_2021-02-09_141537",
+  "window_start_pose_frame": 22440,
+  "views": {
+    "C10095": {
+      "schema_version": "1.0",
+      "view": "C10095",
+      "view_key": "C10095:rgb",
+      "ambiguous": false,
+      "chosen_offset_subframe": 4.785339600591868,
+      "clock_rule": {
+        "schema_version": "1.0",
+        "view_key": "C10095:rgb",
+        "proxy_start_raw_frame": 22440,
+        "raw_frames_per_proxy_frame": 2,
+        "pose_offset_frames": 5,
+        "pose_fps": 60,
+        "analysis_fps": 30,
+        "offset_uncertainty_frames": 1,
+        "offset_evidence": "Chosen +5 pose frames (+-1; mean of metric medians +4.79: skin_hit +4.90, gradient +5.00, motion +4.45) from 9 informative chunk peaks over 3 metrics. skin_hit chunk 0: peak +5 (sub-frame +5.17, prominence 2.2); gradient chunk 0: peak +4 (sub-frame +4.42, prominence 2.2); motion chunk 0: peak +4 (sub-frame +4.43, prominence 2.2); skin_hit chunk 1: peak +5 (sub-frame +4.90, prominence 2.4); gradient chunk 1: peak +5 (sub-frame +5.00, prominence 2.3); motion chunk 1: peak +5 (sub-frame +4.61, prominence 2.3); skin_hit chunk 2: peak +4 (sub-frame +4.45, prominence 2.2); gradient chunk 2: peak +6 (sub-frame +6.07, prominence 2.3); motion chunk 2: peak +4 (sub-frame +4.45, prominence 2.2)"
+      },
+      "scan": {
+        "schema_version": "1.0",
+        "uri": "runs/assembly101-clock-offsets-nusar_9061/C10095.json",
+        "sha256": "128b8a03f014803df0bbfd292ba98afeb4b3d24ae4fe7fd2549d0bb7eac1f26c",
+        "source": "measured"
+      },
+      "dropped_metric": null
+    },
+    "C10115": {
+      "schema_version": "1.0",
+      "view": "C10115",
+      "view_key": "C10115:rgb",
+      "ambiguous": false,
+      "chosen_offset_subframe": 5.659161511499808,
+      "clock_rule": {
+        "schema_version": "1.0",
+        "view_key": "C10115:rgb",
+        "proxy_start_raw_frame": 22440,
+        "raw_frames_per_proxy_frame": 2,
+        "pose_offset_frames": 6,
+        "pose_fps": 60,
+        "analysis_fps": 30,
+        "offset_uncertainty_frames": 1,
+        "offset_evidence": "Chosen +6 pose frames (+-1; mean of metric medians +5.66: skin_hit +5.97, gradient +5.67, motion +5.34) from 9 informative chunk peaks over 3 metrics. skin_hit chunk 0: peak +6 (sub-frame +5.97, prominence 2.2); gradient chunk 0: peak +6 (sub-frame +5.67, prominence 2.4); motion chunk 0: peak +5 (sub-frame +5.43, prominence 2.2); skin_hit chunk 1: peak +7 (sub-frame +6.63, prominence 2.4); gradient chunk 1: peak +6 (sub-frame +6.05, prominence 2.2); motion chunk 1: peak +5 (sub-frame +5.34, prominence 2.3); skin_hit chunk 2: peak +5 (sub-frame +5.17, prominence 2.0); gradient chunk 2: peak +5 (sub-frame +4.72, prominence 1.6); motion chunk 2: peak +4 (sub-frame +4.12, prominence 2.0)"
+      },
+      "scan": {
+        "schema_version": "1.0",
+        "uri": "runs/assembly101-clock-offsets-nusar_9061/C10115.json",
+        "sha256": "0d7f5ecfab5f2f2bc171a4e75a6b1df0272120f450dc6360f8bb416ee5ab84b1",
+        "source": "measured"
+      },
+      "dropped_metric": null
+    },
+    "C10118": {
+      "schema_version": "1.0",
+      "view": "C10118",
+      "view_key": "C10118:rgb",
+      "ambiguous": false,
+      "chosen_offset_subframe": 4.935919023459653,
+      "clock_rule": {
+        "schema_version": "1.0",
+        "view_key": "C10118:rgb",
+        "proxy_start_raw_frame": 22440,
+        "raw_frames_per_proxy_frame": 2,
+        "pose_offset_frames": 5,
+        "pose_fps": 60,
+        "analysis_fps": 30,
+        "offset_uncertainty_frames": 2,
+        "offset_evidence": "Chosen +5 pose frames (+-2; mean of metric medians +4.94: skin_hit +5.05, motion +4.82) from 6 informative chunk peaks over 2 metrics; the gradient metric (+6.96) disagreed with the other two by more than 2 frames and was dropped (majority fallback, uncertainty floored at 2). skin_hit chunk 0: peak +5 (sub-frame +5.05, prominence 2.0); gradient chunk 0: peak +7 (sub-frame +6.96, prominence 2.5); motion chunk 0: peak +5 (sub-frame +4.97, prominence 2.1); skin_hit chunk 1: peak +6 (sub-frame +5.78, prominence 2.3); gradient chunk 1: peak +7 (sub-frame +7.02, prominence 2.3); motion chunk 1: peak +5 (sub-frame +4.82, prominence 2.2); skin_hit chunk 2: peak +4 (sub-frame +3.85, prominence 2.2); gradient chunk 2: peak +4 (sub-frame +4.04, prominence 2.6); motion chunk 2: peak +4 (sub-frame +3.96, prominence 2.1)"
+      },
+      "scan": {
+        "schema_version": "1.0",
+        "uri": "runs/assembly101-clock-offsets-nusar_9061/C10118.json",
+        "sha256": "97a4c024056056f064161ec434598561c3a6d33df2f4dffb1c207bb243860efc",
+        "source": "measured"
+      },
+      "dropped_metric": "gradient"
+    },
+    "C10119": {
+      "schema_version": "1.0",
+      "view": "C10119",
+      "view_key": "C10119:rgb",
+      "ambiguous": false,
+      "chosen_offset_subframe": 4.483445960174131,
+      "clock_rule": {
+        "schema_version": "1.0",
+        "view_key": "C10119:rgb",
+        "proxy_start_raw_frame": 22440,
+        "raw_frames_per_proxy_frame": 2,
+        "pose_offset_frames": 4,
+        "pose_fps": 60,
+        "analysis_fps": 30,
+        "offset_uncertainty_frames": 1,
+        "offset_evidence": "Chosen +4 pose frames (+-1; mean of metric medians +4.48: skin_hit +4.29, gradient +4.87, motion +4.28) from 9 informative chunk peaks over 3 metrics; outlier chunks: gradient/chunk0 (+7.74). skin_hit chunk 0: peak +4 (sub-frame +4.29, prominence 2.1); gradient chunk 0: peak +8 (sub-frame +7.74, prominence 2.4); motion chunk 0: peak +4 (sub-frame +4.28, prominence 2.1); skin_hit chunk 1: peak +5 (sub-frame +4.88, prominence 2.7); gradient chunk 1: peak +5 (sub-frame +4.87, prominence 2.8); motion chunk 1: peak +5 (sub-frame +4.53, prominence 2.2); skin_hit chunk 2: peak +4 (sub-frame +4.10, prominence 2.2); gradient chunk 2: peak +3 (sub-frame +3.22, prominence 1.9); motion chunk 2: peak +3 (sub-frame +3.12, prominence 2.1)"
+      },
+      "scan": {
+        "schema_version": "1.0",
+        "uri": "runs/assembly101-clock-offsets-nusar_9061/C10119.json",
+        "sha256": "0e890bd1c6cf17b720723cb3f93fb82ddaa4cafbbf1b1e1693fb619437ffcc34",
+        "source": "measured"
+      },
+      "dropped_metric": null
+    },
+    "C10379": {
+      "schema_version": "1.0",
+      "view": "C10379",
+      "view_key": "C10379:rgb",
+      "ambiguous": false,
+      "chosen_offset_subframe": 5.8055961574636745,
+      "clock_rule": {
+        "schema_version": "1.0",
+        "view_key": "C10379:rgb",
+        "proxy_start_raw_frame": 22440,
+        "raw_frames_per_proxy_frame": 2,
+        "pose_offset_frames": 6,
+        "pose_fps": 60,
+        "analysis_fps": 30,
+        "offset_uncertainty_frames": 2,
+        "offset_evidence": "Chosen +6 pose frames (+-2; mean of metric medians +5.81: skin_hit +5.41, motion +6.20) from 6 informative chunk peaks over 2 metrics; the gradient metric (+1.55) disagreed with the other two by more than 2 frames and was dropped (majority fallback, uncertainty floored at 2); flat or edge chunks ignored: gradient/chunk1; outlier chunks: motion/chunk1 (+8.09). skin_hit chunk 0: peak +5 (sub-frame +5.41, prominence 1.7); gradient chunk 0: peak +3 (sub-frame +3.02, prominence 1.9); motion chunk 0: peak +6 (sub-frame +6.20, prominence 1.8); skin_hit chunk 1: peak +5 (sub-frame +5.37, prominence 2.0); gradient chunk 1: peak -2 (sub-frame -1.89, prominence 0.9, flat); motion chunk 1: peak +8 (sub-frame +8.09, prominence 2.3); skin_hit chunk 2: peak +7 (sub-frame +6.98, prominence 1.8); gradient chunk 2: peak +0 (sub-frame +0.08, prominence 1.8); motion chunk 2: peak +5 (sub-frame +4.95, prominence 2.2)"
+      },
+      "scan": {
+        "schema_version": "1.0",
+        "uri": "runs/assembly101-clock-offsets-nusar_9061/C10379.json",
+        "sha256": "7a6a5d764df085065cc0474f6ef23cc264e5bc99e9e0fba6c3ebf1c9bdb8b474",
+        "source": "measured"
+      },
+      "dropped_metric": "gradient"
+    },
+    "C10390": {
+      "schema_version": "1.0",
+      "view": "C10390",
+      "view_key": "C10390:rgb",
+      "ambiguous": false,
+      "chosen_offset_subframe": 5.563612509847194,
+      "clock_rule": {
+        "schema_version": "1.0",
+        "view_key": "C10390:rgb",
+        "proxy_start_raw_frame": 22440,
+        "raw_frames_per_proxy_frame": 2,
+        "pose_offset_frames": 6,
+        "pose_fps": 60,
+        "analysis_fps": 30,
+        "offset_uncertainty_frames": 1,
+        "offset_evidence": "Chosen +6 pose frames (+-1; mean of metric medians +5.56: skin_hit +5.93, gradient +5.35, motion +5.42) from 9 informative chunk peaks over 3 metrics. skin_hit chunk 0: peak +6 (sub-frame +5.93, prominence 2.3); gradient chunk 0: peak +5 (sub-frame +5.35, prominence 2.0); motion chunk 0: peak +5 (sub-frame +5.42, prominence 2.0); skin_hit chunk 1: peak +6 (sub-frame +6.02, prominence 2.4); gradient chunk 1: peak +6 (sub-frame +6.01, prominence 2.5); motion chunk 1: peak +5 (sub-frame +5.13, prominence 2.6); skin_hit chunk 2: peak +5 (sub-frame +5.32, prominence 2.6); gradient chunk 2: peak +5 (sub-frame +5.27, prominence 2.0); motion chunk 2: peak +5 (sub-frame +5.44, prominence 2.3)"
+      },
+      "scan": {
+        "schema_version": "1.0",
+        "uri": "runs/assembly101-clock-offsets-nusar_9061/C10390.json",
+        "sha256": "a8dbcab753ad9a5182401bbc40df532e784f4351def9a40918502eaf9347a332",
+        "source": "measured"
+      },
+      "dropped_metric": null
+    },
+    "C10395": {
+      "schema_version": "1.0",
+      "view": "C10395",
+      "view_key": "C10395:rgb",
+      "ambiguous": false,
+      "chosen_offset_subframe": 4.216783686676074,
+      "clock_rule": {
+        "schema_version": "1.0",
+        "view_key": "C10395:rgb",
+        "proxy_start_raw_frame": 22440,
+        "raw_frames_per_proxy_frame": 2,
+        "pose_offset_frames": 4,
+        "pose_fps": 60,
+        "analysis_fps": 30,
+        "offset_uncertainty_frames": 2,
+        "offset_evidence": "Chosen +4 pose frames (+-2; mean of metric medians +4.22: skin_hit +4.90, motion +3.53) from 6 informative chunk peaks over 2 metrics; the gradient metric (-2.12) disagreed with the other two by more than 2 frames and was dropped (majority fallback, uncertainty floored at 2); flat or edge chunks ignored: gradient/chunk1. skin_hit chunk 0: peak +5 (sub-frame +4.90, prominence 1.8); gradient chunk 0: peak -1 (sub-frame -0.98, prominence 2.0); motion chunk 0: peak +4 (sub-frame +3.53, prominence 2.1); skin_hit chunk 1: peak +5 (sub-frame +4.95, prominence 2.1); gradient chunk 1: peak +15 (sub-frame +15.00, prominence 0.9, flat); motion chunk 1: peak +3 (sub-frame +3.20, prominence 2.2); skin_hit chunk 2: peak +4 (sub-frame +4.11, prominence 1.6); gradient chunk 2: peak -3 (sub-frame -3.27, prominence 2.2); motion chunk 2: peak +4 (sub-frame +4.11, prominence 2.4)"
+      },
+      "scan": {
+        "schema_version": "1.0",
+        "uri": "runs/assembly101-clock-offsets-nusar_9061/C10395.json",
+        "sha256": "e2d62d708a39d5efc7a340d87615ea64b49c2c1f91356b4242f9a51efa29d7af",
+        "source": "measured"
+      },
+      "dropped_metric": "gradient"
+    },
+    "C10404": {
+      "schema_version": "1.0",
+      "view": "C10404",
+      "view_key": "C10404:rgb",
+      "ambiguous": false,
+      "chosen_offset_subframe": 5.129429837105392,
+      "clock_rule": {
+        "schema_version": "1.0",
+        "view_key": "C10404:rgb",
+        "proxy_start_raw_frame": 22440,
+        "raw_frames_per_proxy_frame": 2,
+        "pose_offset_frames": 5,
+        "pose_fps": 60,
+        "analysis_fps": 30,
+        "offset_uncertainty_frames": 1,
+        "offset_evidence": "Chosen +5 pose frames (+-1; mean of metric medians +5.13: skin_hit +4.54, gradient +5.68, motion +5.16) from 9 informative chunk peaks over 3 metrics. skin_hit chunk 0: peak +4 (sub-frame +4.25, prominence 1.7); gradient chunk 0: peak +6 (sub-frame +5.82, prominence 2.1); motion chunk 0: peak +5 (sub-frame +5.16, prominence 1.7); skin_hit chunk 1: peak +5 (sub-frame +5.11, prominence 2.5); gradient chunk 1: peak +6 (sub-frame +5.68, prominence 2.7); motion chunk 1: peak +5 (sub-frame +5.22, prominence 2.3); skin_hit chunk 2: peak +5 (sub-frame +4.54, prominence 1.6); gradient chunk 2: peak +4 (sub-frame +3.83, prominence 2.0); motion chunk 2: peak +4 (sub-frame +3.94, prominence 2.0)"
+      },
+      "scan": {
+        "schema_version": "1.0",
+        "uri": "runs/assembly101-clock-offsets-nusar_9061/C10404.json",
+        "sha256": "0ddc7a701e50b12723ffd3aae533ac77b2b2df743c72c8cb8c27a4ef8feb54cc",
+        "source": "measured"
+      },
+      "dropped_metric": null
+    },
+    "HMC_21110305": {
+      "schema_version": "1.0",
+      "view": "HMC_21110305",
+      "view_key": "21110305:mono10bit",
+      "ambiguous": false,
+      "chosen_offset_subframe": 0.1991624527287877,
+      "clock_rule": {
+        "schema_version": "1.0",
+        "view_key": "21110305:mono10bit",
+        "proxy_start_raw_frame": 22440,
+        "raw_frames_per_proxy_frame": 2,
+        "pose_offset_frames": 0,
+        "pose_fps": 60,
+        "analysis_fps": 30,
+        "offset_uncertainty_frames": 1,
+        "offset_evidence": "Chosen +0 pose frames (+-1; mean of metric medians +0.20: gradient +0.40, motion -0.00) from 6 informative chunk peaks over 2 metrics. gradient chunk 0: peak +1 (sub-frame +0.84, prominence 2.4); motion chunk 0: peak +0 (sub-frame -0.00, prominence 2.3); gradient chunk 1: peak +0 (sub-frame +0.12, prominence 3.0); motion chunk 1: peak +0 (sub-frame -0.18, prominence 2.7); gradient chunk 2: peak +0 (sub-frame +0.40, prominence 2.1); motion chunk 2: peak +0 (sub-frame +0.02, prominence 2.4)"
+      },
+      "scan": {
+        "schema_version": "1.0",
+        "uri": "runs/assembly101-clock-offsets-nusar_9061/HMC_21110305.json",
+        "sha256": "f3c81d047632e69208643c6651f89b3e9148907a247baffd09c4e873d5bac53a",
+        "source": "measured"
+      },
+      "dropped_metric": null
+    },
+    "HMC_21179183": {
+      "schema_version": "1.0",
+      "view": "HMC_21179183",
+      "view_key": "21179183:mono10bit",
+      "ambiguous": false,
+      "chosen_offset_subframe": -0.08126030896420994,
+      "clock_rule": {
+        "schema_version": "1.0",
+        "view_key": "21179183:mono10bit",
+        "proxy_start_raw_frame": 22440,
+        "raw_frames_per_proxy_frame": 2,
+        "pose_offset_frames": 0,
+        "pose_fps": 60,
+        "analysis_fps": 30,
+        "offset_uncertainty_frames": 1,
+        "offset_evidence": "Chosen +0 pose frames (+-1; mean of metric medians -0.08: gradient +0.63, motion -0.79) from 6 informative chunk peaks over 2 metrics. gradient chunk 0: peak +1 (sub-frame +0.63, prominence 1.5); motion chunk 0: peak -1 (sub-frame -0.79, prominence 2.1); gradient chunk 1: peak -1 (sub-frame -0.87, prominence 2.3); motion chunk 1: peak -1 (sub-frame -0.88, prominence 2.5); gradient chunk 2: peak +1 (sub-frame +0.63, prominence 2.5); motion chunk 2: peak +0 (sub-frame +0.02, prominence 2.5)"
+      },
+      "scan": {
+        "schema_version": "1.0",
+        "uri": "runs/assembly101-clock-offsets-nusar_9061/HMC_21179183.json",
+        "sha256": "4f6d11e090a03958d54052b76181ef009e515427d4c40b19ab9a9b65378fceba",
+        "source": "measured"
+      },
+      "dropped_metric": null
+    }
+  },
+  "claim_boundaries": [
+    "The offset is the lag of this camera's video behind the dataset pose clock, measured from image evidence at the dataset's own projected fingertips; it is review context for per-frame overlays and cross-view timing, not a statement about any method.",
+    "Dataset poses and 2D landmarks are external context (CC BY-NC 4.0); no accuracy claim rests on them."
+  ]
+}

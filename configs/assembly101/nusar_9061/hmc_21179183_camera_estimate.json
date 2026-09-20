@@ -1,0 +1,45 @@
+{
+  "schema_version": "1.0",
+  "view_key": "21179183:mono10bit",
+  "raw_image_size": [
+    636,
+    480
+  ],
+  "intrinsic_matrix": [
+    [
+      191.39531624193495,
+      0.0,
+      312.2521934729609
+    ],
+    [
+      0.0,
+      191.29025479146378,
+      237.85424861620726
+    ],
+    [
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "distortion": [
+    0.6553200407628575,
+    0.6707753312698587,
+    0.0,
+    0.0,
+    0.024705675372237737,
+    0.710278939610727,
+    0.7687033374209676,
+    0.11056384012374265
+  ],
+  "distortion_model": "rational",
+  "extrinsics_kind": "per_frame_ego",
+  "camera_to_world": null,
+  "provenance": "estimated_from_dataset_landmark_projection",
+  "fit_rms_pixels": 0.0230716803287605,
+  "fit_point_count": 4002,
+  "fit_frame_count": 96,
+  "shipped_extrinsics_rms_pixels": 0.39812576439723657,
+  "shipped_extrinsics_max_pixels": 0.6030803256673005,
+  "fit_notes": "96 frame groups every 50 pose frames in [22440, 27240), hands with confidence >= 0.8, joints inside the image; cv2.calibrateCamera rational with per-frame camera_extrinsics_ego"
+}

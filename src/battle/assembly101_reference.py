@@ -16,6 +16,7 @@ import argparse
 import csv
 import json
 from pathlib import Path
+from typing import Literal
 
 import cv2
 import numpy as np
@@ -35,32 +36,35 @@ from .assembly101_pose_schemas import (
     Assembly101ProjectionCheck,
     Assembly101ReferenceManifest,
 )
+from .assembly101_recordings import (
+    DATASET_REVISION,
+    RECORDING_1,
+    Assembly101Recording,
+    get_recording,
+)
 from .schemas import ArtifactFingerprint
 
-RECORDING_ID = "nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532"
-DATASET_REVISION = "bfc15ea5e3f0bc8f8c232af6c1b45aa137a9d967"
-RAW_ROOT = Path("data/raw/assembly101") / RECORDING_ID
-POSES_ROOT = RAW_ROOT / "AssemblyPoses_selective/assembly101_camera_and_hand_poses"
-FINE_GRAINED_CSV = RAW_ROOT / f"annotations/fine-grained-annotations/train__{RECORDING_ID}.csv"
+# Recording-1 constants, kept for every caller written before the recording registry existed.
+RECORDING_ID = RECORDING_1.recording_id
+RAW_ROOT = RECORDING_1.raw_root
+POSES_ROOT = RECORDING_1.poses_root
+FINE_GRAINED_CSV = RECORDING_1.fine_grained_csv()
 CAMERA_ESTIMATE = Path("configs/assembly101/c10379_camera_estimate.json")
-SHIPPED_2D_WINDOW = (
-    Path("data/derived/assembly101")
-    / RECORDING_ID
-    / "assembly101_landmarks2D_60fps_frames_17640_23202.npz"
-)
-OUTPUT_ROOT = Path("runs/assembly101-reference-first-minute-v1")
+SHIPPED_2D_WINDOW = RECORDING_1.shipped_2d_window
+OUTPUT_ROOT = Path(RECORDING_1.reference_root)
 MANIFEST_NAME = "manifest.json"
 HANDS_NAME = "hands.jsonl"
 
 STATIC_VIEW_KEY = "C10379:rgb"
 STATIC_VIDEO_NAME = "C10379_rgb.mp4"
 PROXY_DIMENSIONS = (1280, 720)
+EGO_PROXY_DIMENSIONS = (954, 720)
 FRAME_COUNT = 1800
 ANALYSIS_FPS = 30
-SOURCE_START_SECONDS = 294.0
+SOURCE_START_SECONDS = RECORDING_1.window_start_seconds
 ANNOTATION_FPS = 30
-ANNOTATION_START_FRAME = int(round(SOURCE_START_SECONDS * ANNOTATION_FPS))
-PROXY_START_RAW_FRAME = 17640
+ANNOTATION_START_FRAME = RECORDING_1.annotation_start_frame
+PROXY_START_RAW_FRAME = RECORDING_1.window_start_raw_frame
 DRAW_CONFIDENCE_THRESHOLD = 0.5
 
 # Measured on this recording: the static C10379 video starts ~9 pose frames (~150 ms) after
@@ -105,8 +109,18 @@ def _fingerprint(path: Path, repository_root: Path, *, verify: bool = False) -> 
     )
 
 
-def _poses_member(kind: str, repository_root: Path) -> Path:
-    return repository_root / POSES_ROOT / kind / f"{RECORDING_ID}.json"
+def _poses_member(
+    kind: str, repository_root: Path, recording: Assembly101Recording = RECORDING_1
+) -> Path:
+    return repository_root / recording.poses_member(kind)
+
+
+def _view_key(view: str) -> str:
+    return f"{view[4:]}:mono10bit" if view.startswith("HMC_") else f"{view}:rgb"
+
+
+def _video_name(view: str) -> str:
+    return f"{view}_mono10bit.mp4" if view.startswith("HMC_") else f"{view}_rgb.mp4"
 
 
 def load_camera_estimate(path: Path) -> Assembly101CameraModel:
@@ -289,7 +303,9 @@ def projection_check(
     for frame in frames:
         row = frame.pose_frame_index - window_start_pose_frame
         if not 0 <= row < shipped.shape[0]:
-            raise IndexError(f"pose frame {frame.pose_frame_index} outside the shipped window")
+            # A positive clock offset maps the last few proxy frames past the fetched 2D
+            # window; those hands are still valid, they just cannot be checked here.
+            continue
         for hand in frame.hands:
             ours = np.array([[p.x, p.y] for p in hand.joints_proxy_pixels])
             theirs = shipped[row, hand.hand_index] * scale
@@ -324,27 +340,65 @@ def _coverage(frames: tuple[Assembly101HandFrame, ...]) -> dict[str, int]:
 def build_reference(
     *,
     repository_root: Path,
-    output_root: Path = OUTPUT_ROOT,
-    camera_estimate: Path = CAMERA_ESTIMATE,
-    shipped_2d_window: Path | None = SHIPPED_2D_WINDOW,
+    output_root: Path | None = None,
+    camera_estimate: Path | None = None,
+    shipped_2d_window: Path | None | Literal["default"] = "default",
     overwrite: bool = False,
+    recording: Assembly101Recording = RECORDING_1,
+    view: str | None = None,
+    clock_rule: Assembly101ClockRule | None = None,
+    frame_count: int | None = None,
 ) -> Path:
+    """Build the dataset-reference window for one static view of one recording.
+
+    Recording 1 keeps its historical defaults (C10379, the first 1,800 frames, the checked-in
+    +9 rule).  Any other recording takes its primary static view, its whole fetched window and
+    the view's rule from its tracked clock-rule file unless told otherwise.
+    `shipped_2d_window=None` skips the projection check.
+    """
+    from .assembly101_clock_offset import load_clock_rules_for
+
     repository_root = repository_root.resolve()
+    is_recording_1 = recording.recording_id == RECORDING_1.recording_id
+    view = view if view is not None else recording.primary_static_view
+    if view.startswith("HMC_"):
+        raise ValueError("the reference window is built for a static view (fixed extrinsics)")
+    view_key_ = _view_key(view)
+    output_root = output_root if output_root is not None else Path(recording.reference_root)
+    if camera_estimate is None:
+        camera_estimate = (
+            CAMERA_ESTIMATE
+            if is_recording_1 and view == "C10379"
+            else Path(recording.camera_config_root) / f"{view.lower()}_camera_estimate.json"
+        )
+    if shipped_2d_window == "default":
+        shipped_2d_window = recording.shipped_2d_window
+    if frame_count is None:
+        frame_count = FRAME_COUNT if is_recording_1 else recording.window_proxy_frame_count
+    if clock_rule is None:
+        if is_recording_1 and view == "C10379":
+            clock_rule = STATIC_CLOCK_RULE
+        else:
+            clock_rule = load_clock_rules_for(recording, repository_root).rule(view)
+    if clock_rule.view_key != view_key_:
+        raise ValueError(f"clock rule is for {clock_rule.view_key}, expected {view_key_}")
+    if clock_rule.proxy_start_raw_frame != recording.window_start_raw_frame:
+        raise ValueError("clock rule's proxy start does not match the recording window")
     root = (repository_root / output_root).resolve()
     if root.exists() and any(root.iterdir()) and not overwrite:
         raise FileExistsError(f"{root} is not empty; pass --overwrite")
     camera_path = repository_root / camera_estimate
     camera = load_camera_estimate(camera_path)
-    if camera.view_key != STATIC_VIEW_KEY:
-        raise ValueError(f"camera estimate is for {camera.view_key}, expected {STATIC_VIEW_KEY}")
-    extrinsics_path = _poses_member("camera_extrinsics_fixed", repository_root)
-    shipped_extrinsics = json.loads(extrinsics_path.read_text(encoding="utf-8"))[STATIC_VIEW_KEY]
+    if camera.view_key != view_key_:
+        raise ValueError(f"camera estimate is for {camera.view_key}, expected {view_key_}")
+    extrinsics_path = _poses_member("camera_extrinsics_fixed", repository_root, recording)
+    shipped_extrinsics = json.loads(extrinsics_path.read_text(encoding="utf-8"))[view_key_]
     if not np.allclose(shipped_extrinsics, camera.camera_to_world, atol=1e-9):
         raise ValueError("camera estimate's camera_to_world differs from the dataset extrinsics")
-    landmarks_path = _poses_member("landmarks3D", repository_root)
-    confidences_path = _poses_member("hand_confidences", repository_root)
-    timestamps_path = _poses_member("timestamp", repository_root)
-    csv_path = repository_root / FINE_GRAINED_CSV
+    landmarks_path = _poses_member("landmarks3D", repository_root, recording)
+    confidences_path = _poses_member("hand_confidences", repository_root, recording)
+    timestamps_path = _poses_member("timestamp", repository_root, recording)
+    csv_path = repository_root / recording.fine_grained_csv(repository_root)
     landmarks3d = json.loads(landmarks_path.read_text(encoding="utf-8"))
     confidences = json.loads(confidences_path.read_text(encoding="utf-8"))
     timestamps = json.loads(timestamps_path.read_text(encoding="utf-8"))
@@ -353,10 +407,17 @@ def build_reference(
         confidences=confidences,
         timestamps=timestamps,
         camera=camera,
-        clock_rule=STATIC_CLOCK_RULE,
+        clock_rule=clock_rule,
+        frame_count=frame_count,
+        source_start_seconds=recording.window_start_seconds,
     )
     del landmarks3d
-    segments = load_fine_segments(csv_path)
+    segments = load_fine_segments(
+        csv_path,
+        video_name=_video_name(view),
+        annotation_start_frame=recording.annotation_start_frame,
+        frame_count=frame_count,
+    )
     check = None
     if shipped_2d_window is not None:
         window_path = repository_root / shipped_2d_window
@@ -366,7 +427,7 @@ def build_reference(
                 window_path,
                 camera=camera,
                 dimensions=PROXY_DIMENSIONS,
-                window_start_pose_frame=PROXY_START_RAW_FRAME,
+                window_start_pose_frame=recording.window_start_raw_frame,
                 repository_root=repository_root,
             )
     root.mkdir(parents=True, exist_ok=True)
@@ -376,17 +437,17 @@ def build_reference(
     )
     manifest = Assembly101ReferenceManifest(
         manifest_kind="assembly101_reference_window",
-        recording_id=RECORDING_ID,
+        recording_id=recording.recording_id,
         dataset_revision=DATASET_REVISION,
         license="CC BY-NC 4.0",
         citation=ASSEMBLY101_CITATION,
-        view_key=STATIC_VIEW_KEY,
+        view_key=view_key_,
         proxy_dimensions=PROXY_DIMENSIONS,
-        frame_count=FRAME_COUNT,
+        frame_count=frame_count,
         analysis_fps=30,
-        source_start_seconds=SOURCE_START_SECONDS,
-        annotation_start_frame=ANNOTATION_START_FRAME,
-        clock_rule=STATIC_CLOCK_RULE,
+        source_start_seconds=recording.window_start_seconds,
+        annotation_start_frame=recording.annotation_start_frame,
+        clock_rule=clock_rule,
         camera=camera,
         draw_confidence_threshold=DRAW_CONFIDENCE_THRESHOLD,
         input_artifacts=tuple(
@@ -469,23 +530,43 @@ def wrist_pixels(hand: Assembly101Hand) -> tuple[float, float]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repository-root", type=Path, default=Path.cwd())
-    parser.add_argument("--output-root", type=Path, default=OUTPUT_ROOT)
-    parser.add_argument("--camera-estimate", type=Path, default=CAMERA_ESTIMATE)
+    parser.add_argument(
+        "--recording",
+        help="Registry label or recording id (configs/assembly101/recordings.json); "
+        "default: recording 1.",
+    )
+    parser.add_argument(
+        "--view", help="Static camera, e.g. C10379 (default: the recording's primary view)."
+    )
+    parser.add_argument("--output-root", type=Path, help="default: the recording's reference_root")
+    parser.add_argument(
+        "--camera-estimate",
+        type=Path,
+        help="default: the recording's checked-in estimate for the view",
+    )
     parser.add_argument(
         "--shipped-2d-window",
         type=Path,
-        default=SHIPPED_2D_WINDOW,
-        help="Optional npz of the dataset's own 2D landmarks for a projection residual check.",
+        help="Optional npz of the dataset's own 2D landmarks for a projection residual check "
+        "(default: the recording's window).",
     )
     parser.add_argument("--no-projection-check", action="store_true")
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
+    recording = get_recording(args.recording, args.repository_root)
+    shipped: Path | None | Literal["default"] = (
+        None
+        if args.no_projection_check
+        else (args.shipped_2d_window if args.shipped_2d_window is not None else "default")
+    )
     root = build_reference(
         repository_root=args.repository_root,
         output_root=args.output_root,
         camera_estimate=args.camera_estimate,
-        shipped_2d_window=None if args.no_projection_check else args.shipped_2d_window,
+        shipped_2d_window=shipped,
         overwrite=args.overwrite,
+        recording=recording,
+        view=args.view,
     )
     manifest = Assembly101ReferenceManifest.model_validate_json(
         (root / MANIFEST_NAME).read_text(encoding="utf-8")

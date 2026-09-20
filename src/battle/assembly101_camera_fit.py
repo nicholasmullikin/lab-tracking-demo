@@ -23,23 +23,16 @@ from typing import Literal
 import cv2
 import numpy as np
 
-from .assembly101_clock_offset import (
-    POSES_ROOT,
-    SHIPPED_2D_WINDOW,
-    WINDOW_FRAME_COUNT,
-    WINDOW_START_POSE_FRAME,
-    is_ego,
-    npz_key,
-    view_key,
-)
-from .assembly101_fetch_view import EGO_VIEWS, RECORDING_ID, STATIC_VIEWS
+from .assembly101_clock_offset import is_ego, npz_key, view_key
+from .assembly101_fetch_view import EGO_VIEWS, STATIC_VIEWS
 from .assembly101_pose_schemas import (
     BROWN_COEFFICIENTS,
     RATIONAL_COEFFICIENTS,
     Assembly101CameraModel,
 )
+from .assembly101_recordings import RECORDING_1, Assembly101Recording, get_recording
 
-CONFIG_ROOT = Path("configs/assembly101")
+CONFIG_ROOT = Path(RECORDING_1.camera_config_root)
 STATIC_RAW_SIZE = (1920, 1080)
 EGO_RAW_SIZE = (636, 480)
 FRAME_STEP = 50
@@ -56,8 +49,14 @@ RATIONAL_FLAGS = (
 BROWN_ACCEPT_RMS_PIXELS = 0.05
 
 
-def camera_estimate_path(view: str, config_root: Path = CONFIG_ROOT) -> Path:
-    return config_root / f"{view.lower()}_camera_estimate.json"
+def camera_estimate_path(
+    view: str,
+    config_root: Path | None = None,
+    *,
+    recording: Assembly101Recording = RECORDING_1,
+) -> Path:
+    root = config_root if config_root is not None else Path(recording.camera_config_root)
+    return root / f"{view.lower()}_camera_estimate.json"
 
 
 def raw_image_size(view: str) -> tuple[int, int]:
@@ -67,11 +66,15 @@ def raw_image_size(view: str) -> tuple[int, int]:
 class PoseMembers:
     """The pose-archive members every fit needs, loaded once for all views."""
 
-    def __init__(self, repository_root: Path) -> None:
-        root = repository_root / POSES_ROOT
+    def __init__(
+        self, repository_root: Path, recording: Assembly101Recording = RECORDING_1
+    ) -> None:
+        self.recording = recording
 
         def member(kind: str) -> dict:
-            return json.loads((root / kind / f"{RECORDING_ID}.json").read_text(encoding="utf-8"))
+            return json.loads(
+                (repository_root / recording.poses_member(kind)).read_text(encoding="utf-8")
+            )
 
         self.landmarks3d = member("landmarks3D")
         self.confidences = member("hand_confidences")
@@ -91,18 +94,30 @@ def gather_correspondences(
     landmarks2d: np.ndarray,
     *,
     frame_step: int = FRAME_STEP,
+    window_start_pose_frame: int | None = None,
+    window_frame_count: int | None = None,
 ) -> tuple[list[np.ndarray], list[np.ndarray], list[np.ndarray], list[int]]:
     """Frame groups of (3D world mm, 2D raw px, world->camera 4x4, pose frame)."""
     width, height = raw_image_size(view)
+    start = (
+        window_start_pose_frame
+        if window_start_pose_frame is not None
+        else members.recording.window_start_raw_frame
+    )
+    count = (
+        window_frame_count
+        if window_frame_count is not None
+        else members.recording.window_raw_frame_count
+    )
     objects: list[np.ndarray] = []
     images: list[np.ndarray] = []
     world_to_camera: list[np.ndarray] = []
     frames: list[int] = []
-    for pose_frame in range(
-        WINDOW_START_POSE_FRAME, WINDOW_START_POSE_FRAME + WINDOW_FRAME_COUNT, frame_step
-    ):
-        row = pose_frame - WINDOW_START_POSE_FRAME
+    for pose_frame in range(start, start + count, frame_step):
+        row = pose_frame - start
         key = str(pose_frame)
+        if key not in members.confidences or key not in members.landmarks3d:
+            continue
         xyz: list[np.ndarray] = []
         uv: list[np.ndarray] = []
         for hand in (0, 1):
@@ -115,7 +130,8 @@ def gather_correspondences(
         points = np.concatenate(xyz)
         pixels = np.concatenate(uv)
         inside = (
-            (pixels[:, 0] >= 0)
+            np.isfinite(pixels).all(axis=1)
+            & (pixels[:, 0] >= 0)
             & (pixels[:, 0] < width)
             & (pixels[:, 1] >= 0)
             & (pixels[:, 1] < height)
@@ -202,8 +218,11 @@ def fit_view(
             attempts.append(("rational", rms, intrinsic, distortion, residual))
     best = min(attempts, key=lambda item: float(np.sqrt(np.mean(item[4] ** 2))))
     model_name, rms, intrinsic, distortion, residual = best
+    window_start = members.recording.window_start_raw_frame
+    window_end = window_start + members.recording.window_raw_frame_count
     notes = (
-        f"{len(frames)} frame groups every {FRAME_STEP} pose frames in [17640, 23202), hands "
+        f"{len(frames)} frame groups every {FRAME_STEP} pose frames in "
+        f"[{window_start}, {window_end}), hands "
         f"with confidence >= {CONFIDENCE_FLOOR}, joints inside the image; "
         f"cv2.calibrateCamera {model_name}"
         + (" with per-frame camera_extrinsics_ego" if ego else " with camera_extrinsics_fixed")
@@ -236,8 +255,10 @@ def fit_view(
     )
 
 
-def load_window_landmarks(repository_root: Path, view: str) -> np.ndarray:
-    with np.load(repository_root / SHIPPED_2D_WINDOW) as archive:
+def load_window_landmarks(
+    repository_root: Path, view: str, recording: Assembly101Recording = RECORDING_1
+) -> np.ndarray:
+    with np.load(repository_root / recording.shipped_2d_window) as archive:
         return np.asarray(archive[npz_key(view)], dtype=np.float64)
 
 
@@ -245,30 +266,42 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--view", action="append", help="e.g. C10095 or HMC_21179183; repeatable")
     parser.add_argument("--all", action="store_true", help="fit every static and ego view")
+    parser.add_argument(
+        "--recording",
+        help="Registry label or recording id (configs/assembly101/recordings.json); "
+        "default: recording 1.",
+    )
     parser.add_argument("--repository-root", type=Path, default=Path.cwd())
-    parser.add_argument("--config-root", type=Path, default=CONFIG_ROOT)
+    parser.add_argument(
+        "--config-root", type=Path, help="default: the recording's camera_config_root"
+    )
     parser.add_argument(
         "--overwrite",
         action="store_true",
         help="Replace an existing estimate (the C10379 file is fingerprinted by built runs).",
     )
     args = parser.parse_args()
+    recording = get_recording(args.recording, args.repository_root)
     views = list(args.view or [])
     if args.all:
-        views = [*STATIC_VIEWS, *EGO_VIEWS]
+        views = (
+            [*STATIC_VIEWS, *EGO_VIEWS]
+            if recording.recording_id == RECORDING_1.recording_id
+            else list(recording.all_views)
+        )
     if not views:
         parser.error("pass --view or --all")
     repository_root = args.repository_root.resolve()
     started = time.monotonic()
-    members = PoseMembers(repository_root)
+    members = PoseMembers(repository_root, recording)
     print(f"loaded pose members in {time.monotonic() - started:.1f} s")
     for view in views:
-        output = repository_root / camera_estimate_path(view, args.config_root)
+        output = repository_root / camera_estimate_path(view, args.config_root, recording=recording)
         if output.exists() and not args.overwrite:
             print(f"{view}: {output} exists; skipped (pass --overwrite)")
             continue
         view_started = time.monotonic()
-        model = fit_view(view, members, load_window_landmarks(repository_root, view))
+        model = fit_view(view, members, load_window_landmarks(repository_root, view, recording))
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(model.model_dump_json(indent=2) + "\n", encoding="utf-8")
         k = model.intrinsic_matrix

@@ -187,6 +187,69 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
   (per-view video-vs-pose offsets measured by `battle-assembly101-clock-offset`). Review
   context only; no accuracy claim rests on any of it.
 
+## Approved local source: Assembly101 recording 2 (`nusar_9061`), 80 s window (Track C1, Sep 20)
+
+- Status: `approved` under the Sep 20 multicam plan (Track C, "a second Assembly101 recording
+  of the same toy with a different subject"), window only. Recording
+  `nusar-2021_action_both_9061-c02a_9061_user_id_2021-02-09_141537` (toy `c02a`, subject 9061;
+  recording 1 is subject 9033). Same dataset/revision (`cvml-nus/assembly101` @
+  `bfc15ea5e3f0bc8f8c232af6c1b45aa137a9d967`), CC BY-NC 4.0, same unresolved use decision as
+  the original G2 pair. Choice and rejected candidates with reasons:
+  `configs/assembly101/nusar_9061/recording_selection.json`; registry entry:
+  `configs/assembly101/recordings.json`.
+- Window: source 374.000-454.000 s (raw 60 fps frames `[22440, 27240)`, 4,800 trim / 2,400
+  proxy frames); the 60 s analysis span is 384.000-444.000 s = proxy frames `[300, 2100)`,
+  10 s of margin each side. Coarse actions inside the span (dataset labels, 30 fps): attach
+  interior, screw chassis, attach body, attempt to attach bumper, screw chassis, attach bumper,
+  attempt to attach cabin, unscrew chassis, detach interior, attach interior, attach cabin.
+- Access method: `battle-fetch-assembly101-view --recording nusar_9061` (Sep 20 2026), the
+  Track 0 recipe unchanged (signed CDN URL, local counting proxy, HTTP Range, `-ss 374 -t 80`,
+  one decode, two encodes, ffmpeg 8.1.2). Two requests per view (`bytes=0-` for the moov atom,
+  one open-ended range for the mdat window). The full files were never downloaded.
+- Video assets (HF path `recordings/<recording>/<view>_rgb.mp4` or `_mono10bit.mp4`; the HF
+  LFS etag is the file's SHA-256 and is recorded as the raw-source checksum; "bytes" is what
+  the proxy delivered to ffmpeg):
+
+  | view | HF size (B) | full-file SHA-256 (etag) | mdat range start | bytes transferred |
+  |---|---:|---|---:|---:|
+  | C10095 | 1,561,006,255 | `7bbbf85830e89de06296708bb1bf8c34cb5369b1e255e1cb28055f77cc0d0f5c` | 1,036,853,453 | 244,318,208 |
+  | C10115 | 1,610,542,189 | `b901175c00bdc00779616a7f2773dc91bb4697a2641568f0872256992aa531fb` | 1,065,821,495 | 258,998,272 |
+  | C10118 | 2,316,443,553 | `83da90db44b642c0d6384b61afb0de22eb65a9181d809f50a1ecc2d7a816e62e` | 1,563,533,624 | 332,398,592 |
+  | C10119 | 1,218,389,649 | `2f8848cd1099750f8edebf55cbc66859eb0114191f7e95b640ff6ff21de3cc64` | 803,186,811 | 204,472,320 |
+  | C10379 | 1,539,394,683 | `d80d4136022bf188d69db7211da88dde316d7fd632fca4a108b50beaef2f7148` | 1,026,288,297 | 246,415,360 |
+  | C10390 | 950,213,939 | `5c0c158ce5ce29add2f95d81627576b0e0cbd7d511fbabadabc4dae2dc84c48a` | 634,300,474 | 155,189,248 |
+  | C10395 | 1,453,831,016 | `185cae75c0c866f79a5c01bda5c841af940a47e2bede859e701aceca214924dd` | 950,471,736 | 235,929,600 |
+  | C10404 | 993,837,625 | `ca3a869454ee49725c0062b02ac1c7e2e6d911adab9508d029d4a44e99a9ecdf` | 660,522,739 | 156,237,824 |
+  | HMC_21110305 (e3) | 86,372,095 | `c76029bcf45c5bc9ba6f97b032189eb6a81bb8a1deeb9d77c5dd400fbd448301` | 56,827,782 | 16,777,216 |
+  | HMC_21179183 (e4) | 99,072,741 | `8dbd3891590993757f2bd05a6f87b0091bd9c9de4e50bf29e9714351cfbce0e4` | 65,384,074 | 19,922,944 |
+
+  Video total 1,870,659,584 B (14-20 % of each file). The two ego views are the e3/e4 camera
+  ids Track 6 found useful on recording 1; recording 2 uses the same headset serials, so the
+  choice transferred by camera id (the visibility audit needs hulls that do not exist yet).
+  HMC_21176623 and HMC_21176875 exist on the Hub and were not fetched. Trim and proxy
+  SHA-256s, frame counts and ranges are in the tracked clip configs
+  (`configs/clips/assembly101_nusar_9061_four_part_reassembly_focused_all_static_g2.json`,
+  `..._ego_hmc_21110305_g2.json`, `..._ego_hmc_21179183_g2.json`) and in the ignored
+  `data/raw/assembly101/<recording>/static_views_focused_acquisition_{report.md,manifest.json}`.
+- Poses and annotations (`battle-fetch-assembly101-poses --recording nusar_9061`): the ten
+  `AssemblyPoses.zip` members for the recording, range-extracted from the 72 GB archive
+  (281,494,021 compressed bytes; per-member CRC-32 verified; `members_manifest.json`); the
+  fine-grained split CSVs streamed once (train/validation/test, 183 MB; full-file SHA-256 equal
+  to the LFS etag for all three; 3,516 rows for this recording, all in `train`, kept as
+  `train__<recording>.csv`); the coarse labels file and four small lookup tables (git blob ids
+  verified). Total 465,555,825 B. Derived, ignored:
+  `data/derived/assembly101/<recording>/assembly101_landmarks2D_60fps_frames_22440_27240.npz`
+  (12 views, no missing pose frame). Record:
+  `data/raw/assembly101/<recording>/poses_annotations_acquisition.json`.
+- Local storage class: ignored `data/derived/assembly101/<recording>/` (`*_raw60.mp4` trims,
+  1.43 GB; `*_1280x720_30fps.mp4` / `*_954x720_30fps.mp4` proxies, 0.40 GB; the contact sheet
+  `contact_sheet_374.000-454.000.png`); ignored `data/raw/assembly101/<recording>/` (0.83 GB).
+- Derived, checked in: `configs/assembly101/nusar_9061/<view>_camera_estimate.json` for the
+  ten fetched views (estimates of the dataset's internal projection, provenance
+  `estimated_from_dataset_landmark_projection`) and `configs/assembly101/clock_rules_nusar_9061.json`
+  (per-view video-vs-pose offsets measured by `battle-assembly101-clock-offset`). Review
+  context only; no accuracy claim rests on any of it.
+
 ## External source: Grounded-SAM-2
 
 - Checkout: `/home/nick/src/Grounded-SAM-2` @ `b7a9c29f196edff0eb54dbe14588d7ae5e3dde28`

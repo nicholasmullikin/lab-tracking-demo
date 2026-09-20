@@ -1,0 +1,510 @@
+{
+  "schema_version": "1.0",
+  "manifest_kind": "assembly101_g2_preprocessing",
+  "clip": {
+    "schema_version": "1.0",
+    "clip_id": "assembly101-nusar-9061-four-part-reassembly-focused-all-static-g2",
+    "source_name": "Assembly101",
+    "source_license": "CC BY-NC 4.0; dataset terms and permitted use recorded in the local provenance ledger",
+    "asset": {
+      "schema_version": "1.0",
+      "uri": "data/derived/assembly101/nusar-2021_action_both_9061-c02a_9061_user_id_2021-02-09_141537/C10379_rgb_374.000-454.000_1280x720_30fps.mp4",
+      "media_type": "video/mp4",
+      "checksum_sha256": "399c769d2287d790b17c01f4374e73356bd168747715140983f0a64759d4f6a7"
+    },
+    "timing": {
+      "schema_version": "1.0",
+      "clocks": {
+        "schema_version": "1.0",
+        "clocks": [
+          {
+            "schema_version": "1.0",
+            "name": "source",
+            "fps": 60
+          },
+          {
+            "schema_version": "1.0",
+            "name": "analysis",
+            "fps": 30
+          },
+          {
+            "schema_version": "1.0",
+            "name": "annotation",
+            "fps": 30
+          },
+          {
+            "schema_version": "1.0",
+            "name": "pose",
+            "fps": 60
+          }
+        ]
+      },
+      "mappings": [
+        {
+          "schema_version": "1.0",
+          "clock": "source",
+          "source_offset_seconds": 374.0,
+          "scale": 1.0
+        },
+        {
+          "schema_version": "1.0",
+          "clock": "analysis",
+          "source_offset_seconds": 374.0,
+          "scale": 1.0
+        },
+        {
+          "schema_version": "1.0",
+          "clock": "annotation",
+          "source_offset_seconds": 374.0,
+          "scale": 1.0
+        },
+        {
+          "schema_version": "1.0",
+          "clock": "pose",
+          "source_offset_seconds": 374.0,
+          "scale": 1.0
+        }
+      ]
+    },
+    "source_duration_seconds": 80.0,
+    "views": [
+      "static-c10095",
+      "static-c10115",
+      "static-c10118",
+      "static-c10119",
+      "static-c10379",
+      "static-c10390",
+      "static-c10395",
+      "static-c10404"
+    ],
+    "provenance_status": "approved"
+  },
+  "hf_dataset": "cvml-nus/assembly101",
+  "hf_revision": "bfc15ea5e3f0bc8f8c232af6c1b45aa137a9d967",
+  "provenance_ledger_uri": "data/raw/assembly101/nusar-2021_action_both_9061-c02a_9061_user_id_2021-02-09_141537/static_views_focused_acquisition_report.md",
+  "g1": {
+    "schema_version": "1.0",
+    "state": "approved",
+    "approved_by": "user (Track C plan of Sep 20; automatic pipeline on a second recording)",
+    "scope": "all eight Assembly101 static views of recording nusar-2021_action_both_9061-c02a_9061_user_id_2021-02-09_141537 (toy c02a, subject 9061), fetched over HTTP Range for source 374.000-454.000 s; the 60 s analysis span is source 384.000-444.000 s = proxy frames [300, 2100); see docs/SOURCES.md"
+  },
+  "g2": {
+    "schema_version": "1.0",
+    "state": "approved",
+    "approved_by": "user (Track C plan of Sep 20; automatic pipeline on a second recording)",
+    "scope": "80.0-second four-part reassembly window on a recording the system has not seen: coarse actions attach interior / screw chassis / attach body inside the analysis span; seeds are to be automatic, not human"
+  },
+  "raw_timing": {
+    "schema_version": "1.0",
+    "clocks": {
+      "schema_version": "1.0",
+      "clocks": [
+        {
+          "schema_version": "1.0",
+          "name": "source",
+          "fps": 60
+        },
+        {
+          "schema_version": "1.0",
+          "name": "analysis",
+          "fps": 30
+        },
+        {
+          "schema_version": "1.0",
+          "name": "annotation",
+          "fps": 30
+        },
+        {
+          "schema_version": "1.0",
+          "name": "pose",
+          "fps": 60
+        }
+      ]
+    },
+    "mappings": [
+      {
+        "schema_version": "1.0",
+        "clock": "source",
+        "source_offset_seconds": 0.0,
+        "scale": 1.0
+      },
+      {
+        "schema_version": "1.0",
+        "clock": "analysis",
+        "source_offset_seconds": 0.0,
+        "scale": 1.0
+      },
+      {
+        "schema_version": "1.0",
+        "clock": "annotation",
+        "source_offset_seconds": 0.0,
+        "scale": 1.0
+      },
+      {
+        "schema_version": "1.0",
+        "clock": "pose",
+        "source_offset_seconds": 0.0,
+        "scale": 1.0
+      }
+    ]
+  },
+  "proxy_timing": {
+    "schema_version": "1.0",
+    "clocks": {
+      "schema_version": "1.0",
+      "clocks": [
+        {
+          "schema_version": "1.0",
+          "name": "source",
+          "fps": 60
+        },
+        {
+          "schema_version": "1.0",
+          "name": "analysis",
+          "fps": 30
+        },
+        {
+          "schema_version": "1.0",
+          "name": "annotation",
+          "fps": 30
+        },
+        {
+          "schema_version": "1.0",
+          "name": "pose",
+          "fps": 60
+        }
+      ]
+    },
+    "mappings": [
+      {
+        "schema_version": "1.0",
+        "clock": "source",
+        "source_offset_seconds": 374.0,
+        "scale": 1.0
+      },
+      {
+        "schema_version": "1.0",
+        "clock": "analysis",
+        "source_offset_seconds": 374.0,
+        "scale": 1.0
+      },
+      {
+        "schema_version": "1.0",
+        "clock": "annotation",
+        "source_offset_seconds": 374.0,
+        "scale": 1.0
+      },
+      {
+        "schema_version": "1.0",
+        "clock": "pose",
+        "source_offset_seconds": 374.0,
+        "scale": 1.0
+      }
+    ]
+  },
+  "source_interval": {
+    "schema_version": "1.0",
+    "start_seconds": 374.0,
+    "end_seconds": 454.0
+  },
+  "raw_frame_range": {
+    "schema_version": "1.0",
+    "start_frame": 22440,
+    "end_frame_exclusive": 27240
+  },
+  "analysis_frame_range": {
+    "schema_version": "1.0",
+    "start_frame": 11220,
+    "end_frame_exclusive": 13620
+  },
+  "proxy_frame_range": {
+    "schema_version": "1.0",
+    "start_frame": 0,
+    "end_frame_exclusive": 2400
+  },
+  "scaling_policy": "preserve_aspect_ratio_height_720",
+  "proxies": [
+    {
+      "schema_version": "1.0",
+      "view_id": "static-c10095",
+      "raw_source": {
+        "schema_version": "1.0",
+        "view_id": "static-c10095",
+        "raw_uri": "hf://datasets/cvml-nus/assembly101@bfc15ea5e3f0bc8f8c232af6c1b45aa137a9d967/recordings/nusar-2021_action_both_9061-c02a_9061_user_id_2021-02-09_141537/C10095_rgb.mp4",
+        "checksum_sha256": "7bbbf85830e89de06296708bb1bf8c34cb5369b1e255e1cb28055f77cc0d0f5c",
+        "dimensions": {
+          "schema_version": "1.0",
+          "width": 1920,
+          "height": 1080
+        },
+        "fps": 60,
+        "raw_frame_range": {
+          "schema_version": "1.0",
+          "start_frame": 22440,
+          "end_frame_exclusive": 27240
+        }
+      },
+      "proxy_uri": "data/derived/assembly101/nusar-2021_action_both_9061-c02a_9061_user_id_2021-02-09_141537/C10095_rgb_374.000-454.000_1280x720_30fps.mp4",
+      "checksum_sha256": "fa1557135880544fbbe5965287e260fe7ef16923d3e2e0d0388f0c69f2ca8837",
+      "dimensions": {
+        "schema_version": "1.0",
+        "width": 1280,
+        "height": 720
+      },
+      "fps": 30,
+      "frame_count": 2400,
+      "codec": "h264",
+      "crf": 18,
+      "preset": "medium",
+      "pixel_format": "yuv420p",
+      "has_audio": false
+    },
+    {
+      "schema_version": "1.0",
+      "view_id": "static-c10115",
+      "raw_source": {
+        "schema_version": "1.0",
+        "view_id": "static-c10115",
+        "raw_uri": "hf://datasets/cvml-nus/assembly101@bfc15ea5e3f0bc8f8c232af6c1b45aa137a9d967/recordings/nusar-2021_action_both_9061-c02a_9061_user_id_2021-02-09_141537/C10115_rgb.mp4",
+        "checksum_sha256": "b901175c00bdc00779616a7f2773dc91bb4697a2641568f0872256992aa531fb",
+        "dimensions": {
+          "schema_version": "1.0",
+          "width": 1920,
+          "height": 1080
+        },
+        "fps": 60,
+        "raw_frame_range": {
+          "schema_version": "1.0",
+          "start_frame": 22440,
+          "end_frame_exclusive": 27240
+        }
+      },
+      "proxy_uri": "data/derived/assembly101/nusar-2021_action_both_9061-c02a_9061_user_id_2021-02-09_141537/C10115_rgb_374.000-454.000_1280x720_30fps.mp4",
+      "checksum_sha256": "191fa9f9a37a08abe28023c465a9c1bb6d34840d6ec4f267b09bdcb83fcac6a7",
+      "dimensions": {
+        "schema_version": "1.0",
+        "width": 1280,
+        "height": 720
+      },
+      "fps": 30,
+      "frame_count": 2400,
+      "codec": "h264",
+      "crf": 18,
+      "preset": "medium",
+      "pixel_format": "yuv420p",
+      "has_audio": false
+    },
+    {
+      "schema_version": "1.0",
+      "view_id": "static-c10118",
+      "raw_source": {
+        "schema_version": "1.0",
+        "view_id": "static-c10118",
+        "raw_uri": "hf://datasets/cvml-nus/assembly101@bfc15ea5e3f0bc8f8c232af6c1b45aa137a9d967/recordings/nusar-2021_action_both_9061-c02a_9061_user_id_2021-02-09_141537/C10118_rgb.mp4",
+        "checksum_sha256": "83da90db44b642c0d6384b61afb0de22eb65a9181d809f50a1ecc2d7a816e62e",
+        "dimensions": {
+          "schema_version": "1.0",
+          "width": 1920,
+          "height": 1080
+        },
+        "fps": 60,
+        "raw_frame_range": {
+          "schema_version": "1.0",
+          "start_frame": 22440,
+          "end_frame_exclusive": 27240
+        }
+      },
+      "proxy_uri": "data/derived/assembly101/nusar-2021_action_both_9061-c02a_9061_user_id_2021-02-09_141537/C10118_rgb_374.000-454.000_1280x720_30fps.mp4",
+      "checksum_sha256": "a8deb2171a4a526bca928ba3d70621f190a784e023107d4d8eef5af292bc1b91",
+      "dimensions": {
+        "schema_version": "1.0",
+        "width": 1280,
+        "height": 720
+      },
+      "fps": 30,
+      "frame_count": 2400,
+      "codec": "h264",
+      "crf": 18,
+      "preset": "medium",
+      "pixel_format": "yuv420p",
+      "has_audio": false
+    },
+    {
+      "schema_version": "1.0",
+      "view_id": "static-c10119",
+      "raw_source": {
+        "schema_version": "1.0",
+        "view_id": "static-c10119",
+        "raw_uri": "hf://datasets/cvml-nus/assembly101@bfc15ea5e3f0bc8f8c232af6c1b45aa137a9d967/recordings/nusar-2021_action_both_9061-c02a_9061_user_id_2021-02-09_141537/C10119_rgb.mp4",
+        "checksum_sha256": "2f8848cd1099750f8edebf55cbc66859eb0114191f7e95b640ff6ff21de3cc64",
+        "dimensions": {
+          "schema_version": "1.0",
+          "width": 1920,
+          "height": 1080
+        },
+        "fps": 60,
+        "raw_frame_range": {
+          "schema_version": "1.0",
+          "start_frame": 22440,
+          "end_frame_exclusive": 27240
+        }
+      },
+      "proxy_uri": "data/derived/assembly101/nusar-2021_action_both_9061-c02a_9061_user_id_2021-02-09_141537/C10119_rgb_374.000-454.000_1280x720_30fps.mp4",
+      "checksum_sha256": "b51ddb71889f09b53315acfc9f6db4339f4e56cb72334403bc649eed96a92db0",
+      "dimensions": {
+        "schema_version": "1.0",
+        "width": 1280,
+        "height": 720
+      },
+      "fps": 30,
+      "frame_count": 2400,
+      "codec": "h264",
+      "crf": 18,
+      "preset": "medium",
+      "pixel_format": "yuv420p",
+      "has_audio": false
+    },
+    {
+      "schema_version": "1.0",
+      "view_id": "static-c10379",
+      "raw_source": {
+        "schema_version": "1.0",
+        "view_id": "static-c10379",
+        "raw_uri": "hf://datasets/cvml-nus/assembly101@bfc15ea5e3f0bc8f8c232af6c1b45aa137a9d967/recordings/nusar-2021_action_both_9061-c02a_9061_user_id_2021-02-09_141537/C10379_rgb.mp4",
+        "checksum_sha256": "d80d4136022bf188d69db7211da88dde316d7fd632fca4a108b50beaef2f7148",
+        "dimensions": {
+          "schema_version": "1.0",
+          "width": 1920,
+          "height": 1080
+        },
+        "fps": 60,
+        "raw_frame_range": {
+          "schema_version": "1.0",
+          "start_frame": 22440,
+          "end_frame_exclusive": 27240
+        }
+      },
+      "proxy_uri": "data/derived/assembly101/nusar-2021_action_both_9061-c02a_9061_user_id_2021-02-09_141537/C10379_rgb_374.000-454.000_1280x720_30fps.mp4",
+      "checksum_sha256": "399c769d2287d790b17c01f4374e73356bd168747715140983f0a64759d4f6a7",
+      "dimensions": {
+        "schema_version": "1.0",
+        "width": 1280,
+        "height": 720
+      },
+      "fps": 30,
+      "frame_count": 2400,
+      "codec": "h264",
+      "crf": 18,
+      "preset": "medium",
+      "pixel_format": "yuv420p",
+      "has_audio": false
+    },
+    {
+      "schema_version": "1.0",
+      "view_id": "static-c10390",
+      "raw_source": {
+        "schema_version": "1.0",
+        "view_id": "static-c10390",
+        "raw_uri": "hf://datasets/cvml-nus/assembly101@bfc15ea5e3f0bc8f8c232af6c1b45aa137a9d967/recordings/nusar-2021_action_both_9061-c02a_9061_user_id_2021-02-09_141537/C10390_rgb.mp4",
+        "checksum_sha256": "5c0c158ce5ce29add2f95d81627576b0e0cbd7d511fbabadabc4dae2dc84c48a",
+        "dimensions": {
+          "schema_version": "1.0",
+          "width": 1920,
+          "height": 1080
+        },
+        "fps": 60,
+        "raw_frame_range": {
+          "schema_version": "1.0",
+          "start_frame": 22440,
+          "end_frame_exclusive": 27240
+        }
+      },
+      "proxy_uri": "data/derived/assembly101/nusar-2021_action_both_9061-c02a_9061_user_id_2021-02-09_141537/C10390_rgb_374.000-454.000_1280x720_30fps.mp4",
+      "checksum_sha256": "f89aa9d21d51bc4e747f1ca1edd4a15fed6084b6a767498edc6e3f3d398e7ffc",
+      "dimensions": {
+        "schema_version": "1.0",
+        "width": 1280,
+        "height": 720
+      },
+      "fps": 30,
+      "frame_count": 2400,
+      "codec": "h264",
+      "crf": 18,
+      "preset": "medium",
+      "pixel_format": "yuv420p",
+      "has_audio": false
+    },
+    {
+      "schema_version": "1.0",
+      "view_id": "static-c10395",
+      "raw_source": {
+        "schema_version": "1.0",
+        "view_id": "static-c10395",
+        "raw_uri": "hf://datasets/cvml-nus/assembly101@bfc15ea5e3f0bc8f8c232af6c1b45aa137a9d967/recordings/nusar-2021_action_both_9061-c02a_9061_user_id_2021-02-09_141537/C10395_rgb.mp4",
+        "checksum_sha256": "185cae75c0c866f79a5c01bda5c841af940a47e2bede859e701aceca214924dd",
+        "dimensions": {
+          "schema_version": "1.0",
+          "width": 1920,
+          "height": 1080
+        },
+        "fps": 60,
+        "raw_frame_range": {
+          "schema_version": "1.0",
+          "start_frame": 22440,
+          "end_frame_exclusive": 27240
+        }
+      },
+      "proxy_uri": "data/derived/assembly101/nusar-2021_action_both_9061-c02a_9061_user_id_2021-02-09_141537/C10395_rgb_374.000-454.000_1280x720_30fps.mp4",
+      "checksum_sha256": "d45f522d020dcf0ba351890bcd7533b4a7c5f1b166ffb432fed168855ee5fdbc",
+      "dimensions": {
+        "schema_version": "1.0",
+        "width": 1280,
+        "height": 720
+      },
+      "fps": 30,
+      "frame_count": 2400,
+      "codec": "h264",
+      "crf": 18,
+      "preset": "medium",
+      "pixel_format": "yuv420p",
+      "has_audio": false
+    },
+    {
+      "schema_version": "1.0",
+      "view_id": "static-c10404",
+      "raw_source": {
+        "schema_version": "1.0",
+        "view_id": "static-c10404",
+        "raw_uri": "hf://datasets/cvml-nus/assembly101@bfc15ea5e3f0bc8f8c232af6c1b45aa137a9d967/recordings/nusar-2021_action_both_9061-c02a_9061_user_id_2021-02-09_141537/C10404_rgb.mp4",
+        "checksum_sha256": "ca3a869454ee49725c0062b02ac1c7e2e6d911adab9508d029d4a44e99a9ecdf",
+        "dimensions": {
+          "schema_version": "1.0",
+          "width": 1920,
+          "height": 1080
+        },
+        "fps": 60,
+        "raw_frame_range": {
+          "schema_version": "1.0",
+          "start_frame": 22440,
+          "end_frame_exclusive": 27240
+        }
+      },
+      "proxy_uri": "data/derived/assembly101/nusar-2021_action_both_9061-c02a_9061_user_id_2021-02-09_141537/C10404_rgb_374.000-454.000_1280x720_30fps.mp4",
+      "checksum_sha256": "b4eaa0d790d3a1aae0c09a409b50e46ef649cffbaf092b615e2ff0f4bcb7354b",
+      "dimensions": {
+        "schema_version": "1.0",
+        "width": 1280,
+        "height": 720
+      },
+      "fps": 30,
+      "frame_count": 2400,
+      "codec": "h264",
+      "crf": 18,
+      "preset": "medium",
+      "pixel_format": "yuv420p",
+      "has_audio": false
+    }
+  ],
+  "annotations_or_poses_downloaded_by_g2": false,
+  "annotations_or_poses_used_by_g2": false
+}
