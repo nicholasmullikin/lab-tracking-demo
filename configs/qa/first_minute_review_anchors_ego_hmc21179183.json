@@ -17,6 +17,54 @@
   "frames": [
     {
       "schema_version": "1.0",
+      "analysis_frame_index": 44,
+      "proxy_seconds": 1.4666666666666666,
+      "source_seconds": 295.46666666666664,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "extra_random",
+      "source_analysis_frame_index": 40,
+      "residual_pose_frames": -1
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 84,
+      "proxy_seconds": 2.8,
+      "source_seconds": 296.8,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "extra_random",
+      "source_analysis_frame_index": 80,
+      "residual_pose_frames": -1
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 224,
+      "proxy_seconds": 7.466666666666667,
+      "source_seconds": 301.46666666666664,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "extra_detector_selected",
+      "source_analysis_frame_index": 220,
+      "residual_pose_frames": -1
+    },
+    {
+      "schema_version": "1.0",
       "analysis_frame_index": 304,
       "proxy_seconds": 10.133333333333333,
       "source_seconds": 304.1333333333333,
@@ -65,6 +113,54 @@
     },
     {
       "schema_version": "1.0",
+      "analysis_frame_index": 484,
+      "proxy_seconds": 16.133333333333333,
+      "source_seconds": 310.1333333333333,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "extra_detector_selected",
+      "source_analysis_frame_index": 480,
+      "residual_pose_frames": -1
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 504,
+      "proxy_seconds": 16.8,
+      "source_seconds": 310.8,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "extra_detector_selected",
+      "source_analysis_frame_index": 500,
+      "residual_pose_frames": -1
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 554,
+      "proxy_seconds": 18.466666666666665,
+      "source_seconds": 312.46666666666664,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "extra_detector_selected",
+      "source_analysis_frame_index": 550,
+      "residual_pose_frames": -1
+    },
+    {
+      "schema_version": "1.0",
       "analysis_frame_index": 604,
       "proxy_seconds": 20.133333333333333,
       "source_seconds": 314.1333333333333,
@@ -109,6 +205,22 @@
       "note": null,
       "origin": "mapped_anchor",
       "source_analysis_frame_index": 700,
+      "residual_pose_frames": -1
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 864,
+      "proxy_seconds": 28.8,
+      "source_seconds": 322.8,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "extra_random",
+      "source_analysis_frame_index": 860,
       "residual_pose_frames": -1
     },
     {
@@ -193,6 +305,22 @@
     },
     {
       "schema_version": "1.0",
+      "analysis_frame_index": 1414,
+      "proxy_seconds": 47.13333333333333,
+      "source_seconds": 341.1333333333333,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "extra_random",
+      "source_analysis_frame_index": 1410,
+      "residual_pose_frames": -1
+    },
+    {
+      "schema_version": "1.0",
       "analysis_frame_index": 1504,
       "proxy_seconds": 50.13333333333333,
       "source_seconds": 344.1333333333333,
@@ -209,6 +337,38 @@
     },
     {
       "schema_version": "1.0",
+      "analysis_frame_index": 1544,
+      "proxy_seconds": 51.46666666666667,
+      "source_seconds": 345.4666666666667,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "extra_detector_selected",
+      "source_analysis_frame_index": 1540,
+      "residual_pose_frames": -1
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1654,
+      "proxy_seconds": 55.13333333333333,
+      "source_seconds": 349.1333333333333,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "extra_detector_selected",
+      "source_analysis_frame_index": 1650,
+      "residual_pose_frames": -1
+    },
+    {
+      "schema_version": "1.0",
       "analysis_frame_index": 1704,
       "proxy_seconds": 56.8,
       "source_seconds": 350.8,
@@ -221,6 +381,54 @@
       "note": null,
       "origin": "mapped_anchor",
       "source_analysis_frame_index": 1700,
+      "residual_pose_frames": -1
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1734,
+      "proxy_seconds": 57.8,
+      "source_seconds": 351.8,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "extra_detector_selected",
+      "source_analysis_frame_index": 1730,
+      "residual_pose_frames": -1
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1754,
+      "proxy_seconds": 58.46666666666667,
+      "source_seconds": 352.4666666666667,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "extra_detector_selected",
+      "source_analysis_frame_index": 1750,
+      "residual_pose_frames": -1
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1774,
+      "proxy_seconds": 59.13333333333333,
+      "source_seconds": 353.1333333333333,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "extra_random",
+      "source_analysis_frame_index": 1770,
       "residual_pose_frames": -1
     }
   ],
@@ -272,9 +480,9 @@
     "target_pose_offset_frames": 0,
     "analysis_frame_shift": 4,
     "convention": "target_frame = floor((source_pose_frame - target.proxy_start_raw_frame - target.pose_offset_frames) / target.raw_frames_per_proxy_frame); source_pose_frame = source_rule.pose_frame(source_frame); half frames round down so the mapped frame is never later than the C10379 frame; residual = target_pose_frame - source_pose_frame",
-    "extra_frames_source": null,
-    "extra_frames_pending": true,
-    "extra_frames_note": "no file matched runs/detector-scorecard-20260920/*/proposed_anchor_frames.json; rerun battle-anchor-frames-for-view once Track A has written its proposed_anchor_frames.json to append those frames"
+    "extra_frames_source": "runs/detector-scorecard-20260920/pm-append/proposed_anchor_frames.json",
+    "extra_frames_pending": false,
+    "extra_frames_note": null
   },
-  "workspace_timestamps": "10.133333,12.466667,13.466667,20.133333,21.800000,23.466667,30.133333,35.133333,36.800000,38.466667,40.133333,50.133333,56.800000"
+  "workspace_timestamps": "1.466667,2.800000,7.466667,10.133333,12.466667,13.466667,16.133333,16.800000,18.466667,20.133333,21.800000,23.466667,28.800000,30.133333,35.133333,36.800000,38.466667,40.133333,47.133333,50.133333,51.466667,55.133333,56.800000,57.800000,58.466667,59.133333"
 }

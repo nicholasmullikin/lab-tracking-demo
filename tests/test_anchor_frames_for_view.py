@@ -124,7 +124,24 @@ def test_read_extra_frames_accepts_the_common_shapes(tmp_path: Path) -> None:
     for payload in ([5, 3, 3], {"frames": [3, 5]}, [{"analysis_frame_index": 5}, {"frame": 3}]):
         path = tmp_path / "f.json"
         path.write_text(json.dumps(payload))
-        assert afv.read_extra_frames(path) == [3, 5]
+        assert afv.read_extra_frames(path) == {
+            3: "extra_detector_selected",
+            5: "extra_detector_selected",
+        }
+    # Track A's shape: records with a `selection`; random draws keep their own origin.
+    path = tmp_path / "proposed.json"
+    path.write_text(
+        json.dumps(
+            {
+                "frames": [
+                    {"analysis_frame_index": 220, "selection": "detector_ranked"},
+                    {"analysis_frame_index": 40, "selection": "random"},
+                    {"analysis_frame_index": 220, "selection": "random"},
+                ]
+            }
+        )
+    )
+    assert afv.read_extra_frames(path) == {40: "extra_random", 220: "extra_detector_selected"}
     (tmp_path / "bad.json").write_text(json.dumps({"other": 1}))
     with pytest.raises(ValueError):
         afv.read_extra_frames(tmp_path / "bad.json")

@@ -17,6 +17,54 @@
   "frames": [
     {
       "schema_version": "1.0",
+      "analysis_frame_index": 42,
+      "proxy_seconds": 1.4,
+      "source_seconds": 295.4,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "extra_random",
+      "source_analysis_frame_index": 40,
+      "residual_pose_frames": 0
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 82,
+      "proxy_seconds": 2.7333333333333334,
+      "source_seconds": 296.73333333333335,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "extra_random",
+      "source_analysis_frame_index": 80,
+      "residual_pose_frames": 0
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 222,
+      "proxy_seconds": 7.4,
+      "source_seconds": 301.4,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "extra_detector_selected",
+      "source_analysis_frame_index": 220,
+      "residual_pose_frames": 0
+    },
+    {
+      "schema_version": "1.0",
       "analysis_frame_index": 302,
       "proxy_seconds": 10.066666666666666,
       "source_seconds": 304.06666666666666,
@@ -65,6 +113,54 @@
     },
     {
       "schema_version": "1.0",
+      "analysis_frame_index": 482,
+      "proxy_seconds": 16.066666666666666,
+      "source_seconds": 310.06666666666666,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "extra_detector_selected",
+      "source_analysis_frame_index": 480,
+      "residual_pose_frames": 0
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 502,
+      "proxy_seconds": 16.733333333333334,
+      "source_seconds": 310.73333333333335,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "extra_detector_selected",
+      "source_analysis_frame_index": 500,
+      "residual_pose_frames": 0
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 552,
+      "proxy_seconds": 18.4,
+      "source_seconds": 312.4,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "extra_detector_selected",
+      "source_analysis_frame_index": 550,
+      "residual_pose_frames": 0
+    },
+    {
+      "schema_version": "1.0",
       "analysis_frame_index": 602,
       "proxy_seconds": 20.066666666666666,
       "source_seconds": 314.06666666666666,
@@ -109,6 +205,22 @@
       "note": null,
       "origin": "mapped_anchor",
       "source_analysis_frame_index": 700,
+      "residual_pose_frames": 0
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 862,
+      "proxy_seconds": 28.733333333333334,
+      "source_seconds": 322.73333333333335,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "extra_random",
+      "source_analysis_frame_index": 860,
       "residual_pose_frames": 0
     },
     {
@@ -193,6 +305,22 @@
     },
     {
       "schema_version": "1.0",
+      "analysis_frame_index": 1412,
+      "proxy_seconds": 47.06666666666667,
+      "source_seconds": 341.06666666666666,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "extra_random",
+      "source_analysis_frame_index": 1410,
+      "residual_pose_frames": 0
+    },
+    {
+      "schema_version": "1.0",
       "analysis_frame_index": 1502,
       "proxy_seconds": 50.06666666666667,
       "source_seconds": 344.06666666666666,
@@ -209,6 +337,38 @@
     },
     {
       "schema_version": "1.0",
+      "analysis_frame_index": 1542,
+      "proxy_seconds": 51.4,
+      "source_seconds": 345.4,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "extra_detector_selected",
+      "source_analysis_frame_index": 1540,
+      "residual_pose_frames": 0
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1652,
+      "proxy_seconds": 55.06666666666667,
+      "source_seconds": 349.06666666666666,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "extra_detector_selected",
+      "source_analysis_frame_index": 1650,
+      "residual_pose_frames": 0
+    },
+    {
+      "schema_version": "1.0",
       "analysis_frame_index": 1702,
       "proxy_seconds": 56.733333333333334,
       "source_seconds": 350.73333333333335,
@@ -221,6 +381,54 @@
       "note": null,
       "origin": "mapped_anchor",
       "source_analysis_frame_index": 1700,
+      "residual_pose_frames": 0
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1732,
+      "proxy_seconds": 57.733333333333334,
+      "source_seconds": 351.73333333333335,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "extra_detector_selected",
+      "source_analysis_frame_index": 1730,
+      "residual_pose_frames": 0
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1752,
+      "proxy_seconds": 58.4,
+      "source_seconds": 352.4,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "extra_detector_selected",
+      "source_analysis_frame_index": 1750,
+      "residual_pose_frames": 0
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1772,
+      "proxy_seconds": 59.06666666666667,
+      "source_seconds": 353.06666666666666,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "extra_random",
+      "source_analysis_frame_index": 1770,
       "residual_pose_frames": 0
     }
   ],
@@ -272,9 +480,9 @@
     "target_pose_offset_frames": 5,
     "analysis_frame_shift": 2,
     "convention": "target_frame = floor((source_pose_frame - target.proxy_start_raw_frame - target.pose_offset_frames) / target.raw_frames_per_proxy_frame); source_pose_frame = source_rule.pose_frame(source_frame); half frames round down so the mapped frame is never later than the C10379 frame; residual = target_pose_frame - source_pose_frame",
-    "extra_frames_source": null,
-    "extra_frames_pending": true,
-    "extra_frames_note": "no file matched runs/detector-scorecard-20260920/*/proposed_anchor_frames.json; rerun battle-anchor-frames-for-view once Track A has written its proposed_anchor_frames.json to append those frames"
+    "extra_frames_source": "runs/detector-scorecard-20260920/pm-append/proposed_anchor_frames.json",
+    "extra_frames_pending": false,
+    "extra_frames_note": null
   },
-  "workspace_timestamps": "10.066667,12.400000,13.400000,20.066667,21.733333,23.400000,30.066667,35.066667,36.733333,38.400000,40.066667,50.066667,56.733333"
+  "workspace_timestamps": "1.400000,2.733333,7.400000,10.066667,12.400000,13.400000,16.066667,16.733333,18.400000,20.066667,21.733333,23.400000,28.733333,30.066667,35.066667,36.733333,38.400000,40.066667,47.066667,50.066667,51.400000,55.066667,56.733333,57.733333,58.400000,59.066667"
 }

@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import glob
 import json
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -102,9 +103,12 @@ def analysis_frame_shift(
     return mapped_frame(source_rule, target_rule, 0)[0]
 
 
-def read_extra_frames(path: Path) -> list[int]:
+def read_extra_frames(path: Path) -> dict[int, FrameOrigin]:
     """Accept a bare list, `{"frames": [...]}`, `{"analysis_frame_indices": [...]}`, or a
-    list of `{"analysis_frame_index": n}` records; the frames are on the C10379 clock."""
+    list of `{"analysis_frame_index": n, "selection": ...}` records (Track A's
+    `proposed_anchor_frames.json`); the frames are on the C10379 clock. A record whose
+    `selection` starts with `random` is an `extra_random` frame, anything else
+    `extra_detector_selected`."""
     payload: Any = json.loads(path.read_text(encoding="utf-8"))
     if isinstance(payload, dict):
         for key in ("frames", "analysis_frame_indices", "proposed_anchor_frames"):
@@ -115,14 +119,19 @@ def read_extra_frames(path: Path) -> list[int]:
             raise ValueError(f"{path}: no frame list under frames/analysis_frame_indices")
     if not isinstance(payload, list):
         raise ValueError(f"{path}: expected a list of frames")
-    frames: list[int] = []
+    frames: dict[int, FrameOrigin] = {}
     for item in payload:
+        origin: FrameOrigin = "extra_detector_selected"
         if isinstance(item, dict):
+            if str(item.get("selection", "")).startswith("random"):
+                origin = "extra_random"
             item = item.get("analysis_frame_index", item.get("frame"))
         if not isinstance(item, int) or isinstance(item, bool) or item < 0:
             raise ValueError(f"{path}: frame entries must be non-negative integers")
-        frames.append(item)
-    return sorted(set(frames))
+        # A frame both detector-ranked and random keeps the detector label.
+        if frames.get(item) != "extra_detector_selected":
+            frames[item] = origin
+    return dict(sorted(frames.items()))
 
 
 def build_view_config(
@@ -135,7 +144,7 @@ def build_view_config(
     manual_seed_target_config: str,
     source_config_fingerprint: ArtifactFingerprint,
     clock_rules_fingerprint: ArtifactFingerprint,
-    extra_frames: list[int] | None = None,
+    extra_frames: Mapping[int, FrameOrigin] | Iterable[int] | None = None,
     extra_frames_source: str | None = None,
     extra_frames_note: str | None = None,
 ) -> ReviewAnchorConfig:
@@ -182,8 +191,13 @@ def build_view_config(
 
     for frame in source.frames:
         add(frame.analysis_frame_index, "mapped_anchor", frame)
-    for extra in extra_frames or []:
-        add(extra, "extra_detector_selected", None)
+    extras: Mapping[int, FrameOrigin] = (
+        extra_frames
+        if isinstance(extra_frames, Mapping)
+        else dict.fromkeys(extra_frames or [], "extra_detector_selected")
+    )
+    for extra, origin in extras.items():
+        add(extra, origin, None)
     frames.sort(key=lambda f: f.analysis_frame_index)
     windows = {name: (low + shift, high + shift) for name, (low, high) in source.windows.items()}
     mapping = AnchorFrameMapping(
@@ -280,15 +294,16 @@ def main() -> None:
     rules = load_clock_rules(root, args.clock_rules)
     source_rule = rules.views[SOURCE_VIEW].clock_rule
     assert source_rule is not None
-    extra_frames: list[int] = []
+    extra_frames: dict[int, FrameOrigin] = {}
     extra_source: str | None = None
     extra_note: str | None = None
     if not args.no_extra_frames:
         matches = sorted(glob.glob(str(root / args.extra_frames)))
         if matches:
             for match in matches:
-                extra_frames.extend(read_extra_frames(Path(match)))
-            extra_frames = sorted(set(extra_frames))
+                for frame, origin in read_extra_frames(Path(match)).items():
+                    if extra_frames.get(frame) != "extra_detector_selected":
+                        extra_frames[frame] = origin
             extra_source = "; ".join(relative_uri(Path(m).resolve(), root) for m in matches)
         else:
             extra_note = (

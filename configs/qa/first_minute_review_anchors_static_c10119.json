@@ -17,6 +17,54 @@
   "frames": [
     {
       "schema_version": "1.0",
+      "analysis_frame_index": 41,
+      "proxy_seconds": 1.3666666666666667,
+      "source_seconds": 295.3666666666667,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "extra_random",
+      "source_analysis_frame_index": 40,
+      "residual_pose_frames": 0
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 81,
+      "proxy_seconds": 2.7,
+      "source_seconds": 296.7,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "extra_random",
+      "source_analysis_frame_index": 80,
+      "residual_pose_frames": 0
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 221,
+      "proxy_seconds": 7.366666666666666,
+      "source_seconds": 301.3666666666667,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "extra_detector_selected",
+      "source_analysis_frame_index": 220,
+      "residual_pose_frames": 0
+    },
+    {
+      "schema_version": "1.0",
       "analysis_frame_index": 301,
       "proxy_seconds": 10.033333333333333,
       "source_seconds": 304.03333333333336,
@@ -65,6 +113,54 @@
     },
     {
       "schema_version": "1.0",
+      "analysis_frame_index": 481,
+      "proxy_seconds": 16.033333333333335,
+      "source_seconds": 310.03333333333336,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "extra_detector_selected",
+      "source_analysis_frame_index": 480,
+      "residual_pose_frames": 0
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 501,
+      "proxy_seconds": 16.7,
+      "source_seconds": 310.7,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "extra_detector_selected",
+      "source_analysis_frame_index": 500,
+      "residual_pose_frames": 0
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 551,
+      "proxy_seconds": 18.366666666666667,
+      "source_seconds": 312.3666666666667,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "extra_detector_selected",
+      "source_analysis_frame_index": 550,
+      "residual_pose_frames": 0
+    },
+    {
+      "schema_version": "1.0",
       "analysis_frame_index": 601,
       "proxy_seconds": 20.033333333333335,
       "source_seconds": 314.03333333333336,
@@ -109,6 +205,22 @@
       "note": null,
       "origin": "mapped_anchor",
       "source_analysis_frame_index": 700,
+      "residual_pose_frames": 0
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 861,
+      "proxy_seconds": 28.7,
+      "source_seconds": 322.7,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "extra_random",
+      "source_analysis_frame_index": 860,
       "residual_pose_frames": 0
     },
     {
@@ -193,6 +305,22 @@
     },
     {
       "schema_version": "1.0",
+      "analysis_frame_index": 1411,
+      "proxy_seconds": 47.03333333333333,
+      "source_seconds": 341.0333333333333,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "extra_random",
+      "source_analysis_frame_index": 1410,
+      "residual_pose_frames": 0
+    },
+    {
+      "schema_version": "1.0",
       "analysis_frame_index": 1501,
       "proxy_seconds": 50.03333333333333,
       "source_seconds": 344.0333333333333,
@@ -209,6 +337,38 @@
     },
     {
       "schema_version": "1.0",
+      "analysis_frame_index": 1541,
+      "proxy_seconds": 51.36666666666667,
+      "source_seconds": 345.3666666666667,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "extra_detector_selected",
+      "source_analysis_frame_index": 1540,
+      "residual_pose_frames": 0
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1651,
+      "proxy_seconds": 55.03333333333333,
+      "source_seconds": 349.0333333333333,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "extra_detector_selected",
+      "source_analysis_frame_index": 1650,
+      "residual_pose_frames": 0
+    },
+    {
+      "schema_version": "1.0",
       "analysis_frame_index": 1701,
       "proxy_seconds": 56.7,
       "source_seconds": 350.7,
@@ -221,6 +381,54 @@
       "note": null,
       "origin": "mapped_anchor",
       "source_analysis_frame_index": 1700,
+      "residual_pose_frames": 0
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1731,
+      "proxy_seconds": 57.7,
+      "source_seconds": 351.7,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "extra_detector_selected",
+      "source_analysis_frame_index": 1730,
+      "residual_pose_frames": 0
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1751,
+      "proxy_seconds": 58.36666666666667,
+      "source_seconds": 352.3666666666667,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "extra_detector_selected",
+      "source_analysis_frame_index": 1750,
+      "residual_pose_frames": 0
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1771,
+      "proxy_seconds": 59.03333333333333,
+      "source_seconds": 353.0333333333333,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "extra_random",
+      "source_analysis_frame_index": 1770,
       "residual_pose_frames": 0
     }
   ],
@@ -272,9 +480,9 @@
     "target_pose_offset_frames": 7,
     "analysis_frame_shift": 1,
     "convention": "target_frame = floor((source_pose_frame - target.proxy_start_raw_frame - target.pose_offset_frames) / target.raw_frames_per_proxy_frame); source_pose_frame = source_rule.pose_frame(source_frame); half frames round down so the mapped frame is never later than the C10379 frame; residual = target_pose_frame - source_pose_frame",
-    "extra_frames_source": null,
-    "extra_frames_pending": true,
-    "extra_frames_note": "no file matched runs/detector-scorecard-20260920/*/proposed_anchor_frames.json; rerun battle-anchor-frames-for-view once Track A has written its proposed_anchor_frames.json to append those frames"
+    "extra_frames_source": "runs/detector-scorecard-20260920/pm-append/proposed_anchor_frames.json",
+    "extra_frames_pending": false,
+    "extra_frames_note": null
   },
-  "workspace_timestamps": "10.033333,12.366667,13.366667,20.033333,21.700000,23.366667,30.033333,35.033333,36.700000,38.366667,40.033333,50.033333,56.700000"
+  "workspace_timestamps": "1.366667,2.700000,7.366667,10.033333,12.366667,13.366667,16.033333,16.700000,18.366667,20.033333,21.700000,23.366667,28.700000,30.033333,35.033333,36.700000,38.366667,40.033333,47.033333,50.033333,51.366667,55.033333,56.700000,57.700000,58.366667,59.033333"
 }
