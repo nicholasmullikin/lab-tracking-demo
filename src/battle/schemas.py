@@ -583,6 +583,95 @@ class TrackerMemoryPolicy(VersionedModel):
         ]
 
 
+CorrectionMemorySemantics = Literal[
+    "replace_prompt_memory_and_reset_frame_memory",
+    "append_prompt_memory_and_reset_frame_memory",
+    "append_prompt_memory_and_keep_frame_memory",
+    "replace_prompt_memory_and_keep_frame_memory",
+]
+
+# MuggledSAM's SAM3 memory fusion has learned position offsets for six frame-memory entries;
+# a larger bank runs, but the older entries share the sixth offset.
+TRAINED_MAX_FRAME_MEMORY_ENTRIES = 6
+
+
+class CorrectionMemorySettings(VersionedModel):
+    """The worker's memory-bank condition: what a correction does and how big the banks are.
+
+    Recorded in every run's runtime settings, default or not.  The defaults reproduce the
+    runs made before the flags existed (one replaced prompt entry, frame memory cleared at
+    a correction, frame memories declared oldest-first).  It is a run condition, not an
+    accuracy claim.
+    """
+
+    prompt_memory_semantics: Literal["replace", "append"] = "replace"
+    max_prompt_memory_entries: int = Field(ge=1)
+    max_frame_memory_entries: int = Field(default=4, ge=1)
+    keep_frame_memory_at_correction: bool = False
+    is_recent_first: bool = False
+
+    @model_validator(mode="after")
+    def require_one_entry_for_replace(self) -> CorrectionMemorySettings:
+        if self.prompt_memory_semantics == "replace" and self.max_prompt_memory_entries != 1:
+            raise ValueError("replace semantics keeps exactly one prompt memory entry")
+        return self
+
+    @classmethod
+    def default_prompt_memory_entries(cls, prompt_memory_semantics: str) -> int:
+        return 32 if prompt_memory_semantics == "append" else 1
+
+    @property
+    def correction_memory_semantics(self) -> str:
+        frame_action = "keep" if self.keep_frame_memory_at_correction else "reset"
+        return f"{self.prompt_memory_semantics}_prompt_memory_and_{frame_action}_frame_memory"
+
+    @property
+    def frame_memory_position_encoding(self) -> str:
+        if self.max_frame_memory_entries > TRAINED_MAX_FRAME_MEMORY_ENTRIES:
+            return "clamped_beyond_6"
+        return "within_trained_range"
+
+    def is_default_except_frame_memory(self) -> bool:
+        return (
+            self.prompt_memory_semantics == "replace"
+            and self.max_prompt_memory_entries == 1
+            and not self.keep_frame_memory_at_correction
+            and not self.is_recent_first
+        )
+
+    def run_id_suffix(self, *, reference_frame_memory_entries: int | None = None) -> str:
+        """Short arm label for run ids: empty for the default condition."""
+        parts = []
+        if (
+            reference_frame_memory_entries is not None
+            and self.max_frame_memory_entries != reference_frame_memory_entries
+        ):
+            parts.append(f"fm{self.max_frame_memory_entries}")
+        if self.prompt_memory_semantics != "replace":
+            parts.append(f"pm-{self.prompt_memory_semantics}")
+            if self.max_prompt_memory_entries != self.default_prompt_memory_entries(
+                self.prompt_memory_semantics
+            ):
+                parts.append(f"pm{self.max_prompt_memory_entries}")
+        if self.keep_frame_memory_at_correction:
+            parts.append("keepfm")
+        if self.is_recent_first:
+            parts.append("recent-first")
+        return "-".join(parts)
+
+    def worker_arguments(self) -> list[str]:
+        """Worker flags for the non-default settings; `--max-frame-memory` is passed separately."""
+        arguments: list[str] = []
+        if self.prompt_memory_semantics != "replace":
+            arguments.extend(["--prompt-memory-semantics", self.prompt_memory_semantics])
+            arguments.extend(["--max-prompt-memory", str(self.max_prompt_memory_entries)])
+        if self.keep_frame_memory_at_correction:
+            arguments.append("--keep-frame-memory-at-correction")
+        if self.is_recent_first:
+            arguments.append("--recent-first")
+        return arguments
+
+
 class FrameObservations(VersionedModel):
     view_id: str = Field(min_length=1)
     analysis_frame_index: int = Field(ge=0)
@@ -1423,15 +1512,28 @@ class MultiKeyframeCorrectionScheduleMetadata(VersionedModel):
 
     schedule_fingerprint: ArtifactFingerprint
     correction_policy_fingerprint: ArtifactFingerprint
-    correction_memory_semantics: Literal["replace_prompt_memory_and_reset_frame_memory"]
+    # The semantics the worker ran with.  Authored schedules only ever declare
+    # `replace_prompt_memory_and_reset_frame_memory`; a memory arm overrides it from the CLI.
+    correction_memory_semantics: CorrectionMemorySemantics
     scheduled_correction_frame_indices: tuple[int, ...] = ()
     # Frames whose correction masks were chosen by agent visual review rather than a human.
     agent_selected_correction_frame_indices: tuple[int, ...] = ()
     # Later corrections the run deliberately did not apply: those past a bounded frame range,
-    # or all of them when the run was asked to track from the frame-0 seeds alone.
+    # those named by `--drop-correction-frame`, or all of them when the run was asked to
+    # track from the frame-0 seeds alone.
     dropped_correction_frame_indices: tuple[int, ...] = ()
+    # The subset of `dropped_correction_frame_indices` dropped by explicit CLI request.
+    cli_dropped_correction_frame_indices: tuple[int, ...] = ()
     frame_zero_seeds_only: bool = False
     ground_truth_accuracy_claim: Literal[False] = False
+
+    @model_validator(mode="after")
+    def require_cli_drops_among_dropped(self) -> MultiKeyframeCorrectionScheduleMetadata:
+        if not set(self.cli_dropped_correction_frame_indices) <= set(
+            self.dropped_correction_frame_indices
+        ):
+            raise ValueError("CLI-dropped correction frames must be listed among the dropped")
+        return self
 
 
 class MuggledSAMProposedTrackingPromptConfig(VersionedModel):

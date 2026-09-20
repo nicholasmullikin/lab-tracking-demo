@@ -23,6 +23,18 @@ MASK_PERIOD_FRAMES = 1
 MAX_FRAMES = 300
 MAX_FRAME_MEMORY = 4
 MAX_PROMPT_MEMORY = 1
+# Correction memory semantics.  Every default reproduces the runs made before the flags
+# existed: one replaced prompt entry, frame memory cleared at a correction, frame memories
+# handed to the fusion model oldest-first (so `is_recent_first` is False).
+PROMPT_MEMORY_SEMANTICS = ("replace", "append")
+DEFAULT_PROMPT_MEMORY_SEMANTICS = "replace"
+APPEND_PROMPT_MEMORY_DEFAULT_ENTRIES = 32
+KEEP_FRAME_MEMORY_AT_CORRECTION = False
+IS_RECENT_FIRST = False
+# MuggledSAM's SAM3 memory fusion has learned position offsets for six frame-memory entries
+# (`memory_image_fusion_model.py`: `max_memory_history = 6`); older deltas are clamped onto
+# the sixth, so a larger bank runs but with a position encoding the model never trained on.
+TRAINED_MAX_FRAME_MEMORY = 6
 MAX_SIDE_LENGTH = 504
 ANALYSIS_FPS = 30.0
 # Bumped whenever the saved tracker state stops being loadable by this worker.
@@ -74,6 +86,7 @@ def _prepare_frame(frame: Any, args: argparse.Namespace) -> Any:
 
 def _runtime_settings(args: argparse.Namespace, concepts: tuple[str, ...]) -> dict[str, Any]:
     """Persist the condition definition beside the worker measurements."""
+    memory = memory_settings_from_args(args)
     settings: dict[str, Any] = {
         "device": "cuda:0",
         "dtype": "bfloat16",
@@ -86,8 +99,24 @@ def _runtime_settings(args: argparse.Namespace, concepts: tuple[str, ...]) -> di
             f"{BOX_COMPONENT_KEEP_FRACTION:g} of the largest; smaller components are ignored"
         ),
         "box_component_keep_fraction": BOX_COMPONENT_KEEP_FRACTION,
-        "max_prompt_memory_entries": MAX_PROMPT_MEMORY,
-        "max_frame_memory_entries": MAX_FRAME_MEMORY,
+        "max_prompt_memory_entries": memory["max_prompt_memory"],
+        "max_frame_memory_entries": memory["max_frame_memory"],
+        "prompt_memory_semantics": memory["prompt_memory_semantics"],
+        "keep_frame_memory_at_correction": memory["keep_frame_memory_at_correction"],
+        "is_recent_first": memory["is_recent_first"],
+        "is_recent_first_semantics": (
+            "the worker appends frame memories oldest-to-newest; is_recent_first is the "
+            "ordering the fusion model is told to assume, so True reverses the temporal "
+            "position encoding of the frame memories and object pointers (the oldest entry "
+            "is encoded as the most recent). It does not reorder the memory bank."
+        ),
+        "frame_memory_position_encoding": frame_memory_position_encoding(
+            memory["max_frame_memory"]
+        ),
+        "correction_memory_semantics": correction_memory_semantics(
+            prompt_memory_semantics=memory["prompt_memory_semantics"],
+            keep_frame_memory_at_correction=memory["keep_frame_memory_at_correction"],
+        ),
         "chunking": "none; one continuous tracker stream",
         "intentional_id_resets": False,
         "concepts": list(concepts),
@@ -189,7 +218,8 @@ def _runtime_settings(args: argparse.Namespace, concepts: tuple[str, ...]) -> di
         }
         settings["initialization_api"] = "encode_prompt_memory_from_mask"
         settings["correction_api"] = "encode_prompt_memory_from_mask"
-        settings["correction_memory_semantics"] = schedule["memory_semantics"]
+        # `correction_memory_semantics` is derived from the flags above; `_corrections_by_frame`
+        # refuses a schedule payload that declares anything else.
         settings["initial_confidence_semantics"] = (
             "1.0 marks a human-selected initialization/correction mask"
             + (
@@ -492,11 +522,21 @@ def _ordered_hybrid_initial_masks(
 
 
 def _corrections_by_frame(
-    schedule: dict[str, Any], concepts: tuple[str, ...]
+    schedule: dict[str, Any],
+    concepts: tuple[str, ...],
+    *,
+    memory_semantics: str = "replace_prompt_memory_and_reset_frame_memory",
 ) -> dict[int, list[dict[str, Any]]]:
-    """Validate worker payload slots before grouping optional later corrections."""
-    if schedule.get("memory_semantics") != "replace_prompt_memory_and_reset_frame_memory":
-        raise ValueError("unsupported correction memory semantics")
+    """Validate worker payload slots before grouping optional later corrections.
+
+    The payload must declare the semantics this worker is configured to run, so a driver
+    cannot hand a replace-semantics schedule to an append-semantics worker unnoticed.
+    """
+    if schedule.get("memory_semantics") != memory_semantics:
+        raise ValueError(
+            f"unsupported correction memory semantics {schedule.get('memory_semantics')!r}; "
+            f"this worker is configured for {memory_semantics!r}"
+        )
     _validate_manual_seed_slots(list(schedule.get("seeds", [])), concepts)
     grouped: dict[int, list[dict[str, Any]]] = {}
     seen: set[tuple[int, int]] = set()
@@ -527,6 +567,142 @@ def _read_verified_mask(path: str, expected_sha256: str, frame_shape: tuple[int,
     return binary_mask
 
 
+def correction_memory_semantics(
+    *, prompt_memory_semantics: str, keep_frame_memory_at_correction: bool
+) -> str:
+    """Name what a correction does to the two memory banks, as recorded in every manifest."""
+    if prompt_memory_semantics not in PROMPT_MEMORY_SEMANTICS:
+        raise ValueError(f"unknown prompt memory semantics {prompt_memory_semantics!r}")
+    frame_action = "keep" if keep_frame_memory_at_correction else "reset"
+    return f"{prompt_memory_semantics}_prompt_memory_and_{frame_action}_frame_memory"
+
+
+def default_max_prompt_memory(prompt_memory_semantics: str) -> int:
+    """One replaced entry today; the demo's 32-entry bank when corrections are appended."""
+    if prompt_memory_semantics not in PROMPT_MEMORY_SEMANTICS:
+        raise ValueError(f"unknown prompt memory semantics {prompt_memory_semantics!r}")
+    return (
+        APPEND_PROMPT_MEMORY_DEFAULT_ENTRIES
+        if prompt_memory_semantics == "append"
+        else MAX_PROMPT_MEMORY
+    )
+
+
+def frame_memory_position_encoding(max_frame_memory: int) -> str:
+    """Say whether every frame-memory entry gets a position offset the model was trained with."""
+    if max_frame_memory > TRAINED_MAX_FRAME_MEMORY:
+        return "clamped_beyond_6"
+    return "within_trained_range"
+
+
+def memory_settings_from_args(args: argparse.Namespace) -> dict[str, Any]:
+    """Read the memory-bank condition as one plain record, so it can be logged and compared.
+
+    Missing attributes fall back to the pre-flag behaviour, which is also how a checkpoint
+    written before these settings existed is interpreted on resume.
+    """
+    semantics = getattr(args, "prompt_memory_semantics", DEFAULT_PROMPT_MEMORY_SEMANTICS)
+    if semantics not in PROMPT_MEMORY_SEMANTICS:
+        raise ValueError(f"unknown prompt memory semantics {semantics!r}")
+    max_prompt_memory = getattr(args, "max_prompt_memory", None)
+    if max_prompt_memory is None:
+        max_prompt_memory = default_max_prompt_memory(semantics)
+    if int(max_prompt_memory) < 1:
+        raise ValueError("max prompt memory must be at least 1")
+    if semantics == "replace" and int(max_prompt_memory) != MAX_PROMPT_MEMORY:
+        raise ValueError(
+            "replace semantics keeps exactly one prompt memory entry; "
+            f"got max prompt memory {max_prompt_memory}"
+        )
+    return {
+        "prompt_memory_semantics": semantics,
+        "max_prompt_memory": int(max_prompt_memory),
+        "max_frame_memory": int(getattr(args, "max_frame_memory", MAX_FRAME_MEMORY)),
+        "keep_frame_memory_at_correction": bool(
+            getattr(args, "keep_frame_memory_at_correction", KEEP_FRAME_MEMORY_AT_CORRECTION)
+        ),
+        "is_recent_first": bool(getattr(args, "recent_first", IS_RECENT_FIRST)),
+    }
+
+
+def memory_settings_are_default(settings: dict[str, Any]) -> bool:
+    """True when the run is byte-identical to one made before the memory flags existed."""
+    return (
+        settings["prompt_memory_semantics"] == DEFAULT_PROMPT_MEMORY_SEMANTICS
+        and settings["max_prompt_memory"] == MAX_PROMPT_MEMORY
+        and settings["keep_frame_memory_at_correction"] is KEEP_FRAME_MEMORY_AT_CORRECTION
+        and settings["is_recent_first"] is IS_RECENT_FIRST
+    )
+
+
+# Checkpoint keys added with the memory flags, and how a checkpoint written without them
+# is read: every one of these means "the behaviour before the flag existed".
+LEGACY_CHECKPOINT_MEMORY_SETTINGS: dict[str, Any] = {
+    "prompt_memory_semantics": DEFAULT_PROMPT_MEMORY_SEMANTICS,
+    "max_prompt_memory": MAX_PROMPT_MEMORY,
+    "keep_frame_memory_at_correction": KEEP_FRAME_MEMORY_AT_CORRECTION,
+    "is_recent_first": IS_RECENT_FIRST,
+}
+
+
+def check_checkpoint_memory_settings(checkpoint: dict[str, Any], settings: dict[str, Any]) -> None:
+    """Refuse to resume a checkpoint into a run with a different memory-bank condition.
+
+    A resumed stream must continue exactly as it would have run unbroken, so every memory
+    setting has to match.  `max_frame_memory` has always been stored; the newer keys are
+    read with their pre-flag defaults so older checkpoints still resume into default runs.
+    """
+    if checkpoint["max_frame_memory"] != settings["max_frame_memory"]:
+        raise ValueError(
+            f"checkpoint holds {checkpoint['max_frame_memory']} frame-memory entries; "
+            f"this run is configured for {settings['max_frame_memory']}"
+        )
+    for key, legacy_value in LEGACY_CHECKPOINT_MEMORY_SETTINGS.items():
+        stored = checkpoint.get(key, legacy_value)
+        if stored != settings[key]:
+            raise ValueError(
+                f"checkpoint was written with {key}={stored!r}; "
+                f"this run is configured for {settings[key]!r}"
+            )
+
+
+def build_memory_banks(
+    *,
+    prompt_memories: list[Any],
+    frame_memories: list[Any],
+    max_prompt_memory: int,
+    max_frame_memory: int,
+) -> tuple[deque[Any], deque[Any]]:
+    """Bounded prompt and frame banks; the oldest entry falls off when either is full."""
+    return (
+        deque(prompt_memories, maxlen=max_prompt_memory),
+        deque(frame_memories, maxlen=max_frame_memory),
+    )
+
+
+def apply_correction_to_memory(
+    *,
+    prompt_memories: deque[Any],
+    frame_memories: deque[Any],
+    correction_memory: Any,
+    prompt_memory_semantics: str = DEFAULT_PROMPT_MEMORY_SEMANTICS,
+    keep_frame_memory_at_correction: bool = KEEP_FRAME_MEMORY_AT_CORRECTION,
+) -> None:
+    """Install one freshly encoded correction prompt memory under the configured semantics.
+
+    ``replace`` drops every earlier prompt entry (the seed included) so the corrected frame
+    is the only prompt; ``append`` keeps the seed and every earlier correction as a bank and
+    lets the deque bound evict the oldest.  Frame memory is cleared unless asked to keep it.
+    """
+    if prompt_memory_semantics not in PROMPT_MEMORY_SEMANTICS:
+        raise ValueError(f"unknown prompt memory semantics {prompt_memory_semantics!r}")
+    if prompt_memory_semantics == "replace":
+        prompt_memories.clear()
+    prompt_memories.append(correction_memory)
+    if not keep_frame_memory_at_correction:
+        frame_memories.clear()
+
+
 def _replace_prompt_memory_for_correction(
     *,
     predicted_source_masks: Any,
@@ -535,8 +711,10 @@ def _replace_prompt_memory_for_correction(
     frame_memories: deque[Any],
     encoded_frame: Any,
     encode_prompt_memory_from_mask: Any,
+    prompt_memory_semantics: str = DEFAULT_PROMPT_MEMORY_SEMANTICS,
+    keep_frame_memory_at_correction: bool = KEEP_FRAME_MEMORY_AT_CORRECTION,
 ) -> Any:
-    """Replace the one prompt entry and automatic history using a full multiplex mask batch."""
+    """Encode a corrected full multiplex mask batch as prompt memory and install it."""
     if predicted_source_masks.shape[0] == 0:
         raise ValueError("cannot apply a correction without multiplex predictions")
     rebased_masks = predicted_source_masks.copy()
@@ -544,10 +722,14 @@ def _replace_prompt_memory_for_correction(
         if slot < 0 or slot >= rebased_masks.shape[0] or mask.shape != rebased_masks.shape[1:]:
             raise ValueError("correction mask does not match the multiplex source-mask shape")
         rebased_masks[slot] = mask
-    replacement_memory = encode_prompt_memory_from_mask(encoded_frame, rebased_masks)
-    prompt_memories.clear()
-    prompt_memories.append(replacement_memory)
-    frame_memories.clear()
+    correction_memory = encode_prompt_memory_from_mask(encoded_frame, rebased_masks)
+    apply_correction_to_memory(
+        prompt_memories=prompt_memories,
+        frame_memories=frame_memories,
+        correction_memory=correction_memory,
+        prompt_memory_semantics=prompt_memory_semantics,
+        keep_frame_memory_at_correction=keep_frame_memory_at_correction,
+    )
     return rebased_masks
 
 
@@ -731,6 +913,11 @@ def run(args: argparse.Namespace) -> int:
         )
     ):
         raise ValueError("hybrid initialization cannot be combined with another prompt payload")
+    memory_settings = memory_settings_from_args(args)
+    effective_memory_semantics = correction_memory_semantics(
+        prompt_memory_semantics=memory_settings["prompt_memory_semantics"],
+        keep_frame_memory_at_correction=memory_settings["keep_frame_memory_at_correction"],
+    )
     runtime_settings = _runtime_settings(args, concepts)
     start = perf_counter()
     gpu_processes = _gpu_processes()
@@ -836,15 +1023,13 @@ def run(args: argparse.Namespace) -> int:
                 raise ValueError(
                     f"checkpoint format {resumed.get('format')!r} is not {CHECKPOINT_FORMAT!r}"
                 )
+            # Memory settings are compared first so a mismatch names the setting instead
+            # of failing as an anonymous identity difference.
+            check_checkpoint_memory_settings(resumed, memory_settings)
             if resumed["stream_identity"] != stream_identity(args, concepts):
                 raise ValueError(
                     "checkpoint was produced by a different stream: the video, model, encoder "
                     "settings, preprocessing, or initialization does not match this run"
-                )
-            if resumed["max_frame_memory"] != MAX_FRAME_MEMORY:
-                raise ValueError(
-                    f"checkpoint holds {resumed['max_frame_memory']} frame-memory entries; "
-                    f"this run is configured for {MAX_FRAME_MEMORY}"
                 )
         start_frame = 1 if resumed is None else int(resumed["frame_index"])
         if start_frame >= MAX_FRAMES:
@@ -898,7 +1083,11 @@ def run(args: argparse.Namespace) -> int:
             )
             _validate_manual_seed_slots(seed_records, concepts)
             correction_schedule = (
-                _corrections_by_frame(multi_keyframe_schedule, concepts)
+                _corrections_by_frame(
+                    multi_keyframe_schedule,
+                    concepts,
+                    memory_semantics=effective_memory_semantics,
+                )
                 if multi_keyframe_schedule is not None
                 else {}
             )
@@ -1010,8 +1199,13 @@ def run(args: argparse.Namespace) -> int:
                     "slots": [(index, concept) for index, concept, *_ in initial_masks],
                     "prompt_memories": list(prompt_memories),
                     "frame_memories": list(frame_memories),
-                    "max_prompt_memory": MAX_PROMPT_MEMORY,
-                    "max_frame_memory": MAX_FRAME_MEMORY,
+                    "max_prompt_memory": memory_settings["max_prompt_memory"],
+                    "max_frame_memory": memory_settings["max_frame_memory"],
+                    "prompt_memory_semantics": memory_settings["prompt_memory_semantics"],
+                    "keep_frame_memory_at_correction": memory_settings[
+                        "keep_frame_memory_at_correction"
+                    ],
+                    "is_recent_first": memory_settings["is_recent_first"],
                     "tracker_memory_policy": policy,
                     "gate_area_history": [list(entries) for entries in gate_area_history],
                 },
@@ -1036,12 +1230,15 @@ def run(args: argparse.Namespace) -> int:
                     first_usable = perf_counter() - start
 
             if initial_masks:
-                if resumed is None:
-                    prompt_memories = deque([initial_memory], maxlen=MAX_PROMPT_MEMORY)
-                    frame_memories = deque([], maxlen=MAX_FRAME_MEMORY)
-                else:
-                    prompt_memories = deque(resumed["prompt_memories"], maxlen=MAX_PROMPT_MEMORY)
-                    frame_memories = deque(resumed["frame_memories"], maxlen=MAX_FRAME_MEMORY)
+                prompt_memories, frame_memories = build_memory_banks(
+                    prompt_memories=(
+                        [initial_memory] if resumed is None else resumed["prompt_memories"]
+                    ),
+                    frame_memories=[] if resumed is None else resumed["frame_memories"],
+                    max_prompt_memory=memory_settings["max_prompt_memory"],
+                    max_frame_memory=memory_settings["max_frame_memory"],
+                )
+                if resumed is not None:
                     # Decode, without encoding, up to the resumed frame: seeking a
                     # long-GOP proxy by index is not frame-exact in every backend.
                     for _ in range(1, start_frame):
@@ -1063,6 +1260,7 @@ def run(args: argparse.Namespace) -> int:
                         encoded,
                         prompt_memories,
                         frame_memories,
+                        is_recent_first=memory_settings["is_recent_first"],
                         num_multiplex_objects=len(initial_masks),
                     )
                     active = scores > 0
@@ -1118,6 +1316,10 @@ def run(args: argparse.Namespace) -> int:
                             frame_memories=frame_memories,
                             encoded_frame=encoded,
                             encode_prompt_memory_from_mask=tracking.encode_prompt_memory_from_mask,
+                            prompt_memory_semantics=memory_settings["prompt_memory_semantics"],
+                            keep_frame_memory_at_correction=memory_settings[
+                                "keep_frame_memory_at_correction"
+                            ],
                         )
                     elif bool(active.any()):
                         frame_memories.append(
@@ -1288,6 +1490,12 @@ def stream_identity(args: argparse.Namespace, concepts: tuple[str, ...]) -> str:
     policy = memory_policy_from_args(args)
     if not memory_policy_is_default(policy):
         payload["tracker_memory_policy"] = policy
+    # Likewise for the memory-bank flags: only a non-default condition joins the identity.
+    memory = memory_settings_from_args(args)
+    if not memory_settings_are_default(memory):
+        payload["memory_settings"] = {
+            key: value for key, value in memory.items() if key != "max_frame_memory"
+        }
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 
@@ -1317,9 +1525,7 @@ def checkpoint_frames(
     return frozenset(frames)
 
 
-def main() -> None:
-    global MAX_FRAMES, MAX_SIDE_LENGTH, MAX_FRAME_MEMORY, ANALYSIS_FPS, MASK_PERIOD_FRAMES
-
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Run one fixed 300-frame MuggledSAM/SAM3 smoke worker."
     )
@@ -1373,6 +1579,42 @@ def main() -> None:
         type=int,
         default=MAX_FRAME_MEMORY,
         help="Frame-memory entries. Its span in seconds is this count divided by the frame rate.",
+    )
+    memory_group = parser.add_argument_group(
+        "correction memory semantics",
+        "Opt-in memory-bank condition; the defaults reproduce the earlier runs byte for byte.",
+    )
+    memory_group.add_argument(
+        "--prompt-memory-semantics",
+        choices=PROMPT_MEMORY_SEMANTICS,
+        default=DEFAULT_PROMPT_MEMORY_SEMANTICS,
+        help=(
+            "replace: a correction becomes the only prompt memory (today). append: the "
+            "frame-0 seed and every correction stay in a bounded prompt bank."
+        ),
+    )
+    memory_group.add_argument(
+        "--max-prompt-memory",
+        type=int,
+        default=None,
+        help=(
+            "Prompt-memory entries; defaults to 1 for replace and "
+            f"{APPEND_PROMPT_MEMORY_DEFAULT_ENTRIES} for append. Replace requires exactly 1."
+        ),
+    )
+    memory_group.add_argument(
+        "--keep-frame-memory-at-correction",
+        action="store_true",
+        help="Do not clear the frame-memory bank when a correction is applied.",
+    )
+    memory_group.add_argument(
+        "--recent-first",
+        action="store_true",
+        help=(
+            "Tell the memory fusion model that index 0 of the frame bank is the most recent "
+            "entry. The worker stores oldest-first, so this reverses the temporal position "
+            "encoding; recorded as is_recent_first."
+        ),
     )
     parser.add_argument(
         "--analysis-fps",
@@ -1442,13 +1684,32 @@ def main() -> None:
         default=GATE_AREA_HISTORY_FRAMES,
         help="Trusted frames behind the rolling median; the band is not applied before then.",
     )
-    args = parser.parse_args()
+    return parser
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse and cross-validate the worker command line without starting a run."""
+    parser = build_parser()
+    args = parser.parse_args(argv)
     if args.gate_area_history_frames < 1:
         parser.error("--gate-area-history-frames must be at least 1")
     if args.mask_period_frames < 1:
         parser.error("--mask-period-frames must be at least 1")
     if args.checkpoint_every < 0:
         parser.error("--checkpoint-every must not be negative")
+    if args.max_frame_memory < 1:
+        parser.error("--max-frame-memory must be at least 1")
+    try:
+        memory_settings_from_args(args)
+    except ValueError as error:
+        parser.error(str(error))
+    return args
+
+
+def main() -> None:
+    global MAX_FRAMES, MAX_SIDE_LENGTH, MAX_FRAME_MEMORY, ANALYSIS_FPS, MASK_PERIOD_FRAMES
+
+    args = parse_args()
     MAX_FRAMES = args.max_frames
     MAX_SIDE_LENGTH = args.max_side_length
     MAX_FRAME_MEMORY = args.max_frame_memory

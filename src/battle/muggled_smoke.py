@@ -18,6 +18,7 @@ from .schemas import (
     ArtifactFingerprint,
     ChunkContinuityPolicy,
     ClockName,
+    CorrectionMemorySettings,
     E4CandidateRunMetadata,
     EncodedAssetInput,
     FourPartFocusedRunMetadata,
@@ -172,18 +173,47 @@ def run_condition_suffix(
     max_side_length: int,
     reference_side_length: int | None = None,
     frame_zero_seeds_only: bool = False,
+    memory_settings: CorrectionMemorySettings | None = None,
+    reference_frame_memory: int | None = None,
+    dropped_correction_frames: tuple[int, ...] = (),
 ) -> str:
     """Name the non-default run conditions in the run id so arms stay distinguishable.
 
     Empty for the established condition (policy off, the profile's usual encoder side, the
-    full correction schedule).  Resolution is named only for profiles that have one.
+    default memory banks, the full correction schedule).  Resolution and frame-memory size
+    are named only against a reference the caller supplies.
     """
     parts = [policy.run_id_suffix()] if not policy.is_default else []
     if reference_side_length is not None and max_side_length != reference_side_length:
         parts.append(f"r{max_side_length}")
+    if memory_settings is not None:
+        memory_suffix = memory_settings.run_id_suffix(
+            reference_frame_memory_entries=reference_frame_memory
+        )
+        if memory_suffix:
+            parts.append(memory_suffix)
     if frame_zero_seeds_only:
         parts.append("seed0")
+    elif dropped_correction_frames:
+        parts.append("drop" + "-".join(str(frame) for frame in sorted(dropped_correction_frames)))
     return "-".join(parts)
+
+
+def correction_memory_settings_from_args(args: argparse.Namespace) -> CorrectionMemorySettings:
+    """Read the memory-bank flags; absent flags mean the pre-flag default condition."""
+    semantics = getattr(args, "prompt_memory_semantics", "replace")
+    max_prompt_memory = getattr(args, "max_prompt_memory", None)
+    if max_prompt_memory is None:
+        max_prompt_memory = CorrectionMemorySettings.default_prompt_memory_entries(semantics)
+    return CorrectionMemorySettings(
+        prompt_memory_semantics=semantics,
+        max_prompt_memory_entries=max_prompt_memory,
+        max_frame_memory_entries=getattr(args, "max_frame_memory", DEFAULT_MAX_FRAME_MEMORY),
+        keep_frame_memory_at_correction=bool(
+            getattr(args, "keep_frame_memory_at_correction", False)
+        ),
+        is_recent_first=bool(getattr(args, "recent_first", False)),
+    )
 
 
 def smoke_frame_count(analysis_fps: float) -> int:
@@ -498,6 +528,7 @@ def _run_worker(
     resume_from_checkpoint: Path | None = None,
     checkpoint_every: int = 0,
     memory_policy: TrackerMemoryPolicy | None = None,
+    memory_settings: CorrectionMemorySettings | None = None,
 ) -> dict[str, Any]:
     environment = os.environ.copy()
     environment["CUDA_VISIBLE_DEVICES"] = "0"
@@ -533,6 +564,10 @@ def _run_worker(
         command.extend(["--resume-from-checkpoint", str(resume_from_checkpoint)])
     if memory_policy is not None and not memory_policy.is_default:
         command.extend(memory_policy.worker_arguments())
+    if memory_settings is not None:
+        if memory_settings.max_frame_memory_entries != max_frame_memory:
+            raise ValueError("memory settings and --max-frame-memory disagree")
+        command.extend(memory_settings.worker_arguments())
     if condition is not None:
         command.extend(
             [
@@ -1139,12 +1174,17 @@ def _load_multi_keyframe_correction_schedule(
     max_frame_exclusive: int = SMOKE_FRAMES,
     drop_out_of_range_corrections: bool = False,
     frame_zero_seeds_only: bool = False,
+    dropped_correction_frames: tuple[int, ...] = (),
+    correction_memory_semantics: str | None = None,
 ) -> tuple[dict[str, Any], MultiKeyframeCorrectionScheduleMetadata]:
     """Validate a proposed schedule and prepare its frame-zero and correction mask payload.
 
     Every entry is verified against the calibration record whether or not it is applied.  A
     bounded run may drop the corrections past its range (`drop_out_of_range_corrections`),
-    and a seeds-only arm drops every later correction; both are listed in the metadata.
+    a seeds-only arm drops every later correction, and `dropped_correction_frames` drops
+    named later frames; all are listed in the metadata.  `correction_memory_semantics`
+    overrides the schedule's declared semantics in the worker payload and the metadata
+    for the memory arms; the schedule file itself must still declare the replace semantics.
     """
     if analysis_fps != SCHEDULE_AUTHORING_FPS:
         raise ValueError(
@@ -1295,14 +1335,24 @@ def _load_multi_keyframe_correction_schedule(
     later.sort(key=lambda item: (int(item["frame_index"]), int(item["multiplex_slot"])))
     if frame_zero_seeds_only:
         dropped_frames.update(int(item["frame_index"]) for item in later)
+    cli_dropped = filter_dropped_correction_frames(
+        scheduled_frames=frozenset(int(item["frame_index"]) for item in later),
+        requested_drops=dropped_correction_frames,
+    )
+    dropped_frames.update(cli_dropped)
     applied = [item for item in later if int(item["frame_index"]) not in dropped_frames]
     for slot, item in enumerate(initial):
         item["initial_multiplex_slot"] = slot
+    effective_semantics = (
+        correction_memory_semantics
+        if correction_memory_semantics is not None
+        else schedule.correction_memory_semantics
+    )
     return (
         {
             "seeds": initial,
             "corrections": applied,
-            "memory_semantics": schedule.correction_memory_semantics,
+            "memory_semantics": effective_semantics,
         },
         MultiKeyframeCorrectionScheduleMetadata(
             schedule_fingerprint=ArtifactFingerprint(
@@ -1311,7 +1361,7 @@ def _load_multi_keyframe_correction_schedule(
                 source="measured",
             ),
             correction_policy_fingerprint=schedule.correction_policy_fingerprint,
-            correction_memory_semantics=schedule.correction_memory_semantics,
+            correction_memory_semantics=effective_semantics,
             scheduled_correction_frame_indices=tuple(
                 sorted({int(item["frame_index"]) for item in applied})
             ),
@@ -1321,9 +1371,28 @@ def _load_multi_keyframe_correction_schedule(
                 )
             ),
             dropped_correction_frame_indices=tuple(sorted(dropped_frames)),
+            cli_dropped_correction_frame_indices=cli_dropped,
             frame_zero_seeds_only=frame_zero_seeds_only,
         ),
     )
+
+
+def filter_dropped_correction_frames(
+    *, scheduled_frames: frozenset[int], requested_drops: tuple[int, ...]
+) -> tuple[int, ...]:
+    """Resolve `--drop-correction-frame` requests against the schedule's later keyframes.
+
+    A requested frame that the schedule does not correct is an error rather than a silent
+    no-op: the arm would otherwise claim to have dropped a correction it never had.
+    """
+    requested = frozenset(int(frame) for frame in requested_drops)
+    unknown = sorted(requested - scheduled_frames)
+    if unknown:
+        raise ValueError(
+            f"--drop-correction-frame names frames the schedule does not correct: {unknown}; "
+            f"scheduled later corrections are {sorted(scheduled_frames)}"
+        )
+    return tuple(sorted(requested))
 
 
 def _write_mask_cache_sidecar(run_directory: Path) -> None:
@@ -1734,6 +1803,10 @@ def run_smoke(args: argparse.Namespace) -> Path:
     multi_keyframe_schedule_payload = None
     multi_keyframe_correction_metadata = None
     frame_zero_seeds_only = bool(getattr(args, "frame_zero_seeds_only", False))
+    dropped_correction_frames = tuple(
+        sorted({int(frame) for frame in (getattr(args, "drop_correction_frame", None) or ())})
+    )
+    memory_settings = correction_memory_settings_from_args(args)
     memory_policy = TrackerMemoryPolicy(
         slot_exclusivity=getattr(args, "slot_exclusivity", "off"),
         memory_gate=getattr(args, "memory_gate", "off"),
@@ -1853,9 +1926,13 @@ def run_smoke(args: argparse.Namespace) -> Path:
                 and schedule_budget < FOUR_PART_FOCUSED_FRAMES
             ),
             frame_zero_seeds_only=frame_zero_seeds_only,
+            dropped_correction_frames=dropped_correction_frames,
+            correction_memory_semantics=memory_settings.correction_memory_semantics,
         )
     elif frame_zero_seeds_only:
         raise ValueError("--frame-zero-seeds-only requires --multi-keyframe-correction-schedule")
+    elif dropped_correction_frames:
+        raise ValueError("--drop-correction-frame requires --multi-keyframe-correction-schedule")
     is_g3_candidate = args.g3_full_static
     is_e4_candidate = args.g4_e4_candidate
     is_full_ego_manual_seed = args.full_ego_manual_seed
@@ -2050,6 +2127,11 @@ def run_smoke(args: argparse.Namespace) -> Path:
                 else None
             ),
             frame_zero_seeds_only=frame_zero_seeds_only,
+            memory_settings=memory_settings,
+            reference_frame_memory=(
+                DEFAULT_MAX_FRAME_MEMORY if is_four_part_focused or is_four_part_multiview else None
+            ),
+            dropped_correction_frames=dropped_correction_frames,
         ),
     )
     run_directory = (args.run_root / run_id).resolve()
@@ -2131,6 +2213,8 @@ def run_smoke(args: argparse.Namespace) -> Path:
         "cuda_visible_devices": "0",
         "tracker_memory_policy": memory_policy.model_dump(mode="json"),
         "max_side_length": args.max_side_length,
+        "correction_memory_settings": memory_settings.model_dump(mode="json"),
+        "frame_memory_position_encoding": memory_settings.frame_memory_position_encoding,
     }
     if is_four_part_full:
         runtime_invocation["known_pilot_failure"] = (
@@ -2208,6 +2292,10 @@ def run_smoke(args: argparse.Namespace) -> Path:
                 "prompt_mode": "manual_seed_multiplexed_keyframes",
                 "multi_keyframe_correction_schedule": multi_keyframe_schedule_payload,
                 "correction_memory_semantics": multi_keyframe_schedule_payload["memory_semantics"],
+                "dropped_correction_frame_indices": list(
+                    multi_keyframe_correction_metadata.dropped_correction_frame_indices
+                ),
+                "cli_dropped_correction_frame_indices": list(dropped_correction_frames),
                 "label": (
                     "multi-keyframe correction schedule with human-selected seeds and "
                     "agent-selected later corrections; not text zero-shot"
@@ -2263,6 +2351,7 @@ def run_smoke(args: argparse.Namespace) -> Path:
             resume_from_checkpoint=resume_checkpoint,
             checkpoint_every=args.checkpoint_every,
             memory_policy=memory_policy,
+            memory_settings=memory_settings,
         )
 
     observations_path = run_directory / "observations.jsonl"
@@ -2652,7 +2741,7 @@ def run_smoke(args: argparse.Namespace) -> Path:
             external_revision=_external_revision(),
         ),
         continuity=StreamContinuityPolicy(
-            max_prompt_memory_entries=1,
+            max_prompt_memory_entries=memory_settings.max_prompt_memory_entries,
             max_frame_memory_entries=args.max_frame_memory,
             detected_object_limit=len(configured_concepts),
             **resume_continuity,
@@ -2995,6 +3084,49 @@ def main() -> None:
             "measure how far the tracker gets without human correction."
         ),
     )
+    parser.add_argument(
+        "--drop-correction-frame",
+        type=int,
+        action="append",
+        metavar="FRAME",
+        help=(
+            "Apply the schedule without the later correction at this analysis frame; repeat "
+            "for several. The frame must be one the schedule corrects. Recorded under "
+            "dropped_correction_frame_indices and cli_dropped_correction_frame_indices."
+        ),
+    )
+    memory_group = parser.add_argument_group(
+        "correction memory semantics",
+        "Opt-in worker memory-bank condition; the defaults reproduce the earlier runs exactly.",
+    )
+    memory_group.add_argument(
+        "--prompt-memory-semantics",
+        choices=("replace", "append"),
+        default="replace",
+        help=(
+            "replace: a correction becomes the only prompt memory. append: the frame-0 seed "
+            "and every correction stay in a bounded prompt bank."
+        ),
+    )
+    memory_group.add_argument(
+        "--max-prompt-memory",
+        type=int,
+        default=None,
+        help="Prompt-memory entries; defaults to 1 for replace and 32 for append.",
+    )
+    memory_group.add_argument(
+        "--keep-frame-memory-at-correction",
+        action="store_true",
+        help="Do not clear the frame-memory bank when a correction is applied.",
+    )
+    memory_group.add_argument(
+        "--recent-first",
+        action="store_true",
+        help=(
+            "Pass is_recent_first=True to the SAM3 memory fusion. The worker stores frame "
+            "memories oldest-first, so this reverses their temporal position encoding."
+        ),
+    )
     policy_group = parser.add_argument_group(
         "tracker memory policy",
         "Opt-in worker policy; the defaults reproduce the unpoliced tracker byte for byte.",
@@ -3015,6 +3147,12 @@ def main() -> None:
     args = parser.parse_args()
     if len(args.gate_area_band) != 2:
         parser.error("--gate-area-band takes exactly 'low,high'")
+    if args.max_frame_memory < 1:
+        parser.error("--max-frame-memory must be at least 1")
+    if args.max_prompt_memory is not None and args.max_prompt_memory < 1:
+        parser.error("--max-prompt-memory must be at least 1")
+    if args.prompt_memory_semantics == "replace" and args.max_prompt_memory not in (None, 1):
+        parser.error("--prompt-memory-semantics replace keeps exactly one prompt memory entry")
     if args.resume_at is not None and args.resume_at < 1:
         parser.error("--resume-at must be at least 1")
     if args.resume_at is not None and args.resume_run is None:
