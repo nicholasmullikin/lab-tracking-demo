@@ -124,6 +124,30 @@ def cluster_intervals(frames: Iterable[int]) -> tuple[tuple[int, int], ...]:
     return tuple(runs)
 
 
+def fallback_intervals_from_contradictions(
+    intervals: Iterable[tuple[int, int]],
+    *,
+    merge_gap_below_frames: int = 15,
+    min_interval_frames: int = 10,
+) -> tuple[tuple[int, int], ...]:
+    """Label-free fallback intervals from consensus contradiction runs of one part.
+
+    Sorted half-open runs are merged when the gap between them is shorter than
+    `merge_gap_below_frames`, then runs shorter than `min_interval_frames` are dropped (merge
+    first, so two short neighbours can survive together).  The rule is the whole selection:
+    nothing about where a human anchor sits enters here.
+    """
+    merged: list[list[int]] = []
+    for start, end in sorted((int(s), int(e)) for s, e in intervals):
+        if end <= start:
+            raise ValueError(f"empty or inverted interval [{start},{end})")
+        if merged and start - merged[-1][1] < merge_gap_below_frames:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    return tuple((s, e) for s, e in merged if e - s >= min_interval_frames)
+
+
 def _r(value: float | None, digits: int = 4) -> float | None:
     return None if value is None else round(float(value), digits)
 

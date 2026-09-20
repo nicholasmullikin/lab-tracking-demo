@@ -1,0 +1,194 @@
+{
+  "schema_version": "1.0",
+  "policy_id": "ensemble-reference-first-minute-v2",
+  "provenance_tag": "agent_authored_assumption",
+  "frame_count": 1800,
+  "primary": {
+    "schema_version": "1.0",
+    "label": "sam3_corrected",
+    "run_directory": "runs/sam3-memory-arms-20260919/arms/pm-append/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260920t033947z-r1280-pm-append",
+    "arm": "pm-append",
+    "anchor_iou_all": 0.743
+  },
+  "fallback": {
+    "schema_version": "1.0",
+    "label": "dam4sam_fallback",
+    "run_directory": "runs/dam4sam-arms-20260919/arms/dam4sam-large-1024-sched-60s",
+    "arm": "dam4sam-large-1024-sched-60s",
+    "anchor_iou_all": 0.715
+  },
+  "rolling_median_window_frames": 300,
+  "rolling_median_min_samples": 30,
+  "contact_eligible_through_frame": 1200,
+  "late_ineligibility_rationale": "Late SAM3 overlays cease to track stable part semantics from frame 1200 in every SAM3 arm (rear_body at anchor frame 1500 scores 0.00 in all of them: the label stays on the table piece while the body is attached); masks remain comparison evidence only. Retained from the v4 human/agent review and the v1 policy.",
+  "targets": [
+    {
+      "schema_version": "1.0",
+      "target_id": "chassis",
+      "fallback_intervals": [
+        {
+          "schema_version": "1.0",
+          "start_frame": 296,
+          "end_frame_exclusive": 313,
+          "rationale": "Label-free: C10379 chassis (pm-append) contradicted by the majority of the other seven static views plus e4 in the 1280 px cross-view consensus over [296,313) (17 frames, mean reprojection error 55 raw px). Bounds from runs/multiview-part-consensus-first-minute-r1280-pm-append; the anchors were not consulted.",
+          "provenance": "multiview_consensus_contradiction"
+        },
+        {
+          "schema_version": "1.0",
+          "start_frame": 475,
+          "end_frame_exclusive": 515,
+          "rationale": "Label-free: consensus contradiction runs [475,494) and [508,515) merged (gap 14 < 15 frames). Bounds from runs/multiview-part-consensus-first-minute-r1280-pm-append; the anchors were not consulted.",
+          "provenance": "multiview_consensus_contradiction"
+        },
+        {
+          "schema_version": "1.0",
+          "start_frame": 1049,
+          "end_frame_exclusive": 1085,
+          "rationale": "Label-free: consensus contradiction runs [1049,1057) and [1058,1085) merged (gap 1 < 15 frames). Bounds from runs/multiview-part-consensus-first-minute-r1280-pm-append; the anchors were not consulted. (The anchors at 1050 and 1100 happen to sit at and after this interval; that is a coincidence the score inherits, not an input to the bounds.)",
+          "provenance": "multiview_consensus_contradiction"
+        }
+      ],
+      "rules": {
+        "schema_version": "1.0",
+        "area_fraction_of_rolling_median_below": 0.5,
+        "other_target_iou_above": 0.3,
+        "discontinuity_with_last_accepted": true,
+        "substitute_when_primary_missing": true
+      },
+      "sanity": {
+        "schema_version": "1.0",
+        "area_fraction_bounds": [0.4, 2.0],
+        "min_iou_with_last_accepted": 0.5,
+        "max_centroid_jump_pixels": 30.0,
+        "centroid_jump_pixels_per_frame": 5.0,
+        "max_continuity_allowance_pixels": 90.0
+      },
+      "hidden_intervals": [],
+      "not_contact_eligible_intervals": []
+    },
+    {
+      "schema_version": "1.0",
+      "target_id": "interior",
+      "fallback_intervals": [],
+      "rules": {
+        "schema_version": "1.0",
+        "area_fraction_of_rolling_median_below": 0.5,
+        "other_target_iou_above": 0.3,
+        "discontinuity_with_last_accepted": true,
+        "substitute_when_primary_missing": true
+      },
+      "sanity": {
+        "schema_version": "1.0",
+        "area_fraction_bounds": [0.4, 2.0],
+        "min_iou_with_last_accepted": 0.5,
+        "max_centroid_jump_pixels": 30.0,
+        "centroid_jump_pixels_per_frame": 5.0,
+        "max_continuity_allowance_pixels": 90.0
+      },
+      "hidden_intervals": [],
+      "not_contact_eligible_intervals": []
+    },
+    {
+      "schema_version": "1.0",
+      "target_id": "rear_body",
+      "fallback_intervals": [
+        {
+          "schema_version": "1.0",
+          "start_frame": 1762,
+          "end_frame_exclusive": 1794,
+          "rationale": "Label-free: C10379 rear_body (pm-append) contradicted by the majority in the 1280 px cross-view consensus over [1762,1794) (32 frames, mean reprojection error 173 raw px). The other contradiction run [1662,1667) is 5 frames and was dropped by the >= 10 frame rule. Bounds from runs/multiview-part-consensus-first-minute-r1280-pm-append; the anchors were not consulted. The DAM4SAM fallback's rear_body slot is mostly empty after frame 1635, so substitution here is expected to be rare and every attempt is recorded.",
+          "provenance": "multiview_consensus_contradiction"
+        }
+      ],
+      "rules": {
+        "schema_version": "1.0",
+        "area_fraction_of_rolling_median_below": 0.5,
+        "other_target_iou_above": 0.3,
+        "discontinuity_with_last_accepted": true,
+        "substitute_when_primary_missing": true
+      },
+      "sanity": {
+        "schema_version": "1.0",
+        "area_fraction_bounds": [0.4, 2.0],
+        "min_iou_with_last_accepted": 0.5,
+        "max_centroid_jump_pixels": 30.0,
+        "centroid_jump_pixels_per_frame": 5.0,
+        "max_continuity_allowance_pixels": 90.0
+      },
+      "hidden_intervals": [],
+      "not_contact_eligible_intervals": [
+        {
+          "schema_version": "1.0",
+          "start_frame": 1660,
+          "end_frame_exclusive": 1800,
+          "rationale": "distractor_confusion (human, docs/qa/first-minute-review-anchors.human-record.json, cell (1700, rear_body), state hidden): the rear body is not visible at frame 1700; the yellow piece next to it is a screwdriver, and every tracker arm's rear_body slot sits on that screwdriver (1.2-1.3k px of hidden false positive in all 19 scored arms). Bounds label-free from the primary run's own rear_body mask: its centroid sits on the table piece at (823,615) through frame 1655, jumps 20-50 px per frame over 1661-1668 and settles at about (915,400) from 1675 to the end of the minute without returning. The mask is kept for display (no substitution; the fallback has no rear_body mask after 1635) and is not contact-eligible; the late boundary at 1200 already covers these frames, this interval names why.",
+          "provenance": "primary_mask_trajectory",
+          "failure_case": "distractor_confusion"
+        }
+      ]
+    },
+    {
+      "schema_version": "1.0",
+      "target_id": "cabin",
+      "fallback_intervals": [],
+      "rules": {
+        "schema_version": "1.0",
+        "area_fraction_of_rolling_median_below": 0.5,
+        "other_target_iou_above": 0.3,
+        "discontinuity_with_last_accepted": true,
+        "substitute_when_primary_missing": true
+      },
+      "sanity": {
+        "schema_version": "1.0",
+        "area_fraction_bounds": [0.4, 2.0],
+        "min_iou_with_last_accepted": 0.5,
+        "max_centroid_jump_pixels": 30.0,
+        "centroid_jump_pixels_per_frame": 5.0,
+        "max_continuity_allowance_pixels": 90.0
+      },
+      "hidden_intervals": [],
+      "not_contact_eligible_intervals": []
+    }
+  ],
+  "no_blend": true,
+  "selection_provenance": {
+    "schema_version": "1.0",
+    "arm_selection": {
+      "schema_version": "1.0",
+      "method": "human_review_anchor_iou",
+      "scoreboard_uri": "runs/anchor-scoreboard-20260919/anchor_iou.json",
+      "anchors_uri": "runs/human-review-anchors-first-minute/anchors/anchor_masks.json",
+      "anchor_frame_count": 13,
+      "anchor_view": "C10379",
+      "tie_rule": "Two arms within 0.01 on `IoU all` are tied; the cheaper/simpler run condition is preferred.",
+      "rationale": "Primary: `pm-append` (SAM3 1280 px, policy off, schedule [327, 900, 1172, 1235], --prompt-memory-semantics append), 0.743 overall, tied with `pm-append-keepfm` 0.743 and chosen as the simpler condition; old reference 0.668, `off-r1280-sched` 0.724. Fallback: `dam4sam-large-1024-sched-60s` (shared predictor, large SAM2.1, 1024 px, same schedule), 0.715 overall, the best DAM4SAM arm; `dam4sam-tiny-1024-sched-60s` wins the [1020,1172) window (0.745) but loses the chassis from frame 1469 and is unsafe as a general fallback."
+    },
+    "interval_selection": {
+      "schema_version": "1.0",
+      "method": "multiview_consensus_contradiction",
+      "consensus_root_uri": "runs/multiview-part-consensus-first-minute-r1280-pm-append",
+      "consensus_manifest_sha256": "b2f64e63427fc31d35aaeffcd88b88b81c73990d74051b50dd37012242aeaef1",
+      "consensus_reference_run": "runs/sam3-memory-arms-20260919/arms/pm-append/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260920t033947z-r1280-pm-append",
+      "merge_gap_below_frames": 15,
+      "min_interval_frames": 10,
+      "raw_contradiction_intervals": {
+        "chassis": [[296, 313], [475, 494], [508, 515], [1049, 1057], [1058, 1085]],
+        "interior": [],
+        "rear_body": [[1662, 1667], [1762, 1794]],
+        "cabin": []
+      },
+      "rationale": "Fallback intervals are exactly the frames where the 1280 px eight-view consensus (seven agent-seeded static views plus e4 behind the wrist gate) contradicts the primary run's C10379 mask by more than 40 raw px for >= 5 frames, after merging gaps shorter than 15 frames and dropping runs shorter than 10 frames (`fallback_intervals_from_contradictions`). The interior has no consensus (only C10379 tracks it) and gets no fallback interval; the cabin is never contradicted."
+    },
+    "bias_statement": "The choice of primary and fallback arm saw the 52 human anchor cells on 13 frames of one view, so this policy's anchor IoU is optimistically biased by that selection and is not an out-of-sample number. The fallback intervals, the hidden-label removal and the distractor interval bounds did not see the anchors."
+  },
+  "claim_boundaries": [
+    "The ensemble is a review reference assembled from retained runs; cross-method fallback is not accuracy and neither source run is ground truth.",
+    "Masks are copied whole from exactly one source per frame and target; no mask is blended, morphed or interpolated.",
+    "Fallback substitution happens only inside explicit frame intervals derived label-free from the cross-view consensus, only when a policy rule fires, and only when the substitute passes the sanity bounds; every substitution and every declined attempt is recorded with a rationale.",
+    "No hidden interval: the v1 agent label that hid the interior over [1024,1172) is withdrawn because the human drew the interior at anchor frames 1050, 1100 and 1150.",
+    "The rear_body distractor interval is a contact-eligibility label with the human's rationale, not a mask edit; the primary mask is shown as tracked.",
+    "Sanity bounds test a substitute against its own target's history only; a substituted mask may overlap another target's primary mask, and the builder's segmentation episode check reports where that happens instead of hiding it.",
+    "Contact eligibility is per target: a mask is eligible only where it is sourced from SAM3 or DAM4SAM, passes sanity, lies before the late-degradation boundary, and is not inside a labelled ineligible interval.",
+    "The arm selection saw the human anchors (13 frames, one view); the anchor score of this reference is selection-biased and the anchors are review evidence, not a dataset and not ground truth."
+  ]
+}

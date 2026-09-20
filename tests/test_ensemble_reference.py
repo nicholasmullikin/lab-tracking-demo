@@ -10,6 +10,7 @@ from battle.ensemble_reference import (
     POLICY_PATH,
     EnsembleDecider,
     cluster_intervals,
+    fallback_intervals_from_contradictions,
     load_policy,
     summarize_target,
     validity_intervals_from_sidecar,
@@ -111,6 +112,96 @@ def test_checked_in_policy_is_typed_and_agent_authored() -> None:
     assert all(item.human_confirmation_pending for item in interior.hidden_intervals)
     assert interior.fallback_intervals == ()
     assert policy.contact_eligible_through_frame == 1200
+
+
+def test_v2_policy_chooses_arms_by_anchors_and_intervals_label_free() -> None:
+    policy = load_policy(Path("configs/ensemble_reference/first_minute_v2.json"))
+
+    assert policy.primary.arm == "pm-append"
+    assert policy.primary.run_directory.startswith("runs/sam3-memory-arms-20260919/arms/pm-append/")
+    assert policy.fallback.arm == "dam4sam-large-1024-sched-60s"
+    assert all(target.hidden_intervals == () for target in policy.targets), "hidden label withdrawn"
+    intervals = {
+        target.target_id: tuple(
+            (i.start_frame, i.end_frame_exclusive) for i in target.fallback_intervals
+        )
+        for target in policy.targets
+    }
+    assert intervals == {
+        "chassis": ((296, 313), (475, 515), (1049, 1085)),
+        "interior": (),
+        "rear_body": ((1762, 1794),),
+        "cabin": (),
+    }
+    selection = policy.selection_provenance
+    assert selection is not None
+    assert selection.arm_selection.method == "human_review_anchor_iou"
+    assert selection.interval_selection.method == "multiview_consensus_contradiction"
+    raw = selection.interval_selection.raw_contradiction_intervals
+    for target in policy.targets:
+        derived = fallback_intervals_from_contradictions(
+            raw[target.target_id],
+            merge_gap_below_frames=selection.interval_selection.merge_gap_below_frames,
+            min_interval_frames=selection.interval_selection.min_interval_frames,
+        )
+        assert derived == intervals[target.target_id], "the config restates the rule's output"
+        assert all(
+            i.provenance == "multiview_consensus_contradiction" for i in target.fallback_intervals
+        )
+    assert "selection-biased" in " ".join(policy.claim_boundaries)
+    distractor = policy.target("rear_body").not_contact_eligible_intervals
+    assert [(i.start_frame, i.end_frame_exclusive, i.failure_case) for i in distractor] == [
+        (1660, 1800, "distractor_confusion")
+    ]
+    assert distractor[0].provenance == "primary_mask_trajectory"
+    assert policy.target("rear_body").in_intervals(1700, distractor)
+
+
+def test_v1_policy_still_loads_without_selection_provenance() -> None:
+    policy = load_policy(POLICY_PATH)
+
+    assert policy.selection_provenance is None
+    assert all(
+        interval.provenance == "agent_authored_visual_review" and interval.failure_case is None
+        for target in policy.targets
+        for interval in (
+            *target.fallback_intervals,
+            *target.hidden_intervals,
+            *target.not_contact_eligible_intervals,
+        )
+    )
+
+
+def test_fallback_intervals_from_contradictions_merges_then_drops() -> None:
+    raw = ((296, 313), (475, 494), (508, 515), (1049, 1057), (1058, 1085), (1662, 1667))
+
+    assert fallback_intervals_from_contradictions(raw) == (
+        (296, 313),
+        (475, 515),
+        (1049, 1085),
+    )
+    # Merge happens before the length filter: two short neighbours survive together.
+    assert fallback_intervals_from_contradictions(((10, 15), (20, 26))) == ((10, 26),)
+    # A gap of exactly the threshold is not merged; unsorted input is fine.
+    assert fallback_intervals_from_contradictions(
+        ((40, 60), (0, 25)), merge_gap_below_frames=15
+    ) == (
+        (0, 25),
+        (40, 60),
+    )
+    assert fallback_intervals_from_contradictions(()) == ()
+    with pytest.raises(ValueError, match="inverted"):
+        fallback_intervals_from_contradictions(((5, 5),))
+
+
+def test_selection_provenance_requires_consensus_derived_fallback_intervals() -> None:
+    v2 = load_policy(Path("configs/ensemble_reference/first_minute_v2.json"))
+    reviewed = _interval(100, 120, "drawn by eye")
+    chassis = v2.target("chassis").model_copy(update={"fallback_intervals": (reviewed,)})
+    with pytest.raises(ValueError, match="cross-view consensus"):
+        EnsembleReferencePolicy.model_validate(
+            v2.model_copy(update={"targets": (chassis, *v2.targets[1:])}).model_dump()
+        )
 
 
 def test_policy_rejects_overlapping_hidden_and_fallback_intervals() -> None:

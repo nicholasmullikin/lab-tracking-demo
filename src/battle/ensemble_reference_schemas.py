@@ -81,12 +81,32 @@ class EnsembleSanityBounds(VersionedModel):
         return min(grown, self.max_continuity_allowance_pixels)
 
 
+IntervalProvenance = Literal[
+    # v1: an agent looked at frames and drew the bounds.
+    "agent_authored_visual_review",
+    # v2 fallback intervals: C10379 contradicted by the majority of the other views in the
+    # label-free cross-view consensus; the bounds never saw the human anchors.
+    "multiview_consensus_contradiction",
+    # v2 distractor interval: bounds read off the primary run's own mask centroid/area
+    # trajectory; the failure case name and the rationale come from the human's anchor record.
+    "primary_mask_trajectory",
+]
+FailureCase = Literal["distractor_confusion"]
+
+
 class EnsembleLabeledInterval(FrameRange):
-    """A half-open frame interval with an agent-authored rationale."""
+    """A half-open frame interval with a rationale and the provenance of its bounds."""
 
     rationale: str = Field(min_length=1)
-    provenance: Literal["agent_authored_visual_review"] = "agent_authored_visual_review"
+    provenance: IntervalProvenance = "agent_authored_visual_review"
     human_confirmation_pending: Literal[True] = True
+    failure_case: FailureCase | None = Field(
+        default=None,
+        description=(
+            "Named failure case from the human review anchor record that this interval "
+            "documents (e.g. the yellow screwdriver next to the rear body at frame 1700)."
+        ),
+    )
 
 
 class EnsembleTargetPolicy(VersionedModel):
@@ -117,6 +137,48 @@ class EnsembleTargetPolicy(VersionedModel):
 class EnsembleSourceRunPolicy(VersionedModel):
     label: Literal["sam3_corrected", "dam4sam_fallback"]
     run_directory: str = Field(min_length=1)
+    arm: str | None = Field(
+        default=None, description="Scoreboard arm name of the run (e.g. `pm-append`)."
+    )
+    anchor_iou_all: float | None = Field(
+        default=None,
+        ge=0,
+        le=1,
+        description="The arm's `IoU all` against the human review anchors when it was chosen.",
+    )
+
+
+class EnsembleArmSelection(VersionedModel):
+    """How the primary and fallback runs were chosen: by the human review anchors."""
+
+    method: Literal["human_review_anchor_iou"]
+    scoreboard_uri: str = Field(min_length=1)
+    anchors_uri: str = Field(min_length=1)
+    anchor_frame_count: int = Field(gt=0)
+    anchor_view: str = Field(min_length=1)
+    tie_rule: str = Field(min_length=1)
+    rationale: str = Field(min_length=1)
+
+
+class EnsembleIntervalSelection(VersionedModel):
+    """How the fallback intervals were chosen: label-free, from cross-view consensus only."""
+
+    method: Literal["multiview_consensus_contradiction"]
+    consensus_root_uri: str = Field(min_length=1)
+    consensus_manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    consensus_reference_run: str = Field(min_length=1)
+    merge_gap_below_frames: int = Field(ge=0)
+    min_interval_frames: int = Field(ge=1)
+    raw_contradiction_intervals: dict[str, tuple[tuple[int, int], ...]]
+    rationale: str = Field(min_length=1)
+
+
+class EnsembleSelectionProvenance(VersionedModel):
+    """Which evidence chose what, and the bias that leaves in the anchor score."""
+
+    arm_selection: EnsembleArmSelection
+    interval_selection: EnsembleIntervalSelection
+    bias_statement: str = Field(min_length=1)
 
 
 class EnsembleReferencePolicy(VersionedModel):
@@ -134,6 +196,26 @@ class EnsembleReferencePolicy(VersionedModel):
     targets: tuple[EnsembleTargetPolicy, ...] = Field(min_length=4, max_length=4)
     no_blend: Literal[True] = True
     claim_boundaries: tuple[str, ...] = Field(min_length=1)
+    selection_provenance: EnsembleSelectionProvenance | None = Field(
+        default=None,
+        description=(
+            "v2+: records that the arms were chosen by the human anchors and the fallback "
+            "intervals label-free. Absent in v1, whose intervals were drawn by visual review."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def require_label_free_intervals_when_selection_is_recorded(self) -> EnsembleReferencePolicy:
+        if self.selection_provenance is None:
+            return self
+        for target in self.targets:
+            for interval in target.fallback_intervals:
+                if interval.provenance != "multiview_consensus_contradiction":
+                    raise ValueError(
+                        f"{target.target_id}: with selection_provenance recorded every fallback "
+                        "interval must come from the cross-view consensus, not from review"
+                    )
+        return self
 
     @model_validator(mode="after")
     def require_ordered_targets_and_distinct_runs(self) -> EnsembleReferencePolicy:
