@@ -1410,7 +1410,8 @@ def summarize_part(
     def best_by(attribute: int) -> dict[str, float]:
         out: dict[str, float] = {}
         for name in names:
-            level = name.split("|")[attribute]
+            fields = name.split("|")
+            level = fields[attribute] if attribute < len(fields) else name
             value = _mean_over(scored, all_frames, name)
             if value is not None:
                 out[level] = max(out.get(level, 0.0), value)
@@ -2152,7 +2153,10 @@ def accept_transfer(
                 + "\n",
                 encoding="utf-8",
             )
-            outcome.proposal_dir = relative_uri(proposal_dir, repository_root)
+            updated = outcome.model_copy(
+                update={"proposal_dir": relative_uri(proposal_dir, repository_root)}
+            )
+            view_outcomes[view_outcomes.index(outcome)] = updated
             proposals_per_view[view] += 1
         outcomes.extend(view_outcomes)
 
@@ -2306,6 +2310,133 @@ def transfer_table(report: TransferReport) -> str:
     return "\n".join(lines) + "\n"
 
 
+# ------------------------------------------------------------------------------ contact sheet
+
+
+SHEET_FRAMES = (0, 300, 600, 1050, 1500, 1700)
+PART_COLOURS = {
+    "chassis": (0, 200, 255),
+    "interior": (255, 120, 0),
+    "rear_body": (0, 255, 120),
+    "cabin": (255, 0, 200),
+}
+
+
+def render_search_sheet(
+    repository_root: Path,
+    *,
+    plan: SearchPlan,
+    report: SearchReport,
+    truth: SeedTruthSet,
+    search_dir: Path,
+    output: Path,
+    frames: Sequence[int] = SHEET_FRAMES,
+    tile_width: int = 520,
+) -> Path:
+    """Rows = C10379 frames; columns = human truth | geometric prompt | winner's candidate."""
+    decoded = json.loads((search_dir / "decode_result.json").read_text(encoding="utf-8"))["decoded"]
+    candidates = load_candidates(plan, decoded, search_dir)
+    rows = []
+    for frame in frames:
+        frame_plan = next((f for f in plan.frames if f.reference_frame == frame), None)
+        image_path = search_dir / "results" / "frames" / f"frame-{frame:06d}.jpg"
+        if frame_plan is None or not image_path.is_file():
+            continue
+        image = cv2.imread(str(image_path))
+        truth_masks = {
+            part: mask_cache.decode_mask_png(repository_root / e.mask.uri)
+            for part in TARGETS
+            if (e := truth.positive(REFERENCE_VIEW, frame, part)) is not None and e.mask
+        }
+        # Crop to the union of truth masks and prompt boxes, padded.
+        xs, ys = [], []
+        for m in truth_masks.values():
+            yy, xx = np.nonzero(m)
+            xs += [xx.min(), xx.max()]
+            ys += [yy.min(), yy.max()]
+        for p in frame_plan.prompts:
+            xs += [p.pixel_box.x1, p.pixel_box.x2]
+            ys += [p.pixel_box.y1, p.pixel_box.y2]
+        if not xs:
+            continue
+        pad = 40
+        x0, x1 = max(0, min(xs) - pad), min(image.shape[1], max(xs) + pad)
+        y0, y1 = max(0, min(ys) - pad), min(image.shape[0], max(ys) + pad)
+        truth_tile = image.copy()
+        prompt_tile = image.copy()
+        winner_tile = image.copy()
+        captions = []
+        for part in TARGETS:
+            colour = PART_COLOURS[part]
+            if part in truth_masks:
+                contours, _ = cv2.findContours(
+                    truth_masks[part].astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+                )
+                cv2.drawContours(truth_tile, contours, -1, colour, 2)
+            summary = report.parts.get(part)
+            if summary is None:
+                continue
+            key = parse_strategy(summary.winner)
+            prompts = [p for p in frame_plan.prompts if p.part == part]
+            for p in prompts:
+                if abs(p.margin - key.margin) < 1e-9 and p.negatives in (key.negatives, "none"):
+                    b = p.pixel_box
+                    cv2.rectangle(prompt_tile, (b.x1, b.y1), (b.x2, b.y2), colour, 2)
+                    for q in p.background_points:
+                        cv2.drawMarker(
+                            prompt_tile, (q.x, q.y), colour, cv2.MARKER_TILTED_CROSS, 12, 2
+                        )
+            chosen = pick_candidate(pool_for_strategy(prompts, candidates, key), key.pick)
+            if chosen is not None:
+                contours, _ = cv2.findContours(
+                    chosen.mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+                )
+                cv2.drawContours(winner_tile, contours, -1, colour, 2)
+            cell = next(
+                (c for c in report.cells if c.reference_frame == frame and c.part == part), None
+            )
+            if cell is not None and cell.truth_role == "positive":
+                captions.append(f"{part[:2]} {cell.iou[summary.winner]:.2f}")
+            elif cell is not None:
+                captions.append(f"{part[:2]} FP{int(cell.iou[summary.winner])}")
+
+        def tile(img: np.ndarray, caption: str) -> np.ndarray:
+            crop = img[y0:y1, x0:x1]
+            scale = tile_width / crop.shape[1]
+            out = cv2.resize(crop, (tile_width, int(crop.shape[0] * scale)))
+            cv2.putText(
+                out, caption, (6, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 3, cv2.LINE_AA
+            )
+            cv2.putText(
+                out,
+                caption,
+                (6, 22),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (235, 235, 235),
+                1,
+                cv2.LINE_AA,
+            )
+            return out
+
+        rows.append(
+            np.hstack(
+                [
+                    tile(truth_tile, f"f{frame} human truth"),
+                    tile(prompt_tile, f"f{frame} geometric prompt (winner box, x = negatives)"),
+                    tile(winner_tile, f"f{frame} winner pick  " + " ".join(captions)),
+                ]
+            )
+        )
+    if not rows:
+        raise ValueError("no frames to render")
+    width = max(r.shape[1] for r in rows)
+    rows = [np.pad(r, ((0, 0), (0, width - r.shape[1]), (0, 0))) for r in rows]
+    output.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(output), np.vstack(rows))
+    return output
+
+
 # --------------------------------------------------------------------------------- CLI
 
 
@@ -2344,6 +2475,7 @@ def search_main() -> None:
         default=None,
         help="interpreter with torch+transformers for the DINOv2-small exemplar arm (CPU)",
     )
+    commands.add_parser("sheet", help="contact sheet: truth | geometric prompt | winner (CPU)")
     commands.add_parser("transfer-plan", help="prompts on the 8 other views from the winners (CPU)")
     transfer_decode = commands.add_parser(
         "transfer-decode", help="decode them, one view at a time (GPU)"
@@ -2361,6 +2493,20 @@ def search_main() -> None:
     plan_path = search_dir / "plan.json"
     report_path = search_dir / "search_report.json"
     transfer_plan_path = transfer_dir / "transfer_plan.json"
+    if args.command == "sheet":
+        plan = SearchPlan.model_validate_json(plan_path.read_text(encoding="utf-8"))
+        report = SearchReport.model_validate_json(report_path.read_text(encoding="utf-8"))
+        truth = load_truth_set(truth_path)
+        out = render_search_sheet(
+            root,
+            plan=plan,
+            report=report,
+            truth=truth,
+            search_dir=search_dir,
+            output=output_root / "search_contact_sheet.png",
+        )
+        print(f"sheet -> {out}")
+        return
     if args.command == "transfer-plan":
         report = SearchReport.model_validate_json(report_path.read_text(encoding="utf-8"))
         context = GeometryContext.load(root)
