@@ -3434,3 +3434,77 @@ this comparison makes no accuracy or cross-method identity claim.
   confirmed at 1280**: dropping 900 lowers `[1020,1172)` (0.659 -> 0.628) and does not recover
   the 720 seed-only number (~0.69) there. Frame memory 6 is neutral, 8 is worse. Nothing here
   is adopted; the arms enter the scoreboard for the ensemble-v2 worker.
+
+### Sep 19: DAM4SAM and SAMURAI arms under the SAM3 run conditions (plan step 2)
+
+- **Claim boundary first.** Runtime, VRAM and frame coverage are measurements; the IoU numbers
+  are against the 13-frame human review anchors on one view (review evidence for ranking arms,
+  not a dataset, not ground truth; means within ~0.02 do not rank). Frame-0 seeds are the
+  reviewed human masks; the corrections are the Sep 18 agent-swap schedule. CC BY-NC 4.0. GPU:
+  nine queue jobs across four passes (three smokes, three DAM4SAM arms, two SAMURAI attempts,
+  one SAMURAI substitute), 04:07-04:44 UTC, one at a time, no `NVRM`/`Xid`; a 60 s `nvidia-smi`
+  watchdog with a 13 GiB per-process kill threshold ran throughout and never fired
+  (`runs/dam4sam-arms-20260919/nvidia_smi_vram.log`; highest sample 7.48 GiB process, 9.04 GiB
+  whole GPU).
+- **Wrapper knobs (commit `340f1a5`, the knobs worker; unit tests there, first GPU use here).**
+  `battle-four-part-segmentation` / `four_part_video_worker.py`: one shared SAM2 predictor for
+  the four DAM4SAM trackers (`src/battle/dam4sam_streaming.py` mixes a caller-supplied predictor
+  and a `correct(image, mask)` method into the upstream tracker class; the DAM4SAM checkout is
+  untouched); `--sam2-model tiny|large` with the large checkpoint SHA-256 pinned like the tiny
+  one; `--input-size 1024|1536` through a battle-owned yaml copy (`sam2_config_source`);
+  `--multi-keyframe-correction-schedule` applied through `add_new_mask` (mid-stream for
+  DAM4SAM, `correction_timing: mid_stream_after_track`; pre-propagation conditioning frames for
+  the offline arms); `--add-correction-to-drm` (default off) decides only whether DAM4SAM's
+  `last_added` throttle and `drm_memory_additions` count a correction as an addition. The
+  tiny/1024/no-schedule worker command is byte-identical to the one that produced the Sep 18
+  60 s run. Manifests gain `sam2_settings`, `vram_probes` (torch counters after 30 and 300
+  frames) and `vram_extrapolation` (linear slope to 1800 frames); a 300-frame smoke exits
+  non-zero when the projected peak exceeds `--fail-if-extrapolated-vram-over-bytes` (12 GiB).
+- **Smokes** (`runs/dam4sam-arms-20260919/smokes/`, 300 frames, correction rebased to frame 150,
+  masks not scored). tiny@1024: allocated 0.63 -> 1.44 GiB between frames 30 and 300, 3.07 MiB
+  per frame, projected 5.94 / 6.14 GiB (allocated / peak) at 1800, pass, 38 s. large@1024:
+  1.33 -> 2.14 GiB, 3.07 MiB/frame, projected 6.64 / 6.91 GiB, pass, 74 s. large@1536 on the
+  1080p proxy: SAM2 accepted `image_size` 1536 and ran all 300 frames (seeds and corrections
+  resized nearest to 1080p), 1.95 -> 3.81 GiB, **7.07 MiB/frame, projected 14.17 / 14.79 GiB**,
+  **gate tripped** (`ExtrapolatedVramOverLimit`, exit 1; the queue stopped as designed), 201 s.
+  The full 1536 arm was **dropped: `vram_gate`**. The slope is the same for tiny and large at
+  1024 (the memory bank is per frame), and the projections held: tiny 6.03 projected vs 6.07
+  measured on 1800 frames, large 6.80 vs 6.80 / 6.85.
+- **Full arms** (`runs/dam4sam-arms-20260919/arms/`, 1800/1800 frames each, worker clock, torch
+  peak, then the nvidia-smi process maximum). `dam4sam-tiny-1024-sched-60s` 222 s, 6.07 GiB /
+  6.35 GiB, 7191 masks (chassis missing from 1469); `dam4sam-large-1024-seed0-60s` 433 s, 6.80 /
+  7.02 GiB, 7097 masks (interior missing from 368, rear_body from 1635);
+  `dam4sam-large-1024-sched-60s` 433 s, 6.85 / 7.48 GiB, 7172 masks (rear_body from 1635). Every
+  scheduled manifest records `scheduled_correction_frame_indices = [327, 900, 1172, 1235]`,
+  `correction_api: add_new_mask`, `shared_predictor: true`. The shared predictor took the
+  tiny 60 s torch peak from 6.81 GiB (Sep 18, four predictors, no corrections) to 6.07 GiB with
+  four corrections.
+- **SAMURAI with the schedule: `unsupported`.** The first job died in 5 s: the driver forwarded
+  `--sam2-model large` to the worker, which refuses that knob for offline arms (they get the
+  large pair through `--sam2-config` / `--checkpoint`, already resolved by the driver). Fixed in
+  commit `6eed418` (`worker_flags` forwards `--sam2-model` only for `dam4sam`; test added), new
+  snapshot `code-snapshot-6eed418/`. The retry loaded the large checkpoint, conditioned frames
+  0 / 327 / 900 / 1172 / 1235 and died at frame 328 inside the SAMURAI checkout
+  (`sam2/modeling/sam2_base.py:667`, `output_dict["non_cond_frame_outputs"][i]["best_iou_score"]`,
+  `KeyError: 327`): in `samurai_mode` the motion-aware memory selection walks every earlier frame
+  in `non_cond_frame_outputs`, and a conditioning frame after index 1 lives in
+  `cond_frame_outputs`. Mid-stream corrections are an upstream assumption violation, not a
+  wrapper bug; the checkout stays unpatched. Both failed directories are kept
+  (`failed-samurai-*`). Substitute run `samurai-large-1024-seed0-60s` (no schedule, four
+  independent offline streams): 537 s, 2.64 / 2.99 GiB, 7200 masks.
+- **Anchor IoU** (overall / `[279,408)` / `[573,722)` / `[1020,1172)` / outside; full table in
+  `runs/anchor-scoreboard-20260919/anchor_iou.md`). `dam4sam-60s` (Sep 18, tiny seed0) 0.717 /
+  0.811 / 0.648 / 0.713 / 0.700; `dam4sam-large-1024-sched-60s` 0.715 / 0.808 / 0.677 / 0.684 /
+  0.695; `dam4sam-tiny-1024-sched-60s` 0.700 / 0.816 / 0.638 / **0.745** / 0.619;
+  `dam4sam-large-1024-seed0-60s` 0.644 / 0.690 / 0.561 / 0.692 / 0.636 (2 missing);
+  `samurai-large-1024-seed0-60s` 0.634 / 0.675 / 0.603 / 0.681 / 0.587. Hidden FP on
+  (1700, rear_body) 1257-1279 px in every SAM2 arm (the screwdriver).
+- **Reading.** For DAM4SAM the schedule matters more than the model size: large seed-only loses
+  the interior at 368 and scores 0.644, large with the four corrections 0.715. Tiny with the
+  schedule (0.700) is below tiny without it (0.717): the corrections cost the chassis slot from
+  1469 on (1500 / 1700 chassis 0.85 / 0.84 -> 0.03 / 0.00). DAM4SAM large with the schedule is
+  tied with `off-r1280-sched` (0.715 vs 0.724) and 0.028 below `pm-append` (0.743); it has the
+  best chassis mean of any arm (0.697; 1050 / 1100 0.87 / 0.80 against SAM3-1280's 0.54 / 0.44)
+  and a weak interior (0.423; 1500 / 1700 0.35 / 0.16 against 0.70 / 0.85). **No DAM4SAM arm
+  beats `off-r1280-sched` on `all` by more than 0.01**, so the plan's seven-view DAM4SAM pass is
+  not started. Nothing is adopted.
