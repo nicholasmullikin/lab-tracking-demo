@@ -1,0 +1,628 @@
+{
+  "schema_version": "1.0",
+  "manifest_kind": "seed_proposal_decisions",
+  "author": null,
+  "author_type": "human",
+  "reviewed_at": null,
+  "instructions": "For each cell set decision to 'accept' with accepted_candidate = the candidate index that is the part (and only the part), or 'reject' with accepted_candidate null when no candidate is; 'unsure' is allowed. Fill author and reviewed_at (UTC ISO 8601). The agent then copies each decision into the proposal.json human_decision field and records the acceptance rate per view and part; nothing is re-run without your say.",
+  "decision_vocabulary": [
+    "accept",
+    "reject",
+    "unsure"
+  ],
+  "generated_at": "2026-09-20T17:00:54.795124+00:00",
+  "cells": [
+    {
+      "view": "C10095",
+      "part": "chassis",
+      "analysis_frame_index": 0,
+      "proposal": "runs/seed-search-20260920/proposals/C10095/chassis_f000000/proposal.json",
+      "contact_sheet": "runs/labeling-sessions-20260920/proposal_sheets/C10095.png",
+      "candidates": [
+        {
+          "index": 0,
+          "strategy": "m0.25|cabin_edge|two|highest_score",
+          "mask_sha256": "bae4c1631789c058d3cd1deb148b7857ee3eabf8a452401500b63e304f937111",
+          "area_px": 3305
+        },
+        {
+          "index": 1,
+          "strategy": "m0.25|none|two|highest_score",
+          "mask_sha256": "33e52663a8df279ae4985857fb280c5617e1ca38a3d4dda6e82503395233f399",
+          "area_px": 3312
+        },
+        {
+          "index": 2,
+          "strategy": "m0.15|cabin_edge|two|highest_score",
+          "mask_sha256": "8ec56b6da3954a618d0808841e4e069826afaed905852695b1a31a2622965086",
+          "area_px": 3864
+        },
+        {
+          "index": 3,
+          "strategy": "m0.15|none|two|highest_score",
+          "mask_sha256": "536cffe6306a6a56f09bcb308834a20877ba5808e6d29fa41deebf9e9e1f2fef",
+          "area_px": 4495
+        }
+      ],
+      "decision": null,
+      "accepted_candidate": null,
+      "note": ""
+    },
+    {
+      "view": "C10095",
+      "part": "rear_body",
+      "analysis_frame_index": 0,
+      "proposal": "runs/seed-search-20260920/proposals/C10095/rear_body_f000000/proposal.json",
+      "contact_sheet": "runs/labeling-sessions-20260920/proposal_sheets/C10095.png",
+      "candidates": [
+        {
+          "index": 0,
+          "strategy": "m0.15|other_centroids|two|highest_score",
+          "mask_sha256": "79510c6e13870ed35659485e676782108c392cf022e99438ae4176a10134d59c",
+          "area_px": 1592
+        },
+        {
+          "index": 1,
+          "strategy": "m0.25|other_centroids|two|highest_score",
+          "mask_sha256": "8b14368d557562092bdfe1d288a698b9de7fb6de565db97e170b032acb424193",
+          "area_px": 2264
+        }
+      ],
+      "decision": null,
+      "accepted_candidate": null,
+      "note": ""
+    },
+    {
+      "view": "C10095",
+      "part": "interior",
+      "analysis_frame_index": 428,
+      "proposal": "runs/seed-search-20260920/proposals/C10095/interior_f000428/proposal.json",
+      "contact_sheet": "runs/labeling-sessions-20260920/proposal_sheets/C10095.png",
+      "candidates": [
+        {
+          "index": 0,
+          "strategy": "m0.25|other_centroids|one|highest_score",
+          "mask_sha256": "8df7a788337ec1089d17f2fd4dc87e8646b5ba0197ce252aca104a73d58a05f8",
+          "area_px": 1994
+        },
+        {
+          "index": 1,
+          "strategy": "m0.25|chassis_rim|one|highest_score",
+          "mask_sha256": "a0273c34b518043a334ae1569138a44c175ca6bc92190a15b6d35795ab3f4d00",
+          "area_px": 2577
+        }
+      ],
+      "decision": null,
+      "accepted_candidate": null,
+      "note": ""
+    },
+    {
+      "view": "C10115",
+      "part": "chassis",
+      "analysis_frame_index": 0,
+      "proposal": "runs/seed-search-20260920/proposals/C10115/chassis_f000000/proposal.json",
+      "contact_sheet": "runs/labeling-sessions-20260920/proposal_sheets/C10115.png",
+      "candidates": [
+        {
+          "index": 0,
+          "strategy": "m0.25|cabin_edge|two|highest_score",
+          "mask_sha256": "25459c9532e2ff2787073ba42733f2f7422605f2adf75cca07678052371659c3",
+          "area_px": 4738
+        },
+        {
+          "index": 1,
+          "strategy": "m0.15|cabin_edge|two|highest_score",
+          "mask_sha256": "f150a6d02abad77fde344e72f5bf496f480a1957d03802b092de2900d5babeb6",
+          "area_px": 4815
+        }
+      ],
+      "decision": null,
+      "accepted_candidate": null,
+      "note": ""
+    },
+    {
+      "view": "C10115",
+      "part": "rear_body",
+      "analysis_frame_index": 0,
+      "proposal": "runs/seed-search-20260920/proposals/C10115/rear_body_f000000/proposal.json",
+      "contact_sheet": "runs/labeling-sessions-20260920/proposal_sheets/C10115.png",
+      "candidates": [
+        {
+          "index": 0,
+          "strategy": "m0.15|other_centroids|two|highest_score",
+          "mask_sha256": "39b4954ee2ec92c7881ee352b2cf19989f54d5657ff0138f79f49197659e2dfe",
+          "area_px": 1398
+        },
+        {
+          "index": 1,
+          "strategy": "m0.25|other_centroids|two|highest_score",
+          "mask_sha256": "d6018d7764c777bde4057d98986084d4f5fc3c38ad0dfa33bdf83dbdae48e7a5",
+          "area_px": 1715
+        }
+      ],
+      "decision": null,
+      "accepted_candidate": null,
+      "note": ""
+    },
+    {
+      "view": "C10115",
+      "part": "interior",
+      "analysis_frame_index": 427,
+      "proposal": "runs/seed-search-20260920/proposals/C10115/interior_f000427/proposal.json",
+      "contact_sheet": "runs/labeling-sessions-20260920/proposal_sheets/C10115.png",
+      "candidates": [
+        {
+          "index": 0,
+          "strategy": "m0.25|other_centroids|one|highest_score",
+          "mask_sha256": "fad12bd43b7cda335540805fa65b97c511666f97bc39c8c635584c343be0b338",
+          "area_px": 2539
+        },
+        {
+          "index": 1,
+          "strategy": "m0.25|chassis_rim|one|highest_score",
+          "mask_sha256": "a50cf908c396ec0cebe5deece53b25dfc115addeea238ec4e00633dedbb7f74b",
+          "area_px": 2761
+        }
+      ],
+      "decision": null,
+      "accepted_candidate": null,
+      "note": ""
+    },
+    {
+      "view": "C10118",
+      "part": "chassis",
+      "analysis_frame_index": 0,
+      "proposal": "runs/seed-search-20260920/proposals/C10118/chassis_f000000/proposal.json",
+      "contact_sheet": "runs/labeling-sessions-20260920/proposal_sheets/C10118.png",
+      "candidates": [
+        {
+          "index": 0,
+          "strategy": "m0.25|cabin_edge|two|highest_score",
+          "mask_sha256": "f8fba75807ffed862dce0a60bf338665535a3b7864b728e45b926398deae05d3",
+          "area_px": 8988
+        },
+        {
+          "index": 1,
+          "strategy": "m0.15|cabin_edge|two|highest_score",
+          "mask_sha256": "051d1963f9250fead3d1fc44b1934954d3cec7eb726440081f53bc212f75cd7a",
+          "area_px": 16588
+        }
+      ],
+      "decision": null,
+      "accepted_candidate": null,
+      "note": ""
+    },
+    {
+      "view": "C10118",
+      "part": "rear_body",
+      "analysis_frame_index": 0,
+      "proposal": "runs/seed-search-20260920/proposals/C10118/rear_body_f000000/proposal.json",
+      "contact_sheet": "runs/labeling-sessions-20260920/proposal_sheets/C10118.png",
+      "candidates": [
+        {
+          "index": 0,
+          "strategy": "m0.15|other_centroids|two|highest_score",
+          "mask_sha256": "df3ced689fe4bb49fafde68bda4daffc0aa4a1810cc7931aa2845919c20a03f7",
+          "area_px": 4390
+        },
+        {
+          "index": 1,
+          "strategy": "m0.25|other_centroids|two|highest_score",
+          "mask_sha256": "a6ed2512f5d3c542fc2a391ccf3c90f6f31b1d993205ad248e6b70676bbbb0cf",
+          "area_px": 4528
+        }
+      ],
+      "decision": null,
+      "accepted_candidate": null,
+      "note": ""
+    },
+    {
+      "view": "C10118",
+      "part": "interior",
+      "analysis_frame_index": 427,
+      "proposal": "runs/seed-search-20260920/proposals/C10118/interior_f000427/proposal.json",
+      "contact_sheet": "runs/labeling-sessions-20260920/proposal_sheets/C10118.png",
+      "candidates": [
+        {
+          "index": 0,
+          "strategy": "m0.25|other_centroids|one|highest_score",
+          "mask_sha256": "e2c7bb9901e005c9b4ee4b995e01bc0bf9c9fe325b789d02218d05a29320c777",
+          "area_px": 1958
+        },
+        {
+          "index": 1,
+          "strategy": "m0.25|chassis_rim|one|highest_score",
+          "mask_sha256": "805885edaf9ed9d46c0dc12a52ba22c94486c14c0bf408d3be2cd0e87c263b8b",
+          "area_px": 2059
+        }
+      ],
+      "decision": null,
+      "accepted_candidate": null,
+      "note": ""
+    },
+    {
+      "view": "C10119",
+      "part": "chassis",
+      "analysis_frame_index": 0,
+      "proposal": "runs/seed-search-20260920/proposals/C10119/chassis_f000000/proposal.json",
+      "contact_sheet": "runs/labeling-sessions-20260920/proposal_sheets/C10119.png",
+      "candidates": [
+        {
+          "index": 0,
+          "strategy": "m0.25|cabin_edge|two|highest_score",
+          "mask_sha256": "8b1259198fda7baf8fdd9e5b118f77e2a1d2df628f781a42d8ab9fa7658d7af2",
+          "area_px": 7155
+        },
+        {
+          "index": 1,
+          "strategy": "m0.15|cabin_edge|two|highest_score",
+          "mask_sha256": "31e61622267918469bdc8577b219844a1fa029f7d8a927da963b805f90f6b91d",
+          "area_px": 12798
+        }
+      ],
+      "decision": null,
+      "accepted_candidate": null,
+      "note": ""
+    },
+    {
+      "view": "C10119",
+      "part": "rear_body",
+      "analysis_frame_index": 0,
+      "proposal": "runs/seed-search-20260920/proposals/C10119/rear_body_f000000/proposal.json",
+      "contact_sheet": "runs/labeling-sessions-20260920/proposal_sheets/C10119.png",
+      "candidates": [
+        {
+          "index": 0,
+          "strategy": "m0.15|other_centroids|two|highest_score",
+          "mask_sha256": "212b1c0f35e9965b6e33109a510b480e82bc2f3f230b6e30fa5d4ef31453c5a3",
+          "area_px": 2034
+        },
+        {
+          "index": 1,
+          "strategy": "m0.25|other_centroids|two|highest_score",
+          "mask_sha256": "9c1ba1afe5baa68e635e061b869cd09dcdae645f4c26513735d921966afe1ac8",
+          "area_px": 3440
+        }
+      ],
+      "decision": null,
+      "accepted_candidate": null,
+      "note": ""
+    },
+    {
+      "view": "C10119",
+      "part": "interior",
+      "analysis_frame_index": 427,
+      "proposal": "runs/seed-search-20260920/proposals/C10119/interior_f000427/proposal.json",
+      "contact_sheet": "runs/labeling-sessions-20260920/proposal_sheets/C10119.png",
+      "candidates": [
+        {
+          "index": 0,
+          "strategy": "m0.25|other_centroids|one|highest_score",
+          "mask_sha256": "051a719dcfc680d64d8e36700db3ff33d5c2554040c3c223ff3cc4e0154429c1",
+          "area_px": 2022
+        },
+        {
+          "index": 1,
+          "strategy": "m0.25|chassis_rim|one|highest_score",
+          "mask_sha256": "f006a33bf2c874b9ecd94a5514df6cedaae462e0fa5134e69003b9ecf0736a5b",
+          "area_px": 3342
+        }
+      ],
+      "decision": null,
+      "accepted_candidate": null,
+      "note": ""
+    },
+    {
+      "view": "C10390",
+      "part": "chassis",
+      "analysis_frame_index": 0,
+      "proposal": "runs/seed-search-20260920/proposals/C10390/chassis_f000000/proposal.json",
+      "contact_sheet": "runs/labeling-sessions-20260920/proposal_sheets/C10390.png",
+      "candidates": [
+        {
+          "index": 0,
+          "strategy": "m0.25|cabin_edge|two|highest_score",
+          "mask_sha256": "3365b5b775b7427894d3bdc768a47f6cd5439503a6bd22a16196b77258b75d67",
+          "area_px": 2943
+        },
+        {
+          "index": 1,
+          "strategy": "m0.25|none|two|highest_score",
+          "mask_sha256": "c35b1258970e9fa742c94186acb9ab1c749c7c62f76b630040d0412947cc7d4a",
+          "area_px": 2948
+        },
+        {
+          "index": 2,
+          "strategy": "m0.15|cabin_edge|two|highest_score",
+          "mask_sha256": "e72920218c4d14b78cb736ebf02bba7dbe017cbae3869e103ac570c242c0a1a7",
+          "area_px": 3069
+        },
+        {
+          "index": 3,
+          "strategy": "m0.15|none|two|highest_score",
+          "mask_sha256": "c1e39956c6a4cbd52f1b668654c338f1e9e484b64a4d6a03ae802da81e4dc891",
+          "area_px": 3129
+        }
+      ],
+      "decision": null,
+      "accepted_candidate": null,
+      "note": ""
+    },
+    {
+      "view": "C10390",
+      "part": "rear_body",
+      "analysis_frame_index": 0,
+      "proposal": "runs/seed-search-20260920/proposals/C10390/rear_body_f000000/proposal.json",
+      "contact_sheet": "runs/labeling-sessions-20260920/proposal_sheets/C10390.png",
+      "candidates": [
+        {
+          "index": 0,
+          "strategy": "m0.15|other_centroids|two|highest_score",
+          "mask_sha256": "a6f2726338919a755d5e58ab2cb90501963e0c42a0debcb4f28ca6aef4a626ae",
+          "area_px": 1317
+        },
+        {
+          "index": 1,
+          "strategy": "m0.25|other_centroids|two|highest_score",
+          "mask_sha256": "4b6775be85c1ddaebe76d4819a48a9a4663cd645112e4689d51a0465a968fba5",
+          "area_px": 1579
+        }
+      ],
+      "decision": null,
+      "accepted_candidate": null,
+      "note": ""
+    },
+    {
+      "view": "C10390",
+      "part": "interior",
+      "analysis_frame_index": 427,
+      "proposal": "runs/seed-search-20260920/proposals/C10390/interior_f000427/proposal.json",
+      "contact_sheet": "runs/labeling-sessions-20260920/proposal_sheets/C10390.png",
+      "candidates": [
+        {
+          "index": 0,
+          "strategy": "m0.25|other_centroids|one|highest_score",
+          "mask_sha256": "e2e73654dd65d27f92c56f17b68780ffd35ac50578df4a912b52df2e539ba6ea",
+          "area_px": 2554
+        },
+        {
+          "index": 1,
+          "strategy": "m0.25|chassis_rim|one|highest_score",
+          "mask_sha256": "b5a00486f69b5b8307ef1e6d2043e133ccdd5f77ce628a18043aba939a271d4a",
+          "area_px": 2582
+        }
+      ],
+      "decision": null,
+      "accepted_candidate": null,
+      "note": ""
+    },
+    {
+      "view": "C10395",
+      "part": "chassis",
+      "analysis_frame_index": 0,
+      "proposal": "runs/seed-search-20260920/proposals/C10395/chassis_f000000/proposal.json",
+      "contact_sheet": "runs/labeling-sessions-20260920/proposal_sheets/C10395.png",
+      "candidates": [
+        {
+          "index": 0,
+          "strategy": "m0.25|cabin_edge|two|highest_score",
+          "mask_sha256": "f31928b00a422326251227e2ac30a888506cb84a4e757b977a3f0a8f784cd936",
+          "area_px": 4718
+        },
+        {
+          "index": 1,
+          "strategy": "m0.25|none|two|highest_score",
+          "mask_sha256": "b157546406edc84ad7ae99435610aa128cf5e35dddd53c0ed274e622f069466c",
+          "area_px": 4769
+        },
+        {
+          "index": 2,
+          "strategy": "m0.15|cabin_edge|two|highest_score",
+          "mask_sha256": "21d7d19ea88a4edbd4e2c0ae298e3b3705bac2ff1457c5fd3539d1733a71a4ba",
+          "area_px": 4999
+        },
+        {
+          "index": 3,
+          "strategy": "m0.15|none|two|highest_score",
+          "mask_sha256": "8d9272a9f6cd58661fae501b52f56969259fc35d7de7d4d05d52bb1c6feb8421",
+          "area_px": 5487
+        }
+      ],
+      "decision": null,
+      "accepted_candidate": null,
+      "note": ""
+    },
+    {
+      "view": "C10395",
+      "part": "rear_body",
+      "analysis_frame_index": 0,
+      "proposal": "runs/seed-search-20260920/proposals/C10395/rear_body_f000000/proposal.json",
+      "contact_sheet": "runs/labeling-sessions-20260920/proposal_sheets/C10395.png",
+      "candidates": [
+        {
+          "index": 0,
+          "strategy": "m0.15|other_centroids|two|highest_score",
+          "mask_sha256": "74a4249ecc5e23a0c153af70a19c5a34f66c59293ef09169608f1678cbb393c7",
+          "area_px": 1654
+        },
+        {
+          "index": 1,
+          "strategy": "m0.25|other_centroids|two|highest_score",
+          "mask_sha256": "69e5f092f8b43545a9f05ddb88b49212e72c5cbf68a7cfff46095cc4edbce4b2",
+          "area_px": 2546
+        }
+      ],
+      "decision": null,
+      "accepted_candidate": null,
+      "note": ""
+    },
+    {
+      "view": "C10395",
+      "part": "interior",
+      "analysis_frame_index": 427,
+      "proposal": "runs/seed-search-20260920/proposals/C10395/interior_f000427/proposal.json",
+      "contact_sheet": "runs/labeling-sessions-20260920/proposal_sheets/C10395.png",
+      "candidates": [
+        {
+          "index": 0,
+          "strategy": "m0.25|other_centroids|one|highest_score",
+          "mask_sha256": "3584dc7a51b3721ce8573eff43846c1a34cfffcd569bead8c55d6ac90a6c78cc",
+          "area_px": 2441
+        },
+        {
+          "index": 1,
+          "strategy": "m0.25|chassis_rim|one|highest_score",
+          "mask_sha256": "2f75afadd37a2b9a159b1b116385e777f8c636e2120e9d495aa04b77637bfb6c",
+          "area_px": 3707
+        }
+      ],
+      "decision": null,
+      "accepted_candidate": null,
+      "note": ""
+    },
+    {
+      "view": "C10404",
+      "part": "chassis",
+      "analysis_frame_index": 0,
+      "proposal": "runs/seed-search-20260920/proposals/C10404/chassis_f000000/proposal.json",
+      "contact_sheet": "runs/labeling-sessions-20260920/proposal_sheets/C10404.png",
+      "candidates": [
+        {
+          "index": 0,
+          "strategy": "m0.25|cabin_edge|two|highest_score",
+          "mask_sha256": "3e211fa680c0adbae6052dbd2193d72c17a649ce3422cab4813b9a1576c6e790",
+          "area_px": 4929
+        },
+        {
+          "index": 1,
+          "strategy": "m0.15|cabin_edge|two|highest_score",
+          "mask_sha256": "52b81b298a09b42cf9d7c3535ca81d619222d55a68fc12b5c8e2c5d04c7804f1",
+          "area_px": 5743
+        }
+      ],
+      "decision": null,
+      "accepted_candidate": null,
+      "note": ""
+    },
+    {
+      "view": "C10404",
+      "part": "rear_body",
+      "analysis_frame_index": 0,
+      "proposal": "runs/seed-search-20260920/proposals/C10404/rear_body_f000000/proposal.json",
+      "contact_sheet": "runs/labeling-sessions-20260920/proposal_sheets/C10404.png",
+      "candidates": [
+        {
+          "index": 0,
+          "strategy": "m0.15|other_centroids|two|highest_score",
+          "mask_sha256": "69761cf4ddb5653e28c6fe8029e4726fb4e9b6eefaddea9c219915e8dbde291c",
+          "area_px": 1424
+        },
+        {
+          "index": 1,
+          "strategy": "m0.25|other_centroids|two|highest_score",
+          "mask_sha256": "31571829f36606aea865fb9e8cb42ce2c28787fe9f76e525f5499128ffc57b0a",
+          "area_px": 1651
+        }
+      ],
+      "decision": null,
+      "accepted_candidate": null,
+      "note": ""
+    },
+    {
+      "view": "C10404",
+      "part": "interior",
+      "analysis_frame_index": 427,
+      "proposal": "runs/seed-search-20260920/proposals/C10404/interior_f000427/proposal.json",
+      "contact_sheet": "runs/labeling-sessions-20260920/proposal_sheets/C10404.png",
+      "candidates": [
+        {
+          "index": 0,
+          "strategy": "m0.25|other_centroids|one|highest_score",
+          "mask_sha256": "8a329230427bbacf9848caccdd3e1414add140b2315a49b2519a41db2117c021",
+          "area_px": 843
+        },
+        {
+          "index": 1,
+          "strategy": "m0.25|chassis_rim|one|highest_score",
+          "mask_sha256": "499243be3bf90226710f5044d277395efbeca73155ef2255b91a624fc8625694",
+          "area_px": 949
+        }
+      ],
+      "decision": null,
+      "accepted_candidate": null,
+      "note": ""
+    },
+    {
+      "view": "HMC_21179183",
+      "part": "chassis",
+      "analysis_frame_index": 0,
+      "proposal": "runs/seed-search-20260920/proposals/HMC_21179183/chassis_f000000/proposal.json",
+      "contact_sheet": "runs/labeling-sessions-20260920/proposal_sheets/HMC_21179183.png",
+      "candidates": [
+        {
+          "index": 0,
+          "strategy": "m0.25|cabin_edge|two|highest_score",
+          "mask_sha256": "f95a5b769ae910a5862c7c6f9bc078fcdef9b86e43b2d0415a437df93c6a69bb",
+          "area_px": 14848
+        },
+        {
+          "index": 1,
+          "strategy": "m0.15|cabin_edge|two|highest_score",
+          "mask_sha256": "c1956167664ba4c742ef4501eb37c50f7441625b26fcda50f01226ce9d4c4559",
+          "area_px": 16751
+        }
+      ],
+      "decision": null,
+      "accepted_candidate": null,
+      "note": ""
+    },
+    {
+      "view": "HMC_21179183",
+      "part": "rear_body",
+      "analysis_frame_index": 0,
+      "proposal": "runs/seed-search-20260920/proposals/HMC_21179183/rear_body_f000000/proposal.json",
+      "contact_sheet": "runs/labeling-sessions-20260920/proposal_sheets/HMC_21179183.png",
+      "candidates": [
+        {
+          "index": 0,
+          "strategy": "m0.15|other_centroids|two|highest_score",
+          "mask_sha256": "cd60770ff250ec4d67e7a22ee84e724617cd01a5d264c2f46e5c0a3ae10ece6c",
+          "area_px": 2783
+        },
+        {
+          "index": 1,
+          "strategy": "m0.25|other_centroids|two|highest_score",
+          "mask_sha256": "d7f391f2e9fc53c43f5b75dac98e16fcaa3e06a4223a9aa70e39eb919ba09734",
+          "area_px": 6185
+        }
+      ],
+      "decision": null,
+      "accepted_candidate": null,
+      "note": ""
+    },
+    {
+      "view": "HMC_21179183",
+      "part": "interior",
+      "analysis_frame_index": 430,
+      "proposal": "runs/seed-search-20260920/proposals/HMC_21179183/interior_f000430/proposal.json",
+      "contact_sheet": "runs/labeling-sessions-20260920/proposal_sheets/HMC_21179183.png",
+      "candidates": [
+        {
+          "index": 0,
+          "strategy": "m0.25|other_centroids|one|highest_score",
+          "mask_sha256": "c2e10f21b6915b0f8530f7f78062b91f79382820e85cce0233fb31949d803a47",
+          "area_px": 9435
+        },
+        {
+          "index": 1,
+          "strategy": "m0.25|chassis_rim|one|highest_score",
+          "mask_sha256": "7042d7127e07f3a9e35434dbaad4b482b6c3f6a7e62f867374c1d542db16bd41",
+          "area_px": 10562
+        }
+      ],
+      "decision": null,
+      "accepted_candidate": null,
+      "note": ""
+    }
+  ]
+}

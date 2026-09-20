@@ -46,6 +46,17 @@ PART_COLORS = mask_cache.REVIEW_COLORS
 HAND_COLORS = {"left": (255, 235, 130), "right": (140, 255, 235)}
 CAMERA_PLANE_MM = 250.0
 WORLD_3D = "world_mm_3d"
+ENTITY_ROOT = "world/assembly101_multiview_first_minute"
+APPLICATION_ID = "battle-multiview-static-comparison"
+RECORDING_ID = "multiview_static_comparison"
+# Human anchor masks (C10379 only) drawn as outlines on that tile at the anchor frames, and the
+# seed-search accept/reject proposals drawn as outlined candidates on each view's tile at the
+# proposal frame.  Both are cleared on the following frame.
+ANCHOR_MASKS = Path("runs/human-review-anchors-first-minute/anchors/anchor_masks.json")
+PROPOSALS_ROOT = Path("runs/seed-search-20260920/proposals")
+PROPOSAL_LABEL = "proposal: accept/reject pending"
+PROPOSAL_COLORS = ((255, 255, 255), (255, 120, 40), (80, 220, 255), (200, 120, 255))
+ANCHOR_SERIES = "metadata/anchors"
 
 
 class MultiviewLayer:
@@ -314,7 +325,158 @@ def log_hull_3d(root: str, hull: HullOverlay, frame: int) -> None:
         )
 
 
+# -- human anchor outlines and seed-search proposals -----------------------------------------
+
+
+def _mask_outlines(mask: np.ndarray) -> list[list[list[float]]]:
+    import cv2
+
+    contours, _ = cv2.findContours(
+        mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+    )
+    strips: list[list[list[float]]] = []
+    for contour in contours:
+        points = contour.reshape(-1, 2).astype(float).tolist()
+        if len(points) >= 3:
+            strips.append([*points, points[0]])
+    return strips
+
+
+def load_anchor_outlines(
+    repository_root: Path, mask_set: Path = ANCHOR_MASKS
+) -> tuple[str, dict[int, dict[str, Path]]]:
+    """(view, {frame: {part: mask png}}) from an exported human anchor mask set."""
+    path = repository_root / mask_set
+    exported = json.loads(path.read_text(encoding="utf-8"))
+    view = str(exported["view_id"]).split("-", 1)[1].upper()
+    by_frame: dict[int, dict[str, Path]] = {}
+    for anchor in exported["anchors"]:
+        frame = int(anchor["analysis_frame_index"])
+        by_frame.setdefault(frame, {})
+        if anchor.get("mask_uri"):
+            by_frame[frame][str(anchor["target"])] = path.parent.parent / anchor["mask_uri"]
+    return view, by_frame
+
+
+class ProposalCell:
+    """One `proposal.json` of `battle-seed-search`: candidates for one view, part and frame."""
+
+    def __init__(self, directory: Path) -> None:
+        record = json.loads((directory / "proposal.json").read_text(encoding="utf-8"))
+        self.directory = directory
+        self.view = str(record["view"])
+        self.part = str(record["part"])
+        self.frame = int(record["analysis_frame_index"])
+        self.disagreement = float(record.get("disagreement_1_minus_mean_pairwise_iou", 0.0))
+        self.decision = record.get("human_decision")
+        self.candidates = tuple(
+            (str(item["strategy"]), directory / str(item["mask_uri"]))
+            for item in record["candidates"]
+        )
+
+
+def load_proposals(
+    repository_root: Path, root: Path = PROPOSALS_ROOT
+) -> dict[str, list[ProposalCell]]:
+    """Proposals by view, each list sorted by frame (empty when the root is absent)."""
+    base = repository_root / root
+    if not base.is_dir():
+        return {}
+    by_view: dict[str, list[ProposalCell]] = {}
+    for proposal in sorted(base.glob("*/*/proposal.json")):
+        cell = ProposalCell(proposal.parent)
+        by_view.setdefault(cell.view, []).append(cell)
+    for cells in by_view.values():
+        cells.sort(key=lambda cell: (cell.frame, cell.part))
+    return by_view
+
+
+def log_anchor_marks_static(root: str, frames: tuple[int, ...], view: str) -> None:
+    rr.log(
+        f"{root}/{ANCHOR_SERIES}/anchor_frame",
+        rr.SeriesPoints(
+            names=f"human anchor frame ({len(frames)} frames, {view})",
+            colors=[(255, 255, 255)],
+            markers="diamond",
+            marker_sizes=6.0,
+        ),
+        static=True,
+    )
+
+
+def log_anchor_outlines_frame(
+    root: str, view_root: str, frame: int, anchors: dict[int, dict[str, Path]]
+) -> None:
+    """Outlines of the human masks on the labelled view at its anchor frames only."""
+    if frame in anchors:
+        rr.log(f"{root}/{ANCHOR_SERIES}/anchor_frame", rr.Scalars([1.0]))
+        for part, mask_path in anchors[frame].items():
+            strips = _mask_outlines(mask_cache.decode_mask_png(mask_path))
+            if not strips:
+                continue
+            rr.log(
+                f"{view_root}/human_anchor_outlines/{part}",
+                rr.LineStrips2D(
+                    strips,
+                    colors=[PART_COLORS[part]] * len(strips),
+                    radii=1.5,
+                    labels=[f"human anchor {part} f{frame}"],
+                    draw_order=3.0,
+                ),
+            )
+    elif (frame - 1) in anchors:
+        rr.log(f"{root}/{ANCHOR_SERIES}/anchor_frame", rr.Clear(recursive=False))
+        rr.log(f"{view_root}/human_anchor_outlines", rr.Clear(recursive=True))
+
+
+def log_proposals_frame(view_root: str, frame: int, cells: list[ProposalCell]) -> None:
+    """Each candidate of a proposal cell as an outline in its own colour at the cell's frame."""
+    for cell in cells:
+        path = f"{view_root}/proposals/{cell.part}"
+        if cell.frame == frame:
+            strips: list[list[list[float]]] = []
+            colors: list[tuple[int, int, int]] = []
+            for index, (_, mask_path) in enumerate(cell.candidates):
+                outlines = _mask_outlines(mask_cache.decode_mask_png(mask_path))
+                strips.extend(outlines)
+                colors.extend([PROPOSAL_COLORS[index % len(PROPOSAL_COLORS)]] * len(outlines))
+            if not strips:
+                continue
+            status = (
+                PROPOSAL_LABEL if cell.decision is None else f"proposal: decided {cell.decision}"
+            )
+            strategies = "; ".join(
+                f"c{index:02d} {strategy}" for index, (strategy, _) in enumerate(cell.candidates)
+            )
+            rr.log(
+                path,
+                rr.LineStrips2D(
+                    strips,
+                    colors=colors,
+                    radii=1.5,
+                    labels=[f"{status} - {cell.part} f{cell.frame} ({strategies})"],
+                    draw_order=3.0,
+                ),
+            )
+        elif cell.frame == frame - 1:
+            rr.log(path, rr.Clear(recursive=False))
+
+
 # -- the eight-view recording ----------------------------------------------------------------
+
+
+def _project_marker(rig: CameraRig, view: str, frame: int, point: np.ndarray) -> np.ndarray | None:
+    """Raw-pixel projection of a world point; an ego view uses its pose at the view's frame
+    and yields None where the dataset has no pose or the point is behind the camera."""
+    if not rig.camera(view).is_ego:
+        return rig.project(view, point.reshape(1, 3))[0]
+    try:
+        pose_frame = rig.pose_frame(view, frame)
+        if rig.depth(view, point.reshape(1, 3), pose_frame)[0] <= 0:
+            return None
+        return rig.project(view, point.reshape(1, 3), pose_frame)[0]
+    except KeyError:
+        return None
 
 
 def build_static_comparison(
@@ -324,12 +486,31 @@ def build_static_comparison(
     consensus_root: Path = CONSENSUS_ROOT,
     hull_root: Path | None = HULL_ROOT,
     mask_every: int = 1,
+    anchor_masks: Path | None = ANCHOR_MASKS,
+    proposals_root: Path | None = PROPOSALS_ROOT,
+    application_id: str = APPLICATION_ID,
+    recording_id: str = RECORDING_ID,
+    embed_blueprint: bool = True,
 ) -> Path:
+    """Write the multi-view comparison recording.
+
+    `anchor_masks` draws the exported human anchor masks as outlines on the labelled view at
+    the anchor frames; `proposals_root` draws the seed-search proposal candidates on each view
+    at their frames.  `application_id` / `recording_id` may be set to another package's so
+    `rerun rrd merge` can put both into one store; `embed_blueprint=False` then leaves the
+    layout to that package's `.rbl` presets.
+    """
     from .muggled_smoke import _create_bounded_rerun_video
 
     started = time.monotonic()
     repository_root = repository_root.resolve()
     layer = MultiviewLayer(repository_root, consensus_root)
+    anchor_view, anchors = (
+        load_anchor_outlines(repository_root, anchor_masks)
+        if anchor_masks is not None and (repository_root / anchor_masks).is_file()
+        else (None, {})
+    )
+    proposals = load_proposals(repository_root, proposals_root) if proposals_root else {}
     rig = CameraRig.load(repository_root)
     frame_count = layer.manifest.frame_count
     runs = {
@@ -366,9 +547,11 @@ def build_static_comparison(
             )
         videos[view] = bounded
     rrd_path = root_dir / RECORDING_NAME
-    rr.init("battle-multiview-static-comparison", recording_id="multiview_static_comparison")
+    rr.init(application_id, recording_id=recording_id)
     rr.save(rrd_path)
-    entity = "world/assembly101_multiview_first_minute"
+    entity = ENTITY_ROOT
+    if anchors and anchor_view in runs:
+        log_anchor_marks_static(entity, tuple(sorted(anchors)), anchor_view)
     for view, path in videos.items():
         rr.log(f"{entity}/views/{view}/video_asset", rr.AssetVideo(path=path), static=True)
     rr.log(
@@ -435,7 +618,10 @@ def build_static_comparison(
                 point = layer.consensus_point(frame, target)
                 if point is None:
                     continue
-                pixel = rig.project(view, point.reshape(1, 3))[0] / scale
+                pixel = _project_marker(rig, view, frame, point)
+                if pixel is None:
+                    continue
+                pixel = pixel / scale
                 error = layer.error[target][view][frame]
                 markers.append(pixel.tolist())
                 colors.append(PART_COLORS[target])
@@ -448,6 +634,10 @@ def build_static_comparison(
                 rr.log(marker_path, rr.Points2D(markers, colors=colors, labels=labels, radii=6.0))
             else:
                 rr.log(marker_path, rr.Clear(recursive=False))
+            if view == anchor_view and anchors:
+                log_anchor_outlines_frame(entity, view_root, frame, anchors)
+            if view in proposals:
+                log_proposals_frame(view_root, frame, proposals[view])
         log_consensus_3d(f"{entity}/{WORLD_3D}", layer, frame)
         log_dataset_hands_3d(
             f"{entity}/{WORLD_3D}",
@@ -457,39 +647,127 @@ def build_static_comparison(
         if hull is not None:
             log_hull_3d(f"{entity}/{WORLD_3D}", hull, frame)
         log_error_series_frame(f"{entity}/diagnostics/multiview", layer, frame)
-    rr.send_blueprint(_static_comparison_blueprint(entity, tuple(runs), hull is not None))
+    if embed_blueprint:
+        rr.send_blueprint(
+            static_comparison_blueprint(
+                entity,
+                tuple(runs),
+                hull is not None,
+                anchor_view=anchor_view if anchors else None,
+                proposal_views=tuple(view for view in runs if view in proposals),
+            )
+        )
     rr.disconnect()
     index = {
         "manifest_kind": "multiview_static_comparison",
         "recording": rrd_path.relative_to(repository_root).as_posix(),
+        "application_id": application_id,
+        "recording_id": recording_id,
+        "embedded_blueprint": embed_blueprint,
+        "consensus_root": consensus_root.as_posix(),
+        "hull_root": hull_root.as_posix() if hull is not None and hull_root is not None else None,
         "consensus_manifest": layer.manifest.per_frame_fingerprint.model_dump(mode="json")
         if layer.manifest.per_frame_fingerprint
         else None,
         "views": list(runs),
         "hull_overlay": hull is not None,
         "mask_every": mask_every,
+        "anchor_outlines": {
+            "view": anchor_view,
+            "frames": sorted(anchors),
+            "mask_set": anchor_masks.as_posix() if anchor_masks is not None else None,
+        }
+        if anchors
+        else None,
+        "proposals": {
+            view: [
+                {
+                    "part": cell.part,
+                    "frame": cell.frame,
+                    "candidates": len(cell.candidates),
+                    "human_decision": cell.decision,
+                }
+                for cell in cells
+            ]
+            for view, cells in proposals.items()
+            if view in runs
+        },
         "runtime_seconds": time.monotonic() - started,
-        "claim_boundaries": list(layer.manifest.claim_boundaries),
+        "recording_bytes": rrd_path.stat().st_size,
+        "claim_boundaries": [
+            *layer.manifest.claim_boundaries,
+            "Human anchor outlines exist on the labelled view only (C10379); every other view's "
+            "seeds are agent-authored and unreviewed.",
+            "Seed-search proposals are agent decoder candidates awaiting human accept/reject; "
+            "drawing them changes no seed and no run.",
+        ],
     }
     (root_dir / "index.json").write_text(json.dumps(index, indent=2) + "\n", encoding="utf-8")
     return rrd_path
 
 
-def _static_comparison_blueprint(entity: str, views: tuple[str, ...], hull: bool) -> rrb.Blueprint:
-    def view_2d(view: str) -> rrb.Spatial2DView:
-        contents = [
-            "$origin/video",
-            "$origin/masks/**",
-            "$origin/consensus_markers",
-            *(["$origin/hull_projection/**"] if hull else []),
-        ]
-        return rrb.Spatial2DView(
-            origin=f"{entity}/views/{view}",
-            name=f"{view}" + (" (human seeds)" if view == REFERENCE_VIEW else " (agent seeds)"),
-            contents=contents,
+def view_tile(
+    entity: str,
+    view: str,
+    *,
+    hull: bool,
+    anchor_view: str | None = None,
+    proposal_views: tuple[str, ...] = (),
+) -> rrb.Spatial2DView:
+    """One camera tile: video, part masks, consensus markers, hull projection, and the human
+    anchor outlines / seed proposals where they exist for that view."""
+    contents = [
+        "$origin/video",
+        "$origin/masks/**",
+        "$origin/consensus_markers",
+        *(["$origin/hull_projection/**"] if hull else []),
+        *(["$origin/human_anchor_outlines/**"] if view == anchor_view else []),
+        *(["$origin/proposals/**"] if view in proposal_views else []),
+    ]
+    if view == REFERENCE_VIEW:
+        seeds = " (human seeds + corrections" + (
+            ", anchor outlines)" if view == anchor_view else ")"
         )
+    else:
+        seeds = " (agent seeds, unreviewed" + (", proposals)" if view in proposal_views else ")")
+    return rrb.Spatial2DView(
+        origin=f"{entity}/views/{view}", name=f"{view}{seeds}", contents=contents
+    )
 
-    grid = rrb.Grid(*[view_2d(view) for view in views], grid_columns=4)
+
+def static_comparison_blueprint(
+    entity: str,
+    views: tuple[str, ...],
+    hull: bool,
+    *,
+    anchor_view: str | None = None,
+    proposal_views: tuple[str, ...] = (),
+) -> rrb.Blueprint:
+    grid = rrb.Grid(
+        *[
+            view_tile(
+                entity, view, hull=hull, anchor_view=anchor_view, proposal_views=proposal_views
+            )
+            for view in views
+        ],
+        grid_columns=4,
+    )
+    series_tabs = [
+        rrb.TimeSeriesView(
+            origin=f"{entity}/diagnostics/multiview/{target}",
+            name=f"{target}: per-view error (raw px)",
+            contents="$origin/**",
+        )
+        for target in TARGETS
+    ]
+    if anchor_view is not None:
+        series_tabs.append(
+            rrb.TimeSeriesView(
+                origin=f"{entity}/{ANCHOR_SERIES}",
+                name=f"human anchor frames ({anchor_view})",
+                contents="$origin/anchor_frame",
+            )
+        )
     return rrb.Blueprint(
         rrb.Vertical(
             grid,
@@ -500,16 +778,7 @@ def _static_comparison_blueprint(entity: str, views: tuple[str, ...], hull: bool
                     + (", hull voxels (1 fps)" if hull else ""),
                     contents="$origin/**",
                 ),
-                rrb.Tabs(
-                    *[
-                        rrb.TimeSeriesView(
-                            origin=f"{entity}/diagnostics/multiview/{target}",
-                            name=f"{target}: per-view error (raw px)",
-                            contents="$origin/**",
-                        )
-                        for target in TARGETS
-                    ]
-                ),
+                rrb.Tabs(*series_tabs),
                 rrb.TextDocumentView(
                     origin=f"{entity}/metadata/disagreement", name="Disagreement episodes"
                 ),
@@ -531,6 +800,31 @@ def main() -> None:
     parser.add_argument("--hull-root", type=Path, default=HULL_ROOT)
     parser.add_argument("--no-hull", action="store_true")
     parser.add_argument("--mask-every", type=int, default=1)
+    parser.add_argument(
+        "--anchor-masks",
+        type=Path,
+        default=ANCHOR_MASKS,
+        help="Exported human anchor mask set drawn as outlines on its view at the anchor frames.",
+    )
+    parser.add_argument("--no-anchor-outlines", action="store_true")
+    parser.add_argument(
+        "--proposals-root",
+        type=Path,
+        default=PROPOSALS_ROOT,
+        help="battle-seed-search proposals drawn as outlined candidates on each view's tile.",
+    )
+    parser.add_argument("--no-proposals", action="store_true")
+    parser.add_argument("--application-id", default=APPLICATION_ID)
+    parser.add_argument(
+        "--recording-id",
+        default=RECORDING_ID,
+        help="Set to the interaction-review package's id so `rerun rrd merge` yields one store.",
+    )
+    parser.add_argument(
+        "--no-blueprint",
+        action="store_true",
+        help="Do not embed a layout (use when merging into a package that carries .rbl presets).",
+    )
     args = parser.parse_args()
     path = build_static_comparison(
         args.repository_root,
@@ -538,6 +832,11 @@ def main() -> None:
         consensus_root=args.consensus_root,
         hull_root=None if args.no_hull else args.hull_root,
         mask_every=args.mask_every,
+        anchor_masks=None if args.no_anchor_outlines else args.anchor_masks,
+        proposals_root=None if args.no_proposals else args.proposals_root,
+        application_id=args.application_id,
+        recording_id=args.recording_id,
+        embed_blueprint=not args.no_blueprint,
     )
     print(f"{path} ({path.stat().st_size / 1e6:.1f} MB)")
 

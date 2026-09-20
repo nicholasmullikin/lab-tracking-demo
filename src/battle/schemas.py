@@ -2937,6 +2937,23 @@ class InteractionReviewIndexManifest(VersionedModel):
     output_rrd: ArtifactFingerprint | None = None
     review_guide: ArtifactFingerprint | None = None
     contact_sheet: ArtifactFingerprint | None = None
+    candidate_arms: dict[str, ArtifactFingerprint] | None = Field(
+        default=None,
+        description=(
+            "Further C10379 segmentation runs logged beside the reference "
+            "(`--candidate-arm NAME=RUN_DIR`), keyed by display name -> run manifest."
+        ),
+    )
+    confidence_series: ArtifactFingerprint | None = Field(
+        default=None,
+        description="`confidence.jsonl` of the detector scorecard logged as a time series.",
+    )
+    anchor_marks: tuple[ArtifactFingerprint, ...] | None = Field(
+        default=None,
+        description="Human anchor config (and exported mask set) marked on the timeline.",
+    )
+    application_id: str | None = None
+    recording_id: str | None = None
 
 
 class AgentAuthoredVisualFinding(VersionedModel):

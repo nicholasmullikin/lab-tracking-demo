@@ -1117,9 +1117,17 @@ def _log_navigation_frame(
 
 REFERENCE_PROVENANCE_SERIES = "diagnostics/reference_provenance"
 REFERENCE_PROVENANCE_OVERLAY = "primary/reference_provenance_overlay"
+# Generic legend (every code the schema defines); the v4 builder passes a legend restricted to
+# the states its reference actually holds, so a policy without a hidden interval shows none.
 REFERENCE_PROVENANCE_PANEL_NAME = (
-    "Reference mask provenance per part (0 missing, 1 sam3, 2 dam4sam fallback, 3 hidden)"
+    "Reference mask provenance per part (0 missing, 1 sam3 primary, 2 dam4sam fallback, "
+    "3 hidden agent label)"
 )
+CANDIDATE_SEGMENTATION_ROOT = "comparison/segmentation"
+CANDIDATE_AREA_SERIES = "diagnostics/segmentation"
+CONFIDENCE_SERIES = "diagnostics/confidence"
+ANCHOR_SERIES = "metadata/anchors"
+HUMAN_ANCHOR_OUTLINES = "primary/human_anchor_outlines"
 
 
 ASSEMBLY101_2D_ROOT = "comparison/assembly101_hands_2d"
@@ -1136,12 +1144,18 @@ def _blueprint(
     reference_provenance: bool = False,
     assembly101: bool = False,
     multiview: bool = False,
+    provenance_panel_name: str = REFERENCE_PROVENANCE_PANEL_NAME,
+    candidate_arms: tuple[str, ...] = (),
+    confidence: bool = False,
+    anchors: bool = False,
 ) -> rrb.Blueprint:
     """Shared review layout.
 
     `reference_provenance` adds the ensemble provenance layer/panel; `assembly101` adds the
     dataset hand-pose views, their diagnostics panel, and swaps the navigation panel's agent
-    substep series for the dataset's fine-grained segment index.
+    substep series for the dataset's fine-grained segment index.  `candidate_arms` adds a row
+    of same-frame segmentation tiles (one per arm) and their area panel; `confidence` and
+    `anchors` add the detector-confidence and anchor-mark panels.
     """
     primary = rrb.Spatial2DView(
         origin=root,
@@ -1154,6 +1168,7 @@ def _blueprint(
             "$origin/source/video",
             "$origin/primary/reference_four_part_segmentation/**",
             *((f"$origin/{REFERENCE_PROVENANCE_OVERLAY}/**",) if reference_provenance else ()),
+            *((f"$origin/{HUMAN_ANCHOR_OUTLINES}/**",) if anchors else ()),
             "$origin/primary/stabilized_wilor/render/hands/**",
         ),
         visual_bounds=rrb.VisualBounds2D(x_range=[0, dimensions[0]], y_range=[0, dimensions[1]]),
@@ -1162,11 +1177,49 @@ def _blueprint(
         (
             rrb.TimeSeriesView(
                 origin=f"{root}/{REFERENCE_PROVENANCE_SERIES}",
-                name=REFERENCE_PROVENANCE_PANEL_NAME,
+                name=provenance_panel_name,
                 contents="$origin/**",
             ),
         )
         if reference_provenance
+        else ()
+    )
+    arm_rows = (
+        (rrb.Horizontal(*[candidate_arm_view(root, name, dimensions) for name in candidate_arms]),)
+        if candidate_arms
+        else ()
+    )
+    arm_series = (
+        (
+            rrb.TimeSeriesView(
+                origin=f"{root}/{CANDIDATE_AREA_SERIES}",
+                name="Candidate arms: mask area per part (px)",
+                contents="$origin/**",
+            ),
+        )
+        if candidate_arms
+        else ()
+    )
+    confidence_series = (
+        (
+            rrb.TimeSeriesView(
+                origin=f"{root}/{CONFIDENCE_SERIES}",
+                name="Detector confidence per part (1 - suspicion) and abstain marks",
+                contents="$origin/**",
+            ),
+        )
+        if confidence
+        else ()
+    )
+    anchor_series = (
+        (
+            rrb.TimeSeriesView(
+                origin=f"{root}/{ANCHOR_SERIES}",
+                name="Human anchor frames and failed cells (scored run)",
+                contents=("$origin/anchor_frame", "$origin/failed_cells"),
+            ),
+        )
+        if anchors
         else ()
     )
     assembly101_2d = (
@@ -1271,11 +1324,15 @@ def _blueprint(
                         contents=navigation_series,
                     ),
                     *provenance_views,
+                    *confidence_series,
+                    *anchor_series,
+                    *arm_series,
                     *assembly101_series,
                     *multiview_series,
                 ),
                 column_shares=[3, 2],
             ),
+            *arm_rows,
             comparison,
             rrb.Horizontal(
                 rrb.Spatial2DView(
@@ -1312,11 +1369,21 @@ def _blueprint(
                 ),
                 column_shares=[2] * (6 if assembly101 else 5),
             ),
-            row_shares=[4, 3, 2],
+            row_shares=[4, *([3] if candidate_arms else []), 3, 2],
         ),
         rrb.TimePanel(timeline="analysis_time", fps=ANALYSIS_FPS),
         auto_layout=False,
         auto_views=False,
+    )
+
+
+def candidate_arm_view(root: str, name: str, dimensions: tuple[int, int]) -> rrb.Spatial2DView:
+    """One same-frame tile: the source video with one candidate arm's four part masks."""
+    return rrb.Spatial2DView(
+        origin=root,
+        name=f"{name}: four part masks (candidate arm)",
+        contents=("$origin/source/video", f"$origin/{CANDIDATE_SEGMENTATION_ROOT}/{name}/**"),
+        visual_bounds=rrb.VisualBounds2D(x_range=[0, dimensions[0]], y_range=[0, dimensions[1]]),
     )
 
 

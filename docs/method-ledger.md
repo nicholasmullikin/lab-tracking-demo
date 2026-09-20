@@ -4246,3 +4246,118 @@ this comparison makes no accuracy or cross-method identity claim.
   Sep 19 `-r1280-pm-append` roots stay canonical; these roots sit beside them. The interior is
   the open problem it was: no other view tracks it, its search prior was the run's own mask,
   and it failed the 0.6 gate.
+
+### Sep 20: v6 review surface, one recording with three blueprint presets (Track D of the multicam plan)
+
+- **Claim boundary first.** CPU only over retained runs; no model ran, the GPU was not touched
+  (`CUDA_VISIBLE_DEVICES=""`), and no viewer was opened by the agent. Everything logged here is
+  display of existing artifacts: the candidate arms are one tracker's output each on the same
+  C10379 proxy and none is a second reference; the human anchors stay 13 frames on one view;
+  the other eight views' seeds are agent-authored and unreviewed; consensus, hull and detector
+  series measure disagreement between estimates. Ensemble v2 is still a candidate. CC BY-NC 4.0.
+- **What the human asked** (three complaints about v5): which analyses are multi-camera and why
+  the recording showed one camera; how to compare SAM3, DAM4SAM and the human label on one
+  frame; whether hands and segmentation could be separate layouts that switch every panel at
+  once (decision: one `.rrd`, several `.rbl` presets). The v5 provenance legend also still
+  listed a `3 hidden` code that ensemble v2 never emits.
+- **Builder** (`battle-build-interaction-review-v4`, `interaction_review_v4.py` /
+  `interaction_review.py`): `--candidate-arm NAME=RUN_DIR` (repeatable) validates the run like
+  every other input (same clip, clock and source fingerprint; every frame not required), logs
+  its four part masks as RGBA cut-outs under `comparison/segmentation/NAME/<part>` at every
+  frame from the mask cache and its per-part area under `diagnostics/segmentation/NAME/<part>`;
+  `--confidence RUN_DIR` logs `confidence.jsonl` of the detector scorecard as
+  `diagnostics/confidence/<part>/confidence` and `.../abstain` (points where it fires); anchor
+  marks are on by default from `configs/qa/first_minute_review_anchors.json` and the exported
+  mask set (`metadata/anchors/anchor_frame`, `failed_cells` from the scorecard's truth column,
+  a `TextLog` at `metadata/anchors/log` naming the failed cells; the human masks as outlines at
+  `primary/human_anchor_outlines/<part>` and as the arm `human_anchors`, present on the anchor
+  frame only and cleared on the next); `--application-id` / `--recording-id`; the provenance
+  legend is now `provenance_legend(sidecar, policy)`: the codes whose count is non-zero plus the
+  policy's named `not_contact_eligible` intervals (`1 sam3 primary, 2 dam4sam fallback;
+  rear_body [1660,1800) not_contact_eligible: distractor_confusion` for v2), used in the panel
+  name, the series names and the guide, and the guide text no longer speaks of hidden intervals
+  when the policy has none. `InteractionReviewIndexManifest` gained optional `candidate_arms`
+  (name -> manifest fingerprint), `confidence_series`, `anchor_marks`, `application_id`,
+  `recording_id` (schemas.py; older indexes load unchanged). `_prepare_output_root` tolerates
+  the `.rbl` / merged `.rrd` / `presets_check.json` side files.
+- **Nine-view recording** (`battle-build-multiview-static-comparison`, `multiview_review.py`)
+  rebuilt on the Sep 19 canonical set: consensus `runs/multiview-part-consensus-first-minute-r1280-pm-append/`
+  (reference `pm-append`, seven 1280 statics, e4), hull `runs/multiview-visual-hull-first-minute-r1280-pm-append/`,
+  `--mask-every 2`, into `runs/multiview-static-comparison-first-minute-r1280-pm-append/`
+  (**253.9 MB, 14.5 s**; the Sep 18 720 px recording is left as it was). New: the ego view is
+  projected through its pose at the view's frame (the builder had only ever seen static
+  sources), `--anchor-masks` draws the C10379 human masks as outlines on that tile at the 13
+  anchor frames (`views/C10379/human_anchor_outlines/<part>`), `--proposals-root` draws the
+  seed-search candidates on each of the eight other tiles at their frames
+  (`views/<VIEW>/proposals/<part>`, one colour per candidate, label `proposal: accept/reject
+  pending` with the strategies; 24 cells: chassis f0, rear_body f0, interior f427-430),
+  `--application-id` / `--recording-id` / `--no-blueprint`, tile names say `(human seeds +
+  corrections, anchor outlines)` or `(agent seeds, unreviewed, proposals)`, and the index records
+  ids, roots, outlines, proposals and size.
+- **One file.** Both recordings were written with the same ids
+  (`battle-interaction-review-v6` / `interaction_review_first_minute_v6`) and merged by the
+  new `battle-review-presets --merge` (`review_presets.py`): `rerun rrd merge`, then the
+  recording store alone re-written through `rerun.experimental.LazyStore.write_rrd` so the
+  merged file carries **no embedded blueprint** (a leftover default layout and a `.rbl` on the
+  command line would race for activation). `runs/interaction-review-first-minute-v6/`:
+  `interaction_review_first_minute_v4.rrd` **154.5 MB** (the v5-style package with five
+  candidate arms, 47.4 s: validate 2.8 / geometry 13.1 / export 31.5; the v5 package is
+  untouched at 100 MB), `interaction_review_combined.rrd` **406.4 MB** (one recording store, 384
+  entity paths; merge + presets 7 s), the three presets, `presets_check.json`, the index, guide
+  and sheet. Total build 69 s from the caches; `battle-cache-masks` was run once for the three
+  arms without a sidecar (DAM4SAM large 47 s, ensemble v2 38 s, the 001210z run 67 s).
+- **Candidate arms logged** (`comparison/segmentation/<arm>`): `pm-append` (v2 primary),
+  `dam4sam-large-1024-sched-60s` (v2 fallback), `off-r1280-sched`,
+  `old-reference-off-r720-sched` (`...20260918t001210z`, the run policy v1 calls primary),
+  `ensemble-v1`, plus `human_anchors` on the 13 anchor frames; the reference tile is ensemble v2.
+  Anchor log, from the scorecard's truth column: 9 failed cells on `pm-append` (600 / 650
+  chassis, 700 interior, 1050 chassis + interior, 1100 / 1150 interior, 1500 rear_body, 1700
+  rear_body hidden with 1,265 px), none in `[279,408)` or at 900. Abstain marks: 1,022 of 7,200
+  rows (chassis 277, interior 484, rear_body 261, cabin 0).
+- **Presets** (`segmentation.rbl` 15 views / 25 queries, `hands.rbl` 10 / 21, `multiview.rbl`
+  18 / 47; `rerun.blueprint.Blueprint.save(application_id, path)`, Rerun 0.37.1): segmentation =
+  reference (provenance overlay, anchor outlines) + six same-frame arm tiles + provenance,
+  consensus-contradiction, confidence/abstain, anchor and arm-area series + anchor log, per-frame
+  document, guide; hands = stabilized WiLoR, raw WiLoR, MediaPipe, dataset hands 2D, world-mm 3D
+  with dataset hands and both ATHENA arms (consensus and hull excluded), WiLoR 3D, disagreement /
+  dataset / ATHENA / contact series, no masks; multiview = 3 x 3 camera tiles (masks, consensus
+  markers, hull projections, anchor outlines on C10379, proposals elsewhere), world-mm rig with
+  hull voxels, the contradiction and per-view error tabs, anchor marks, both episode documents.
+  The preset writer reads the recording's entity tree and only declares views for what exists.
+- **Validation without a viewer** (`rerun --headless` does not exist in 0.37.1): each `.rbl`
+  read back through `RrdReader` (one blueprint store, application id equal to the
+  recording's); `rerun rrd verify` passes on the combined file and every preset; every view's
+  `space_origin` and `ViewContents` queries are expanded (`$origin`, `/**` = the path or any
+  descendant, exclusions ignored) and must match a logged entity: all matched
+  (`presets_check.json`). Not proven: the look of the layout, video decoding on the client.
+- **Labeling sessions prepared, none started** (`docs/labeling-sessions-2026-09-20.md`):
+  (a) C10119, 26 frames, workspace `runs/human-review-anchors-first-minute-static-c10119/`
+  written by `battle-anchor-export prepare --view static-c10119`, the exact
+  `battle-muggled-calibration-web ... --resume --tailscale` command, export and `anchor-iou`
+  commands, and the brief (chassis / rear_body / cabin, interior where visible, hidden and
+  distractor vocabulary, what the 13 mapped / 8 detector-selected / 5 random frames test);
+  (b) e4 likewise (`runs/human-review-anchors-first-minute-ego-hmc21179183/`) plus a one-off
+  seed workspace at e4 frames 4 and 430 (`--timestamps 0.133333,14.333333`) for the human
+  interior seed the automatic seed is to be compared against; (c) the 24 seed-search proposals
+  as one contact sheet per view (`battle-seed-proposal-sheets`, `seed_proposal_sheets.py`;
+  `runs/labeling-sessions-20260920/proposal_sheets/<VIEW>.png`: full frame with every candidate
+  outlined plus a zoomed filled crop per candidate with strategy, area and decoder IoU
+  estimate) and the decisions template `configs/qa/seed_proposal_decisions.template.json` (24
+  cells, `accept` / `reject` / `unsure`, `accepted_candidate` index); (d) recording 2 is the
+  GPU worker's; its config `configs/qa/nusar_9061_review_anchors_c10379.json` did not exist
+  when the document was written, so it is referenced, not commanded.
+- **Docs.** `docs/review-guide-2026-09-20-multiview-presets.md` (commands per preset, which
+  entities are multi-camera and which single-camera, how to read confidence / abstain and the
+  anchor marks, frames to scrub, how the presets were validated), README intro and the v6
+  paragraph under "First-minute v4 review" with the three build commands.
+- **Tests.** `tests/test_review_presets.py`: 13 default-tier (arm spec parsing, the legend from
+  a sidecar/policy, confidence loader and duplicate refusal, anchor marks logging on the anchor
+  frame and clearing on the next, candidate arm frame logging, the v4 blueprint's new roots,
+  proposal outlines by frame, anchor outlines by view, tile names, query resolution with globs
+  and exclusions, presets written / read back / resolved on a synthetic recording, an unmatched
+  query reported, merge yielding one store with no blueprint) and one `real_data` test over the
+  built v6 package. Ruff clean on every touched file.
+- **Open.** The layouts were not seen by a human or the agent; a 406 MB single file may be
+  heavy for a small client (the two component files take the same presets). The hidden / not
+  visible vocabulary in the workspace is a button plus a note, not a typed distractor field.
+  The arm anchor numbers quoted in the guide are the Sep 19 scoreboard's; nothing was re-scored.

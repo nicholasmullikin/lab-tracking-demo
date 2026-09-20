@@ -53,6 +53,15 @@ SAM3-1280), and produced the **candidate** reference `runs/ensemble-reference-fi
 interior, the frame-1700 screwdriver named `distractor_confusion`) shown in the v5 review
 package; its guide is
 [`docs/review-guide-2026-09-20-ensemble-v2.md`](docs/review-guide-2026-09-20-ensemble-v2.md).
+Later on Sep 20 the review surface became **v6**: one recording that carries the v5-style package
+and the nine-camera comparison (SAM3 runs on nine views; only C10379 has human seeds, corrections
+and anchors), the candidate arms logged beside the reference so SAM3, DAM4SAM and the human
+anchor masks sit on the same frame, the detector confidence and anchor marks on the time panel,
+and three blueprint presets (`segmentation.rbl`, `hands.rbl`, `multiview.rbl`) that switch every
+panel at once; guide
+[`docs/review-guide-2026-09-20-multiview-presets.md`](docs/review-guide-2026-09-20-multiview-presets.md),
+and the four prepared (not started) labeling sessions are in
+[`docs/labeling-sessions-2026-09-20.md`](docs/labeling-sessions-2026-09-20.md).
 Human QA dispositions are pending for every method, including the new agent seeds, the
 proposed `not_contact_eligible` intervals and the ensemble-v2 candidate, and no accuracy claim
 is made anywhere.
@@ -1217,6 +1226,57 @@ the agent-proposed correction rows. What changed:
   the ensemble-v2 candidate (below); contact eligibility is chassis `[0,1049)` `[1057,1200)` and
   `[0,1200)` for the other parts. Numbers against v4 and the frames to scrub are in
   [`docs/review-guide-2026-09-20-ensemble-v2.md`](docs/review-guide-2026-09-20-ensemble-v2.md).
+- **v6 (Sep 20): one recording, three presets.** `runs/interaction-review-first-minute-v6/`
+  (v5 untouched). The builder gained `--candidate-arm NAME=RUN_DIR` (repeatable; logs that
+  C10379 run's four part masks under `comparison/segmentation/NAME/<part>` at every frame plus
+  a per-part area series, ~15 MB per arm), `--confidence RUN_DIR` (a `battle-detector-scorecard`
+  run's `confidence.jsonl` as `diagnostics/confidence/<part>/{confidence,abstain}`), anchor
+  marks on by default (`metadata/anchors/{anchor_frame,failed_cells,log}`, the human anchor
+  masks as outlines on the primary view and as the arm `human_anchors` on the 13 anchor frames;
+  `--no-anchors` to skip), `--application-id` / `--recording-id`, and a provenance legend built
+  from the states the reference actually holds (ensemble v2 has no hidden code). The nine-view
+  comparison (`battle-build-multiview-static-comparison`, now on the Sep 19 canonical roots with
+  `--anchor-masks` outlines on C10379, `--proposals-root` seed-search candidates on the other
+  tiles, and the same ids with `--no-blueprint`) is merged into the package by
+  `battle-review-presets --merge`, which then writes and validates the presets
+  (`presets_check.json`: every view's contents resolved against the recording's entities).
+
+```bash
+CUDA_VISIBLE_DEVICES="" uv run battle-build-multiview-static-comparison \
+  --output-root runs/multiview-static-comparison-first-minute-r1280-pm-append \
+  --consensus-root runs/multiview-part-consensus-first-minute-r1280-pm-append \
+  --hull-root runs/multiview-visual-hull-first-minute-r1280-pm-append --mask-every 2 \
+  --application-id battle-interaction-review-v6 --recording-id interaction_review_first_minute_v6 --no-blueprint
+CUDA_VISIBLE_DEVICES="" uv run battle-build-interaction-review-v4 \
+  --output-root runs/interaction-review-first-minute-v6 \
+  --reference runs/ensemble-reference-first-minute-v2 \
+  --multiview-consensus runs/multiview-part-consensus-first-minute-r1280-pm-append \
+  --candidate-arm pm-append=runs/sam3-memory-arms-20260919/arms/pm-append/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260920t033947z-r1280-pm-append \
+  --candidate-arm dam4sam-large-1024-sched-60s=runs/dam4sam-arms-20260919/arms/dam4sam-large-1024-sched-60s \
+  --candidate-arm off-r1280-sched=runs/sam3-policy-ablation-20260918/arms/off-r1280-sched/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260918t154956z-r1280 \
+  --candidate-arm old-reference-off-r720-sched=runs/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260918t001210z \
+  --candidate-arm ensemble-v1=runs/ensemble-reference-first-minute-v1 \
+  --confidence runs/detector-scorecard-20260920/pm-append \
+  --application-id battle-interaction-review-v6 --recording-id interaction_review_first_minute_v6
+uv run battle-review-presets --rrd runs/interaction-review-first-minute-v6/interaction_review_combined.rrd \
+  --merge runs/interaction-review-first-minute-v6/interaction_review_first_minute_v4.rrd \
+          runs/multiview-static-comparison-first-minute-r1280-pm-append/multiview_static_comparison.rrd
+uv run rerun runs/interaction-review-first-minute-v6/interaction_review_combined.rrd runs/interaction-review-first-minute-v6/segmentation.rbl   # or hands.rbl / multiview.rbl
+```
+
+  14.5 s + 47.4 s + 7 s from the mask caches; 253.9 MB + 154.5 MB -> 406.4 MB combined (the
+  combined file carries no embedded layout, so a preset is the only blueprint in play).
+  `segmentation.rbl`: reference + six same-frame arm tiles + provenance / consensus /
+  confidence / anchor series; `hands.rbl`: stabilized and raw WiLoR, MediaPipe, dataset hands
+  2D, world-mm 3D with ATHENA, disagreement series, no masks; `multiview.rbl`: nine camera
+  tiles with masks, consensus markers, hull projections, anchor outlines and proposals, the 3D
+  rig with hull voxels, per-view error, the episode documents. `battle-seed-proposal-sheets`
+  renders one accept/reject contact sheet per view for the seed-search proposals
+  (`runs/labeling-sessions-20260920/proposal_sheets/`) and the decisions template
+  `configs/qa/seed_proposal_decisions.template.json`. Guide:
+  [`docs/review-guide-2026-09-20-multiview-presets.md`](docs/review-guide-2026-09-20-multiview-presets.md);
+  sessions: [`docs/labeling-sessions-2026-09-20.md`](docs/labeling-sessions-2026-09-20.md).
+
 
 #### Reviewing a package from another computer (Tailscale, native viewer)
 

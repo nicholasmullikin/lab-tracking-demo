@@ -9,13 +9,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 import rerun as rr
 
 from . import assembly101_reference as a101
-from . import athena_hands_review, multiview_consensus, multiview_review
+from . import athena_hands_review, mask_cache, multiview_consensus, multiview_review
 from . import ensemble_reference as ensemble
 from . import interaction_review as review
 from .assembly101_pose_schemas import (
@@ -54,6 +56,10 @@ OUTPUT_NAME = "interaction_review_first_minute_v4.rrd"
 INDEX_NAME = "interaction_review_index.json"
 GUIDE_NAME = "review_guide.md"
 CONTACT_SHEET_NAME = "pinned_moments_contact_sheet.png"
+# Files `battle-review-presets` and the recording merge add next to a package (`.rbl` presets,
+# a merged `.rrd`, the preset check); `--overwrite` may replace them along with the package.
+PACKAGE_SIDE_FILE_SUFFIXES = frozenset({".rbl", ".rrd", ".stdout", ".log"})
+PRESET_CHECK_NAME = "presets_check.json"
 FINE_LABELS = Path("configs/fine_substeps/assembly101_focused_static_first_20s_agent_labels.json")
 
 # Corrected focused SAM3 rerun whose schedule adds an agent-selected chassis/interior
@@ -114,22 +120,357 @@ context only, never a prediction or an accuracy claim.
 
 HAND_LAYER_STATES = ("low_confidence_continuation", "fallback", "missing")
 PROVENANCE_CODE_LEGEND = ", ".join(f"{code} {name}" for name, code in PROVENANCE_CODES.items())
+PROVENANCE_DISPLAY_NAMES = {
+    "missing": "missing",
+    "sam3_corrected": "sam3 primary",
+    "dam4sam_fallback": "dam4sam fallback",
+    "hidden_agent_label": "hidden (agent label)",
+}
+APPLICATION_ID = "battle-interaction-review-v4"
+RECORDING_ID = "interaction_review_first_minute_v4"
+# Candidate segmentation arms (`--candidate-arm NAME=RUN_DIR`) are logged beside the reference
+# so the same frame can be read across trackers; they are comparison evidence, never a
+# second reference.  Human anchor masks are logged as one more arm on the 13 anchor frames.
+CANDIDATE_SEGMENTATION_ROOT = review.CANDIDATE_SEGMENTATION_ROOT
+CANDIDATE_AREA_SERIES = review.CANDIDATE_AREA_SERIES
+HUMAN_ANCHOR_ARM = "human_anchors"
+HUMAN_ANCHOR_OUTLINES = review.HUMAN_ANCHOR_OUTLINES
+CONFIDENCE_SERIES = review.CONFIDENCE_SERIES
+ANCHOR_SERIES = review.ANCHOR_SERIES
+ANCHOR_LOG = f"{review.ANCHOR_SERIES}/log"
+ANCHOR_CONFIG = Path("configs/qa/first_minute_review_anchors.json")
+ANCHOR_MASKS = Path("runs/human-review-anchors-first-minute/anchors/anchor_masks.json")
+CONFIDENCE_NAME = "confidence.jsonl"
+ARM_NAME_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")
 
 
 def _intervals_text(intervals: tuple[tuple[int, int], ...]) -> str:
     return ", ".join(f"[{start},{end})" for start, end in intervals) or "none"
 
 
-def _reference_provenance_static(entity: str) -> None:
+def provenance_legend(sidecar: EnsembleProvenanceSidecar, policy: EnsembleReferencePolicy) -> str:
+    """Legend built from the states the sidecar actually holds, plus the policy's named
+    ineligible intervals (a `not_contact_eligible` interval is not a provenance state, so it
+    is listed separately instead of a code no frame carries)."""
+    counts: dict[str, int] = {}
+    for summary in sidecar.summaries:
+        for state, count in summary.provenance_counts.items():
+            counts[state] = counts.get(state, 0) + int(count)
+    codes = ", ".join(
+        f"{code} {PROVENANCE_DISPLAY_NAMES.get(name, name)}"
+        for name, code in PROVENANCE_CODES.items()
+        if counts.get(name, 0) > 0
+    )
+    ineligible = [
+        f"{target.target_id} [{item.start_frame},{item.end_frame_exclusive}) "
+        f"not_contact_eligible{': ' + item.failure_case if item.failure_case else ''}"
+        for target in policy.targets
+        for item in target.not_contact_eligible_intervals
+    ]
+    return codes + (f"; {'; '.join(ineligible)}" if ineligible else "")
+
+
+def _reference_provenance_static(entity: str, legend: str = PROVENANCE_CODE_LEGEND) -> None:
     for part in TARGETS:
         rr.log(
             f"{entity}/{review.REFERENCE_PROVENANCE_SERIES}/{part}",
             rr.SeriesLines(
-                names=f"{part} mask provenance ({PROVENANCE_CODE_LEGEND})",
+                names=f"{part} mask provenance ({legend})",
                 colors=[ensemble.PART_COLORS[part]],
             ),
             static=True,
         )
+
+
+# -- candidate arms, confidence series, anchor marks -------------------------------------------
+
+
+def parse_candidate_arm(spec: str) -> tuple[str, Path]:
+    """`NAME=RUN_DIR` for `--candidate-arm`; the name becomes an entity path segment."""
+    name, separator, run_directory = spec.partition("=")
+    name = name.strip()
+    if not separator or not name or not run_directory.strip():
+        raise argparse.ArgumentTypeError(f"expected NAME=RUN_DIR, got {spec!r}")
+    if not ARM_NAME_PATTERN.fullmatch(name):
+        raise argparse.ArgumentTypeError(
+            f"candidate arm name {name!r} must match {ARM_NAME_PATTERN.pattern}"
+        )
+    if name == HUMAN_ANCHOR_ARM:
+        raise argparse.ArgumentTypeError(f"{HUMAN_ANCHOR_ARM!r} is reserved for the anchor masks")
+    return name, Path(run_directory.strip())
+
+
+def _candidate_arm_static(entity: str, name: str) -> None:
+    for part in TARGETS:
+        rr.log(
+            f"{entity}/{CANDIDATE_AREA_SERIES}/{name}/{part}",
+            rr.SeriesLines(names=f"{name} {part} area (px)", colors=[ensemble.PART_COLORS[part]]),
+            static=True,
+        )
+
+
+def _log_candidate_arm_frame(
+    entity: str, name: str, source: review.LoadedSource, frame: int
+) -> dict[str, int]:
+    """One RGBA cut-out per part under the arm's own root, plus the mask area series."""
+    observation = source.observations.get(frame)
+    cache = mask_cache.cache_for(source.run_directory)
+    areas: dict[str, int] = {}
+    for part in TARGETS:
+        item = (
+            next((o for o in observation.objects if o.label == part and o.mask), None)
+            if observation is not None
+            else None
+        )
+        mask_path = f"{entity}/{CANDIDATE_SEGMENTATION_ROOT}/{name}/{part}"
+        area_path = f"{entity}/{CANDIDATE_AREA_SERIES}/{name}/{part}"
+        if item is None or item.mask is None:
+            rr.log(mask_path, rr.Clear(recursive=False))
+            rr.log(area_path, rr.Clear(recursive=False))
+            continue
+        rr.log(
+            mask_path,
+            rr.EncodedImage(
+                contents=cache.rgba_png(item.mask.uri, ensemble.PART_COLORS[part]),
+                media_type="image/png",
+                opacity=0.35,
+                draw_order=1.0,
+            ),
+        )
+        area = int(np.count_nonzero(cache.mask(item.mask.uri)))
+        areas[part] = area
+        rr.log(area_path, rr.Scalars([float(area)]))
+    return areas
+
+
+@dataclass(frozen=True)
+class ConfidenceRow:
+    confidence: float
+    abstain: bool
+    is_anchor_frame: bool
+    anchor_truth_failed: bool | None
+
+
+def load_confidence_series(path: Path) -> dict[tuple[int, str], ConfidenceRow]:
+    """`confidence.jsonl` of `battle-detector-scorecard`: one row per frame x part."""
+    rows: dict[tuple[int, str], ConfidenceRow] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        item = json.loads(line)
+        key = (int(item["analysis_frame_index"]), str(item["target"]))
+        if key in rows:
+            raise ValueError(f"{path} repeats frame x part {key}")
+        rows[key] = ConfidenceRow(
+            confidence=float(item["confidence"]),
+            abstain=bool(item["abstain"]),
+            is_anchor_frame=bool(item.get("is_anchor_frame", False)),
+            anchor_truth_failed=item.get("anchor_truth_failed"),
+        )
+    return rows
+
+
+def _confidence_static(entity: str, run_label: str) -> None:
+    for part in TARGETS:
+        rr.log(
+            f"{entity}/{CONFIDENCE_SERIES}/{part}/confidence",
+            rr.SeriesLines(
+                names=f"{part} detector confidence ({run_label}; 1 - combined suspicion)",
+                colors=[ensemble.PART_COLORS[part]],
+            ),
+            static=True,
+        )
+        rr.log(
+            f"{entity}/{CONFIDENCE_SERIES}/{part}/abstain",
+            rr.SeriesPoints(
+                names=f"{part} abstain (confidence at or below the R>=0.8 point)",
+                colors=[ensemble.PART_COLORS[part]],
+                markers="cross",
+                marker_sizes=3.0,
+            ),
+            static=True,
+        )
+
+
+def _log_confidence_frame(
+    entity: str, frame: int, rows: dict[tuple[int, str], ConfidenceRow]
+) -> None:
+    for part in TARGETS:
+        row = rows.get((frame, part))
+        review._log_scalar_or_clear(
+            f"{entity}/{CONFIDENCE_SERIES}/{part}/confidence",
+            None if row is None else row.confidence,
+        )
+        # Abstentions are logged as points only where they occur so the panel reads as marks.
+        review._log_scalar_or_clear(
+            f"{entity}/{CONFIDENCE_SERIES}/{part}/abstain",
+            1.0 if row is not None and row.abstain else None,
+        )
+
+
+@dataclass(frozen=True)
+class AnchorMarks:
+    """Human review anchors: frames, per-cell state, and (when exported) the mask PNGs."""
+
+    frames: tuple[int, ...]
+    windows: dict[str, tuple[int, int]]
+    states: dict[tuple[int, str], str]
+    masks: dict[tuple[int, str], Path]
+    config_path: Path
+    mask_set_path: Path | None
+
+    def window_for(self, frame: int) -> str | None:
+        for name, (start, end) in self.windows.items():
+            if start <= frame < end:
+                return name
+        return None
+
+
+def load_anchor_marks(
+    repository_root: Path, config_path: Path = ANCHOR_CONFIG, mask_set: Path | None = ANCHOR_MASKS
+) -> AnchorMarks:
+    config = json.loads((repository_root / config_path).read_text(encoding="utf-8"))
+    frames = tuple(int(item["analysis_frame_index"]) for item in config["frames"])
+    windows = {name: (int(a), int(b)) for name, (a, b) in config.get("windows", {}).items()}
+    states: dict[tuple[int, str], str] = {}
+    masks: dict[tuple[int, str], Path] = {}
+    mask_set_path = None
+    if mask_set is not None and (repository_root / mask_set).is_file():
+        mask_set_path = repository_root / mask_set
+        exported = json.loads(mask_set_path.read_text(encoding="utf-8"))
+        for anchor in exported["anchors"]:
+            key = (int(anchor["analysis_frame_index"]), str(anchor["target"]))
+            states[key] = str(anchor["state"])
+            if anchor.get("mask_uri"):
+                masks[key] = mask_set_path.parent.parent / anchor["mask_uri"]
+    return AnchorMarks(
+        frames=frames,
+        windows=windows,
+        states=states,
+        masks=masks,
+        config_path=repository_root / config_path,
+        mask_set_path=mask_set_path,
+    )
+
+
+def mask_outlines(mask: np.ndarray) -> list[list[list[float]]]:
+    """Closed contour polylines (pixel coordinates) of a boolean mask."""
+    import cv2
+
+    contours, _ = cv2.findContours(
+        mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+    )
+    strips: list[list[list[float]]] = []
+    for contour in contours:
+        points = contour.reshape(-1, 2).astype(float).tolist()
+        if len(points) >= 3:
+            strips.append([*points, points[0]])
+    return strips
+
+
+def _anchor_static(entity: str, anchors: AnchorMarks, *, with_masks: bool) -> None:
+    rr.log(
+        f"{entity}/{ANCHOR_SERIES}/anchor_frame",
+        rr.SeriesPoints(
+            names=f"human anchor frame ({len(anchors.frames)} frames, C10379)",
+            colors=[(255, 255, 255)],
+            markers="diamond",
+            marker_sizes=6.0,
+        ),
+        static=True,
+    )
+    rr.log(
+        f"{entity}/{ANCHOR_SERIES}/failed_cells",
+        rr.SeriesPoints(
+            names="anchor cells the scored run fails (IoU < 0.5, or hidden with > 300 px)",
+            colors=[(255, 80, 80)],
+            markers="cross",
+            marker_sizes=6.0,
+        ),
+        static=True,
+    )
+    if with_masks:
+        _candidate_arm_static(entity, HUMAN_ANCHOR_ARM)
+
+
+def _log_anchor_frame(
+    entity: str,
+    frame: int,
+    anchors: AnchorMarks,
+    confidence: dict[tuple[int, str], ConfidenceRow] | None,
+) -> None:
+    """Marks on the timeline at anchor frames, the anchor masks as outlines on the primary view
+    and as one more arm; everything is cleared on the following frame so nothing lingers."""
+    is_anchor = frame in anchors.frames
+    was_anchor = (frame - 1) in anchors.frames
+    if not is_anchor and not was_anchor:
+        return
+    if not is_anchor:
+        rr.log(f"{entity}/{ANCHOR_SERIES}/anchor_frame", rr.Clear(recursive=False))
+        rr.log(f"{entity}/{ANCHOR_SERIES}/failed_cells", rr.Clear(recursive=False))
+        rr.log(f"{entity}/{HUMAN_ANCHOR_OUTLINES}", rr.Clear(recursive=True))
+        rr.log(
+            f"{entity}/{CANDIDATE_SEGMENTATION_ROOT}/{HUMAN_ANCHOR_ARM}", rr.Clear(recursive=True)
+        )
+        rr.log(f"{entity}/{CANDIDATE_AREA_SERIES}/{HUMAN_ANCHOR_ARM}", rr.Clear(recursive=True))
+        return
+    rr.log(f"{entity}/{ANCHOR_SERIES}/anchor_frame", rr.Scalars([1.0]))
+    failed = [
+        part
+        for part in TARGETS
+        if confidence is not None
+        and (row := confidence.get((frame, part))) is not None
+        and row.anchor_truth_failed
+    ]
+    review._log_scalar_or_clear(
+        f"{entity}/{ANCHOR_SERIES}/failed_cells", float(len(failed)) if confidence else None
+    )
+    lines = []
+    for part in TARGETS:
+        state = anchors.states.get((frame, part), "unlabeled")
+        verdict = ""
+        if confidence is not None and (row := confidence.get((frame, part))) is not None:
+            if row.anchor_truth_failed is True:
+                verdict = " FAILED"
+            elif row.anchor_truth_failed is False:
+                verdict = " ok"
+        lines.append(f"{part} {state}{verdict}")
+        mask_path = anchors.masks.get((frame, part))
+        if mask_path is None:
+            continue
+        mask = mask_cache.decode_mask_png(mask_path)
+        color = ensemble.PART_COLORS[part]
+        strips = mask_outlines(mask)
+        if strips:
+            rr.log(
+                f"{entity}/{HUMAN_ANCHOR_OUTLINES}/{part}",
+                rr.LineStrips2D(
+                    strips,
+                    colors=[color] * len(strips),
+                    radii=1.5,
+                    labels=[f"human anchor {part} f{frame}"],
+                    draw_order=3.0,
+                ),
+            )
+        rr.log(
+            f"{entity}/{CANDIDATE_SEGMENTATION_ROOT}/{HUMAN_ANCHOR_ARM}/{part}",
+            rr.EncodedImage(
+                contents=mask_cache.encode_rgba_mask_png(mask, color),
+                media_type="image/png",
+                opacity=0.35,
+                draw_order=1.0,
+            ),
+        )
+        rr.log(
+            f"{entity}/{CANDIDATE_AREA_SERIES}/{HUMAN_ANCHOR_ARM}/{part}",
+            rr.Scalars([float(np.count_nonzero(mask))]),
+        )
+    window = anchors.window_for(frame)
+    heading = f"anchor f{frame}" + (f" (window {window})" if window else "")
+    rr.log(
+        f"{entity}/{ANCHOR_LOG}",
+        rr.TextLog(f"{heading}: " + "; ".join(lines), level="WARN" if failed else "INFO"),
+    )
 
 
 def _log_reference_provenance_frame(
@@ -397,7 +738,13 @@ def _prepare_output_root(root: Path, *, overwrite: bool) -> None:
             "package files or choose another --output-root"
         )
     for path in existing:
-        if path.name in {OUTPUT_NAME, INDEX_NAME, GUIDE_NAME, CONTACT_SHEET_NAME}:
+        if path.name in {
+            OUTPUT_NAME,
+            INDEX_NAME,
+            GUIDE_NAME,
+            CONTACT_SHEET_NAME,
+            PRESET_CHECK_NAME,
+        } or (path.suffix in PACKAGE_SIDE_FILE_SUFFIXES and path.is_file()):
             path.unlink()
         else:
             raise FileExistsError(f"{root} holds an unexpected entry {path.name}; not overwriting")
@@ -407,6 +754,7 @@ def _prepare_output_root(root: Path, *, overwrite: bool) -> None:
 def _reference_section(
     index: InteractionReviewIndexManifest,
     eligibility: dict[str, tuple[tuple[int, int], ...]],
+    legend: str = PROVENANCE_CODE_LEGEND,
 ) -> str:
     if index.reference_segmentation_method != "ensemble_reference":
         return """- Corrected SAM3 stays the default segmentation display. It is a visible-surface
@@ -427,16 +775,26 @@ def _reference_section(
         + ", ".join(f"{count} {name}" for name, count in counts.get(part, {}).items() if count)
         for part in TARGETS
     )
+    has_hidden = any(counts.get(part, {}).get("hidden_agent_label") for part in TARGETS)
+    hidden_text = (
+        ", and explicit\n  empty masks over agent-labelled hidden intervals"
+        if has_hidden
+        else " (this policy labels\n  no hidden interval)"
+    )
+    hidden_claim = (
+        "; hidden intervals are\n  agent visibility labels pending human confirmation"
+        if has_hidden
+        else ""
+    )
     return f"""- The default segmentation display is the **per-target ensemble review reference**
-  (`battle-build-ensemble-reference`): corrected SAM3 by default, the DAM4SAM arm's whole
+  (`battle-build-ensemble-reference`): the SAM3 primary by default, the DAM4SAM arm's whole
   mask substituted for one target only inside explicit policy intervals when a rule fires
   (area below a fraction of the rolling median, overlap with another target, or
-  discontinuity with the last accepted mask) and the substitute passes sanity, and explicit
-  empty masks over agent-labelled hidden intervals. Masks are never blended. Cross-method
-  fallback is **not** accuracy; neither source run is ground truth; hidden intervals are
-  agent visibility labels pending human confirmation.
+  discontinuity with the last accepted mask) and the substitute passes sanity{hidden_text}.
+  Masks are never blended. Cross-method fallback is **not** accuracy; neither source run is
+  ground truth{hidden_claim}.
 - **Provenance layer.** `{review.REFERENCE_PROVENANCE_SERIES}/<part>` plots a per-part code
-  ({PROVENANCE_CODE_LEGEND}) on the time panel and
+  ({legend}) on the time panel and
   `{review.REFERENCE_PROVENANCE_OVERLAY}/<part>` draws a magenta box around every
   DAM4SAM-sourced mask in the primary view (toggle it off in the blueprint tree). The
   per-frame navigation document names each part's provenance and eligibility.
@@ -487,19 +845,69 @@ def _assembly101_section(
 """
 
 
+def _comparison_section(
+    candidate_arms: tuple[str, ...],
+    confidence_run: str | None,
+    anchors: AnchorMarks | None,
+) -> str:
+    if not candidate_arms and confidence_run is None and anchors is None:
+        return ""
+    lines = [
+        "",
+        "## Segmentation comparison layers (evidence beside the reference, not a second reference)",
+        "",
+    ]
+    if candidate_arms:
+        names = ", ".join(f"`{name}`" for name in candidate_arms)
+        lines.append(
+            f"- **Candidate arms** ({names}): each arm's four part masks are logged under "
+            f"`{CANDIDATE_SEGMENTATION_ROOT}/<arm>/<part>` at every frame and its per-part mask "
+            f"area under `{CANDIDATE_AREA_SERIES}/<arm>/<part>`. Every arm is one tracker's "
+            "output on the same C10379 proxy; the reference above is the only mask the contact "
+            "geometry uses. No arm is ground truth."
+        )
+    if anchors is not None:
+        frames = ", ".join(str(frame) for frame in anchors.frames)
+        lines.append(
+            f"- **Human anchors** ({len(anchors.frames)} frames: {frames}): at each anchor frame "
+            "the human's accepted decoder masks are drawn as outlines on the primary view "
+            f"(`{HUMAN_ANCHOR_OUTLINES}/<part>`) and as the arm `{HUMAN_ANCHOR_ARM}` under "
+            f"`{CANDIDATE_SEGMENTATION_ROOT}`; `{ANCHOR_SERIES}/anchor_frame` marks the frame on "
+            f"the time panel, `{ANCHOR_SERIES}/failed_cells` counts the cells the scored run "
+            f"fails (anchor IoU < 0.5, or a hidden cell with > 300 px) and `{ANCHOR_LOG}` names "
+            "them. The outlines exist only on the anchor frame itself (cleared on the next "
+            "frame). Anchors are review evidence on 13 frames of one view, not ground truth."
+        )
+    if confidence_run is not None:
+        lines.append(
+            f"- **Detector confidence** (`{CONFIDENCE_SERIES}/<part>/confidence`, from "
+            f"`{confidence_run}`): 1 - the combined suspicion of the top-3 label-free detectors "
+            "(SAM3 object score, seed-area drift, area jump), per frame and part; "
+            f"`{CONFIDENCE_SERIES}/<part>/abstain` marks frames whose confidence is at or below "
+            "the in-sample R>=0.8 threshold. Held out, that threshold recalls 0.44-0.64 of the "
+            "anchor failures at precision 0.36-0.62, so read the series as a ranker of "
+            "suspicious frames, not a calibrated gate."
+        )
+    return "\n".join(lines) + "\n"
+
+
 def _guide(
     index: InteractionReviewIndexManifest,
     rrd_path: Path,
     eligibility: dict[str, tuple[tuple[int, int], ...]] | None = None,
     assembly101: Assembly101ReferenceManifest | None = None,
+    legend: str = PROVENANCE_CODE_LEGEND,
+    candidate_arms: tuple[str, ...] = (),
+    confidence_run: str | None = None,
+    anchors: AnchorMarks | None = None,
 ) -> str:
     eligibility = eligibility or {part: SEGMENTATION_CONTACT_ELIGIBLE_INTERVALS for part in TARGETS}
     display = (
-        "the per-target ensemble reference (corrected SAM3 with provenance-tracked DAM4SAM "
-        "fallback and agent-labelled hidden intervals)"
+        "the per-target ensemble reference (SAM3 primary with provenance-tracked DAM4SAM fallback)"
         if index.reference_segmentation_method == "ensemble_reference"
         else "corrected focused SAM3"
     )
+    comparison_section = _comparison_section(candidate_arms, confidence_run, anchors)
     return f"""# First-minute interaction review (v4)
 
 Open exactly this recording:
@@ -526,10 +934,10 @@ partial Kineo NLF body context are separate/toggleable evidence layers.
 - The bottom-right tabs hold the fine-grained and coarse GT tables, the checked-in substep
   contract JSON, and the Drop-DTW status note (no Drop-DTW alignment exists for the first
   minute).
-{_assembly101_section(index, assembly101)}
+{_assembly101_section(index, assembly101)}{comparison_section}
 ## Validity and claim boundaries
 
-{_reference_section(index, eligibility)}
+{_reference_section(index, eligibility, legend)}
 - Frame ~370: the interior mask briefly grows into the chassis and recedes on its own (human
   observation); no correction was attempted there.
 - Stabilized WiLoR (v5) preserves raw/smoothed/low_confidence_continuation/fallback/missing
@@ -688,22 +1096,57 @@ def build_first_minute_review(
     verify_fingerprints: bool = False,
     layers: tuple[str, ...] = LAYERS,
     timer: PhaseTimer | None = None,
+    candidate_arms: dict[str, Path] | None = None,
+    confidence_root: Path | None = None,
+    anchor_config: Path | None = ANCHOR_CONFIG,
+    anchor_masks: Path | None = ANCHOR_MASKS,
+    application_id: str = APPLICATION_ID,
+    recording_id: str = RECORDING_ID,
 ) -> Path:
     """Build a 1,800-row review package from retained, source-aligned artifacts.
 
     `reference_run` is the ensemble reference by default; a corrected-SAM3 run directory
     (`CORRECTED_SAM3_REFERENCE_SEGMENTATION`) keeps the earlier frame-level eligibility.
     `assembly101_reference` is the dataset window from `battle-build-assembly101-reference`;
-    `None` builds without the dataset layer and fine-grained labels.
+    `None` builds without the dataset layer and fine-grained labels.  `candidate_arms` maps
+    display names to further C10379 segmentation runs logged beside the reference;
+    `confidence_root` is a `battle-detector-scorecard` run holding `confidence.jsonl`;
+    `anchor_config` / `anchor_masks` mark the human anchor frames (and draw their masks when
+    the export exists).  `application_id` / `recording_id` let another recording (the
+    multiview comparison) be merged into the same store.
     """
 
     unknown = tuple(name for name in layers if name not in LAYERS)
     if unknown:
         raise ValueError(f"unknown review layers {unknown}; choose from {LAYERS}")
     selected = frozenset(layers)
+    candidate_arms = dict(candidate_arms or {})
+    for name in candidate_arms:
+        parse_candidate_arm(f"{name}=x")
     timer = timer or PhaseTimer("interaction review v4", enabled=False)
     timer.start("validate")
     repository_root = repository_root.resolve()
+    arms = {
+        name: review._validate_run(
+            review.SourceSpec(name, run_directory),
+            repository_root,
+            frame_count=FRAME_COUNT,
+            require_every_frame=False,
+            verify_fingerprints=verify_fingerprints,
+        )
+        for name, run_directory in candidate_arms.items()
+    }
+    confidence_path = (
+        (repository_root / confidence_root / CONFIDENCE_NAME).resolve()
+        if confidence_root is not None
+        else None
+    )
+    confidence = load_confidence_series(confidence_path) if confidence_path is not None else None
+    anchors = (
+        load_anchor_marks(repository_root, anchor_config, anchor_masks)
+        if anchor_config is not None and (repository_root / anchor_config).is_file()
+        else None
+    )
     dataset = (
         a101.load_reference(
             assembly101_reference,
@@ -739,9 +1182,10 @@ def build_first_minute_review(
         frame_count=FRAME_COUNT,
         verify_fingerprints=verify_fingerprints,
     )
-    review._validate_shared_sources([*sources.values(), reference])
+    review._validate_shared_sources([*sources.values(), reference, *arms.values()])
     ensemble_context = _load_ensemble_context(reference, repository_root)
     reference_method = "ensemble_reference" if ensemble_context else "baseline_sam3"
+    legend = provenance_legend(*ensemble_context) if ensemble_context else PROVENANCE_CODE_LEGEND
     video_path = sources["wilor"].run_directory / "input.mp4"
     frames, fps, dimensions = review._video_info(video_path)
     if (frames, fps, dimensions) != (FRAME_COUNT, ANALYSIS_FPS, review.DIMENSIONS):
@@ -823,10 +1267,35 @@ def build_first_minute_review(
         if multiview is not None
         else None
     )
+    arm_fingerprints = {
+        name: _file_fingerprint(source.run_directory / "manifest.json", repository_root)
+        for name, source in arms.items()
+    }
+    confidence_fingerprint = (
+        _file_fingerprint(confidence_path, repository_root) if confidence_path is not None else None
+    )
+    anchor_fingerprints = (
+        [
+            _file_fingerprint(anchors.config_path, repository_root),
+            *(
+                [_file_fingerprint(anchors.mask_set_path, repository_root)]
+                if anchors.mask_set_path is not None
+                else []
+            ),
+        ]
+        if anchors is not None
+        else []
+    )
     artifacts = [
         _file_fingerprint(video_path, repository_root),
-        *[item for source in [*sources.values(), reference] for item in source.artifacts],
+        *[
+            item
+            for source in [*sources.values(), reference, *arms.values()]
+            for item in source.artifacts
+        ],
         *reference_artifacts,
+        *([confidence_fingerprint] if confidence_fingerprint is not None else []),
+        *anchor_fingerprints,
         *(
             [dataset_manifest_fingerprint, *dataset.manifest.input_artifacts]
             if dataset is not None and dataset_manifest_fingerprint is not None
@@ -927,11 +1396,16 @@ def build_first_minute_review(
         segmentation_validity_intervals=validity,
         pinned_moments=moments,
         logged_layers=None if selected == frozenset(LAYERS) else tuple(sorted(selected)),
+        candidate_arms=arm_fingerprints or None,
+        confidence_series=confidence_fingerprint,
+        anchor_marks=tuple(anchor_fingerprints) or None,
+        application_id=application_id,
+        recording_id=recording_id,
     )
     timer.stop("geometry")
     timer.start("export")
     fine_contract = load_fine_substep_contract(repository_root / FINE_LABELS)
-    rr.init("battle-interaction-review-v4", recording_id="interaction_review_first_minute_v4")
+    rr.init(application_id, recording_id=recording_id)
     rr.save(rrd_path)
     entity = f"world/{reference.manifest.clip.clip_id}/interaction_review_v4"
     rr.log(f"{entity}/source/video_asset", rr.AssetVideo(path=video_path), static=True)
@@ -941,12 +1415,27 @@ def build_first_minute_review(
         static=True,
     )
     dataset_manifest = dataset.manifest if dataset is not None else None
-    guide = _guide(index, rrd_path, eligibility, dataset_manifest)
+    guide = _guide(
+        index,
+        rrd_path,
+        eligibility,
+        dataset_manifest,
+        legend=legend,
+        candidate_arms=tuple(arms),
+        confidence_run=confidence_root.as_posix() if confidence_root is not None else None,
+        anchors=anchors,
+    )
     _log_static_documents(
         entity, guide=guide, fine_contract=fine_contract, assembly101=dataset_manifest
     )
     if ensemble_context is not None:
-        _reference_provenance_static(entity)
+        _reference_provenance_static(entity, legend)
+    for name in arms:
+        _candidate_arm_static(entity, name)
+    if confidence is not None and confidence_root is not None:
+        _confidence_static(entity, confidence_root.name)
+    if anchors is not None:
+        _anchor_static(entity, anchors, with_masks=bool(anchors.masks))
     if dataset is not None and "assembly101_hands" in selected:
         _log_assembly101_static(entity, dataset.manifest)
     athena_arms: list[tuple[str, athena_hands_review.LoadedAthenaHands]] = []
@@ -978,6 +1467,12 @@ def build_first_minute_review(
             review._log_reference_masks(
                 entity, reference.observations[frame], reference.run_directory, dimensions
             )
+        for name, source in arms.items():
+            _log_candidate_arm_frame(entity, name, source, frame)
+        if confidence is not None:
+            _log_confidence_frame(entity, frame, confidence)
+        if anchors is not None:
+            _log_anchor_frame(entity, frame, anchors, confidence)
         if "stabilized_wilor" in selected:
             _log_hands(
                 f"{entity}/primary/stabilized_wilor/render",
@@ -1115,6 +1610,13 @@ def build_first_minute_review(
             reference_provenance=ensemble_context is not None,
             assembly101=dataset is not None and "assembly101_hands" in selected,
             multiview=multiview is not None,
+            provenance_panel_name=f"Reference mask provenance per part ({legend})",
+            candidate_arms=(
+                *arms,
+                *((HUMAN_ANCHOR_ARM,) if anchors is not None and anchors.masks else ()),
+            ),
+            confidence=confidence is not None,
+            anchors=anchors is not None,
         )
     )
     rr.disconnect()
@@ -1199,11 +1701,56 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--candidate-arm",
+        action="append",
+        type=parse_candidate_arm,
+        default=[],
+        metavar="NAME=RUN_DIR",
+        help=(
+            "Log another C10379 segmentation run's four part masks beside the reference under "
+            f"{CANDIDATE_SEGMENTATION_ROOT}/NAME (repeatable; about 15 MB per arm)."
+        ),
+    )
+    parser.add_argument(
+        "--confidence",
+        type=Path,
+        default=None,
+        metavar="RUN_DIR",
+        help=(
+            f"battle-detector-scorecard run holding {CONFIDENCE_NAME}; logs per-part confidence "
+            f"and abstain series under {CONFIDENCE_SERIES}."
+        ),
+    )
+    parser.add_argument(
+        "--anchor-config",
+        type=Path,
+        default=ANCHOR_CONFIG,
+        help="Human review anchor config whose frames are marked on the timeline.",
+    )
+    parser.add_argument(
+        "--anchor-masks",
+        type=Path,
+        default=ANCHOR_MASKS,
+        help="Exported anchor mask set; when present the masks are drawn on the anchor frames.",
+    )
+    parser.add_argument("--no-anchors", action="store_true", help="Skip the anchor marks.")
+    parser.add_argument("--application-id", default=APPLICATION_ID)
+    parser.add_argument(
+        "--recording-id",
+        default=RECORDING_ID,
+        help="Recording id; share it with the multiview recording to merge both into one file.",
+    )
+    parser.add_argument(
         "--quiet",
         action="store_true",
         help="Suppress the per-phase timing report.",
     )
     args = parser.parse_args()
+    candidate_arms: dict[str, Path] = {}
+    for name, run_directory in args.candidate_arm:
+        if name in candidate_arms:
+            parser.error(f"candidate arm {name!r} given twice")
+        candidate_arms[name] = run_directory
     print(
         build_first_minute_review(
             repository_root=args.repository_root,
@@ -1217,6 +1764,12 @@ def main() -> None:
             ),
             multiview_consensus_root=args.multiview_consensus,
             verify_fingerprints=args.verify_fingerprints,
+            candidate_arms=candidate_arms,
+            confidence_root=args.confidence,
+            anchor_config=None if args.no_anchors else args.anchor_config,
+            anchor_masks=None if args.no_anchors else args.anchor_masks,
+            application_id=args.application_id,
+            recording_id=args.recording_id,
         )
     )
 
