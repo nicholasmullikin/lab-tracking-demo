@@ -3242,3 +3242,112 @@ this comparison makes no accuracy or cross-method identity claim.
   requested host with the printed URL, `--tailscale` binding the monkeypatched address and
   advertising MagicDNS, the down-tailscale error path, `--tailscale` with `--host` refused,
   four wildcard refusals, IPv6 bracketing, and the relative-URL sweep over the served pages.
+
+### Sep 19: SAM3 at 1280 px on all eight views, and 1920 px on C10379 (steps 0, 1 and 1c of the follow-up plan)
+
+- **Claim boundary first.** Every run below is the same tracker (MuggledSAM SAM3, policy off)
+  at a larger encoder side; the eight-view numbers are cross-view disagreement between runs of
+  that tracker, and the C10379 numbers are IoU against the 13-frame human review anchors on one
+  view (review evidence for ranking arms, not a dataset, not ground truth). Seeds on the seven
+  static views and e4 are last night's agent-authored geometric transfers, unreviewed; the
+  1920 arm's seeds and corrections are resampled copies of masks chosen on the 720p proxy,
+  unreviewed at 1080p. Nothing was swapped into any reference. CC BY-NC 4.0 applies. GPU:
+  16 queue jobs, one at a time, no `NVRM`/`Xid`; no viewer opened.
+- **Step 0.** The anchor calibration workspace (`battle-muggled-calibration-web --tailscale`,
+  pid 3361603/3361607, and its MuggledSAM worker pid 3361702, 2.5 GiB on `cuda:0`) was stopped
+  with SIGTERM (all three exited within 1 s; port 8765 free; `nvidia-smi` showed no Python
+  process). The human confirmed the (1700, rear_body) hidden mark on a second look and named
+  the yellow piece a screwdriver; recorded as failure case `distractor_confusion` in
+  `docs/qa/first-minute-review-anchors.human-record.json` (new optional per-cell
+  `failure_case` / `note` fields on `ReviewAnchorRecordEntry`, default null so earlier records
+  load; `battle-anchor-export` rewrites the file without them, which the record's `notes` says),
+  and the Sep 19 ledger line that called the mark "contradicted by all 15 runs" was reworded:
+  the 1.2-1.3k px every arm puts on that cell is the distractor signal. Commit `30be958`;
+  `tests/test_review_anchors.py` +1 (13 pass).
+- **Step 1, runs** (`runs/sam3-views-r1280-20260919/`, `scripts/overnight_queue.py`, same
+  `--four-part-multiview-first-minute --geometric-seed-manifest ... --checkpoint-every 300`
+  command lines as Sep 18 with `--max-side-length 1280`, policy off, all-static config for the
+  seven static views and the e4 config for `ego-hmc21179183`). Eight runs, 1800/1800 frames
+  each, 5314-5400 masks; worker elapsed 326-352 s per view (2.5-3.0x the 117-132 s at 720),
+  peak VRAM 2.39 GiB on every view (1.96 at 720), time to first output 4.2-5.6 s. Part presence
+  unchanged to two decimals except C10395 chassis 0.99 -> 1.00 and e4 rear_body 0.93 -> 0.95;
+  first-missing frames moved (C10095 chassis 1537 -> none, C10390 chassis 1642 -> none but
+  rear_body 1230 and cabin 1079 appear, C10395 chassis 594 -> none, cabin 228 -> 105). Run
+  directories `views/<VIEW>/muggledsam-sam3-four-part-multiview-first-minute-<view>-20260920t0*-r1280`;
+  table in `README.md` / `views_table.md`. **Incident:** the first queue pass finished only
+  C10095: a concurrent worker's live edit left `src/battle/muggled_worker.py` without `main` for
+  a few minutes, the SAM3 worker of jobs 2-8 died at import (`NameError`), the smoke recorded
+  `failed` and exited 0, and the queue counted the seven as succeeded in 0.4 s each (kept under
+  `failed-worker-edit-20260920t0156z/`). The retry pass and the 1920 arm ran with `PYTHONPATH`
+  on `code-snapshot-072fe0b/src`, a `git archive` of `src/battle` at commit 072fe0b, so working-
+  tree edits cannot reach a queued GPU job; the queue's "exit 0 = success" reading of a smoke
+  that recorded a failed core method is a gap to close in `overnight_queue`.
+- **Step 1, consensus and hull** (`runs/multiview-part-consensus-first-minute-r1280/`, 77 s,
+  reference `runs/sam3-policy-ablation-20260918/arms/off-r1280-sched`, eight explicit
+  `--view-run`, `--ego-view HMC_21179183`; `runs/multiview-visual-hull-first-minute-r1280/`,
+  835 s). Compared with the Sep 18 `-with-e4` roots by the new `battle-compare-multiview-builds`
+  (`summary.md` / `summary.json` in both new roots; commit `024dbf9`, whose `real_data` test
+  reproduces the Sep 18 policy numbers 228 frames / 99 (15) / 146 (32) / 0.396). C10379 chassis
+  contradicted by the majority: 720 `[585,604)` `[643,658)` `[665,693)` `[697,702)` `[1037,1042)`
+  `[1089,1163)` `[1167,1172)` `[1459,1470)` `[1499,1504)` (166 frames) -> 1280 `[296,313)`
+  `[475,494)` `[508,515)` `[594,629)` `[649,722)` `[1058,1063)` `[1065,1085)` (174 frames): the
+  `[1020,1172)` swap window drops from 84 contradicted frames to 25 and ends at 1085, while
+  `[573,722)` grows from 66 to 106 and three short new intervals appear (296, 475, 508).
+  rear_body 16 -> 37 frames (`[1662,1667)` `[1762,1794)`); cabin none in both. C10379 agreement
+  0.88 / 0.98 / 1.00 -> 0.89 / 0.97 / 1.00; consensus episodes over all views 121 (C10379 14) ->
+  111 (12); C10395 chassis / rear_body agreement 0.74 / 0.81 -> 0.84 / 0.93 but cabin 0.73 ->
+  0.58; e4 rear_body 0.58 -> 0.63. Hull: frames with hull chassis / rear_body / cabin 1476 /
+  1221 / 1585 -> 1371 / 1209 / 1726, median voxels 704 / 196 / 427 -> 450 / 207 / 779 (the cabin
+  hull no longer collapses under the hand at 279-408: C10379 cabin hull IoU there 0.061 ->
+  0.860); C10379 chassis hull-vs-mask median IoU overall 0.418 -> 0.420, in `[279,408)` /
+  `[573,722)` / `[1020,1172)` 0.451 / 0.036 / 0.005 -> 0.465 / 0.000 / 0.466; rear_body 0.407 ->
+  0.447 (0.465 / 0.408 / 0.379 -> 0.583 / 0.446 / 0.401); hull episodes 266 (C10379 43) -> 251 (33),
+  the C10379 chassis list losing `[1089,1161)` and gaining `[477,493)` `[510,515)` `[699,722)`
+  and three short ones before frame 200.
+  Reading, label-free and consistent with the anchors: at 1280 the eight views agree with
+  C10379 through the `[1020,1172)` window (the anchors gave the 1280 chassis 0.53 / 0.31-0.44 /
+  0.51 at 1050 / 1100 / 1150 where 720 had 0.27 / 0.00 / 0.00) and disagree with it through
+  more of `[573,722)` (the anchors gave the 1280 chassis 0.29 / 0.17 / 0.00 at 600 / 650 / 700).
+- **Step 1c, 1080p proxy and 1920 arm** (`runs/sam3-c10379-r1920-20260919/`). New proxy
+  `data/derived/.../C10379_rgb_294.000-386.700_1920x1080_30fps.mp4` from the local raw60 trim
+  with the 720p proxy's filter and encoder settings (`fps=30:round=near`, libx264 crf 18
+  medium yuv420p cfr, 12.6 s), 2781 frames, sha256 `c98180f4acd978c9ae3d8886e320e028c1cf4157fd7bdb995461f6c59628dc62`,
+  frame k the same instant as the 720p proxy's frame k (downscaled |diff| 1.7-1.9 vs 2.0-3.2 for
+  the neighbouring frame at five probes). Registered in
+  `configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_1080p_g2.json` with the new
+  `scaling_policy` literal `preserve_aspect_ratio_height_1080` (`G2PreprocessingManifest`;
+  the old literal still validates) and sibling manual-seed / correction-policy configs bound to
+  it. Seed plumbing: the worker verifies every mask's SHA-256 and pixel size against the
+  calibration and the schedule fingerprints the calibration, the policy and the G2 config, so
+  instead of touching the worker (another worker owns it tonight) `battle-rescale-calibration`
+  (`calibration_rescale.py`, commit `072fe0b`, 3 tests) writes a derived calibration: all 104
+  candidate masks resampled x1.5 nearest (area ratio 2.21-2.26), boxes and clicks scaled and
+  re-normalised, review URIs pointing back at the source workspace, `derived_from_calibration`
+  set, plus a derived schedule and a `rescale_provenance.json` sidecar; the derived schedule
+  loads through `_load_multi_keyframe_correction_schedule` unchanged (seeds in order, schedule
+  327 / 900 / 1172 / 1235, 1800 and 2700 dropped as out of range). Run `off-r1920-sched`
+  (`arms/off-r1920-sched/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260920t024532z-r1920`):
+  1800/1800 frames, 7199 masks at 1920x1080, worker 911 s (queue 1036 s; 2.6x the 1280 arm's
+  348 s, 7.3x 720), peak VRAM 3.36 GiB, first output 4.5 s; the manifest's
+  `multi_keyframe_corrections.schedule_fingerprint` names the derived schedule and the
+  provenance sidecar is copied into the run directory.
+- **Anchor IoU, 1920** (`anchor_iou.{json,md}`, `anchors_vs_reference_vs_r1920.png`; run masks
+  downsampled nearest to the 720p anchors on all 51 cells, `resized_run_mask` set). `off-r1920-sched`
+  0.597 / 0.530 / 0.749 / 0.960 (chassis / interior / rear_body / cabin), **0.708** overall,
+  windows 0.868 / 0.558 / 0.652, outside 0.746, 0 missing, hidden FP 2726 px at 1080p (about
+  1212 px at 720p, the same screwdriver). Against `off-r1280-sched` (0.724; 0.861 / 0.603 /
+  0.659 / 0.764): gains chassis 370 0.72 -> 0.82 and 700 0.00 -> 0.65, interior 370 0.64 -> 0.82,
+  1100 0.24 -> 0.80, 1150 0.53 -> 0.64; losses chassis 600 0.29 -> 0.00 and 1050 0.54 -> 0.09,
+  interior 650 0.46 -> 0.02 and 1500 0.70 -> 0.59, rear_body 0.03-0.06 lower on nine of twelve
+  visible cells. The resolution trend does not continue past 1280 on these anchors: 1920 sits
+  with 1008 (0.705), below both 1280 arms (0.724 / 0.728), inside the ~0.02 band where the anchors
+  do not rank. Two confounds are named, not resolved: the seeds are 1.5 px-blocky upscales, and
+  the encoder side 1920 on a 1920x1080 proxy is native pixels where 1280 was a downscale.
+- **Deliverables.** Commits `30be958` (step 0), `072fe0b` (proxy, configs, rescaler),
+  `024dbf9` (build comparison); run roots `runs/sam3-views-r1280-20260919/`,
+  `runs/multiview-part-consensus-first-minute-r1280/`, `runs/multiview-visual-hull-first-minute-r1280/`,
+  `runs/sam3-c10379-r1920-20260919/`, the derived calibration
+  `runs/muggledsam-sam3-four-part-focused-corrections-agent-swap-20260918t000947z-rescaled-1920x1080/`,
+  each with a README or summary. Not done here, by instruction: the memory arms (step 1b), DAM4SAM
+  (step 2), scoring tables across all new runs and the ensemble v2 (step 3), README and review
+  guide updates.
