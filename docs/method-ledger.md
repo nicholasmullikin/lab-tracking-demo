@@ -4059,3 +4059,147 @@ this comparison makes no accuracy or cross-method identity claim.
   C10379 and C10395 rest on two metrics; a zoomed overlay check like the Sep 17 one has not
   been made for recording 2. The seed frame for C2 should be chosen from the contact sheet
   (proxy frames about 75-420 show the four parts apart), not assumed to be frame 0.
+
+### Sep 20: B0 tooling of the multicam plan, anchors mapped to every view (commit `6c6cd66`)
+
+- **Claim boundary first.** Nothing here is a label. The tool prepares labelling sessions on
+  the other views by mapping the 13 C10379 anchor frames through the measured clock rules; the
+  per-view configs hold no masks, and `battle-anchor-iou --view <view>` refuses to score until a
+  human record exists for that view. CC BY-NC 4.0 applies to the frames. No GPU work: the
+  workspace check ran with `--no-worker`.
+- **Mapping convention** (`battle-anchor-frames-for-view`, `anchor_frames_for_view.py`). C10379
+  analysis frame `p` shows pose frame `17649 + 2p` (clock rule offset +9); the target view's
+  frame is `floor((pose - 17640 - offset_target) / 2)`, the half frame rounded *down* so the
+  mapped frame is never later than the C10379 frame, the same integer-timeline convention as
+  the ego-exo correspondence (`egoexo_correspondence.mapped_analysis_frame`), with the
+  residual (target pose frame minus source pose frame) recorded per frame. Because every rule
+  has the same raw-frame step the mapping is a constant shift per view: C10095 (+5) shift +2,
+  residual 0; C10115 / C10118 / C10395 / C10404 (+6) shift +1, residual -1; C10119 / C10390
+  (+7) shift +1, residual 0; e4 (0) shift +4, residual -1. Anchor 300 -> 302 / 301 / 301 / 304.
+  Windows and the hidden-prompt interval shift with the frames.
+- **Written.** `configs/qa/first_minute_review_anchors_<view_id>.json` for the seven other
+  statics and e4 (`ReviewAnchorConfig` with `view_id`, `frame_mapping` (source config and
+  clock-rules fingerprints, offsets, shift, convention), per-frame `origin` /
+  `source_analysis_frame_index` / `residual_pose_frames`, and `workspace_timestamps`, the
+  `--timestamps` string the calibration workspace accepts) and a per-view four-part target
+  policy `configs/muggledsam_{static,ego}_four_part_reassembly_focused_manual_seed_<view_id>.json`
+  bound to the all-static (or e4) clip config. Extra frames: the tool appends Track A's
+  `runs/detector-scorecard-20260920/*/proposed_anchor_frames.json` when it exists (bare list,
+  `frames`, or records with `analysis_frame_index`); it did not exist when the configs were
+  written, so every config says `extra_frames_pending: true` and the tool prints the rerun
+  instruction.
+- **C10379 assumptions removed.** `build_first_minute_config` takes the view / clip config /
+  target config (defaults unchanged); `battle-anchor-export prepare|export` and
+  `battle-anchor-iou` gained `--view` with per-view default paths
+  (`runs/human-review-anchors-first-minute-<view_id>`, `docs/qa/first-minute-review-anchors-<view_id>.human-record.json`)
+  and a plain failure naming the next step when the record is missing; the calibration
+  manifest and the manual-seed target policy accept any `static-*` / `ego-*` view id (they
+  were `Literal` over three ids); `muggled_calibration.build_manifest` and the web CLI resolve
+  the view from the config (a single-proxy config needs no `--view`, a multi-proxy config
+  requires it; the legacy e4 default survives only for the original e4 screen config).
+- **Verified headless.** `battle-anchor-export prepare --view static-c10119` and
+  `--view ego-hmc21179183` built workspaces on the all-static and e4 configs;
+  `battle-muggled-calibration-web --no-worker` served both (`/api/state` returned the
+  manifest with the right `base_g2_config` and proxy); the all-static config without `--view`
+  is refused with the list of proxies. `battle-anchor-iou --view static-c10119` fails with
+  "no human review anchors exist for static-c10119 ... prepare / label / export".
+- **Tests.** `tests/test_anchor_frames_for_view.py` (9): the mapping on synthetic rules (+9 ->
+  +9/+7/+6/+5/0), the refusal before the target proxy, a full per-view config (frames,
+  windows, hidden interval, extra-frame de-duplication, round trip), the pending flag, the
+  extra-frame reader, `view_paths`, the missing-record message, and that every committed
+  per-view config equals what the mapper writes from the committed clock rules. Existing
+  suites for the anchors, the calibration and the web workspace pass (173 in the affected
+  files).
+
+### Sep 20: B2 of the multicam plan, seeding strategy search on the C10379 human masks and transfer (commits `2861d2f`, `df1edff`, `afb8475`)
+
+- **Claim boundary first.** Every IoU below is against one person's choice of SAM3
+  image-decoder mask on 16 frames of one view (the 13 anchor frames plus the human
+  correction frames 0 / 327 / 900 / 1235); it ranks seeding strategies against each other and
+  is not accuracy, not a dataset, not ground truth. The prompts are built from the *other*
+  views' tracker masks (the agent-seeded 1280 runs and, for the interior prior, the
+  human-corrected C10379 run) on the calibrated rig, never from the human mask being scored.
+  Seeds written for the other views are agent-selected (`selected_by: agent`); "accepted"
+  means the candidate is consistent with the other views' masks, not right. GPU: two queue
+  jobs on code snapshots (`runs/seed-search-20260920/code-snapshot-{20c843b,df1edff}`), 69 s
+  and 45 s, no `NVRM`/`Xid`. CC BY-NC 4.0.
+- **Truth set** (`battle-seed-truth-set`, `runs/seed-search-20260920/truth_set.json`): 68
+  human masks (64 on C10379: 51 anchor cells, 13 correction masks at 0 x4 / 327 x4 / 900 x2 /
+  1235 x3; 4 e3 frame-0 masks), 1 hidden mark (rear_body 1700), 8 rejected decoder candidates
+  (the two chassis prompts rejected at 300 and 650) and 204 unchosen alternatives of accepted
+  prompts as labelled negatives; 24 excluded (the agent-selected 1172 / 1100 masks, the 1800 /
+  2700 frames). The manifests keep every alternative, so the negatives exist. The anchor
+  export's SHA-256s were checked against the workspace candidates.
+- **Search** (`battle-seed-search plan|decode|score`, `search/`). Per truth frame and part the
+  other views' centroids at the same pose frame (clock-rule shifts) are triangulated (DLT,
+  30 raw px drop-worst, 6-9 views used) into a sphere whose radius is the median
+  equivalent-circle radius at depth, projected into C10379 as a square box; the interior,
+  which no other view tracks, uses the run's own mask one frame earlier (`self_prior`,
+  labelled on every cell). Grid: margins {0.15, 0.25, 0.40, 0.60} x negatives {none, other
+  parts' centroids, chassis rim, cabin edge, dataset hand joints} x {one box, margin box +
+  0.60 box pooled} x pick {highest decoder score, largest, smallest, DINOv2-small exemplar
+  from the other truth frames}: 160 strategies, 659 unique prompts (a negative set that adds
+  no point inside the box collapses into `none`), decoded with one warm image decoder in
+  69 s. Leave-frames-out: fit on all frames but 3 anchor frames, score the fit winner on
+  those, rotate over the 13 anchor frames, correction frames always in the fitting set.
+
+  | part | winner (margin / negatives / boxes / pick) | mean IoU all 16 frames | runner-up gap | held-out mean | held-out min | frame-0 IoU | gate >= 0.6 |
+  | --- | --- | --- | --- | --- | --- | --- | --- |
+  | chassis | 0.25 / cabin edge / two / highest score | 0.581 | 0.001 | **0.525** | 0.018 (300) | 0.81 | FAIL |
+  | interior | 0.25 / other centroids / one / highest score | 0.547 | 0.000 | **0.465** | 0.085 (1050) | 0.94 | FAIL |
+  | rear_body | 0.15 / other centroids / two / highest score | 0.786 | 0.003 | **0.795** | 0.238 (1500) | 0.72 | pass |
+  | cabin | 0.15 / other centroids / one / highest score | 0.954 | 0.000 | **0.949** | 0.805 (1500) | 0.95 | pass |
+
+  By axis: the decoder's own top score beats the exemplar re-ranker on every part (0.581 vs
+  0.496, 0.547 vs 0.524, 0.786 vs 0.712, 0.954 vs 0.877) and `largest` / `smallest` by more;
+  `none` / other centroids / chassis rim / cabin edge are within 0.004 of each other on every
+  part (the winners above are third-decimal ties) and hand joints cost 0.1-0.3; margin
+  0.15-0.25 beats 0.60 by ~0.1; two boxes vs one within 0.03. The exact human mask is never
+  returned (0 / 16 on every part: the human drew different boxes). Chassis fails in
+  `[279,408)` and `[573,722)` (0.30-0.35 at 300 / 600 / 650: the other views' chassis
+  centroid sits where the hand and interior are) and the interior fails where its own prior
+  is wrong (1050 0.08, 1100 0.31). At frame 0 all four are 0.72-0.95.
+  `search_contact_sheet.png`: truth | geometric prompt | winner pick for six frames.
+- **Transfer** (`battle-seed-search transfer-plan|transfer-decode|transfer-accept`,
+  `transfer/`, `seeds/`, `proposals/`). Frame 0 of each of the seven other statics and e4:
+  the sphere from every *other* view's frame-0 mask (C10379 and e3 human seeds, the seven
+  1280 runs, e4; the target view left out), the winner strategy decoded (7-9 prompts per
+  view, 5-6 s each), accepted when the candidate's own centroid triangulates with the other
+  observations with >= 3 views inside the 30 raw px filter and its area is within
+  [0.3, 3.0] x the projected sphere. **rear_body and cabin accepted on all 8 views (16 / 16)**,
+  every time with all 10 observations agreeing, reprojection 0.4-13.8 raw px; IoU against the
+  Sep 18 agent seeds rear_body median 0.91 (0.68-0.97), cabin median 0.85 (0.39-0.99; C10390
+  0.39 and C10395 area x0.45 are the low / corner cameras where the tight box picks a
+  smaller cabin surface). Chassis candidates are consistent everywhere (10 views, 0.6-9.5 px,
+  IoU vs Sep 18 median 0.97) but the part is below the gate, so they are **proposals only**
+  and B3 keeps the Sep 18 chassis seed (`acceptance_basis` note `carried over from Sep 18`).
+  **Interior rest frame:** the rule (hands >= N mm from the eight-view chassis consensus
+  centroid over 15 frames with the centroid still, N = 100 then 60 then 40) finds nothing at
+  100 or 60 mm, because the nearest hand joint is never farther than 63 mm from the chassis
+  after frame 323; N = 40 gives C10379 frame **426** (view frames 427-430), so "rest" means
+  hands clear by 40 mm, not put down. The interior triangulated there from the C10379 and e3
+  run masks is consistent with its candidates in all 8 views (3 observations, the minimum,
+  2-16 px) and is **proposals only** (gate 0.465); it is **blocked in the B3 seeds** because the
+  multiview run profile seeds every slot at frame 0 and the interior is hand-held then, and a
+  mid-minute slot start was not built. Proposals: 24 (3 per view: chassis f0, interior
+  f427-430, rear_body or cabin f0) ranked by cross-strategy disagreement (1 - mean pairwise
+  IoU of the five best strategies' picks; cabin's always agree), each with the distinct
+  candidate PNGs, an overlay with the Sep 18 seed, and `proposal.json` (`human_decision: null`).
+- **Schema.** `multiview_schemas.SeedCandidate.acceptance_basis` gains
+  `multiview_consistency` and `carried_over_sep18_seed`, plus `consistency_views_used`,
+  `consistency_reprojection_px`, `iou_vs_sep18_seed` (all optional, Sep 18 manifests load
+  unchanged). The eight `seeds/<view>/seed_manifest.json` load through
+  `_load_geometric_seed_manifest` (3 seeds each, interior blocked).
+- **Tests.** `tests/test_seed_search.py` (10 default + 1 `real_data`): strategy grid and name
+  round trip, pool rules (margin box, the 0.60 box for `two`, negative-set fallback), the four
+  pick rules including the exemplar arm, leave-frames-out on synthetic cells (fit winner per
+  split, held-out means, the gate), decode-request normalisation, boundary / crop helpers,
+  calibration collection (positive, rejected, unchosen, agent excluded); `real_data`: the
+  written truth set, search report and transfer report are consistent (68 / 64 positives,
+  gates as above, every view's B3 seeds = rear_body + cabin from the search, chassis carried
+  over, interior blocked). Ruff clean.
+- **Open.** Interior unseeded on every other view; chassis re-seeding rejected by the gate;
+  exemplar arm tried in one configuration only; the interior consistency test has exactly the
+  minimum three observations. The plan's stop rule ("automatic interior seed fails on >= 4
+  views -> run B3 with the human seed") applies: there is no human interior seed on the other
+  views, so B3 runs three parts and records the interior as the open problem.
