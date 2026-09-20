@@ -426,6 +426,10 @@ class Sphere(VersionedModel):
     prior_centre_px: tuple[float, float] | None = None
     prior_half_size_px: float | None = None
     note: str | None = None
+    # The raw-pixel observations (and ego poses) the triangulation saw, kept so a candidate
+    # in another view can be tested for consistency against the same observations.
+    view_points_raw: dict[str, tuple[float, float]] = Field(default_factory=dict)
+    view_poses: dict[str, int] = Field(default_factory=dict)
 
 
 def mask_boundary_points(mask: np.ndarray, count: int) -> np.ndarray:
@@ -489,11 +493,20 @@ class GeometryContext:
 
     def sphere_from_views(self, part: str, reference_frame: int, views: Sequence[str]) -> Sphere:
         """Triangulate the part centroid from `views`' tracker masks at the same pose frame."""
+        return self.sphere_at_frames(
+            part, {view: self.frame_in(view, reference_frame) for view in views}
+        )
+
+    def sphere_at_frames(self, part: str, frames_by_view: Mapping[str, int]) -> Sphere:
+        """Triangulate the part centroid from each view's tracker mask at the given frame."""
         points: dict[str, np.ndarray] = {}
         poses: dict[str, int] = {}
         areas: dict[str, float] = {}
-        for view in views:
-            mask = self.mask(view, reference_frame, part)
+        for view, frame in frames_by_view.items():
+            run = self.runs.get(view)
+            if run is None or frame < 0 or frame >= FIRST_MINUTE:
+                continue
+            mask = run.mask(frame, part)
             if mask is None or not mask.any():
                 continue
             scale = proxy_to_raw_scale(view)
@@ -503,7 +516,7 @@ class GeometryContext:
             points[view] = centroid.reshape(1, 2)
             areas[view] = float(mask.sum())
             if is_ego(view):
-                poses[view] = self.rig.pose_frame(view, self.frame_in(view, reference_frame))
+                poses[view] = self.rig.pose_frame(view, frame)
         if len(points) < 2:
             return Sphere(
                 part=part,
@@ -546,6 +559,8 @@ class GeometryContext:
                 if np.isfinite(e)
             },
             source="other_views",
+            view_points_raw={v: (float(p[0, 0]), float(p[0, 1])) for v, p in points.items()},
+            view_poses={v: int(p) for v, p in poses.items()},
         )
 
     def self_prior(self, view: str, reference_frame: int, part: str) -> Sphere:
@@ -623,7 +638,9 @@ class PromptSpec(VersionedModel):
 
     prompt_id: str
     view: str
-    reference_frame: int = Field(ge=0)
+    # C10379-clock frame the geometry was taken at; negative when a view's frame 0 precedes
+    # C10379's frame 0 (the transfer frame of the statics, +1/+2 frames ahead).
+    reference_frame: int
     target_frame: int = Field(ge=0)
     part: str
     margin: float
@@ -941,10 +958,13 @@ DINOV2_SCRIPT = r"""
 import json, sys
 import numpy as np, torch
 from PIL import Image
-from transformers import AutoImageProcessor, AutoModel
+from transformers import AutoModel
 spec = json.load(open(sys.argv[1]))
-processor = AutoImageProcessor.from_pretrained("facebook/dinov2-small")
 model = AutoModel.from_pretrained("facebook/dinov2-small").eval()
+# ImageNet normalisation, 224 px crops: the DINOv2 processor's defaults, done without
+# torchvision so the MuggledSAM interpreter's torch build is left untouched.
+mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
+std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
 out = {}
 with torch.no_grad():
     items = spec["crops"]
@@ -954,9 +974,10 @@ with torch.no_grad():
         for item in chunk:
             image = Image.open(item["image"]).convert("RGB")
             x0, y0, x1, y1 = item["box"]
-            images.append(image.crop((x0, y0, x1, y1)).resize((224, 224)))
-        inputs = processor(images=images, return_tensors="pt")
-        features = model(**inputs).pooler_output
+            crop = image.crop((x0, y0, x1, y1)).resize((224, 224), Image.BICUBIC)
+            images.append(torch.from_numpy(np.asarray(crop, dtype=np.float32) / 255.0))
+        pixels = (torch.stack(images).permute(0, 3, 1, 2) - mean) / std
+        features = model(pixel_values=pixels).pooler_output
         features = torch.nn.functional.normalize(features, dim=-1).cpu().numpy()
         for item, vector in zip(chunk, features):
             out[item["key"]] = vector.tolist()
@@ -1191,7 +1212,8 @@ def score_search(
     exemplar_python: Path | None,
 ) -> SearchReport:
     decoded = json.loads(decode_path.read_text(encoding="utf-8"))["decoded"]
-    results_root = output_dir / "results"
+    # The worker reports `results/masks/<name>.png` relative to the directory holding results/.
+    results_root = output_dir
     candidates = load_candidates(plan, decoded, results_root)
     truth_masks: dict[tuple[int, str], tuple[TruthMask, np.ndarray | None]] = {}
     for entry in truth.entries:
@@ -1206,7 +1228,7 @@ def score_search(
     # Exemplar arm: DINOv2-small crops of every candidate and every human mask, CPU.
     exemplar_note = None
     embeddings: dict[str, np.ndarray] | None = None
-    frames_dir = results_root / "frames"
+    frames_dir = results_root / "results" / "frames"
     crops: list[dict[str, Any]] = []
     for prompt_id, items in candidates.items():
         for c in items:
@@ -1469,6 +1491,821 @@ def search_table(report: SearchReport) -> str:
     return "\n".join(lines) + "\n"
 
 
+# -------------------------------------------------------------------------------- transfer
+
+
+REST_MIN_FRAME = 323
+# Tried in order; the first threshold with a qualifying window is recorded. In this minute
+# the hands never leave the assembly by 100 mm (the subject keeps working on it), so the
+# rule degrades to the largest clearance that does occur.
+REST_HAND_DISTANCE_MM_LADDER = (100.0, 60.0, 40.0)
+REST_WINDOW_FRAMES = 15
+REST_MAX_STEP_MM = 3.0
+CONSENSUS_ROOT = Path("runs/multiview-part-consensus-first-minute-r1280-pm-append")
+
+
+class InteriorRestFrame(VersionedModel):
+    reference_frame: int | None
+    rule: str
+    consensus_root: str
+    min_hand_distance_mm: dict[str, float] = Field(default_factory=dict)
+    chassis_step_mm: dict[str, float] = Field(default_factory=dict)
+    note: str | None = None
+
+
+def find_interior_rest_frame(repository_root: Path, context: GeometryContext) -> InteriorRestFrame:
+    """First C10379 frame >= 323 where the hands leave the assembly and the chassis rests.
+
+    Rule: over `[f, f + 15)` every dataset hand joint with confidence >= 0.5 is at least
+    100 mm from the eight-view chassis consensus centroid, and that centroid moves less
+    than 3 mm per frame. The interior is attached to the chassis by then (fine-grained GT:
+    `position interior` ends at 323), so the chassis consensus stands in for the assembly.
+    """
+    centroids: dict[int, np.ndarray] = {}
+    with (repository_root / CONSENSUS_ROOT / "per_frame.jsonl").open(encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            point = row["parts"]["chassis"].get("consensus_world_mm")
+            if point is not None:
+                centroids[int(row["analysis_frame_index"])] = np.asarray(point, dtype=np.float64)
+
+    def hand_distance(frame: int) -> float:
+        key = str(context.rig.pose_frame(REFERENCE_VIEW, frame))
+        joints = context.members.landmarks3d.get(key)
+        if joints is None or frame not in centroids:
+            return float("inf")
+        distances = []
+        for index in ASSEMBLY101_HAND_SIDES:
+            if float(context.members.confidences[key][str(index)]) < HAND_CONFIDENCE_FLOOR:
+                continue
+            xyz = np.asarray(joints[str(index)], dtype=np.float64)
+            distances.append(float(np.linalg.norm(xyz - centroids[frame], axis=1).min()))
+        return min(distances) if distances else float("inf")
+
+    distances = {f: hand_distance(f) for f in range(REST_MIN_FRAME, FIRST_MINUTE)}
+    tried: list[str] = []
+    for threshold in REST_HAND_DISTANCE_MM_LADDER:
+        rule = (
+            f"first f >= {REST_MIN_FRAME} such that for every frame in "
+            f"[f, f+{REST_WINDOW_FRAMES}): "
+            f"all dataset hand joints (confidence >= {HAND_CONFIDENCE_FLOOR}) are >= "
+            f"{threshold:.0f} mm from the chassis consensus centroid and the chassis consensus "
+            f"centroid moves < {REST_MAX_STEP_MM:.0f} mm/frame"
+        )
+        for f in range(REST_MIN_FRAME, FIRST_MINUTE - REST_WINDOW_FRAMES):
+            window_hand = []
+            window_step = []
+            ok = True
+            for g in range(f, f + REST_WINDOW_FRAMES):
+                if g not in centroids or (g + 1) not in centroids:
+                    ok = False
+                    break
+                step = float(np.linalg.norm(centroids[g + 1] - centroids[g]))
+                window_hand.append(distances[g])
+                window_step.append(step)
+                if distances[g] < threshold or step >= REST_MAX_STEP_MM:
+                    ok = False
+                    break
+            if ok:
+                finite = [d for d in distances.values() if np.isfinite(d)]
+                return InteriorRestFrame(
+                    reference_frame=f,
+                    rule=rule,
+                    consensus_root=CONSENSUS_ROOT.as_posix(),
+                    min_hand_distance_mm={str(f): min(window_hand)},
+                    chassis_step_mm={str(f): max(window_step)},
+                    note=(
+                        ("no window satisfies the " + " / ".join(tried) + " mm clearance; ")
+                        if tried
+                        else ""
+                    )
+                    + f"the nearest hand joint is never farther than {max(finite):.0f} mm from "
+                    f"the chassis after frame {REST_MIN_FRAME} (the subject keeps handling the "
+                    "assembly), so 'rest' here means the hands are clear by "
+                    f"{threshold:.0f} mm and the chassis is still, not that it was put down",
+                )
+        tried.append(f"{threshold:.0f}")
+    return InteriorRestFrame(
+        reference_frame=None,
+        rule=" | ".join(tried),
+        consensus_root=CONSENSUS_ROOT.as_posix(),
+        note="no frame in the first minute satisfies the rest rule at any threshold tried",
+    )
+
+
+class TransferCell(VersionedModel):
+    view: str
+    part: str
+    target_frame: int
+    reference_frame: int
+    sphere: Sphere
+    strategy: str
+    prompts: tuple[PromptSpec, ...]
+    expected_area_px: float | None
+
+
+class TransferPlan(VersionedModel):
+    manifest_kind: Literal["seed_transfer_plan"]
+    search_report: ArtifactFingerprint
+    winners: dict[str, str]
+    gate_passed: dict[str, bool]
+    interior_rest: InteriorRestFrame
+    views: dict[str, dict[str, Any]]
+    cells: tuple[TransferCell, ...]
+    claim_boundaries: tuple[str, ...]
+
+
+def parse_strategy(name: str) -> StrategyKey:
+    margin, negatives, boxes, pick = name.split("|")
+    return StrategyKey(margin=float(margin[1:]), negatives=negatives, boxes=boxes, pick=pick)
+
+
+def plan_transfer(
+    repository_root: Path,
+    *,
+    report: SearchReport,
+    report_path: Path,
+    context: GeometryContext,
+) -> TransferPlan:
+    winners = {part: s.winner for part, s in report.parts.items()}
+    gate = {part: s.passes_transfer_gate for part, s in report.parts.items()}
+    rest = find_interior_rest_frame(repository_root, context)
+    cells: list[TransferCell] = []
+    views: dict[str, dict[str, Any]] = {}
+    for view in TRANSFER_VIEWS:
+        proxy, (width, height) = proxy_for_view(repository_root, view)
+        shape = (height, width)
+        views[view] = {
+            "view_id": view_id_for(view),
+            "proxy": proxy.model_dump(mode="json"),
+            "proxy_dimensions": [width, height],
+        }
+        counter = itertools.count(1)
+        # Frame 0 of this view: the other views' masks at THEIR frame 0 (parts rest on the
+        # table, so the sub-100 ms clock offsets between cameras do not move them).
+        others = [v for v in (REFERENCE_VIEW, SECONDARY_VIEW, *TRANSFER_VIEWS) if v != view]
+        spheres_f0 = {
+            part: context.sphere_at_frames(part, dict.fromkeys(others, 0))
+            for part in TARGETS
+            if part != "interior"
+        }
+        reference_f0 = -context.frame_shift[view]
+        for part in ("chassis", "rear_body", "cabin"):
+            key = parse_strategy(winners[part])
+            margins = [key.margin] + (
+                [TWO_BOX_SECOND_MARGIN]
+                if key.boxes == "two" and abs(key.margin - TWO_BOX_SECOND_MARGIN) > 1e-9
+                else []
+            )
+            prompts = build_prompts(
+                context,
+                view=view,
+                reference_frame=reference_f0,
+                part=part,
+                sphere=spheres_f0[part],
+                other_spheres=spheres_f0,
+                shape=shape,
+                counter=counter,
+                margins=margins,
+                negative_sets=("none", key.negatives) if key.negatives != "none" else ("none",),
+            )
+            projected = context.projected_centre(spheres_f0[part], view, reference_f0)
+            cells.append(
+                TransferCell(
+                    view=view,
+                    part=part,
+                    target_frame=0,
+                    reference_frame=reference_f0,
+                    sphere=spheres_f0[part],
+                    strategy=winners[part],
+                    prompts=tuple(prompts),
+                    expected_area_px=(
+                        float(np.pi * projected[1] ** 2) if projected is not None else None
+                    ),
+                )
+            )
+        # Interior at its rest frame: C10379 (human-corrected run) x e3 (human-seeded run).
+        if rest.reference_frame is not None:
+            f = rest.reference_frame
+            sphere = context.sphere_at_frames(
+                "interior",
+                {REFERENCE_VIEW: f, SECONDARY_VIEW: context.frame_in(SECONDARY_VIEW, f)},
+            )
+            sphere = (
+                sphere.model_copy(update={"source": "reference_plus_e3"})
+                if (sphere.source == "other_views")
+                else sphere
+            )
+            others_rest = {
+                part: context.sphere_from_views(
+                    part, f, [v for v in (REFERENCE_VIEW, *TRANSFER_VIEWS) if v != view]
+                )
+                for part in ("chassis", "rear_body", "cabin")
+            }
+            key = parse_strategy(winners["interior"])
+            margins = [key.margin] + (
+                [TWO_BOX_SECOND_MARGIN]
+                if key.boxes == "two" and abs(key.margin - TWO_BOX_SECOND_MARGIN) > 1e-9
+                else []
+            )
+            prompts = build_prompts(
+                context,
+                view=view,
+                reference_frame=f,
+                part="interior",
+                sphere=sphere,
+                other_spheres={**others_rest, "interior": sphere},
+                shape=shape,
+                counter=counter,
+                margins=margins,
+                negative_sets=("none", key.negatives) if key.negatives != "none" else ("none",),
+            )
+            projected = context.projected_centre(sphere, view, f)
+            cells.append(
+                TransferCell(
+                    view=view,
+                    part="interior",
+                    target_frame=context.frame_in(view, f),
+                    reference_frame=f,
+                    sphere=sphere,
+                    strategy=winners["interior"],
+                    prompts=tuple(prompts),
+                    expected_area_px=(
+                        float(np.pi * projected[1] ** 2) if projected is not None else None
+                    ),
+                )
+            )
+    return TransferPlan(
+        manifest_kind="seed_transfer_plan",
+        search_report=_fingerprint(report_path, repository_root),
+        winners=winners,
+        gate_passed=gate,
+        interior_rest=rest,
+        views=views,
+        cells=tuple(cells),
+        claim_boundaries=CLAIM_BOUNDARIES,
+    )
+
+
+def run_transfer_decode(
+    repository_root: Path, plan: TransferPlan, *, output_dir: Path, device: str = "cuda:0"
+) -> Path:
+    """One warm decoder per view (each view has its own proxy), views strictly in sequence."""
+    summary: dict[str, Any] = {}
+    for view, info in plan.views.items():
+        cells = [c for c in plan.cells if c.view == view]
+        prompts = [p for c in cells for p in c.prompts]
+        if not prompts:
+            summary[view] = {"prompt_count": 0, "decoded": {}}
+            continue
+        view_dir = output_dir / view
+        proxy = ArtifactFingerprint.model_validate(info["proxy"])
+        width, height = info["proxy_dimensions"]
+        decoder = make_decoder(repository_root, proxy, view_dir / "results", device=device)
+        started = time.monotonic()
+        try:
+            decoded = decode_prompts(decoder, prompts, (height, width))
+        finally:
+            decoder.close()
+        summary[view] = {
+            "prompt_count": len(prompts),
+            "elapsed_seconds": time.monotonic() - started,
+            "decoded": decoded,
+        }
+        print(
+            f"{view}: {len(prompts)} prompts decoded in {summary[view]['elapsed_seconds']:.1f} s",
+            flush=True,
+        )
+    output = output_dir / "decode_result.json"
+    output.write_text(json.dumps(summary, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+    return output
+
+
+class TransferOutcome(VersionedModel):
+    view: str
+    part: str
+    target_frame: int
+    strategy: str
+    gate_passed: bool
+    decision: Literal["accepted_seed", "proposal_only", "not_accepted", "no_prompt"]
+    reason: str
+    top_candidate: str | None = None
+    top_area_px: int | None = None
+    consistency_views_used: tuple[str, ...] = ()
+    consistency_reprojection_px: float | None = None
+    area_ratio_vs_expected: float | None = None
+    iou_vs_sep18_seed: float | None = None
+    disagreement: float | None = None
+    proposal_dir: str | None = None
+
+
+class TransferReport(VersionedModel):
+    manifest_kind: Literal["seed_transfer_report"]
+    plan: ArtifactFingerprint
+    decode_result: ArtifactFingerprint
+    interior_rest: InteriorRestFrame
+    outcomes: tuple[TransferOutcome, ...]
+    seeds_written: dict[str, str]
+    seeds_per_view: dict[str, dict[str, str]]
+    proposals_per_view: dict[str, int]
+    generated_at: datetime
+    claim_boundaries: tuple[str, ...]
+
+
+def _old_seed_masks(repository_root: Path, view: str) -> dict[str, tuple[Path, Any]]:
+    """Sep 18 accepted seed part records (`target -> (mask path, SeedTransferPart)`)."""
+    from .multiview_seed_transfer import load_manifest
+
+    path = repository_root / OLD_SEED_ROOT / view / "seed_manifest.json"
+    if not path.is_file():
+        return {}
+    manifest = load_manifest(path)
+    out = {}
+    for part in manifest.parts:
+        if part.status == "accepted" and part.accepted is not None:
+            out[part.target] = (repository_root / part.accepted.mask.uri, part)
+    return out
+
+
+def _consistency(
+    context: GeometryContext, cell: TransferCell, candidate: Candidate
+) -> tuple[bool, tuple[str, ...], float | None, str]:
+    """Triangulate the candidate centroid with the sphere's observations; >= 3 views agree."""
+    sphere = cell.sphere
+    if not sphere.view_points_raw:
+        return False, (), None, "no other-view observations to test against"
+    centroid = mask_centroid_raw(candidate.mask, proxy_to_raw_scale(cell.view))
+    if centroid is None:
+        return False, (), None, "empty candidate"
+    points = {v: np.asarray(p).reshape(1, 2) for v, p in sphere.view_points_raw.items()}
+    points[cell.view] = centroid.reshape(1, 2)
+    poses = dict(sphere.view_poses)
+    if is_ego(cell.view):
+        poses[cell.view] = context.rig.pose_frame(cell.view, cell.target_frame)
+    result = context.rig.triangulate(
+        points, pose_frame=poses, reproj_filter_px=CONSISTENCY_MAX_RAW_PX
+    )
+    used = tuple(v for v, u in zip(result.views, result.used[0], strict=True) if u)
+    index = result.views.index(cell.view)
+    error = float(result.reprojection_px[0, index])
+    if cell.view not in used:
+        return (
+            False,
+            used,
+            error if np.isfinite(error) else None,
+            (
+                f"candidate centroid dropped by the {CONSISTENCY_MAX_RAW_PX:.0f} px filter "
+                f"(reprojection {error:.0f} raw px)"
+            ),
+        )
+    if len(used) < CONSISTENCY_MIN_VIEWS:
+        return False, used, error, f"only {len(used)} consistent views (< {CONSISTENCY_MIN_VIEWS})"
+    return True, used, error, f"{len(used)} views agree, reprojection {error:.1f} raw px"
+
+
+def _overlay(
+    frame_bgr: np.ndarray, masks: Sequence[tuple[str, np.ndarray]], box: PixelBox | None
+) -> np.ndarray:
+    palette = [(0, 200, 255), (255, 120, 0), (0, 255, 120), (255, 0, 200), (200, 200, 0)]
+    out = frame_bgr.copy()
+    for i, (label, mask) in enumerate(masks):
+        colour = palette[i % len(palette)]
+        contours, _ = cv2.findContours(
+            mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
+        cv2.drawContours(out, contours, -1, colour, 2)
+        cv2.putText(
+            out, label, (8, 24 + 22 * i), cv2.FONT_HERSHEY_SIMPLEX, 0.6, colour, 2, cv2.LINE_AA
+        )
+    if box is not None:
+        cv2.rectangle(out, (box.x1, box.y1), (box.x2, box.y2), (255, 255, 255), 1)
+    return out
+
+
+def accept_transfer(
+    repository_root: Path,
+    *,
+    plan: TransferPlan,
+    plan_path: Path,
+    decode_path: Path,
+    report: SearchReport,
+    context: GeometryContext,
+    output_dir: Path,
+) -> TransferReport:
+    from .multiview_schemas import SeedCandidate, SeedPrompt, SeedTransferPart
+    from .multiview_seed_transfer import SeedTransferPlanner, write_manifest
+
+    decoded_all = json.loads(decode_path.read_text(encoding="utf-8"))
+    planner = SeedTransferPlanner(repository_root)
+    outcomes: list[TransferOutcome] = []
+    seeds_written: dict[str, str] = {}
+    seeds_per_view: dict[str, dict[str, str]] = {}
+    proposals_per_view: dict[str, int] = {}
+    top5 = {
+        part: [
+            n
+            for n, _ in sorted(
+                (
+                    (
+                        n,
+                        _mean_over(
+                            [c for c in report.cells if c.part == part],
+                            [c.reference_frame for c in report.cells],
+                            n,
+                        ),
+                    )
+                    for n in report.strategies
+                ),
+                key=lambda t: -(t[1] or 0.0),
+            )[:5]
+        ]
+        for part in TARGETS
+    }
+    for view, info in plan.views.items():
+        view_dir = output_dir / view
+        decoded = decoded_all.get(view, {}).get("decoded", {})
+        width, height = info["proxy_dimensions"]
+        cells = [c for c in plan.cells if c.view == view]
+        fake_plan = SearchPlan(
+            manifest_kind="seed_search_plan",
+            view=view,
+            view_id=info["view_id"],
+            proxy=ArtifactFingerprint.model_validate(info["proxy"]),
+            proxy_dimensions=(width, height),
+            truth_set=plan.search_report,
+            frames=tuple(
+                FramePlan(
+                    view=view,
+                    reference_frame=max(c.reference_frame, 0),
+                    target_frame=c.target_frame,
+                    spheres={c.part: c.sphere},
+                    prompts=c.prompts,
+                )
+                for c in cells
+            ),
+            prompt_count=sum(len(c.prompts) for c in cells),
+            grid={},
+            claim_boundaries=CLAIM_BOUNDARIES,
+        )
+        candidates = load_candidates(fake_plan, decoded, view_dir)
+        old = _old_seed_masks(repository_root, view)
+        config_path = (
+            Path("configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_ego_e4_g2.json")
+            if view == E4_VIEW
+            else Path(
+                "configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_all_static_g2.json"
+            )
+        )
+        base = planner.plan_view(view, config_path=config_path)
+        new_parts: dict[str, SeedTransferPart] = {}
+        view_outcomes: list[TransferOutcome] = []
+        for cell in cells:
+            key = parse_strategy(cell.strategy)
+            gate = plan.gate_passed[cell.part]
+            pool = pool_for_strategy(cell.prompts, candidates, key)
+            ranked: list[Candidate] = []
+            remaining = list(pool)
+            while remaining:
+                chosen = pick_candidate(remaining, key.pick)
+                if chosen is None:
+                    break
+                ranked.append(chosen)
+                remaining = [c for c in remaining if c is not chosen]
+            old_entry = old.get(cell.part)
+            old_mask = mask_cache.decode_mask_png(old_entry[0]) if old_entry else None
+            if not ranked:
+                view_outcomes.append(
+                    TransferOutcome(
+                        view=view,
+                        part=cell.part,
+                        target_frame=cell.target_frame,
+                        strategy=cell.strategy,
+                        gate_passed=gate,
+                        decision="no_prompt",
+                        reason=cell.sphere.note
+                        or "part projects outside the view or no prompt decoded",
+                    )
+                )
+                continue
+            top = ranked[0]
+            # Cross-strategy disagreement among the top-5 search strategies for this part.
+            picks: list[np.ndarray] = []
+            for name in top5[cell.part]:
+                k = parse_strategy(name)
+                sub = pool_for_strategy(cell.prompts, candidates, k)
+                c = pick_candidate(sub, k.pick)
+                if c is not None:
+                    picks.append(c.mask)
+            pairwise = [iou(a, b) for a, b in itertools.combinations(picks, 2)]
+            disagreement = float(1.0 - np.mean(pairwise)) if pairwise else None
+            accepted_candidate: Candidate | None = None
+            used: tuple[str, ...] = ()
+            error: float | None = None
+            reason = ""
+            area_ratio = None
+            for c in ranked:
+                ok, used, error, reason = _consistency(context, cell, c)
+                area_ratio = c.area / cell.expected_area_px if cell.expected_area_px else None
+                in_band = area_ratio is not None and AREA_BAND[0] <= area_ratio <= AREA_BAND[1]
+                if ok and in_band:
+                    accepted_candidate = c
+                    break
+                if ok and not in_band:
+                    reason = f"{reason}; area ratio {area_ratio:.2f} outside {AREA_BAND}"
+            iou_old = iou(top.mask, old_mask) if old_mask is not None else None
+            if accepted_candidate is None:
+                decision: Literal["accepted_seed", "proposal_only", "not_accepted"] = "not_accepted"
+            elif not gate:
+                decision = "proposal_only"
+                reason = (
+                    f"consistent ({reason}) but {cell.part} held-out IoU on C10379 is below "
+                    f"{TRANSFER_PASS_IOU}; proposal only"
+                )
+            else:
+                decision = "accepted_seed"
+            outcome = TransferOutcome(
+                view=view,
+                part=cell.part,
+                target_frame=cell.target_frame,
+                strategy=cell.strategy,
+                gate_passed=gate,
+                decision=decision,
+                reason=reason,
+                top_candidate=f"{top.prompt.prompt_id}:{top.index}",
+                top_area_px=top.area,
+                consistency_views_used=used,
+                consistency_reprojection_px=error,
+                area_ratio_vs_expected=area_ratio,
+                iou_vs_sep18_seed=iou_old,
+                disagreement=disagreement,
+            )
+            view_outcomes.append(outcome)
+            if decision == "accepted_seed" and accepted_candidate is not None:
+                mask_path = view_dir / accepted_candidate.mask_uri
+                new_parts[cell.part] = SeedTransferPart(
+                    target=cell.part,
+                    kind="part",
+                    status="accepted",
+                    source_points_world_mm=(
+                        (cell.sphere.centre_world_mm,) if cell.sphere.centre_world_mm else ()
+                    ),
+                    triangulation_reprojection_px=cell.sphere.reprojection_px,
+                    radius_mm=cell.sphere.radius_mm,
+                    expected_area_px=cell.expected_area_px,
+                    prompts=tuple(
+                        SeedPrompt(
+                            prompt_id=p.prompt_id,
+                            target=p.part,
+                            variant=f"seed_search_{cell.strategy}_m{p.margin:.2f}_{p.negatives}",
+                            pixel_box=p.pixel_box,
+                            background_points=p.background_points,
+                        )
+                        for p in cell.prompts
+                    ),
+                    candidates=(),
+                    accepted=SeedCandidate(
+                        prompt_id=accepted_candidate.prompt.prompt_id,
+                        candidate_index=accepted_candidate.index,
+                        mask=_fingerprint(mask_path, repository_root),
+                        decoder_iou_estimate=accepted_candidate.score,
+                        mask_area_px=accepted_candidate.area,
+                        area_ratio_vs_expected=area_ratio,
+                        sanity_pass=True,
+                        acceptance_basis="multiview_consistency",
+                        sanity_notes=(reason, f"strategy {cell.strategy} from the C10379 search"),
+                        consistency_views_used=used,
+                        consistency_reprojection_px=error,
+                        iou_vs_sep18_seed=(
+                            iou(accepted_candidate.mask, old_mask) if old_mask is not None else None
+                        ),
+                    ),
+                )
+        # Proposals: top-3 cells by disagreement, candidate masks + overlays for the human.
+        ranked_cells = sorted(
+            (o for o in view_outcomes if o.disagreement is not None),
+            key=lambda o: -(o.disagreement or 0.0),
+        )[:3]
+        proposals_per_view[view] = 0
+        for outcome in ranked_cells:
+            cell = next(c for c in cells if c.part == outcome.part)
+            proposal_dir = (
+                output_dir.parent / "proposals" / view / f"{cell.part}_f{cell.target_frame:06d}"
+            )
+            proposal_dir.mkdir(parents=True, exist_ok=True)
+            frame_path = view_dir / "results" / "frames" / f"frame-{cell.target_frame:06d}.jpg"
+            frame_bgr = cv2.imread(str(frame_path))
+            entries = []
+            masks_for_overlay: list[tuple[str, np.ndarray]] = []
+            seen_sha: set[str] = set()
+            for name in top5[cell.part]:
+                k = parse_strategy(name)
+                c = pick_candidate(pool_for_strategy(cell.prompts, candidates, k), k.pick)
+                if c is None or c.sha256 in seen_sha:
+                    continue
+                seen_sha.add(c.sha256)
+                target = proposal_dir / f"candidate_{len(entries):02d}.png"
+                target.write_bytes((view_dir / c.mask_uri).read_bytes())
+                entries.append(
+                    {
+                        "strategy": name,
+                        "mask_uri": target.name,
+                        "sha256": c.sha256,
+                        "area_px": c.area,
+                        "decoder_iou_estimate": c.score,
+                        "is_accepted_seed": outcome.decision == "accepted_seed"
+                        and outcome.top_candidate == f"{c.prompt.prompt_id}:{c.index}",
+                    }
+                )
+                masks_for_overlay.append((f"{len(entries) - 1}: {name}", c.mask))
+            if old.get(cell.part) is not None:
+                old_mask = mask_cache.decode_mask_png(old[cell.part][0])
+                masks_for_overlay.append(("sep18 agent seed", old_mask))
+            if frame_bgr is not None:
+                box = cell.prompts[0].pixel_box if cell.prompts else None
+                cv2.imwrite(
+                    str(proposal_dir / "overlay.png"), _overlay(frame_bgr, masks_for_overlay, box)
+                )
+            (proposal_dir / "proposal.json").write_text(
+                json.dumps(
+                    {
+                        "view": view,
+                        "view_id": info["view_id"],
+                        "part": cell.part,
+                        "analysis_frame_index": cell.target_frame,
+                        "disagreement_1_minus_mean_pairwise_iou": outcome.disagreement,
+                        "decision_for_b3": outcome.decision,
+                        "reason": outcome.reason,
+                        "candidates": entries,
+                        "human_decision": None,
+                        "instructions": (
+                            "Accept one candidate index (or reject all) by filling human_decision "
+                            "with {'accepted_candidate': <index or null>, 'author': ..., "
+                            "'at': ...}. "
+                            "Candidates are agent decoder outputs; the overlay draws each contour "
+                            "and, in the last colour, the Sep 18 agent seed."
+                        ),
+                    },
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            outcome.proposal_dir = relative_uri(proposal_dir, repository_root)
+            proposals_per_view[view] += 1
+        outcomes.extend(view_outcomes)
+
+        # Seed manifest for B3: new accepted seeds; a part that failed the gate keeps its
+        # Sep 18 agent seed (the standing run condition, unchanged); the interior is blocked.
+        parts: list[SeedTransferPart] = []
+        per_view: dict[str, str] = {}
+        for base_part in base.parts:
+            part = base_part.target
+            outcome = next((o for o in view_outcomes if o.part == part), None)
+            if part in new_parts:
+                parts.append(new_parts[part])
+                per_view[part] = "seed_search"
+            elif part in old and part != "interior":
+                old_part = old[part][1]
+                note = f"carried over from Sep 18: the searched {part} strategy " + (
+                    "did not pass the C10379 held-out gate "
+                    f"({report.parts[part].held_out_iou_mean:.3f} < {TRANSFER_PASS_IOU})"
+                    if not plan.gate_passed[part]
+                    else "passed the gate but its candidate was not accepted here "
+                    f"({outcome.reason if outcome else 'no outcome'})"
+                )
+                accepted = old_part.accepted
+                assert accepted is not None
+                parts.append(
+                    old_part.model_copy(
+                        update={
+                            "accepted": accepted.model_copy(
+                                update={"sanity_notes": (*accepted.sanity_notes, note)}
+                            )
+                        }
+                    )
+                )
+                per_view[part] = "sep18_carried_over"
+            else:
+                reason = (
+                    "interior: "
+                    + (
+                        f"held-out IoU {report.parts['interior'].held_out_iou_mean:.3f} < "
+                        f"{TRANSFER_PASS_IOU} on C10379, proposals only; "
+                        if not plan.gate_passed["interior"]
+                        else ""
+                    )
+                    + (
+                        f"rest frame {plan.interior_rest.reference_frame} (C10379 clock); "
+                        if plan.interior_rest.reference_frame is not None
+                        else "no rest frame found; "
+                    )
+                    + "the multiview run profile seeds every slot at frame 0 and the interior is "
+                    "hand-held at frame 0, so it is omitted from the B3 run"
+                    if part == "interior"
+                    else (outcome.reason if outcome else "no candidate")
+                )
+                parts.append(
+                    base_part.model_copy(
+                        update={
+                            "status": "blocked",
+                            "blocked_reason": reason,
+                            "prompts": (),
+                            "accepted": None,
+                        }
+                    )
+                )
+                per_view[part] = "blocked"
+        accepted_count = sum(p.status == "accepted" for p in parts)
+        manifest = base.model_copy(
+            update={
+                "transfer_method": (
+                    "Sep 20 seed search: per-part winning strategy from the C10379 human-mask "
+                    "search (leave-frames-out), geometric box from the other views' frame-0 masks "
+                    "triangulated on the rig, decoded with the isolated image decoder, accepted "
+                    "when the candidate centroid triangulates with >= 3 views within 30 raw px "
+                    "and the area is in band; parts below the 0.6 gate keep their Sep 18 seed."
+                ),
+                "parts": tuple(parts),
+                "hands": tuple(
+                    h.model_copy(
+                        update={
+                            "status": "blocked",
+                            "blocked_reason": "hands not seeded by the Sep 20 transfer",
+                            "prompts": (),
+                        }
+                    )
+                    for h in base.hands
+                ),
+                "decode_state": "decoded",
+                "run_decision": "run" if accepted_count >= base.rules.min_parts_to_run else "skip",
+                "run_decision_reason": (
+                    f"{accepted_count} of {len(TARGETS)} parts seeded ("
+                    + ", ".join(f"{p}={s}" for p, s in per_view.items())
+                    + ")"
+                ),
+            }
+        )
+        seed_path = output_dir.parent / "seeds" / view / "seed_manifest.json"
+        write_manifest(seed_path, manifest)
+        seeds_written[view] = relative_uri(seed_path, repository_root)
+        seeds_per_view[view] = per_view
+    return TransferReport(
+        manifest_kind="seed_transfer_report",
+        plan=_fingerprint(plan_path, repository_root),
+        decode_result=_fingerprint(decode_path, repository_root),
+        interior_rest=plan.interior_rest,
+        outcomes=tuple(outcomes),
+        seeds_written=seeds_written,
+        seeds_per_view=seeds_per_view,
+        proposals_per_view=proposals_per_view,
+        generated_at=datetime.now(UTC),
+        claim_boundaries=CLAIM_BOUNDARIES,
+    )
+
+
+def _fmt_opt(value: float | None, digits: int) -> str:
+    return "-" if value is None else f"{value:.{digits}f}"
+
+
+def transfer_table(report: TransferReport) -> str:
+    lines = [
+        "| view | part | frame | strategy | decision | views agreeing | reproj raw px | "
+        "area ratio | IoU vs Sep 18 seed | disagreement | reason |",
+        "|---|---|---|---|---|---|---|---|---|---|---|",
+    ]
+    for o in report.outcomes:
+        lines.append(
+            f"| {o.view} | {o.part} | {o.target_frame} | `{o.strategy}` | {o.decision} | "
+            f"{len(o.consistency_views_used)} | "
+            f"{_fmt_opt(o.consistency_reprojection_px, 1)} | "
+            f"{'-' if o.area_ratio_vs_expected is None else f'{o.area_ratio_vs_expected:.2f}'} | "
+            f"{'-' if o.iou_vs_sep18_seed is None else f'{o.iou_vs_sep18_seed:.2f}'} | "
+            f"{'-' if o.disagreement is None else f'{o.disagreement:.2f}'} | {o.reason} |"
+        )
+    lines.append("")
+    lines.append(
+        "Seeds per view for B3: "
+        + "; ".join(
+            f"{v}: " + ", ".join(f"{p}={s}" for p, s in d.items())
+            for v, d in report.seeds_per_view.items()
+        )
+    )
+    lines.append("")
+    rest = report.interior_rest
+    lines.append(
+        f"Interior rest frame (C10379 clock): {rest.reference_frame}. Rule: {rest.rule}."
+        + (f" {rest.note}" if rest.note else "")
+    )
+    lines.append("")
+    lines.append(
+        "Proposals written per view: "
+        + ", ".join(f"{v} {n}" for v, n in report.proposals_per_view.items())
+    )
+    return "\n".join(lines) + "\n"
+
+
 # --------------------------------------------------------------------------------- CLI
 
 
@@ -1507,12 +2344,67 @@ def search_main() -> None:
         default=None,
         help="interpreter with torch+transformers for the DINOv2-small exemplar arm (CPU)",
     )
+    commands.add_parser("transfer-plan", help="prompts on the 8 other views from the winners (CPU)")
+    transfer_decode = commands.add_parser(
+        "transfer-decode", help="decode them, one view at a time (GPU)"
+    )
+    transfer_decode.add_argument("--device", default="cuda:0")
+    commands.add_parser(
+        "transfer-accept", help="consistency acceptance, seed manifests, proposals (CPU)"
+    )
     args = parser.parse_args()
     root = _root(args)
     output_root = root / args.output_root
     search_dir = output_root / "search"
+    transfer_dir = output_root / "transfer"
     truth_path = output_root / "truth_set.json"
     plan_path = search_dir / "plan.json"
+    report_path = search_dir / "search_report.json"
+    transfer_plan_path = transfer_dir / "transfer_plan.json"
+    if args.command == "transfer-plan":
+        report = SearchReport.model_validate_json(report_path.read_text(encoding="utf-8"))
+        context = GeometryContext.load(root)
+        plan = plan_transfer(root, report=report, report_path=report_path, context=context)
+        transfer_dir.mkdir(parents=True, exist_ok=True)
+        transfer_plan_path.write_text(plan.model_dump_json(indent=1) + "\n", encoding="utf-8")
+        print(f"winners {plan.winners}; gate {plan.gate_passed}")
+        print(
+            f"interior rest frame: {plan.interior_rest.reference_frame} ({plan.interior_rest.note})"
+        )
+        for cell in plan.cells:
+            print(
+                f"{cell.view} {cell.part} f{cell.target_frame}: {len(cell.prompts)} prompts, "
+                f"sphere {cell.sphere.source} from {len(cell.sphere.views_used)} views"
+            )
+        print(f"-> {transfer_plan_path}")
+        return
+    if args.command == "transfer-decode":
+        plan = TransferPlan.model_validate_json(transfer_plan_path.read_text(encoding="utf-8"))
+        print(
+            "decoded -> "
+            f"{run_transfer_decode(root, plan, output_dir=transfer_dir, device=args.device)}"
+        )
+        return
+    if args.command == "transfer-accept":
+        plan = TransferPlan.model_validate_json(transfer_plan_path.read_text(encoding="utf-8"))
+        report = SearchReport.model_validate_json(report_path.read_text(encoding="utf-8"))
+        context = GeometryContext.load(root)
+        result = accept_transfer(
+            root,
+            plan=plan,
+            plan_path=transfer_plan_path,
+            decode_path=transfer_dir / "decode_result.json",
+            report=report,
+            context=context,
+            output_dir=transfer_dir,
+        )
+        (transfer_dir / "transfer_report.json").write_text(
+            result.model_dump_json(indent=1) + "\n", encoding="utf-8"
+        )
+        table = transfer_table(result)
+        (transfer_dir / "transfer_table.md").write_text(table, encoding="utf-8")
+        print(table)
+        return
     if args.command == "plan":
         truth = load_truth_set(truth_path)
         context = GeometryContext.load(root)

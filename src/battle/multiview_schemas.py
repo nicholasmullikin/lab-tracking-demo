@@ -54,8 +54,25 @@ class SeedCandidate(VersionedModel):
     area_ratio_vs_expected: float | None = Field(default=None, ge=0)
     joints_inside_fraction: float | None = Field(default=None, ge=0, le=1)
     sanity_pass: bool
-    acceptance_basis: Literal["plane_warp_iou", "centroid_ray", "dataset_joints"] | None = None
+    acceptance_basis: (
+        Literal[
+            "plane_warp_iou",
+            "centroid_ray",
+            "dataset_joints",
+            # Sep 20 seed search: the candidate's centroid triangulates with >= 3 views'
+            # masks at the same pose frame within the reprojection filter, area in band.
+            "multiview_consistency",
+            # The Sep 18 agent seed carried over unchanged because the searched strategy
+            # for that part did not pass the C10379 held-out gate.
+            "carried_over_sep18_seed",
+        ]
+        | None
+    ) = None
     sanity_notes: tuple[str, ...] = ()
+    # Multi-view consistency evidence (Sep 20 transfer); None on the Sep 18 records.
+    consistency_views_used: tuple[str, ...] | None = None
+    consistency_reprojection_px: float | None = Field(default=None, ge=0)
+    iou_vs_sep18_seed: float | None = Field(default=None, ge=0, le=1)
 
 
 class SeedTransferPart(VersionedModel):
