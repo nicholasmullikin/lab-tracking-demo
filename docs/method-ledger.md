@@ -352,6 +352,34 @@ jobs, 25 succeeded, no `NVRM`/`Xid` line). The morning review guide is
   wall for the four job files. Record:
   [GPU queue results](#sep-18-gpu-queue-results-wilor-arm-kineo-ego-exo).
 
+#### Sep 19-20: human anchors, the resolution and DAM4SAM follow-up, ensemble v2
+
+The human labelled 52 review anchors on 13 C10379 frames (Sep 19), and `battle-anchor-iou`
+replaced self-consistency as the yardstick. The follow-up plan then ran through the queue
+(19 arms scored) and closed with a named candidate. The review guide is
+[`docs/review-guide-2026-09-20-ensemble-v2.md`](review-guide-2026-09-20-ensemble-v2.md).
+
+- Anchors (`30be958`): 51 masks, one hidden mark (rear_body 1700, a screwdriver every arm
+  latches onto, `distractor_confusion`). Record: [anchors](#sep-18-human-review-anchors-labeling-run-prepared-not-labelled-sep-18-labelled-sep-19).
+- Resolution (`072fe0b`, `024dbf9`, `c0cc32b`): the label-free proxies had rejected 720 px
+  wrongly; 1280 is best on the anchors (0.724-0.728), 1920 saturates (0.708); all eight views
+  rerun at 1280. Record: [1280 on all views](#sep-19-sam3-at-1280-px-on-all-eight-views-and-1920-px-on-c10379-steps-0-1-and-1c-of-the-follow-up-plan).
+- Queue gap (`7380a9e`): a dead worker now exits 3 and stops the queue. Record:
+  [queue gap](#sep-19-queue-gap-closed-a-dead-worker-no-longer-counts-as-a-succeeded-job).
+- Memory arms (`68d0b49`, `49b6159`): appending corrections to the prompt bank is the one
+  change that helps (`pm-append` 0.743, +0.019); drop-900 refuted; frame memory 6/8 no gain.
+  Record: [memory arms](#sep-19-sam3-correction-memory-arms-on-c10379-at-1280-plan-step-1b).
+- DAM4SAM, fairly (`340f1a5`, `6eed418`, `8ee1b9f`): shared predictor, large checkpoint, the
+  SAM3 schedule; large+sched ties SAM3-1280 (0.715); 1536 VRAM-gated (14.79 GiB projected);
+  SAMURAI+schedule unsupported upstream. Record: [DAM4SAM arms](#sep-19-dam4sam-and-samurai-arms-under-the-sam3-run-conditions-plan-step-2).
+- Scoreboard (`d4bb226`): 19 arms x 52 cells in one table. Record:
+  [scoreboard](#sep-19-anchor-scoreboard-over-every-first-minute-arm-plan-step-3-scoring-half).
+- Ensemble v2, the candidate (`c02a2d8`, `a8362a8` and the docs commit after them): arms by anchors,
+  fallback intervals label-free from the consensus rebuilt on `pm-append`, hidden interior
+  withdrawn, 1700 distractor interval; v5 review package and review metrics. Adoption is the
+  human's disposition. Record:
+  [ensemble v2](#sep-20-ensemble-reference-v2-the-named-candidate-plan-step-3-deciding-half-closes-the-resolution-and-dam4sam-follow-up-plan).
+
 ### Plan versus actual
 
 What the plan said, what happened instead, and why, in one line each.
@@ -3558,3 +3586,143 @@ this comparison makes no accuracy or cross-method identity claim.
   the committed code its queue ran. Next, by instruction for a later worker: ensemble v2
   (primary/fallback by anchors, fallback intervals label-free), v5 rebuild, README and review
   guide.
+
+### Sep 20: ensemble reference v2, the named candidate (plan step 3, deciding half; closes the resolution and DAM4SAM follow-up plan)
+
+- **Claim boundary first.** Everything below is CPU work over retained runs. The human review
+  anchors are 52 cells on 13 frames of one view (C10379): review evidence for ranking arms
+  against each other, not a dataset, not ground truth, no accuracy claim; arm means within
+  ~0.02 are noise and two arms within 0.01 on `all` are tied. The ensemble's **arm choice saw the
+  anchors**, so its anchor row is selection-biased; its **fallback intervals did not** (cross-view
+  consensus only). Nothing is adopted here: ensemble v2 is a *candidate* and adoption stays the
+  human's disposition. Assembly101 is CC BY-NC 4.0. No GPU job ran; no viewer was opened.
+- **Anchor scoreboard** (`runs/anchor-scoreboard-20260919/anchor_iou.{json,md}`, regenerated
+  with the v2 row; 20 arms x 52 cells). Top rows by `IoU all`, then `[279,408)` / `[573,722)` /
+  `[1020,1172)` / outside, hidden-FP px at (1700, rear_body): `pm-append-keepfm` **0.743** /
+  0.854 / 0.687 / 0.618 / 0.800, 1263; `pm-append` **0.743** / 0.853 / 0.687 / 0.616 / 0.800,
+  1265; `ensemble-reference-v2` **0.743** (byte-equal to `pm-append` on every cell, see below);
+  `xg-r1280-sched` 0.728; `pm-append-fm6` 0.726; `off-r1280-sched` 0.724; `fm6` 0.722;
+  `dam4sam-60s` 0.717; `dam4sam-large-1024-sched-60s` 0.715 / 0.808 / 0.677 / 0.684 / 0.695,
+  1279; `off-r1920-sched` 0.708; `fm8` 0.708; `off-r1008-sched` 0.705; `dam4sam-tiny-1024-sched-60s`
+  0.700 (best `[1020,1172)`, 0.745); `drop-900` 0.691; `ensemble-reference-v1` 0.681 (3 missing);
+  `reference` = `off-r720-sched` 0.668 / 0.824 / 0.628 / 0.533 / 0.684, 1306;
+  `dam4sam-large-1024-seed0-60s` 0.644; `samurai-large-1024-seed0-60s` 0.634.
+- **Findings restated, once, for the record.** (1) *Resolution:* 720 px had been rejected by the
+  label-free proxies (self-consistency, consensus contradiction counts) as the run condition to
+  keep; the anchors reverse that: 720 scores 0.668, 1008 0.705, **1280 0.724-0.728** (best), and
+  **1920 saturates at 0.708** (tied with 1008; seeds were 1.5x blocky upscales and the encoder
+  side was native, both named confounds). 1280 px is the SAM3 run condition. (2) *Memory:*
+  appending corrections to the prompt bank (`--prompt-memory-semantics append`, bank 32) is the
+  one memory change that clears the 0.01 band over the 1280 baseline (**+0.019**, from
+  `[573,722)` +0.08 and outside +0.04, at -0.04 inside `[1020,1172)`); `drop-900` is **refuted**
+  (0.691; `[1020,1172)` 0.659 -> 0.628 and frame 900 lost); `--keep-frame-memory-at-correction`
+  has **no effect** the anchors see (0.743 both, within 0.01 on every cell); `fm6` / `fm8` bring
+  **no gain overall** (0.722 / 0.708; they win `[279,408)` 0.891 / 0.892 and lose 1150).
+  (3) *DAM4SAM fairness correction:* with one shared SAM2 predictor for the four trackers, the
+  large checkpoint and the SAM3 schedule through `add_new_mask`, DAM4SAM large (0.715) **ties
+  SAM3-1280** (0.724) and sits 0.028 below `pm-append`; it has the best chassis mean of all arms
+  (0.697) and the weakest interior of the scheduled arms (0.423). The 1536 arm was **VRAM-gated**
+  (7.07 MiB/frame slope on the 1080p proxy, **14.79 GiB projected** at 1800 frames against the
+  12 GiB limit). SAMURAI with the schedule is **unsupported upstream** (`samurai_mode` indexes
+  every earlier frame in `non_cond_frame_outputs`; a conditioning frame after index 1 raises
+  `KeyError`), so only its seed-only large arm ran (0.634). (4) *Queue gap:* the smoke driver
+  now exits 3 when the run manifest records a failed core method (commit `7380a9e`), so a dead
+  worker stops the queue instead of counting as succeeded; every queued job since ran from a
+  `code-snapshot-<commit>/` archive.
+- **Label-free fallback intervals** (`runs/multiview-part-consensus-first-minute-r1280-pm-append/`,
+  74 s; hull `runs/multiview-visual-hull-first-minute-r1280-pm-append/`, 847 s; `summary.md` in
+  both compares against the `-r1280` build). The eight-view consensus rebuilt with `pm-append` as
+  the C10379 reference contradicts the reference chassis on `[296,313)` `[475,494)` `[508,515)`
+  `[1049,1057)` `[1058,1085)` (78 frames; the `-r1280` build had 174, every one inside
+  `[573,722)` gone) and rear_body on `[1662,1667)` `[1762,1794)`; cabin never; the interior has no
+  consensus (only C10379 tracks it). Rule, recorded in the config and implemented as
+  `fallback_intervals_from_contradictions`: merge gaps shorter than 15 frames, then drop runs
+  shorter than 10. Result: chassis `[296,313)` `[475,515)` `[1049,1085)`, rear_body `[1762,1794)`,
+  interior and cabin none. The anchors were not consulted for any bound. Label-free corroboration
+  of the anchor finding: C10379 chassis agreement 0.89 -> 0.94, hull-vs-mask median IoU
+  `[573,722)` 0.000 -> 0.675 and `[1020,1172)` 0.466 -> 0.362, the same directions the anchors
+  give `pm-append` against `off-r1280-sched`.
+- **Policy v2** (`configs/ensemble_reference/first_minute_v2.json`, commit `c02a2d8`). Primary
+  `pm-append` (`runs/sam3-memory-arms-20260919/arms/pm-append/...-r1280-pm-append`, 1280 px,
+  policy off, schedule `[327, 900, 1172, 1235]`, append prompt bank; chosen over the tied
+  `pm-append-keepfm` as the simpler condition). Fallback `dam4sam-large-1024-sched-60s`
+  (`runs/dam4sam-arms-20260919/arms/dam4sam-large-1024-sched-60s`; the tiny scheduled arm wins
+  `[1020,1172)` but loses the chassis from 1469 and is unsafe as a general fallback). Rules and
+  sanity bounds unchanged from v1. **No hidden interval**: the v1 `hidden_agent_label` over the
+  interior `[1024,1172)` is withdrawn because the human drew the interior at 1050 / 1100 / 1150.
+  **Distractor interval**: rear_body `[1660,1800)` `not_contact_eligible`, `failure_case:
+  distractor_confusion`, with the human's rationale from the anchor record (the yellow piece is a
+  screwdriver; every arm's rear_body slot sits on it at 1700); the bounds are label-free from the
+  primary's own rear_body mask, whose centroid sits on the table piece at (823,615) through 1655,
+  jumps 20-50 px/frame over 1661-1668 and settles near (915,400) to the end of the minute
+  without returning. No mask is substituted there. New optional schema fields, all defaulting so
+  v1 loads unchanged: `selection_provenance` (arm selection by anchors with scoreboard/anchor
+  URIs and the tie rule; interval selection with the consensus root, its manifest SHA-256, the
+  rule parameters and the raw contradiction runs; a bias statement), interval `provenance`
+  literals `multiview_consensus_contradiction` / `primary_mask_trajectory`, `failure_case`, and
+  `arm` / `anchor_iou_all` on the source runs; a validator refuses a reviewed fallback interval
+  once selection provenance is recorded. Tests: `tests/test_ensemble_reference.py` +4 (17 pass).
+- **Build** (`runs/ensemble-reference-first-minute-v2/`, `battle-build-ensemble-reference
+  --policy ... --output-root ...`, 2 min 7 s). Fallback frames actually used: **chassis 46**
+  (`[311,313)` 2, `[480,494)` 14, `[512,513)` 1, `[514,515)` 1, `[1057,1085)` 28), **rear_body 2**
+  (1762, 1776; the fallback's rear_body slot is mostly empty after 1635), interior 0, cabin 0;
+  declined: chassis 8 at `[1049,1057)`, rear_body 2 at `[1777,1779)`. Contact-eligible: chassis
+  `[0,1049)` `[1057,1200)`, interior / rear_body / cabin `[0,1200)`. Two things the human should
+  know: (a) at 1049-1056 the DAM4SAM chassis (7.3k px; anchor IoU 0.87 at 1050 where `pm-append`
+  has 0.00) was **declined as discontinuous** (IoU 0.07, centroid jump 73 px) against a
+  last-accepted SAM3 chassis that had itself collapsed to 961 px at 1048 and was still recorded
+  as sane because rule firings outside an interval are diagnostics only; the grown allowance
+  reaches 75 px only at 1057. That is an engine property, not something to tune against the
+  anchors; a label-free fix (do not advance the continuity anchor on a primary that fired a
+  rule) is a follow-up. (b) Inside the substituted frames the DAM4SAM chassis **overlaps the
+  SAM3 interior** (IoU 0.41-0.59 over `[480,494)` / 512 / 514, 0.54-0.82 over `[1057,1085)`):
+  the two sources do not agree on where the interior ends, and the sanity bounds test a
+  substitute only against its own target's history. The episode check reports it (22 -> 24
+  segmentation episodes, two new chassis/interior swap episodes at 480-493 and 512-514) rather
+  than hiding it; a symmetric overlap bound was considered and rejected because it would also
+  decline `[1057,1085)`, where the anchors say the DAM4SAM chassis is the right one.
+- **Anchor score of v2.** `ensemble-reference-v2` **0.743** / 0.853 / 0.687 / 0.616 / 0.800,
+  0 missing, hidden FP 1265 px, identical to `pm-append` on all 52 cells: the label-free
+  intervals contain exactly one anchor frame (1050, declined), so no substituted frame is scored
+  and the anchors cannot tell the ensemble from its primary. Against the old reference (0.668):
+  +0.075 overall, `[573,722)` 0.628 -> 0.687, `[1020,1172)` 0.533 -> 0.616, hidden FP 1306 -> 1265
+  px (the screwdriver, unchanged in kind). The table states the selection bias in a footnote and
+  the README of the scoreboard root carries the addendum; a second sheet
+  `anchors_vs_reference_vs_ensemble_v2.png` shows anchors | old reference | v2.
+- **v5 review package** (`runs/interaction-review-first-minute-v5/`, 48 s, all layers;
+  `battle-build-interaction-review-v4 --output-root ... --reference runs/ensemble-reference-first-minute-v2
+  --multiview-consensus runs/multiview-part-consensus-first-minute-r1280-pm-append`; the
+  `--multiview-consensus` flag is new so the multiview layer can follow the primary run; the v4
+  package is untouched). Against v4 (ensemble v1): contact rows observed 7,598 -> 7,820,
+  `invalid_mask` 5,178 -> 4,816, `missing_hand` 1,624 -> 1,764, debounced candidates 3,265 ->
+  3,417, contact events 168 -> 185, segmentation triggers 183 -> 206, episodes 35 -> 43, pinned
+  moments 56 -> 62, hand disagreements 3,599 both; multiview layer 8 -> 9 views, reference
+  contradicted frames 262 -> 115.
+- **Review metrics** (`battle-review-metrics --v4-index <package index> --output-root ...`; the
+  existing `review-metrics-first-minute-v2` measured a Sep 17 v4 index, so v4 was re-measured
+  into `runs/review-metrics-first-minute-v4-current/` and v5 into `runs/review-metrics-first-minute-v5/`,
+  ~80 s each). v4 -> v5: episodes 187 -> 185; `mask_area_anomaly_vs_median` 26 -> 18,
+  `segmentation_identity_swap` 2 -> 4 (the two fallback overlaps above plus 1048-1084, score 2.7),
+  `segmentation_label_crossing` 1 -> 2, `mask_growth_hand_capture_suspect` 34 -> 37, contact
+  intervals 138 -> 148 (sub-5-frame 47 both; median 10 both; p90 55.0 -> 53.6; max 297 -> 323),
+  hand gaps 13 / 79 frames both. Part-area medians chassis 7369 -> 7054, interior 2503 -> 2872,
+  rear_body 2139 -> 2079, cabin 16451 -> 16117. Top of the v5 rank: chassis growth 1057-1071
+  (18.6x, the substitution restoring the chassis), rear_body collapse 1748-1761 (11.4x, the
+  screwdriver), chassis/interior swap 1048-1084 (2.7x), rear_body appearance leakage 1747-1778,
+  interior growth 1044-1047. The chassis collapse anomaly over `[572,695)` persists at 4.0x
+  (v4 5.9x): the `pm-append` chassis is still undersized there even though the other views no
+  longer contradict it.
+- **Candidate, named.** `runs/ensemble-reference-first-minute-v2/` built from
+  `configs/ensemble_reference/first_minute_v2.json` is the candidate reference; the v4 builder's
+  default stays the v1 ensemble until the human disposes. The review guide
+  `docs/review-guide-2026-09-20-ensemble-v2.md` gives the `rerun` command for v5, the three
+  numbers and the frames to scrub.
+- **Deliverables.** Commits `c02a2d8` (policy v2, schema, tests), `a8362a8` (the
+  `--multiview-consensus` flag) and the docs commit that follows (ledger, README, review
+  guide). Run roots (ignored):
+  `runs/multiview-part-consensus-first-minute-r1280-pm-append/`,
+  `runs/multiview-visual-hull-first-minute-r1280-pm-append/`,
+  `runs/ensemble-reference-first-minute-v2/`, `runs/interaction-review-first-minute-v5/`,
+  `runs/review-metrics-first-minute-v5/`, `runs/review-metrics-first-minute-v4-current/`, and the
+  regenerated `runs/anchor-scoreboard-20260919/`. Plan todos `r-ensemble-v2` and `r-docs`
+  completed; the extended experiments (E2-E9) stay pending.

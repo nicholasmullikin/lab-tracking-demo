@@ -42,8 +42,20 @@ LM-EEC mapped C10379 part masks into the ego view at twelve keyframes ("Ego-exo
 correspondence with LM-EEC"). Every one of those results is cross-source disagreement on
 dataset context; the morning review guide is
 [`docs/review-guide-2026-09-18-multicam.md`](docs/review-guide-2026-09-18-multicam.md).
-Human QA dispositions are pending for every method, including the new agent seeds and the
-proposed `not_contact_eligible` intervals, and no accuracy claim is made anywhere.
+On Sep 19 the human labelled 52 review anchors on 13 C10379 frames (one accepted SAM3 decoder
+mask per visible part, or a hidden mark), and `battle-anchor-iou` became the yardstick: it
+ranked 19 arms (`runs/anchor-scoreboard-20260919/`), rejected the label-free case for 720 px
+(1280 px is the SAM3 run condition; 1920 saturates), found that appending corrections to the
+prompt bank is the one memory change that helps (`pm-append`, 0.743 against the old reference's
+0.668), gave DAM4SAM a fair run (shared predictor, large checkpoint, the same schedule; it ties
+SAM3-1280), and produced the **candidate** reference `runs/ensemble-reference-first-minute-v2/`
+(`pm-append` primary, DAM4SAM-large fallback inside label-free consensus intervals, no hidden
+interior, the frame-1700 screwdriver named `distractor_confusion`) shown in the v5 review
+package; its guide is
+[`docs/review-guide-2026-09-20-ensemble-v2.md`](docs/review-guide-2026-09-20-ensemble-v2.md).
+Human QA dispositions are pending for every method, including the new agent seeds, the
+proposed `not_contact_eligible` intervals and the ensemble-v2 candidate, and no accuracy claim
+is made anywhere.
 
 The rest of this file is the how-to: each section below gives the exact commands that
 reproduce a stage. No recordings, annotations, or model weights are included. The SAM3
@@ -1198,6 +1210,13 @@ the agent-proposed correction rows. What changed:
 - `battle-build-interaction-review-v4` accepts an empty existing output root and needs
   `--overwrite` to replace an existing package; `runs/interaction-review-first-minute-v4-local`
   is an older, superseded build kept only because a viewer may still have it open.
+- **v5 (Sep 20, candidate).** The same builder with `--reference runs/ensemble-reference-first-minute-v2`
+  and `--multiview-consensus runs/multiview-part-consensus-first-minute-r1280-pm-append` (new
+  flag; the multiview layer follows the primary run) writes
+  `runs/interaction-review-first-minute-v5/` next to the untouched v4 package. Its reference is
+  the ensemble-v2 candidate (below); contact eligibility is chassis `[0,1049)` `[1057,1200)` and
+  `[0,1200)` for the other parts. Numbers against v4 and the frames to scrub are in
+  [`docs/review-guide-2026-09-20-ensemble-v2.md`](docs/review-guide-2026-09-20-ensemble-v2.md).
 
 ##### Sep 17–18 follow-up: leak onset, 20 s hand layer, DAM4SAM first minute
 
@@ -1495,7 +1514,35 @@ gate starves without corrections (53-67 % of chassis/interior frames withheld) a
 camera C10395; higher encoder sides (1008, 1280) rewrite the trajectory outside the windows, so
 720 stays. Every number is label-free disagreement, not accuracy.
 
-#### Human review anchors (Sep 18, prepared, not labelled)
+**Superseded on Sep 19 by the human anchors** (`runs/anchor-scoreboard-20260919/`): the
+label-free proxies had rejected 720 wrongly. Against the anchors 720 scores 0.668, 1008 0.705,
+**1280 0.724** (`xg` 0.728, tied) and 1920 0.708 (saturates), so the SAM3 run condition is now
+`--max-side-length 1280`, policy off, with the four-frame schedule `[327, 900, 1172, 1235]`; all
+eight views were rerun at 1280 (`runs/sam3-views-r1280-20260919/`, consensus and hull in the
+`-r1280` roots). The worker gained correction-memory flags, all recorded in the manifest as
+`correction_memory_semantics` / `correction_memory_settings`:
+
+- `--prompt-memory-semantics replace|append` (`append` keeps the frame-0 seed and every
+  correction in a prompt bank, `--max-prompt-memory` 32): **the one memory change that helps**,
+  `pm-append` 0.743 (+0.019 over the 1280 baseline; `[573,722)` +0.08, outside +0.04,
+  `[1020,1172)` -0.04). This is the ensemble-v2 primary.
+- `--keep-frame-memory-at-correction`: no effect the anchors see (0.743 both).
+- `--drop-correction-frame FRAME` (repeatable): `drop-900` 0.691, refuting the hypothesis that
+  the 900 correction hurt `[1020,1172)`.
+- `--max-frame-memory 6|8`: no gain overall (0.722 / 0.708; 8 is tagged `clamped_beyond_6`).
+  `--recent-first` reverses the temporal encoding and was not run.
+
+```bash
+uv run battle-muggled-smoke --config configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_g2.json \
+  --view static-c10379 --four-part-static-focused --max-frames 1800 --max-side-length 1280 \
+  --multi-keyframe-correction-schedule runs/muggledsam-sam3-four-part-focused-corrections-agent-swap-20260918t000947z/multi_keyframe_correction_schedule.json \
+  --prompt-memory-semantics append --run-root runs/sam3-memory-arms-20260919/arms/pm-append
+uv run battle-rescale-calibration --help    # derived calibration/schedule at 1920x1080 for the 1080p proxy (1920 arm)
+uv run battle-compare-multiview-builds --consensus-before <root> --consensus-after <root> \
+  --hull-before <root> --hull-after <root> --output <summary.md>   # two consensus+hull builds side by side
+```
+
+#### Human review anchors (Sep 18 prepared; labelled Sep 19; scoreboard in `runs/anchor-scoreboard-20260919/`)
 
 The label-free ablation cannot rank the arms inside the windows where the reference is itself
 wrong, so the next evidence is human: one accepted mask per visible part, or an explicit
@@ -1531,7 +1578,12 @@ IoU and area ratio per accepted anchor, a run mask on a hidden part counted as a
 with its area, a missing run mask as IoU 0 and flagged, unlabeled anchors skipped and counted;
 per-part and per-window (`[279,408)`, `[573,722)`, `[1020,1172)`) means over the anchor frames
 inside each. The per-frame procedure, timing (~1 h) and the full post-labelling commands are in
-`runs/human-review-anchors-first-minute/README.md`. Nothing has been labelled by the agent.
+`runs/human-review-anchors-first-minute/README.md`. Nothing has been labelled by the agent. The
+human record (51 labelled, 1 hidden: rear_body at 1700, `failure_case: distractor_confusion`, a
+yellow screwdriver every arm's rear_body slot latches onto) is
+`docs/qa/first-minute-review-anchors.human-record.json`; the 20-arm table with its tie notes is
+`runs/anchor-scoreboard-20260919/anchor_iou.md`. Anchors are 13 frames on one view: they rank
+arms against each other and support no accuracy claim.
 
 ### First-minute review metrics (label-free triggers)
 
@@ -1643,6 +1695,39 @@ and `primary/reference_provenance_overlay/<part>` magenta boxes around every DAM
 mask in the primary view. Claim boundary: the ensemble is a review reference; cross-method
 fallback is not accuracy and neither source run is ground truth.
 
+#### Policy v2, the candidate (Sep 20)
+
+`configs/ensemble_reference/first_minute_v2.json` follows the v1 schema and separates two
+kinds of choice, recorded in its `selection_provenance`: the **arms** were chosen by the human
+review anchors (primary `pm-append`, SAM3 at 1280 px with the appended prompt bank, 0.743;
+fallback `dam4sam-large-1024-sched-60s`, 0.715; scoreboard in
+`runs/anchor-scoreboard-20260919/`), the **fallback intervals** were chosen label-free from the
+eight-view consensus rebuilt with `pm-append` as the C10379 reference (contradiction runs, gaps
+< 15 frames merged, runs < 10 frames dropped; `fallback_intervals_from_contradictions`):
+chassis `[296,313)` `[475,515)` `[1049,1085)`, rear_body `[1762,1794)`. The v1 hidden-interior
+label is withdrawn (the human drew the interior at 1050/1100/1150) and rear_body `[1660,1800)`
+is `not_contact_eligible` with `failure_case: distractor_confusion` (the screwdriver at 1700;
+bounds from the primary's own mask trajectory, no substitution). Because the arm choice saw the
+anchors, the v2 anchor row (0.743, byte-equal to `pm-append` on every cell: the intervals hold
+one anchor frame, 1050, where the substitute was declined) is selection-biased and says so.
+Fallback frames used: chassis 46, rear_body 2. New optional schema fields (`selection_provenance`,
+interval `provenance` literals, `failure_case`, `arm` / `anchor_iou_all`) default so v1 loads
+unchanged. The v4 builder's default reference stays the v1 ensemble until the human disposes.
+
+```bash
+uv run battle-build-multiview-part-consensus --reference-run <pm-append run> --ego-view HMC_21179183 \
+  --view-run C10095=<1280 run> ... --output-root runs/multiview-part-consensus-first-minute-r1280-pm-append
+uv run battle-build-ensemble-reference --policy configs/ensemble_reference/first_minute_v2.json \
+  --output-root runs/ensemble-reference-first-minute-v2
+uv run battle-anchor-iou --anchors runs/human-review-anchors-first-minute \
+  --run ensemble-reference-v2=runs/ensemble-reference-first-minute-v2 --run reference=<old reference> ...
+uv run battle-build-interaction-review-v4 --output-root runs/interaction-review-first-minute-v5 \
+  --reference runs/ensemble-reference-first-minute-v2 \
+  --multiview-consensus runs/multiview-part-consensus-first-minute-r1280-pm-append
+uv run battle-review-metrics --v4-index runs/interaction-review-first-minute-v5/interaction_review_index.json \
+  --output-root runs/review-metrics-first-minute-v5
+```
+
 ### Four-part segmentation comparison
 
 `configs/four_part_segmentation_comparison.json` is the checked-in fair-comparison
@@ -1683,6 +1768,30 @@ WiLoR are hand-pose layers, BoxMOT is detector-conditioned box tracking, Kineo N
 body-pose output, and Drop-DTW is weak temporal alignment; none are segmentation
 comparators. The earlier unified exploratory recording remains indexed at
 `runs/exploratory-first-20s-comparison/exploratory_first_20s_comparison.rrd`.
+
+**SAM2 arms under the SAM3 run conditions (Sep 19).** `battle-four-part-segmentation dam4sam`
+builds **one shared SAM2 predictor** for the four DAM4SAM trackers and takes `--sam2-model
+tiny|large` (checkpoints SHA-256 pinned), `--input-size 1024|1536` (a battle-owned yaml copy
+with `image_size` changed, recorded as `sam2_config_source`) and
+`--multi-keyframe-correction-schedule` (the SAM3 schedule applied through `add_new_mask`,
+mid-stream for DAM4SAM, as pre-propagation conditioning frames for the offline arms;
+`--add-correction-to-drm` decides whether a correction counts as a DRM addition). Manifests
+record `sam2_settings`, `vram_probes` at frames 30 and 300 and a linear `vram_extrapolation` to
+1800 frames; a 300-frame smoke exits non-zero when the projection exceeds
+`--fail-if-extrapolated-vram-over-bytes` (12 GiB). Results (`runs/dam4sam-arms-20260919/`):
+large@1024 with the schedule 0.715 on the anchors, tied with SAM3-1280 and 0.028 below
+`pm-append`, 6.85 GiB peak; large@1536 on the 1080p proxy projected 14.79 GiB and was gated;
+SAMURAI with a schedule is unsupported upstream (`samurai_mode` indexes every earlier frame in
+`non_cond_frame_outputs`), so only its seed-only large arm ran.
+
+```bash
+uv run battle-four-part-segmentation dam4sam --frame-count 1800 --sam2-model large --input-size 1024 \
+  --multi-keyframe-correction-schedule <schedule.json> --run-id dam4sam-large-1024-sched-60s
+uv run battle-four-part-segmentation dam4sam --frame-count 300 --sam2-model large --input-size 1536 \
+  --multi-keyframe-correction-schedule <schedule.json> --smoke-correction-frame 150 \
+  --vram-probe-frames 30,300 --extrapolate-to-frames 1800 \
+  --fail-if-extrapolated-vram-over-bytes 12884901888          # the VRAM smoke that gated the 1536 arm
+```
 
 ## Validate and export fixtures
 
@@ -1863,6 +1972,10 @@ with its whole process group (SIGTERM, then SIGKILL after 10 s). Events go to
 stdout/stderr to `logs/<index>_<name>.log` beside it. The queue stops at the first non-zero
 exit, timeout, spawn failure or GPU error unless `--continue-on-failure` is given; jobs after
 the stop are logged as `skipped` with the reason. Exit code 0 only when every job succeeded.
+Since Sep 19 `battle-muggled-smoke` exits **3** when its run manifest records a failed core
+method (a dead SAM3 worker used to leave `failed` behind exit 0, and the queue counted seven
+such jobs as succeeded), so a dead worker stops the queue; queued jobs run with `PYTHONPATH`
+on a `code-snapshot-<commit>/` archive of `src/battle` so working-tree edits cannot reach them.
 
 ### ATHENA multi-view hands (Sep 18)
 
