@@ -340,6 +340,28 @@ def test_committed_human_record_is_signed_and_complete() -> None:
     assert all(a.mask_sha256 for a in record.anchors if a.state == "labeled")
     assert record.config.uri == "configs/qa/first_minute_review_anchors.json"
     assert "not a dataset" in record.claim_boundary
+    # The one named failure case sits on the hidden cell; every other cell is unannotated.
+    named = [
+        (a.analysis_frame_index, a.target, a.failure_case) for a in record.anchors if a.failure_case
+    ]
+    assert named == [(1700, "rear_body", "distractor_confusion")]
+    hidden_entry = next(a for a in record.anchors if a.state == "hidden")
+    assert hidden_entry.note and "screwdriver" in hidden_entry.note
+    assert record.notes and "distractor_confusion" in record.notes
+
+
+def test_record_entry_failure_case_is_optional_and_snake_case() -> None:
+    legacy = {"analysis_frame_index": 1700, "target": "rear_body", "state": "hidden"}
+    entry = review_anchors.ReviewAnchorRecordEntry.model_validate(legacy)
+    assert entry.failure_case is None and entry.note is None
+    tagged = review_anchors.ReviewAnchorRecordEntry.model_validate(
+        {**legacy, "failure_case": "distractor_confusion", "note": "screwdriver"}
+    )
+    assert tagged.failure_case == "distractor_confusion"
+    with pytest.raises(ValueError):
+        review_anchors.ReviewAnchorRecordEntry.model_validate(
+            {**legacy, "failure_case": "Distractor Confusion"}
+        )
 
 
 # ---------------------------------------------------------------- workspace prepare / export

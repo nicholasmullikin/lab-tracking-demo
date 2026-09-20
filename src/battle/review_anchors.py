@@ -276,6 +276,11 @@ class ReviewAnchorRecordEntry(VersionedModel):
     target: str
     state: AnchorState
     mask_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    # Optional human annotation of a cell, filled in after the session: a short snake_case
+    # name for a failure mode every tracker showed there (e.g. `distractor_confusion`) and a
+    # free-text note. Both default to None so records written before the fields existed load.
+    failure_case: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_]*$")
+    note: str | None = None
 
 
 class ReviewAnchorHumanRecord(VersionedModel):

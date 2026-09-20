@@ -383,7 +383,9 @@
       "analysis_frame_index": 1700,
       "target": "rear_body",
       "state": "hidden",
-      "mask_sha256": null
+      "mask_sha256": null,
+      "failure_case": "distractor_confusion",
+      "note": "Human confirmed the hidden mark on a second look (Sep 19): the rear body is not visible at frame 1700; the yellow piece next to it is a screwdriver, and every tracker arm scored so far (15 runs, 1.2-1.3k px each) has its rear_body slot on that screwdriver. No relabel."
     },
     {
       "schema_version": "1.0",
@@ -395,5 +397,5 @@
   ],
   "claim_boundary": "human_review_anchor masks are review evidence for scoring tracker arms against each other on a handful of frames; they are not a dataset, not ground truth, and support no accuracy claim. A human chose one SAM3 image-decoder mask per visible part, or marked the part hidden; the mask boundary is the decoder's, the choice is the human's.",
   "license": "CC BY-NC 4.0 (Assembly101 source frames); anchor masks and marks are derived from those frames and inherit the same non-commercial terms",
-  "notes": null
+  "notes": "Named failure cases: distractor_confusion at (1700, rear_body). The human confirmed the hidden mark and identified a yellow screwdriver lying next to the rear body as the object every tracker's rear_body slot latched onto; the scorer's hidden_false_positive area on that cell is the distractor_confusion signal, not label noise. Per-cell fields failure_case and note were added Sep 19; battle-anchor-export rewrites this file without them, so re-apply after a re-export."
 }

@@ -3069,9 +3069,12 @@ this comparison makes no accuracy or cross-method identity claim.
   22 frames before it, the chassis is still 0.00. Late in the minute the reference's interior is
   a third of the human's (1500, 1700) and its rear_body at 1500 is disjoint from the human's
   588 px. Cabin 0.87-0.98 and rear_body 0.80-0.88 outside 1500 / 1700 are stable in every arm.
-  The one hidden mark (rear_body 1700) is contradicted by all 15 runs, which put 1.2-1.3k px on
-  the same yellow piece in the raised hand; the human may want a second look at that cell (the
-  export and scorer are re-runnable; the record would change).
+  The one hidden mark (rear_body 1700) was confirmed by the human on a second look (Sep 19):
+  the rear body is not visible there, and the yellow piece next to it that all 15 runs put
+  1.2-1.3k px on is a screwdriver. It is recorded as the named failure case
+  `distractor_confusion` in the human record (`failure_case` / `note` on that cell); the
+  scorer's `hidden FP` area on that cell is the distractor-confusion signal, not label noise.
+  No relabel.
 - **What each arm changed on the anchor cells** (|IoU| >= 0.05 against the reference).
   `xg-r720-sched`: 650 chassis 0.51 -> 0.17 (0.25x the human's area), 650 interior 0.58 -> 0.45,
   1500 interior 0.10 -> 0.15, nothing else; the `[1020,1172)` swap is untouched (chassis 0.27 /
