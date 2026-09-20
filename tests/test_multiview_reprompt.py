@@ -22,6 +22,7 @@ from battle.schemas import (
     G2PreprocessingManifest,
     MuggledSAMCalibrationCandidate,
     MuggledSAMMultiKeyframeCorrectionSchedule,
+    MultiviewAgentCorrectionSchedule,
     MultiviewConsensusProvenanceFile,
     MultiviewContradictionOnset,
     MultiviewRepromptPlan,
@@ -448,9 +449,25 @@ def _plan(
             "source_correction_frames": (900,),
         }
     else:
+        seed_manifest = tmp_path / "seeds" / "seed_manifest.json"
+        seed_manifest.parent.mkdir(parents=True, exist_ok=True)
+        # Only the accepted-part order matters to the re-prompt loop (slot assignment); the
+        # tracker validates the full manifest itself.
+        seed_manifest.write_text(
+            json.dumps(
+                {
+                    "parts": [
+                        {"target": "chassis", "status": "accepted", "accepted": {"x": 1}},
+                        {"target": "interior", "status": "blocked", "accepted": None},
+                        {"target": "rear_body", "status": "accepted", "accepted": {"x": 1}},
+                        {"target": "cabin", "status": "accepted", "accepted": {"x": 1}},
+                    ]
+                }
+            )
+        )
         extras = {
             "source_run_profile": "four_part_multiview",
-            "source_geometric_seed_manifest": _fingerprint(dummy),
+            "source_geometric_seed_manifest": _fingerprint(seed_manifest),
         }
     plan = MultiviewRepromptPlan(
         manifest_kind="multiview_reprompt_plan",
@@ -658,24 +675,82 @@ def test_policy_keyframe_budget_rejects_a_passing_candidate(
     assert set(decisions.schedules) == {"human-plus-consensus", "consensus-only"}
 
 
-def test_decode_without_a_source_schedule_records_why_no_schedule_exists(
+def test_decode_of_a_geometry_seeded_source_writes_an_agent_schedule(
+    rig: mvg.CameraRig, tmp_path: Path
+) -> None:
+    """A multiview (geometry-seeded) run has no human calibration; its accepted corrections go
+    into a MultiviewAgentCorrectionSchedule bound to the seed manifest, consensus-only arm only."""
+    chassis, centroid, half = _onset(rig, "chassis", 500, np.array([40.0, -30.0, -20.0]), 40.0)
+    plan_path, extras = _plan(rig, tmp_path, onsets=(chassis,), schedule_capable=False)
+    decoder = _StubDecoder(
+        plan_path.parent / mr.CALIBRATION_DIR_NAME / "results",
+        _masks_for_factory({500: (centroid, half)}),
+    )
+    decisions = mr.load_decisions(
+        mr.decode_plan(plan_path, repository_root=ROOT, decoder=decoder, rig=rig)
+    )
+    assert decisions.accepted_count == 1 and set(decisions.schedules) == {"consensus-only"}
+    assert decisions.schedule_blocked_reason is None
+    schedule_path = ROOT / decisions.schedules["consensus-only"].uri
+    schedule = MultiviewAgentCorrectionSchedule.model_validate_json(schedule_path.read_text())
+    assert schedule.seed_manifest == extras["source_geometric_seed_manifest"]
+    assert [c.analysis_frame_index for c in schedule.corrections] == [500]
+    correction = schedule.corrections[0]
+    # chassis is the first accepted part of the fixture manifest -> slot 0.
+    assert (correction.target, correction.multiplex_slot, correction.iteration) == ("chassis", 0, 1)
+    assert correction.selected_by == "agent" and correction.provenance == "multiview_consensus"
+    assert (
+        hashlib.sha256((ROOT / correction.mask.uri).read_bytes()).hexdigest()
+        == correction.mask.sha256
+    )
+    assert (plan_path.parent / mr.CALIBRATION_DIR_NAME / mr.PROVENANCE_NAME).is_file()
+
+    commands = mr.run_commands(plan_path.parent, repository_root=ROOT)
+    by_arm = {c.arm: c for c in commands}
+    assert by_arm["human-plus-consensus"].mode == "blocked"
+    assert "no human corrections" in by_arm["human-plus-consensus"].note
+    argv = list(by_arm["consensus-only"].argv)
+    assert by_arm["consensus-only"].mode == "full_run"
+    assert "--four-part-multiview-first-minute" in argv
+    assert argv[argv.index("--agent-correction-schedule") + 1].endswith(mr.AGENT_SCHEDULE_NAME)
+    assert "--multi-keyframe-correction-schedule" not in argv
+    assert "--recording" not in argv
+
+
+def test_decode_carries_a_previous_agent_schedule_forward(
     rig: mvg.CameraRig, tmp_path: Path
 ) -> None:
     chassis, centroid, half = _onset(rig, "chassis", 500, np.array([40.0, -30.0, -20.0]), 40.0)
     plan_path, _ = _plan(rig, tmp_path, onsets=(chassis,), schedule_capable=False)
     decoder = _StubDecoder(
-        plan_path.parent / "results", _masks_for_factory({500: (centroid, half)})
+        plan_path.parent / mr.CALIBRATION_DIR_NAME / "results",
+        _masks_for_factory({500: (centroid, half)}),
     )
-    decisions = mr.load_decisions(
+    first = mr.load_decisions(
         mr.decode_plan(plan_path, repository_root=ROOT, decoder=decoder, rig=rig)
     )
-    assert decisions.accepted_count == 1 and decisions.schedules == {}
-    assert decisions.schedule_blocked_reason is not None
-    assert "geometric seed manifest" in decisions.schedule_blocked_reason
-    assert not (plan_path.parent / mr.CALIBRATION_DIR_NAME).exists()
-    commands = mr.run_commands(plan_path.parent, repository_root=ROOT)
-    assert [c.mode for c in commands] == ["blocked", "blocked"]
-    assert all("--four-part-multiview-first-minute" in c.argv for c in commands)
+    # Iteration 2: the source run applied the iteration-1 agent schedule; a new onset at 900.
+    chassis2, centroid2, half2 = _onset(rig, "chassis", 900, np.array([40.0, -30.0, -20.0]), 40.0)
+    plan2_path, _ = _plan(
+        rig, tmp_path / "second", onsets=(chassis2,), schedule_capable=False, iteration=2
+    )
+    plan2 = mr.load_plan(plan2_path)
+    plan2 = plan2.model_copy(update={"source_agent_schedule": first.schedules["consensus-only"]})
+    plan2_path.write_text(plan2.model_dump_json(indent=2) + "\n")
+    decoder2 = _StubDecoder(
+        plan2_path.parent / mr.CALIBRATION_DIR_NAME / "results",
+        _masks_for_factory({900: (centroid2, half2)}),
+    )
+    second = mr.load_decisions(
+        mr.decode_plan(plan2_path, repository_root=ROOT, decoder=decoder2, rig=rig)
+    )
+    schedule = MultiviewAgentCorrectionSchedule.model_validate_json(
+        (ROOT / second.schedules["consensus-only"].uri).read_text()
+    )
+    assert [(c.analysis_frame_index, c.iteration) for c in schedule.corrections] == [
+        (500, 1),
+        (900, 2),
+    ]
 
 
 # -- run commands --------------------------------------------------------------------------------

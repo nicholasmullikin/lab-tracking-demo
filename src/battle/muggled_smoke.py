@@ -242,8 +242,19 @@ def selected_frame_budget(args: argparse.Namespace, analysis_fps: float) -> int:
     if getattr(args, "four_part_ego_focused", False):
         return FOUR_PART_FOCUSED_FRAMES
     if getattr(args, "four_part_multiview_first_minute", False):
+        if not is_default_recording(getattr(args, "recording", None)):
+            return int(getattr(args, "max_frames", FOUR_PART_MULTIVIEW_FRAMES))
         return FOUR_PART_MULTIVIEW_FRAMES
     return smoke_frame_count(analysis_fps)
+
+
+def is_default_recording(recording: str | None) -> bool:
+    """True when no `--recording` was given or it names recording 1 (the historical default)."""
+    if recording is None:
+        return True
+    from .assembly101_recordings import RECORDING_1
+
+    return recording in (RECORDING_1.label, RECORDING_1.recording_id)
 
 
 def require_smoke_range(
@@ -329,9 +340,30 @@ def require_four_part_ego_focused_range(
 
 
 def require_four_part_multiview_range(
-    view_id: str, start_frame: int, max_frames: int
+    view_id: str,
+    start_frame: int,
+    max_frames: int,
+    *,
+    recording: str | None = None,
+    proxy_frame_count: int | None = None,
 ) -> FrameRange:
-    """Permit the first minute on a geometry-seeded static view or the e4 ego view only."""
+    """Permit the first minute on a geometry-seeded static view or the e4 ego view only.
+
+    On another recording (`--recording`, not recording 1) the profile has no human
+    reference view to protect and no fixed first minute: any static view may run and the
+    budget is `--max-frames`, bounded by the proxy the clip config names.
+    """
+    if not is_default_recording(recording):
+        if not view_id.startswith("static-") or start_frame != 0 or max_frames < 1:
+            raise ValueError(
+                f"multiview four-part run on recording {recording} permits only proxy frames "
+                "[0, --max-frames) of a static view"
+            )
+        if proxy_frame_count is not None and max_frames > proxy_frame_count:
+            raise ValueError(
+                f"--max-frames {max_frames} exceeds the {proxy_frame_count} frames of the proxy"
+            )
+        return FrameRange(start_frame=start_frame, end_frame_exclusive=max_frames)
     permitted_view = (
         view_id.startswith("static-") and view_id != "static-c10379"
     ) or view_id in FOUR_PART_MULTIVIEW_EGO_VIEWS
@@ -408,6 +440,7 @@ def _load_geometric_seed_manifest(
                 "candidate_index": part.accepted.candidate_index,
                 "backprojection_iou": part.accepted.backprojection_iou,
                 "area_ratio_vs_expected": part.accepted.area_ratio_vs_expected,
+                "provenance": manifest.provenance,
             }
         )
     if len(seeds) < manifest.rules.min_parts_to_run:
@@ -422,8 +455,98 @@ def _load_geometric_seed_manifest(
             ),
             "seeds": provenance,
             "blocked_targets": blocked,
+            "seed_provenance": manifest.provenance,
         },
     )
+
+
+def _load_agent_correction_schedule(
+    *,
+    schedule_path: Path,
+    seed_manifest_path: Path,
+    seed_payload: dict[str, Any],
+    repository_root: Path,
+    config_path: Path,
+    proxy: Any,
+    max_frame_exclusive: int,
+    correction_memory_semantics: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Combine a geometric seed payload with agent re-prompt corrections into a worker schedule.
+
+    The schedule binds to the seed manifest, the clip config and the proxy by fingerprint;
+    every correction must name an accepted seed slot of the manifest and a mask whose bytes
+    still hash as recorded. The worker receives the same `{seeds, corrections,
+    memory_semantics}` payload a human schedule produces, with every entry `selected_by:
+    agent`; nothing here is a human review.
+    """
+    from .schemas import MultiviewAgentCorrectionSchedule
+
+    schedule = MultiviewAgentCorrectionSchedule.model_validate_json(
+        schedule_path.read_text(encoding="utf-8")
+    )
+    if schedule.view_id != proxy.view_id:
+        raise ValueError("agent correction schedule must name the selected view")
+    if schedule.clip_config.uri != relative_uri(
+        config_path, repository_root
+    ) or schedule.clip_config.sha256 != sha256_file(config_path):
+        raise ValueError("agent correction schedule config does not match the selected G2 config")
+    if schedule.proxy.uri != proxy.proxy_uri or schedule.proxy.sha256 != proxy.checksum_sha256:
+        raise ValueError("agent correction schedule proxy does not match the selected G2 proxy")
+    if schedule.seed_manifest.uri != relative_uri(
+        seed_manifest_path, repository_root
+    ) or schedule.seed_manifest.sha256 != sha256_file(seed_manifest_path):
+        raise ValueError(
+            "agent correction schedule was derived from a different geometric seed manifest"
+        )
+    slots = {seed["target"]: int(seed["multiplex_slot"]) for seed in seed_payload["seeds"]}
+    corrections: list[dict[str, Any]] = []
+    for correction in schedule.corrections:
+        slot = slots.get(correction.target)
+        if slot is None or slot != correction.multiplex_slot:
+            raise ValueError(
+                f"agent correction for {correction.target} at {correction.analysis_frame_index} "
+                "names a slot the seed manifest did not seed"
+            )
+        if correction.analysis_frame_index >= max_frame_exclusive:
+            raise ValueError(
+                f"agent correction at {correction.analysis_frame_index} lies outside the run's "
+                f"[0, {max_frame_exclusive}) budget"
+            )
+        mask_path = _resolve_artifact_uri(repository_root, correction.mask.uri)
+        if not mask_path.is_file() or sha256_file(mask_path) != correction.mask.sha256:
+            raise ValueError(f"agent correction mask is unavailable or has changed: {mask_path}")
+        corrections.append(
+            {
+                "candidate_id": correction.candidate_id,
+                "target": correction.target,
+                "object_id": f"sam3-{slot:02d}",
+                "multiplex_slot": slot,
+                "frame_index": correction.analysis_frame_index,
+                "mask_path": str(mask_path),
+                "mask_sha256": correction.mask.sha256,
+                "selected_by": "agent",
+                "provenance": correction.provenance,
+                "iteration": correction.iteration,
+            }
+        )
+    corrections.sort(key=lambda item: (int(item["frame_index"]), int(item["multiplex_slot"])))
+    payload = {
+        "seeds": [dict(seed) for seed in seed_payload["seeds"]],
+        "corrections": corrections,
+        "memory_semantics": correction_memory_semantics,
+    }
+    audit = {
+        "schedule_fingerprint": ArtifactFingerprint(
+            uri=relative_uri(schedule_path, repository_root),
+            sha256=sha256_file(schedule_path),
+            source="measured",
+        ),
+        "correction_frames": tuple(sorted({int(c["frame_index"]) for c in corrections})),
+        "corrections": [
+            {k: v for k, v in item.items() if k != "mask_path"} for item in corrections
+        ],
+    }
+    return payload, audit
 
 
 def checkpoint_path_for(run_directory: Path, frame_index: int) -> Path:
@@ -1960,10 +2083,19 @@ def run_smoke(args: argparse.Namespace) -> Path:
     ):
         raise ValueError("only one approved candidate profile may be selected")
     geometric_seed_path = getattr(args, "geometric_seed_manifest", None)
+    agent_schedule_path = getattr(args, "agent_correction_schedule", None)
+    recording_label = getattr(args, "recording", None)
+    agent_correction_audit: dict[str, Any] | None = None
     if is_four_part_multiview != (geometric_seed_path is not None):
         raise ValueError(
             "--four-part-multiview-first-minute and --geometric-seed-manifest go together"
         )
+    if agent_schedule_path is not None and not is_four_part_multiview:
+        raise ValueError(
+            "--agent-correction-schedule applies to --four-part-multiview-first-minute runs only"
+        )
+    if recording_label is not None and not is_four_part_multiview:
+        raise ValueError("--recording is read by the multiview four-part profile only")
     if is_four_part_multiview:
         if (
             condition is not None
@@ -1972,13 +2104,41 @@ def run_smoke(args: argparse.Namespace) -> Path:
             or manual_seed_payload is not None
             or multi_keyframe_schedule_payload is not None
         ):
-            raise ValueError("the multiview four-part run takes only its geometric seed manifest")
+            raise ValueError(
+                "the multiview four-part run takes only its geometric seed manifest (plus an "
+                "--agent-correction-schedule derived from it)"
+            )
+        if not is_default_recording(recording_label):
+            from .assembly101_recordings import get_recording
+
+            recording = get_recording(recording_label, repository_root)
+            if recording.recording_id not in proxy.proxy_uri:
+                raise ValueError(
+                    f"--recording {recording_label} names {recording.recording_id}, but the "
+                    f"selected proxy is {proxy.proxy_uri}"
+                )
         manual_seed_payload, geometric_seed_audit = _load_geometric_seed_manifest(
             seed_manifest_path=geometric_seed_path.resolve(),
             repository_root=repository_root,
             config_path=config_path,
             proxy=proxy,
         )
+        if agent_schedule_path is not None:
+            # The worker takes either seeds or a schedule; the agent corrections ride in a
+            # schedule payload built from the geometric seeds, so the seeds payload is dropped.
+            multi_keyframe_schedule_payload, agent_correction_audit = (
+                _load_agent_correction_schedule(
+                    schedule_path=agent_schedule_path.resolve(),
+                    seed_manifest_path=geometric_seed_path.resolve(),
+                    seed_payload=manual_seed_payload,
+                    repository_root=repository_root,
+                    config_path=config_path,
+                    proxy=proxy,
+                    max_frame_exclusive=selected_frame_budget(args, analysis_fps),
+                    correction_memory_semantics=memory_settings.correction_memory_semantics,
+                )
+            )
+            manual_seed_payload = None
     four_part_targets = (
         tuple(seed.intended_target for seed in manual_seed_metadata.seeds)
         if manual_seed_metadata is not None
@@ -2082,7 +2242,13 @@ def run_smoke(args: argparse.Namespace) -> Path:
         if is_four_part_focused
         else require_four_part_ego_focused_range(proxy.view_id, args.start_frame, args.max_frames)
         if is_four_part_ego_focused
-        else require_four_part_multiview_range(proxy.view_id, args.start_frame, args.max_frames)
+        else require_four_part_multiview_range(
+            proxy.view_id,
+            args.start_frame,
+            args.max_frames,
+            recording=recording_label,
+            proxy_frame_count=proxy.frame_count,
+        )
         if is_four_part_multiview
         else require_smoke_range(args.start_frame, args.max_frames, analysis_fps)
     )
@@ -2287,7 +2453,28 @@ def run_smoke(args: argparse.Namespace) -> Path:
             "seed_manifest_fingerprint"
         ].model_dump(mode="json")
         runtime_invocation["blocked_targets"] = geometric_seed_audit["blocked_targets"]
-    if multi_keyframe_schedule_payload is not None:
+        if recording_label is not None:
+            runtime_invocation["recording"] = recording_label
+    if agent_correction_audit is not None:
+        assert multi_keyframe_schedule_payload is not None
+        runtime_invocation.update(
+            {
+                "prompt_mode": "manual_seed_multiplexed_keyframes",
+                "multi_keyframe_correction_schedule": multi_keyframe_schedule_payload,
+                "correction_memory_semantics": multi_keyframe_schedule_payload["memory_semantics"],
+                "agent_correction_schedule": agent_correction_audit[
+                    "schedule_fingerprint"
+                ].model_dump(mode="json"),
+                "agent_correction_frames": list(agent_correction_audit["correction_frames"]),
+                "label": (
+                    "agent-authored geometric seeds (provenance geometric_seed_transfer) plus "
+                    "agent-authored later corrections from the multiview consensus re-prompt "
+                    "loop (provenance multiview_consensus); not human-reviewed and not text "
+                    "zero-shot"
+                ),
+            }
+        )
+    elif multi_keyframe_schedule_payload is not None:
         runtime_invocation.update(
             {
                 "prompt_mode": "manual_seed_multiplexed_keyframes",
@@ -2864,7 +3051,11 @@ def run_smoke(args: argparse.Namespace) -> Path:
         assert geometric_seed_audit is not None
         four_part_multiview = FourPartMultiviewRunMetadata(
             requested_analysis_frame_range=requested_range,
-            requested_seconds=FOUR_PART_MULTIVIEW_SECONDS,
+            requested_seconds=(
+                FOUR_PART_MULTIVIEW_SECONDS
+                if is_default_recording(recording_label)
+                else requested_frames / analysis_fps
+            ),
             view_id=proxy.view_id,
             qa_artifact_uri=relative_uri(qa_path, repository_root) if qa_path is not None else None,
             seed_manifest_fingerprint=geometric_seed_audit["seed_manifest_fingerprint"],
@@ -2873,6 +3064,21 @@ def run_smoke(args: argparse.Namespace) -> Path:
                 for item in geometric_seed_audit["seeds"]
             ),
             blocked_targets=geometric_seed_audit["blocked_targets"],
+            seed_provenance=geometric_seed_audit["seed_provenance"],
+            later_corrections=(
+                "multiview_consensus" if agent_correction_audit is not None else "none"
+            ),
+            agent_correction_schedule_fingerprint=(
+                agent_correction_audit["schedule_fingerprint"]
+                if agent_correction_audit is not None
+                else None
+            ),
+            agent_correction_frames=(
+                agent_correction_audit["correction_frames"]
+                if agent_correction_audit is not None
+                else ()
+            ),
+            recording_label=None if is_default_recording(recording_label) else recording_label,
             **metadata_common,
         )
     else:
@@ -3026,6 +3232,23 @@ def main() -> None:
         "--geometric-seed-manifest",
         type=Path,
         help="Accepted seed_manifest.json from battle-multiview-seed-transfer for --view.",
+    )
+    parser.add_argument(
+        "--agent-correction-schedule",
+        type=Path,
+        help=(
+            "Multiview profile only: agent corrections (battle-multiview-reprompt, provenance "
+            "multiview_consensus) bound to the geometric seed manifest; applied as later "
+            "keyframes on top of the seeds."
+        ),
+    )
+    parser.add_argument(
+        "--recording",
+        help=(
+            "Multiview profile only: registry label of the recording when it is not recording "
+            "1 (configs/assembly101/recordings.json); permits any static view and sets the "
+            "frame budget from --max-frames."
+        ),
     )
     parser.add_argument("--external-python", type=Path, default=MUGGLED_SAM_PYTHON)
     parser.add_argument("--model", type=Path, default=DEFAULT_MODEL)
@@ -3191,7 +3414,11 @@ def main() -> None:
         args.max_frames = FOUR_PART_FOCUSED_FRAMES
     if args.four_part_ego_focused and args.max_frames == SMOKE_FRAMES:
         args.max_frames = FOUR_PART_FOCUSED_FRAMES
-    if args.four_part_multiview_first_minute and args.max_frames == SMOKE_FRAMES:
+    if (
+        args.four_part_multiview_first_minute
+        and args.max_frames == SMOKE_FRAMES
+        and is_default_recording(getattr(args, "recording", None))
+    ):
         args.max_frames = FOUR_PART_MULTIVIEW_FRAMES
     try:
         run_directory = run_smoke(args)

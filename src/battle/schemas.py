@@ -2012,7 +2012,9 @@ class GeometricSeedProvenance(VersionedModel):
     backprojection_iou: float | None = Field(default=None, ge=0, le=1)
     area_ratio_vs_expected: float | None = Field(default=None, ge=0)
     selected_by: Literal["agent"] = "agent"
-    provenance: Literal["geometric_seed_transfer"] = "geometric_seed_transfer"
+    provenance: Literal["geometric_seed_transfer", "exemplar_multiview_consistency"] = (
+        "geometric_seed_transfer"
+    )
 
 
 class FourPartMultiviewRunMetadata(VersionedModel):
@@ -2025,7 +2027,7 @@ class FourPartMultiviewRunMetadata(VersionedModel):
     """
 
     requested_analysis_frame_range: FrameRange
-    requested_seconds: Literal[60.0]
+    requested_seconds: float = Field(gt=0)
     view_id: str = Field(min_length=1)
     concepts: tuple[str, ...] = Field(min_length=2)
     source_fingerprint: ArtifactFingerprint
@@ -2043,21 +2045,40 @@ class FourPartMultiviewRunMetadata(VersionedModel):
     seed_manifest_fingerprint: ArtifactFingerprint
     seeds: tuple[GeometricSeedProvenance, ...] = Field(min_length=2)
     blocked_targets: dict[str, str] = Field(default_factory=dict)
-    seed_provenance: Literal["geometric_seed_transfer"] = "geometric_seed_transfer"
-    later_corrections: Literal["none"] = "none"
+    seed_provenance: Literal["geometric_seed_transfer", "exemplar_multiview_consistency"] = (
+        "geometric_seed_transfer"
+    )
+    # `none` is the Sep 18-20 first-minute condition; `multiview_consensus` marks a run that
+    # applied agent corrections from `battle-multiview-reprompt` (`agent_correction_*` below).
+    later_corrections: Literal["none", "multiview_consensus"] = "none"
+    agent_correction_schedule_fingerprint: ArtifactFingerprint | None = None
+    agent_correction_frames: tuple[int, ...] = ()
+    # Registry label of the recording when it is not recording 1 (whose runs cover exactly the
+    # first minute [0, 1800)); another recording's window is whatever its clip config permits.
+    recording_label: str | None = None
     ground_truth_accuracy_claim: Literal[False] = False
 
     @model_validator(mode="after")
     def require_first_minute_and_ordered_seeds(self) -> FourPartMultiviewRunMetadata:
-        if (
+        if self.recording_label is None and (
             self.requested_analysis_frame_range.start_frame != 0
             or self.requested_analysis_frame_range.frame_count != 1800
         ):
             raise ValueError("multiview four-part runs cover exactly analysis frames [0, 1800)")
+        if self.requested_analysis_frame_range.start_frame != 0:
+            raise ValueError("multiview four-part runs start at analysis frame 0 of their proxy")
         if tuple(seed.target for seed in self.seeds) != self.concepts:
             raise ValueError("multiview seeds must match the ordered concepts")
         if [seed.multiplex_slot for seed in self.seeds] != list(range(len(self.seeds))):
             raise ValueError("multiview seeds must fill multiplex slots from zero")
+        if (self.later_corrections == "multiview_consensus") != (
+            self.agent_correction_schedule_fingerprint is not None
+        ):
+            raise ValueError(
+                "multiview_consensus corrections name their schedule file, and only they do"
+            )
+        if self.later_corrections == "none" and self.agent_correction_frames:
+            raise ValueError("a run without later corrections lists no correction frames")
         return self
 
 
@@ -3389,6 +3410,8 @@ class MultiviewRepromptPlan(VersionedModel):
     source_run_manifest: ArtifactFingerprint
     source_run_profile: Literal["four_part_static_focused", "four_part_multiview"]
     source_schedule: ArtifactFingerprint | None = None
+    # Agent schedule a geometry-seeded source run applied (iteration >= 2 on such a view).
+    source_agent_schedule: ArtifactFingerprint | None = None
     source_calibration_manifest: ArtifactFingerprint | None = None
     source_geometric_seed_manifest: ArtifactFingerprint | None = None
     source_checkpoint_frames: tuple[int, ...] = ()
@@ -3401,6 +3424,9 @@ class MultiviewRepromptPlan(VersionedModel):
     detector: MultiviewRepromptDetectorConfig
     box_margins: tuple[float, ...] = Field(min_length=1)
     hand_negatives: bool = False
+    # Registry label when the target run is on another recording than recording 1 (its rig,
+    # clock rules and poses were used; the tracker command must repeat `--recording`).
+    recording_label: str | None = None
     onsets: tuple[MultiviewContradictionOnset, ...] = ()
     selected_by: Literal["agent"] = "agent"
     provenance: Literal["multiview_consensus"] = MULTIVIEW_CONSENSUS_PROVENANCE
@@ -3472,7 +3498,9 @@ class MultiviewConsensusProvenanceFile(VersionedModel):
     """Sidecar beside a derived calibration: every consensus correction it carries."""
 
     manifest_kind: Literal["multiview_consensus_correction_provenance"]
-    derived_calibration_manifest: ArtifactFingerprint
+    # None when the corrections went into a MultiviewAgentCorrectionSchedule (geometry-seeded
+    # target run) instead of a derived human calibration.
+    derived_calibration_manifest: ArtifactFingerprint | None
     carried_from: ArtifactFingerprint | None = None
     corrections: tuple[MultiviewConsensusCorrectionProvenance, ...] = ()
 
@@ -3534,4 +3562,56 @@ class MultiviewRepromptRunCommand(VersionedModel):
             raise ValueError("a resume names both the prior run and the frame")
         if self.mode == "checkpoint_resumed" and self.resume_at is None:
             raise ValueError("a checkpoint-resumed command names where it resumes")
+        return self
+
+
+class MultiviewAgentCorrection(VersionedModel):
+    """One agent-authored later-frame correction for a geometry-seeded (multiview) run.
+
+    The calibration-manifest contract forbids agent seeds and is bound to a human workspace,
+    so a geometry-seeded run cannot carry a `MuggledSAMMultiKeyframeCorrectionSchedule`. This
+    record binds one accepted re-prompt mask to a seed-manifest slot instead; every field is
+    checked against the seed manifest and the mask bytes before the tracker sees it.
+    """
+
+    target: str = Field(min_length=1)
+    multiplex_slot: int = Field(ge=0)
+    analysis_frame_index: int = Field(ge=1)
+    candidate_id: str = Field(pattern=r"^t\d{6}-b\d{2,}$")
+    candidate_index: int = Field(ge=0)
+    mask: ArtifactFingerprint
+    iteration: int = Field(ge=1, le=MULTIVIEW_REPROMPT_MAX_ITERATIONS)
+    selected_by: Literal["agent"] = "agent"
+    provenance: Literal["multiview_consensus"] = MULTIVIEW_CONSENSUS_PROVENANCE
+
+
+class MultiviewAgentCorrectionSchedule(VersionedModel):
+    """Agent corrections for a `--four-part-multiview-first-minute` run (consensus-only arm).
+
+    Seeds are *not* repeated here: the run still takes its geometric seed manifest, whose
+    fingerprint this file names so the two cannot drift apart. `provenance_file` is the
+    re-prompt loop's `reprompt_provenance.json` (consensus fingerprint, onset, views used,
+    rejected alternatives per correction).
+    """
+
+    manifest_kind: Literal["multiview_agent_correction_schedule"]
+    view_id: str = Field(pattern=r"^(static|ego)-[a-z0-9]+$")
+    clip_config: ArtifactFingerprint
+    proxy: ArtifactFingerprint
+    seed_manifest: ArtifactFingerprint
+    plan: ArtifactFingerprint
+    provenance_file: ArtifactFingerprint | None = None
+    correction_memory_semantics: Literal["replace_prompt_memory_and_reset_frame_memory"] = (
+        "replace_prompt_memory_and_reset_frame_memory"
+    )
+    corrections: tuple[MultiviewAgentCorrection, ...] = Field(min_length=1)
+    selected_by: Literal["agent"] = "agent"
+    provenance: Literal["multiview_consensus"] = MULTIVIEW_CONSENSUS_PROVENANCE
+    claim_boundaries: tuple[str, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def require_unique_cells(self) -> MultiviewAgentCorrectionSchedule:
+        cells = [(c.target, c.analysis_frame_index) for c in self.corrections]
+        if len(set(cells)) != len(cells):
+            raise ValueError("one correction per target and frame")
         return self

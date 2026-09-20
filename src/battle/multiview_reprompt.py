@@ -81,6 +81,8 @@ from .schemas import (
     MuggledSAMImageDecoderResult,
     MuggledSAMMultiKeyframeCorrectionPolicy,
     MuggledSAMMultiKeyframeCorrectionSchedule,
+    MultiviewAgentCorrection,
+    MultiviewAgentCorrectionSchedule,
     MultiviewConsensusCorrectionProvenance,
     MultiviewConsensusProvenanceFile,
     MultiviewContradictionOnset,
@@ -119,6 +121,7 @@ SCHEDULE_NAMES = {
     "human-plus-consensus": "multi_keyframe_correction_schedule.json",
     "consensus-only": "multi_keyframe_correction_schedule.consensus-only.json",
 }
+AGENT_SCHEDULE_NAME = "agent_correction_schedule.consensus-only.json"
 DEFAULT_CHECKPOINT_EVERY = 300
 MAX_SIDE_LENGTH = 1280
 FIRST_MINUTE_FRAMES = 1800
@@ -444,6 +447,7 @@ class SourceRun:
     geometric_seed_manifest: ArtifactFingerprint | None
     checkpoint_frames: tuple[int, ...]
     correction_frames: tuple[int, ...]
+    agent_schedule: ArtifactFingerprint | None = None
 
     @property
     def view(self) -> str:
@@ -506,9 +510,22 @@ def inspect_source_run(repository_root: Path, run_directory: Path) -> SourceRun:
             calibration_manifest=None,
             geometric_seed_manifest=multiview.seed_manifest_fingerprint,
             checkpoint_frames=checkpoints,
-            correction_frames=(),
+            correction_frames=tuple(multiview.agent_correction_frames),
+            agent_schedule=multiview.agent_correction_schedule_fingerprint,
         )
     raise ValueError(f"{directory} is neither a focused nor a multiview four-part run")
+
+
+def resolve_recording(repository_root: Path, recording: str | None) -> Any | None:
+    """The registry record for `recording`, or None when it is absent or names recording 1."""
+    if recording is None:
+        return None
+    from .assembly101_recordings import RECORDING_1, get_recording
+
+    record = get_recording(recording, repository_root)
+    if record.recording_id == RECORDING_1.recording_id:
+        return None
+    return record
 
 
 def proxy_for(repository_root: Path, source: SourceRun) -> Any:
@@ -622,8 +639,13 @@ def plan_reprompt(
     hand_negatives: bool = False,
     box_margins: Sequence[float] = BOX_MARGINS,
     overwrite: bool = False,
+    recording: str | None = None,
 ) -> Path:
-    """Write `reprompt_plan.json` for `target_view` from a consensus run; returns its path."""
+    """Write `reprompt_plan.json` for `target_view` from a consensus run; returns its path.
+
+    `recording` (registry label) selects another recording's rig, clock rules and poses;
+    the default is recording 1, whose first minute bounds the plan at 1800 frames.
+    """
     repository_root = repository_root.resolve()
     if is_ego(target_view):
         raise ValueError("re-prompt targets are static views; ego views only feed the consensus")
@@ -641,10 +663,24 @@ def plan_reprompt(
         raise ValueError(f"source run is for {source.view}, not the target view {target_view}")
     proxy = proxy_for(repository_root, source)
     shape = (proxy.dimensions.height, proxy.dimensions.width)
-    frame_count = min(consensus.frame_count, FIRST_MINUTE_FRAMES)
+    recording_record = resolve_recording(repository_root, recording)
+    recording_label = recording_record.label if recording_record is not None else None
+    frame_count = (
+        consensus.frame_count
+        if recording_record is not None
+        else min(consensus.frame_count, FIRST_MINUTE_FRAMES)
+    )
 
-    rig = CameraRig.load(repository_root)
-    members = PoseMembers(repository_root)
+    rig = (
+        CameraRig.load(repository_root, recording=recording_record)
+        if recording_record is not None
+        else CameraRig.load(repository_root)
+    )
+    members = (
+        PoseMembers(repository_root, recording_record)
+        if recording_record is not None
+        else PoseMembers(repository_root)
+    )
     plane = fit_first_minute_plane(rig, members)
     sources = {item.view: item for item in consensus.sources}
     for item in consensus.sources:
@@ -845,6 +881,7 @@ def plan_reprompt(
         source_run_manifest=source.manifest_fingerprint,
         source_run_profile=source.profile,  # type: ignore[arg-type]
         source_schedule=source.schedule,
+        source_agent_schedule=source.agent_schedule,
         source_calibration_manifest=source.calibration_manifest,
         source_geometric_seed_manifest=source.geometric_seed_manifest,
         source_checkpoint_frames=source.checkpoint_frames,
@@ -857,6 +894,7 @@ def plan_reprompt(
         detector=detector,
         box_margins=tuple(float(m) for m in box_margins),
         hand_negatives=hand_negatives,
+        recording_label=recording_label,
         onsets=tuple(onsets),
         claim_boundaries=CLAIM_BOUNDARIES,
     )
@@ -1117,17 +1155,34 @@ def decode_plan(
     plan_path = plan_path.resolve()
     plan = load_plan(plan_path)
     iteration_dir = plan_path.parent
-    rig = rig or CameraRig.load(repository_root)
+    if rig is None:
+        record = resolve_recording(repository_root, plan.recording_label)
+        rig = (
+            CameraRig.load(repository_root, recording=record)
+            if record is not None
+            else CameraRig.load(repository_root)
+        )
     width, height = plan.proxy_dimensions
 
     schedule_capable = (
         plan.source_calibration_manifest is not None and plan.source_schedule is not None
     )
+    agent_schedule_capable = (
+        not schedule_capable
+        and plan.source_run_profile == "four_part_multiview"
+        and plan.source_geometric_seed_manifest is not None
+    )
     blocked_reason: str | None = None
     calibration_dir: Path | None = None
     manifest: MuggledSAMBoxCalibrationManifest | None = None
     manifest_path: Path | None = None
-    if schedule_capable:
+    if agent_schedule_capable:
+        # A geometry-seeded run has no human calibration to derive from; its corrections go
+        # into a `MultiviewAgentCorrectionSchedule` bound to the seed manifest instead.
+        calibration_dir = iteration_dir / CALIBRATION_DIR_NAME
+        results_directory = calibration_dir / "results"
+        results_directory.mkdir(parents=True, exist_ok=True)
+    elif schedule_capable:
         source_manifest_path = _verify(
             repository_root,
             plan.source_calibration_manifest,
@@ -1244,6 +1299,18 @@ def decode_plan(
     later_per_target: dict[str, int] = {}
     for correction in source_later:
         later_per_target[correction.target_id] = later_per_target.get(correction.target_id, 0) + 1
+    carried_agent: list[MultiviewAgentCorrection] = []
+    if agent_schedule_capable and plan.source_agent_schedule is not None:
+        previous_schedule = MultiviewAgentCorrectionSchedule.model_validate_json(
+            _verify(repository_root, plan.source_agent_schedule, "source agent schedule").read_text(
+                encoding="utf-8"
+            )
+        )
+        carried_agent = [
+            c for c in previous_schedule.corrections if c.analysis_frame_index < plan.frame_count
+        ]
+        for correction in carried_agent:
+            later_per_target[correction.target] = later_per_target.get(correction.target, 0) + 1
 
     decisions: list[RepromptDecision] = []
     accepted_ids: dict[tuple[str, int], str] = {}
@@ -1273,7 +1340,7 @@ def decode_plan(
         decision = score_candidates(
             rig, target_view=plan.target_view, onset=onset, candidates=candidates
         )
-        if decision.decision == "accepted" and schedule_capable:
+        if decision.decision == "accepted" and (schedule_capable or agent_schedule_capable):
             count = later_per_target.get(onset.target, 0) + 1
             if count > policy.maximum_later_correction_keyframes_per_target:
                 decision = decision.model_copy(
@@ -1475,6 +1542,110 @@ def decode_plan(
             ) as handle:
                 handle.write("\n".join(log_lines) + "\n")
 
+    if agent_schedule_capable:
+        assert calibration_dir is not None
+        new_records: list[MultiviewAgentCorrection] = []
+        provenance_records: list[MultiviewConsensusCorrectionProvenance] = []
+        log_lines = []
+        for decision in decisions:
+            if decision.decision != "accepted" or decision.accepted is None:
+                continue
+            onset = next(
+                o
+                for o in plan.onsets
+                if (o.target, o.onset_frame) == (decision.target, decision.onset_frame)
+            )
+            new_records.append(
+                MultiviewAgentCorrection(
+                    target=decision.target,
+                    multiplex_slot=_seed_slot(
+                        repository_root, plan.source_geometric_seed_manifest, decision.target
+                    ),
+                    analysis_frame_index=decision.onset_frame,
+                    candidate_id=decision.accepted.calibration_candidate_id or "",
+                    candidate_index=decision.accepted.candidate_index,
+                    mask=decision.accepted.mask,
+                    iteration=plan.iteration,
+                )
+            )
+            provenance_records.append(
+                MultiviewConsensusCorrectionProvenance(
+                    candidate_id=decision.accepted.calibration_candidate_id or "",
+                    target=decision.target,
+                    onset_frame=decision.onset_frame,
+                    iteration=plan.iteration,
+                    consensus_manifest=plan.consensus_manifest,
+                    consensus_includes_target_view=plan.consensus_includes_target_view,
+                    consensus_reference_run_uri=plan.consensus_reference_run_uri,
+                    reference_dependency_note=plan.reference_dependency_note,
+                    views_used=onset.views_used,
+                    target_error_px=onset.target_error_px,
+                    accepted=decision.accepted,
+                    rejected_alternatives=tuple(
+                        c for c in decision.candidates if c is not decision.accepted
+                    ),
+                    mask=decision.accepted.mask,
+                )
+            )
+            log_lines.append(
+                json.dumps(
+                    {
+                        "candidate_id": decision.accepted.calibration_candidate_id,
+                        "candidate_index": decision.accepted.candidate_index,
+                        "intended_target": decision.target,
+                        "analysis_frame_index": decision.onset_frame,
+                        "provenance": MULTIVIEW_CONSENSUS_PROVENANCE,
+                        "selected_by": "agent",
+                        "iteration": plan.iteration,
+                        "rationale": decision.reason,
+                    }
+                )
+            )
+        if new_records:
+            provenance_path = calibration_dir / PROVENANCE_NAME
+            provenance_path.write_text(
+                MultiviewConsensusProvenanceFile(
+                    manifest_kind="multiview_consensus_correction_provenance",
+                    derived_calibration_manifest=None,
+                    carried_from=None,
+                    corrections=tuple(provenance_records),
+                ).model_dump_json(indent=2)
+                + "\n",
+                encoding="utf-8",
+            )
+            provenance_uri = relative_uri(provenance_path, repository_root)
+            with (calibration_dir / "agent_acceptances.jsonl").open(
+                "a", encoding="utf-8"
+            ) as handle:
+                handle.write("\n".join(log_lines) + "\n")
+            schedule_path = calibration_dir / AGENT_SCHEDULE_NAME
+            schedule_path.write_text(
+                MultiviewAgentCorrectionSchedule(
+                    manifest_kind="multiview_agent_correction_schedule",
+                    view_id=plan.target_view_id,
+                    clip_config=plan.clip_config,
+                    proxy=plan.proxy,
+                    seed_manifest=plan.source_geometric_seed_manifest,  # type: ignore[arg-type]
+                    plan=fingerprint(plan_path, repository_root),
+                    provenance_file=fingerprint(provenance_path, repository_root),
+                    corrections=tuple(
+                        sorted(
+                            (*carried_agent, *new_records),
+                            key=lambda c: (c.analysis_frame_index, c.multiplex_slot),
+                        )
+                    ),
+                    claim_boundaries=CLAIM_BOUNDARIES,
+                ).model_dump_json(indent=2)
+                + "\n",
+                encoding="utf-8",
+            )
+            schedules["consensus-only"] = fingerprint(schedule_path, repository_root)
+        else:
+            blocked_reason = (
+                "no correction was accepted, so no agent correction schedule was written for "
+                "this geometry-seeded run"
+            )
+
     accepted_count = sum(d.decision == "accepted" for d in decisions)
     output = MultiviewRepromptDecisions(
         manifest_kind="multiview_reprompt_decisions",
@@ -1499,6 +1670,31 @@ def decode_plan(
     path = iteration_dir / DECISIONS_NAME
     path.write_text(output.model_dump_json(indent=2) + "\n", encoding="utf-8")
     return path
+
+
+def _seed_slot(
+    repository_root: Path, seed_manifest: ArtifactFingerprint | None, target: str
+) -> int:
+    """Multiplex slot of `target` in the geometric seed manifest (accepted parts in order).
+
+    Mirrors `muggled_smoke._load_geometric_seed_manifest`, which assigns slots to the accepted
+    parts in manifest order; the tracker re-validates the whole manifest before running.
+    """
+    if seed_manifest is None:
+        raise ValueError("a geometry-seeded run names its seed manifest")
+    payload = json.loads(
+        _verify(repository_root, seed_manifest, "geometric seed manifest").read_text(
+            encoding="utf-8"
+        )
+    )
+    accepted = [
+        str(part["target"])
+        for part in payload.get("parts", [])
+        if part.get("status") == "accepted" and part.get("accepted") is not None
+    ]
+    if target not in accepted:
+        raise ValueError(f"{target} is not an accepted seed in {seed_manifest.uri}")
+    return accepted.index(target)
 
 
 def _placeholder_candidate(
@@ -1584,14 +1780,18 @@ def smoke_argv(
     ]
     if plan.source_run_profile == "four_part_static_focused":
         argv += ["--four-part-static-focused", "--max-frames", str(plan.frame_count)]
+        schedule_flag = "--multi-keyframe-correction-schedule"
     else:
         argv += ["--four-part-multiview-first-minute"]
         if plan.source_geometric_seed_manifest is not None:
             argv += ["--geometric-seed-manifest", plan.source_geometric_seed_manifest.uri]
+        if plan.recording_label is not None:
+            argv += ["--recording", plan.recording_label, "--max-frames", str(plan.frame_count)]
+        schedule_flag = "--agent-correction-schedule"
     argv += [
         "--max-side-length",
         str(MAX_SIDE_LENGTH),
-        "--multi-keyframe-correction-schedule",
+        schedule_flag,
         schedule_uri,
         "--prompt-memory-semantics",
         "append",
@@ -1672,26 +1872,38 @@ def run_commands(
                         "BLOCKED: "
                         + (
                             decisions.schedule_blocked_reason
-                            or "no schedule was derived for this arm"
+                            or (
+                                "a geometry-seeded view has no human corrections to add; the "
+                                "consensus-only arm is the only arm on this view"
+                                if plan.source_run_profile == "four_part_multiview"
+                                else "no schedule was derived for this arm"
+                            )
                         )
                     ),
                 )
             )
             continue
         schedule_path = _verify(repository_root, schedule, f"{arm} schedule")
-        model = MuggledSAMMultiKeyframeCorrectionSchedule.model_validate_json(
-            schedule_path.read_text(encoding="utf-8")
-        )
-        later = tuple(
-            sorted(
-                {
-                    c.frame.analysis_frame_index
-                    for c in model.corrections
-                    if c.frame.analysis_frame_index
-                }
+        if plan.source_run_profile == "four_part_multiview":
+            agent_model = MultiviewAgentCorrectionSchedule.model_validate_json(
+                schedule_path.read_text(encoding="utf-8")
             )
-        )
-        arm_ids = {c.candidate_id for c in model.corrections}
+            later = tuple(sorted({c.analysis_frame_index for c in agent_model.corrections}))
+            arm_ids = {c.candidate_id for c in agent_model.corrections}
+        else:
+            model = MuggledSAMMultiKeyframeCorrectionSchedule.model_validate_json(
+                schedule_path.read_text(encoding="utf-8")
+            )
+            later = tuple(
+                sorted(
+                    {
+                        c.frame.analysis_frame_index
+                        for c in model.corrections
+                        if c.frame.analysis_frame_index
+                    }
+                )
+            )
+            arm_ids = {c.candidate_id for c in model.corrections}
         dropped_human = tuple(
             sorted(
                 {
@@ -1847,6 +2059,11 @@ def main() -> None:
     plan.add_argument("--hand-negatives", action="store_true")
     plan.add_argument("--box-margin", type=float, action="append", default=None)
     plan.add_argument("--overwrite", action="store_true")
+    plan.add_argument(
+        "--recording",
+        default=None,
+        help="registry label of the recording when it is not recording 1 (rig, clocks, poses)",
+    )
 
     decode = commands.add_parser(
         "decode", help="decode the plan with one warm worker (GPU), accept, derive"
@@ -1884,6 +2101,7 @@ def main() -> None:
             hand_negatives=args.hand_negatives,
             box_margins=tuple(args.box_margin) if args.box_margin else BOX_MARGINS,
             overwrite=args.overwrite,
+            recording=args.recording,
         )
         _print_plan(load_plan(path), path)
     elif args.command == "decode":

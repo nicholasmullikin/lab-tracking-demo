@@ -17,6 +17,10 @@ from .multiview_geometry import TablePlane
 from .schemas import ArtifactFingerprint, PixelBox, PixelPoint, VersionedModel
 
 GEOMETRIC_SEED_PROVENANCE = "geometric_seed_transfer"
+# Sep 20 recording-2 seeding: DINOv2 exemplars of recording 1's human masks rank SAM3 grid
+# candidates, accepted by >= 3-view triangulation; no geometry from other views' masks.
+EXEMPLAR_SEED_PROVENANCE = "exemplar_multiview_consistency"
+SeedProvenance = Literal["geometric_seed_transfer", "exemplar_multiview_consistency"]
 MULTIVIEW_CLAIM_BOUNDARIES: tuple[str, ...] = (
     "Seeds on views other than C10379 were chosen by an agent from geometry (table-plane "
     "transfer of the human frame-0 masks) and a back-projection IoU rule; no human reviewed them.",
@@ -65,6 +69,9 @@ class SeedCandidate(VersionedModel):
             # The Sep 18 agent seed carried over unchanged because the searched strategy
             # for that part did not pass the C10379 held-out gate.
             "carried_over_sep18_seed",
+            # Sep 20 recording 2: exemplar-ranked candidate whose centroid triangulates with
+            # >= 3 static views' top candidates at the seed frame, radii in band.
+            "exemplar_multiview_consistency",
         ]
         | None
     ) = None
@@ -83,7 +90,7 @@ class SeedTransferPart(VersionedModel):
     status: SeedStatus
     blocked_reason: str | None = None
     selected_by: Literal["agent"] = "agent"
-    provenance: Literal["geometric_seed_transfer"] = GEOMETRIC_SEED_PROVENANCE
+    provenance: SeedProvenance = GEOMETRIC_SEED_PROVENANCE
     source_points_world_mm: tuple[tuple[float, float, float], ...] = ()
     triangulation_reprojection_px: dict[str, float] = Field(default_factory=dict)
     height_above_table_mm: float | None = None
@@ -145,7 +152,7 @@ class MultiviewSeedTransferManifest(VersionedModel):
     run_decision: Literal["run", "skip", "pending"]
     run_decision_reason: str = Field(min_length=1)
     selected_by: Literal["agent"] = "agent"
-    provenance: Literal["geometric_seed_transfer"] = GEOMETRIC_SEED_PROVENANCE
+    provenance: SeedProvenance = GEOMETRIC_SEED_PROVENANCE
     claim_boundaries: tuple[str, ...] = Field(min_length=1)
 
     @property
@@ -163,7 +170,9 @@ class ConsensusViewSource(VersionedModel):
     manifest: ArtifactFingerprint
     observations: ArtifactFingerprint
     is_ego: bool
-    seed_provenance: Literal["human_reviewed", "geometric_seed_transfer"]
+    seed_provenance: Literal[
+        "human_reviewed", "geometric_seed_transfer", "exemplar_multiview_consistency"
+    ]
     targets: tuple[str, ...] = Field(min_length=1)
     frame_count: int = Field(ge=1)
     proxy_to_raw_scale: float = Field(gt=0)

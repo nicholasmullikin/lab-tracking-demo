@@ -29,8 +29,9 @@ import numpy as np
 
 from . import mask_cache
 from .assembly101_camera_fit import PoseMembers
-from .assembly101_clock_offset import SHIPPED_2D_WINDOW, WINDOW_START_POSE_FRAME, is_ego, npz_key
+from .assembly101_clock_offset import WINDOW_START_POSE_FRAME, is_ego, npz_key
 from .assembly101_pose_schemas import ASSEMBLY101_WRIST_INDEX
+from .assembly101_recordings import RECORDING_1, Assembly101Recording, get_recording
 from .digest_cache import sha256_file
 from .four_part_contract import TARGETS
 from .multiview_geometry import CameraRig
@@ -123,7 +124,7 @@ def load_view_run(
                 observations[observation.analysis_frame_index] = observation
     if manifest.four_part_multiview is not None:
         targets = manifest.four_part_multiview.concepts
-        provenance = "geometric_seed_transfer"
+        provenance = manifest.four_part_multiview.seed_provenance
     elif manifest.four_part_focused is not None:
         targets = manifest.four_part_focused.concepts
         provenance = "human_reviewed"
@@ -256,6 +257,8 @@ def wrist_triangulation_check(
     *,
     reference_view: str,
     per_view_clocks: bool,
+    frame_offset: int = 0,
+    window_start_pose_frame: int = WINDOW_START_POSE_FRAME,
 ) -> WristTriangulationCheck:
     """Triangulate the dataset wrists from the shipped per-view 2D and compare with its 3D.
 
@@ -266,6 +269,7 @@ def wrist_triangulation_check(
     residuals: list[float] = []
     used_frames = 0
     for frame in frames:
+        frame = frame + frame_offset
         reference_pose = rig.pose_frame(reference_view, frame)
         key = str(reference_pose)
         if key not in members.landmarks3d:
@@ -277,7 +281,7 @@ def wrist_triangulation_check(
             continue
         for view in views:
             pose = rig.pose_frame(view, frame) if per_view_clocks else reference_pose
-            row = pose - WINDOW_START_POSE_FRAME
+            row = pose - window_start_pose_frame
             if row < 0 or row >= landmarks2d[view].shape[0]:
                 continue
             width, height = rig.image_size(view)
@@ -325,14 +329,17 @@ def ego_pose_gate(
     frames: Iterable[int],
     *,
     threshold_px: float,
+    frame_offset: int = 0,
+    window_start_pose_frame: int = WINDOW_START_POSE_FRAME,
+    frame_count: int = FRAME_COUNT,
 ) -> np.ndarray:
     """Frames where the dataset wrists, projected through the ego pose, match the shipped 2D."""
-    ok = np.zeros(FRAME_COUNT, dtype=bool)
+    ok = np.zeros(frame_count, dtype=bool)
     width, height = rig.image_size(view)
     for frame in frames:
-        pose = rig.pose_frame(view, frame)
+        pose = rig.pose_frame(view, frame + frame_offset)
         key = str(pose)
-        row = pose - WINDOW_START_POSE_FRAME
+        row = pose - window_start_pose_frame
         if key not in members.landmarks3d or pose not in rig.ego_poses or row < 0:
             continue
         errors: list[float] = []
@@ -361,17 +368,24 @@ def build_consensus(
     frame_count: int = FRAME_COUNT,
     rules: ConsensusEpisodeRules = RULES,
     exclude_views: tuple[str, ...] = (),
+    recording: Assembly101Recording | None = None,
+    analysis_frame_offset: int = 0,
 ) -> MultiviewConsensusManifest:
     """Build the consensus; `exclude_views` leaves views (even the reference) out entirely.
 
     Excluding the reference view gives a consensus formed by the other cameras only, so a
     re-prompt of that view is not scored against a consensus its own masks helped form.
+    `recording` selects another recording's rig, clock rules and poses (default recording 1);
+    `analysis_frame_offset` is the proxy frame the runs' frame 0 corresponds to when they ran
+    on a proxy trimmed from a later frame (pose lookups add it; mask indices do not).
     """
     started = time.monotonic()
     repository_root = repository_root.resolve()
-    rig = CameraRig.load(repository_root)
-    members = PoseMembers(repository_root)
-    with np.load(repository_root / SHIPPED_2D_WINDOW) as archive:
+    recording = recording or RECORDING_1
+    rig = CameraRig.load(repository_root, recording=recording)
+    members = PoseMembers(repository_root, recording)
+    window_start_pose_frame = recording.window_start_raw_frame
+    with np.load(repository_root / recording.shipped_2d_window) as archive:
         landmarks2d = {
             view: np.asarray(archive[npz_key(view)], dtype=np.float64) for view in rig.views
         }
@@ -380,6 +394,8 @@ def build_consensus(
         runs[REFERENCE_VIEW] = load_view_run(
             repository_root, reference_run, view=REFERENCE_VIEW, frame_count=frame_count
         )
+    if view_runs is None and recording.recording_id != RECORDING_1.recording_id:
+        raise ValueError("another recording's consensus needs explicit --view-run entries")
     for view, directory in (view_runs or discover_multiview_runs(repository_root)).items():
         if view in exclude_views:
             continue
@@ -398,6 +414,9 @@ def build_consensus(
             view,
             range(frame_count),
             threshold_px=rules.ego_wrist_gate_px or 10.0,
+            frame_offset=analysis_frame_offset,
+            window_start_pose_frame=window_start_pose_frame,
+            frame_count=frame_count,
         )
         for view in views
         if is_ego(view) and view in ego_views
@@ -427,7 +446,7 @@ def build_consensus(
                 if is_ego(view):
                     if view not in gates or not gates[view][frame]:
                         continue
-                    poses[view] = rig.pose_frame(view, frame)
+                    poses[view] = rig.pose_frame(view, frame + analysis_frame_offset)
                 mask = run.mask(frame, target)
                 if mask is None:
                     continue
@@ -543,6 +562,8 @@ def build_consensus(
         range(0, frame_count, 5),
         reference_view=REFERENCE_VIEW,
         per_view_clocks=False,
+        frame_offset=analysis_frame_offset,
+        window_start_pose_frame=window_start_pose_frame,
     )
     wrists_per_view_clock = wrist_triangulation_check(
         rig,
@@ -552,6 +573,8 @@ def build_consensus(
         range(0, frame_count, 5),
         reference_view=REFERENCE_VIEW,
         per_view_clocks=True,
+        frame_offset=analysis_frame_offset,
+        window_start_pose_frame=window_start_pose_frame,
     )
 
     root = repository_root / output_root
@@ -652,6 +675,17 @@ def main() -> None:
             "builds a consensus from the other cameras only, for re-prompting that view."
         ),
     )
+    parser.add_argument(
+        "--recording",
+        default=None,
+        help="registry label of the recording when it is not recording 1 (rig, clocks, poses)",
+    )
+    parser.add_argument(
+        "--analysis-frame-offset",
+        type=int,
+        default=0,
+        help="proxy frame that the runs' frame 0 shows (runs on a proxy trimmed from that frame)",
+    )
     args = parser.parse_args()
     view_runs = (
         {item.split("=", 1)[0]: Path(item.split("=", 1)[1]) for item in args.view_run}
@@ -666,6 +700,8 @@ def main() -> None:
         ego_views=tuple(args.ego_view),
         frame_count=args.frame_count,
         exclude_views=tuple(args.exclude_view),
+        recording=get_recording(args.recording, args.repository_root) if args.recording else None,
+        analysis_frame_offset=args.analysis_frame_offset,
     )
     for summary in manifest.summaries:
         print(
