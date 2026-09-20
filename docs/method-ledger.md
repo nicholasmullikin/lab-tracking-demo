@@ -4738,3 +4738,115 @@ the binding constraint and the consensus stays a detector. The alternatives have
 value now: more acceptance filters are selection artefacts on 16 cells; the interior needs the
 human e4 seed before any automatic seed can be compared; recording 2 needs its 13 labels before
 any knob is turned, and turning one first would make those labels confirmatory.
+
+### Sep 20, evening: the named next experiment run, decoder-score ranking in the consensus re-prompt loop (commit `625321a` tooling; this entry's commit)
+
+- **Claim boundary first.** Every IoU below is against one person's choice of SAM3 decoder
+  masks on **13 frames of one view** (C10379; 51 labelled cells + 1 hidden): review evidence
+  that ranks arms against each other, not accuracy, not a dataset, not ground truth. C10119 has
+  no anchors and nothing there is scored; its one number is agreement of one tracker with the
+  other cameras. Every correction is agent-authored (`selected_by: agent`, provenance
+  `multiview_consensus`, now also `candidate_ranking: decoder_score`). The consensus that
+  authored them was built without C10379 but its members were seeded by geometric transfer of
+  the C10379 human frame-0 masks. GPU: four queue passes on
+  `runs/multiview-reprompt-20260920/code-snapshot-625321a/` (`git archive 625321a src/battle`,
+  94 files): decode 6.7 s, C10379 arm 403 s (worker 341 s), decode 5.9 s, C10119 arm 370 s
+  (worker 327 s), 19:01-19:18 UTC; every `gpu_check` ok, no `NVRM`/`Xid`, one GPU process at a
+  time. CC BY-NC 4.0.
+- **Change (fixed, unfitted; the closing section's one pick).** `battle-multiview-reprompt
+  decode --candidate-ranking ray|decoder_score` (`src/battle/multiview_reprompt.py`,
+  `schemas.py`). `ray` is the default and the byte-identical seed-transfer pick (closest
+  centroid ray, ties by decoder IoU); `decoder_score` keeps the same acceptance filters (area
+  within [0.3, 3.0] x expected, ray <= 1.5 radii, policy budget) and takes the decoder's own
+  IoU estimate first, ties by ray (rule (g) of the acceptance search). The ranking is written
+  on every `RepromptDecision`, the decisions file, every provenance record, every
+  `MultiviewAgentCorrection` (kept per correction because schedules carry earlier iterations
+  forward) and the acceptance log; the human-schema `MuggledSAMMultiKeyframeCorrectionSchedule`
+  is untouched (it is a human contract and hashed into the tracker's stream identity), so for
+  the derived C10379 schedules the ranking lives in the bound `reprompt_provenance.json`.
+  Tests: `tests/test_multiview_reprompt.py` +2 (stub decoder; a fixture where two candidates
+  pass and the two rankings pick different ones; the ranking recorded on decisions, provenance,
+  agent schedule and log under both source profiles); 617 default-tier tests pass, ruff clean.
+- **C10379, iteration 1** (`runs/multiview-reprompt-20260920/variants/decoder-score/C10379/iter1/`;
+  same others-only consensus, pm-append source, default gate). The plan is identical to the ray
+  plan (same three chassis onsets 296 / 475 / 1049, same prompts, rear_body 1762 blocked) and
+  the decode passes the same 8 / 6 / 7 of 8 candidates; only the pick changes:
+
+  | onset | accepted: px, decoder IoU, ray mm | ray pick: px, IoU, ray mm | expected px | anchor <= 5 frames | human px | IoU vs human: accepted / ray pick / best in pool |
+  | --- | --- | --- | --- | --- | --- | --- |
+  | chassis 296 | 8,103, 0.82, 21 | 15,373, 0.59, 16 | 10,381 | 300 | 4,156 | 0.33 / 0.07 / 0.34 |
+  | chassis 475 | 9,507, 0.86, 17 | 17,084, 0.68, 10 | 10,991 | none | - | - |
+  | chassis 1049 | 8,726, 0.83, 28 | 23,288, 0.60, 18 | 12,319 | 1050 | 6,631 | 0.74 / 0.24 / 0.75 |
+
+  The accepted masks are 0.53 / 0.56 / 0.37 of the ray picks' areas and 0.71-0.86 x the
+  sphere's expected area (the ray picks were 1.5-1.9 x); at 1049 the accepted mask is within
+  0.01 of the best candidate in the pool, at 296 nothing in the pool exceeds 0.34. Arm (full
+  run, 1800 frames, `--max-side-length 1280 --prompt-memory-semantics append`): 341 s, 2.48 GiB.
+- **Arm table** (`anchor_iou_arms.md`, regenerated with every row; all / ch / int / rb / cab,
+  windows 279-408 / 573-722 / 1020-1172 / outside, hidden FP px, worker s, GiB):
+
+  | arm | later corrections | all | ch | int | rb | cab | 279-408 | 573-722 | 1020-1172 | outside | hidden FP | s | GiB |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | pm-append (human) | 327 900 1172 1235 | **0.743** | 0.637 | 0.585 | 0.790 | 0.962 | 0.853 | 0.687 | 0.616 | 0.800 | 1265 | 341 | 2.54 |
+  | seed-only-1280 | none | 0.591 | 0.404 | 0.228 | 0.789 | 0.959 | 0.648 | 0.628 | 0.579 | 0.527 | 1252 | 329 | 2.39 |
+  | consensus-only iter 1 (ray) | 296 475 1049 | 0.590 | 0.291 | 0.316 | 0.810 | 0.959 | 0.573 | 0.651 | 0.637 | 0.517 | 1226 | 343 | 2.48 |
+  | consensus-only iter 2 (ray) | + 333 653 983 1326 1590 | 0.663 | 0.519 | 0.397 | 0.787 | 0.959 | 0.653 | 0.661 | 0.747 | 0.606 | 1251 | 359 | 2.77 |
+  | human-plus-consensus (ray) | 296 327 475 900 1049 1172 1235 | 0.730 | 0.591 | 0.585 | 0.791 | 0.960 | 0.823 | 0.679 | 0.560 | 0.834 | 1207 | 357 | 2.71 |
+  | **consensus-only-ds iter 1** | 296 475 1049 | **0.659** | **0.609** | 0.288 | 0.788 | 0.959 | 0.720 | 0.694 | 0.677 | 0.566 | 1266 | 341 | 2.48 |
+  | consensus-only-ds iter 2 | no onset | = iter 1 | | | | | | | | | | - | - |
+
+  Chassis per anchor frame, ray -> ds: 300 0.08 -> 0.41, 370 0.00 -> 0.64, 400 0.00 -> 0.85,
+  600 0.38 -> 0.36, 650 0.32 -> 0.39, 700 0.19 -> 0.60, 900 0.59 -> 0.60, 1050 0.30 -> 0.75,
+  1100 0.78 -> 0.82, 1150 0.52 -> 0.51, 1200 0.60 -> 0.66, 1500 0.00 -> 0.76, 1700 0.00 -> 0.58
+  (pm-append at 600 / 650: 0.25 / 0.20; at 1050: 0.00).
+- **C10379, iteration 2: no onset.** Consensus rebuilt with the ds run as the C10379 member
+  (`runs/multiview-part-consensus-first-minute-r1280-reprompt-ds-iter1/`, 70 s; the README's
+  iteration-2 recipe): chassis consensus on 1800 frames, 7.78 mean views, **C10379 contradicts
+  on 0 frames**; the only contradictions are rear_body `[1662,1667)` (5 frames, under the
+  10-frame minimum) and `[1762,1794)` (2 statics agree). `plan --previous-plan`: 0 planned, 1
+  blocked. The same plan against the others-only consensus (the recipe the ray iteration 2
+  used; CPU-only diagnostic into `/tmp`, not kept): also 0 planned, 1 blocked. Under ray ranking
+  this step had produced five new chassis onsets over 400+ frames (the blobs made C10379
+  contradict the other cameras more, not less); under decoder-score ranking the loop is at a
+  fixed point after three corrections. Nothing was decoded or run for iteration 2 because
+  there was nothing to decode; the iteration-2 row equals iteration 1 by construction.
+- **C10119, iteration 1** (`variants/decoder-score/C10119/iter1/`; consensus excluding C10119,
+  reference pm-append included as a member, source the Sep 19 r1280 run via the
+  agent-correction-schedule path). Plan identical to the ray plan (rear_body 1533
+  `[1533,1800)`, 281 px, 6 statics, 8/8 pass). Decode: accepted `t001533-b01#3`, 1,652 px,
+  decoder IoU 0.95, ray 4 mm = 0.18 radii, area x1.29 (ray pick `t001533-b02#3`: 1,802 px,
+  0.93, 2 mm). Arm: 1800 frames, 327 s, 2.42 GiB. Agreement rebuilt with this run replacing the
+  Sep 19 C10119 (`runs/multiview-part-consensus-first-minute-r1280-c10119-reprompt-ds-iter1/`,
+  71 s): rear_body agreement **0.872 -> 0.997**, mean error 20.5 -> 0.7 px, 13 contradicting
+  episodes -> 1 (`[1525,1530)`), episodes over all views 105 -> 90: identical to the ray arm to
+  three decimals; the two runs' rear_body masks agree at 0.958 mean IoU over `[1533,1800)`
+  (min 0.887) and are identical before 1533. Held for human scoring on the 26 prepared frames;
+  `docs/labeling-sessions-2026-09-20.md` now scores both runs (`consensus-only`,
+  `consensus-only-ds`). The caveat stands: after 1660 the majority sits on the screwdriver.
+- **Reading, against the pre-registered diagnostic.** consensus-only-ds did **not** stay at the
+  0.591 floor: it moved **0.069 of the 0.153 gap** (0.590 -> 0.659 against 0.743), on every
+  window, most in 279-408 (0.573 -> 0.720, pm-append 0.853), then outside (0.517 -> 0.566, vs
+  0.800), 573-722 (0.651 -> 0.694, vs 0.687) and 1020-1172 (0.637 -> 0.677, vs 0.616); in the
+  last two windows it is level with or above the human-corrected run. The chassis, the only
+  part the corrections touch, goes from 0.291 to **0.609, within 0.03 of the human's 0.637**,
+  and with three corrections rather than the eight the ray loop accumulated. So on the chassis
+  the acceptance *ranking* was the binding constraint, as the search predicted, and the
+  ceiling it predicted holds where it said: at 600 / 650 (the `[573,722)` occlusion window)
+  every arm including pm-append sits at 0.20-0.39 and the pool's best candidate was 0.32, and
+  at 300 the accepted 0.33 is the pool's 0.34; those cells are the candidate set, not the rule,
+  and the lever there is still prompts (a size prior from the target view's own history rather
+  than the sphere model, or a second decoder). What the experiment exposes as the **remaining
+  gap is the interior**: 0.288 (seed-only 0.228, pm-append 0.585), untouched because no other
+  view tracks it and the consensus therefore never proposes a correction for it; of the 0.084
+  still separating consensus-only-ds from pm-append, 0.074 is the interior and 0.007 the
+  chassis. The plan's stop rule reads verbatim: 0.084 > 0.03 on the one view with anchors, so
+  **multicam is a detector and, on the chassis, now a corrector at the human's level; on the
+  interior it is neither**, because it does not see the part. What remains human is unchanged
+  (chassis and interior frame-0 seeds, the four C10379 corrections as the reference arm, every
+  anchor); the interior needs the human e4 seed before any view other than C10379 can observe
+  it, which is the labelling session already ordered (b). No further GPU work was run beyond
+  the two targets; the `decoder_score` ranking is a flag, not the default.
+- **Deliverables.** `runs/multiview-reprompt-20260920/variants/decoder-score/{C10379/iter1,
+  C10379/iter2,C10119/iter1}/`, `anchor_iou_arms.{json,md}`, `jobs_7..10_*.json`, `queue.log`,
+  `logs/`, `code-snapshot-625321a/`; the two rebuilt consensus roots named above; README results
+  section; `docs/labeling-sessions-2026-09-20.md` (a); this entry.

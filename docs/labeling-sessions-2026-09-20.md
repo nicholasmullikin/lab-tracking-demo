@@ -52,13 +52,19 @@ uv run battle-anchor-iou --view static-c10119 \
   --run r1280=runs/sam3-views-r1280-20260919/views/C10119 \
   --run seeded=runs/sam3-views-r1280-pmappend-seeded-20260920/views/C10119 \
   --run consensus-only=runs/multiview-reprompt-20260920/C10119/iter1/arms/consensus-only \
+  --run consensus-only-ds=runs/multiview-reprompt-20260920/variants/decoder-score/C10119/iter1/arms/consensus-only \
   --output runs/anchor-scoreboard-c10119-20260920/anchor_iou.json
 ```
 
-The third `--run` is the C10119 consensus correction held for scoring (`runs/multiview-reprompt-20260920/C10119/iter1/`,
-one agent correction, rear_body at 1533): its agreement with the other cameras rose from 0.872
-to 0.997, but after frame 1660 that majority sits on the screwdriver the recording-1 human named
-a distractor, so only these anchors can say whether the corrected slot is on the rear body. The
+The third and fourth `--run`s are the C10119 consensus corrections held for scoring: both are
+one agent correction, rear_body at 1533, from the same prompts and the same eight decoded
+candidates; `consensus-only` (`runs/multiview-reprompt-20260920/C10119/iter1/`) accepted the
+candidate nearest the consensus ray (1,802 px, decoder IoU 0.93), `consensus-only-ds`
+(`variants/decoder-score/C10119/iter1/`, `--candidate-ranking decoder_score`) the decoder's
+top-scored one (1,652 px, 0.95). Their agreement with the other cameras rose identically from
+0.872 to 0.997 (the two runs' rear_body masks agree at 0.96 mean IoU over `[1533,1800)`), but
+after frame 1660 that majority sits on the screwdriver the recording-1 human named a
+distractor, so only these anchors can say whether the corrected slot is on the rear body. The
 `r1280` and `seeded` runs are the Sep 19 geometric-transfer seeds and the Sep 20 seed-search
 seeds on the same view.
 
