@@ -294,7 +294,9 @@ class G2PreprocessingManifest(VersionedModel):
     raw_frame_range: FrameRange
     analysis_frame_range: FrameRange
     proxy_frame_range: FrameRange
-    scaling_policy: Literal["preserve_aspect_ratio_height_720"]
+    scaling_policy: Literal[
+        "preserve_aspect_ratio_height_720", "preserve_aspect_ratio_height_1080"
+    ]
     proxies: tuple[VideoProxy, ...] = Field(min_length=1)
     annotations_or_poses_downloaded_by_g2: Literal[False] = False
     annotations_or_poses_used_by_g2: Literal[False] = False
