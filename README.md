@@ -719,7 +719,8 @@ with the zero-shot condition until a later human G gate defines that comparison.
 ### Rapid browser workspace
 
 `battle-muggled-calibration-web` replaces the repeated OpenCV/terminal ROI loop with a
-loopback-only browser workspace. Start a new gitignored `runs/<calibration-id>/`
+browser workspace served on loopback (or, with `--tailscale`, on your own tailnet only).
+Start a new gitignored `runs/<calibration-id>/`
 directory for each calibration; historical run directories are evidence and must not be
 resumed or edited. The workspace samples only the selected timestamps (default
 `0,10,30,50` seconds); it does not inspect all 1,800 candidate frames and it never
@@ -733,9 +734,16 @@ uv run battle-muggled-calibration-web
 The Battle `uv` process runs the HTTP server. It starts the configured isolated
 `/home/nick/.pyenv/versions/muggled_sam/bin/python` worker once, keeps that image decoder
 warm, serializes decode jobs, and records worker stderr at
-`runs/<calibration-id>/worker.stderr.log`. The server binds only `127.0.0.1`; it does not
-expose the raw video, model, or workspace to the network. Source-frame previews, masks,
-per-candidate review panels, and contact sheets remain in that ignored run directory.
+`runs/<calibration-id>/worker.stderr.log`. The server binds `127.0.0.1` by default and never
+a wildcard address (`--host 0.0.0.0` is refused): there is no authentication, and every
+decode POST runs on the GPU. To label from another of your own devices, `--tailscale` binds
+this machine's Tailscale IPv4 instead (from `tailscale ip -4`; a clear error if tailscaled is
+down) and prints both the numeric and the MagicDNS URL, so the workspace is reachable inside
+the tailnet only. Alternatively keep the loopback bind and let Tailscale proxy it with HTTPS:
+`tailscale serve --bg --https=8443 http://127.0.0.1:8765` (then
+`https://<machine>.<tailnet>.ts.net:8443/`; `tailscale serve --https=8443 off` to remove).
+Source-frame previews, masks, per-candidate review panels, and contact sheets remain in that
+ignored run directory.
 
 Usage:
 
@@ -1509,6 +1517,9 @@ uv run battle-muggled-calibration-web \
   --view static-c10379 \
   --manual-seed-target-config configs/muggledsam_static_four_part_reassembly_focused_manual_seed.json \
   --output-dir runs/human-review-anchors-first-minute --resume   # prints http://127.0.0.1:8765/
+# ... same command with --tailscale to label from another device on your tailnet: binds the
+# Tailscale IPv4 and prints http://<tailscale-ip>:8765/ and http://<machine>.<tailnet>.ts.net:8765/.
+# Zero-code alternative (loopback bind + HTTPS): tailscale serve --bg --https=8443 http://127.0.0.1:8765
 uv run battle-anchor-export export             # anchors/anchor_masks.json + docs/qa/...human-record.json
 uv run battle-anchor-iou --anchors runs/human-review-anchors-first-minute \
   --run runs/sam3-policy-ablation-20260918/arms/xg-r720-sched --run reference=<reference run> \

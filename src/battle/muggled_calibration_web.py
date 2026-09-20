@@ -6,6 +6,7 @@ import argparse
 import base64
 import hashlib
 import io
+import ipaddress
 import json
 import os
 import queue
@@ -73,6 +74,7 @@ from .schemas import (
 )
 
 STATIC_DIRECTORY = Path(__file__).with_name("static") / "calibration"
+DEFAULT_HOST = "127.0.0.1"
 VIEW_RENDER_CACHE_ENTRIES = 12
 VIEW_SOURCE_CACHE_ENTRIES = 8
 JOB_HISTORY_LIMIT = 32
@@ -1439,7 +1441,8 @@ def _encode_view_png(pixels: np.ndarray) -> str:
     Nothing is resampled or quantized, so the image a reader sees is exactly the one
     the operators produced. Only two things change relative to a default save: a render
     with no coloured edge overlay is stored as a single grey channel instead of three
-    identical ones, and the deflate level is low because this never leaves localhost.
+    identical ones, and the deflate level is low because this only travels over loopback
+    or the operator's own tailnet.
     """
     coloured = pixels[:, :, 0]
     monochrome = np.array_equal(coloured, pixels[:, :, 1]) and np.array_equal(
@@ -1800,10 +1803,95 @@ def make_workspace(args: argparse.Namespace, repository_root: Path) -> Workspace
     )
 
 
+WILDCARD_HOSTS = frozenset({"", "0.0.0.0", "::", "*"})
+TAILSCALE_TIMEOUT_SECONDS = 10.0
+
+
+def _run_tailscale(*arguments: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["tailscale", *arguments],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=TAILSCALE_TIMEOUT_SECONDS,
+    )
+
+
+def resolve_tailscale_ipv4() -> str:
+    """Return this machine's Tailscale IPv4 address, or explain why there is none.
+
+    The workspace is unauthenticated, so the only remote bind it offers is the tailnet
+    address: reachable from the operator's own devices and nothing else.
+    """
+    try:
+        completed = _run_tailscale("ip", "-4")
+    except FileNotFoundError:
+        raise RuntimeError(
+            "--tailscale needs the `tailscale` CLI on PATH, and it was not found"
+        ) from None
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(
+            "--tailscale: `tailscale ip -4` did not answer; is tailscaled up?"
+        ) from None
+    reported = completed.stdout.split()
+    address = reported[0] if reported else ""
+    if completed.returncode != 0 or not address:
+        detail = completed.stderr.strip() or completed.stdout.strip() or "no IPv4 address reported"
+        raise RuntimeError(
+            f"--tailscale: tailscale is not running or has no IPv4 address ({detail}); "
+            "run `tailscale up`, or bind an explicit address with --host"
+        )
+    try:
+        ipaddress.IPv4Address(address)
+    except ValueError:
+        raise RuntimeError(
+            f"--tailscale: unexpected `tailscale ip -4` output {address!r}"
+        ) from None
+    return address
+
+
+def tailscale_dns_name() -> str | None:
+    """The MagicDNS name of this machine, without the trailing dot, when known."""
+    try:
+        completed = _run_tailscale("status", "--json")
+        name = json.loads(completed.stdout)["Self"]["DNSName"] if completed.returncode == 0 else ""
+    except (OSError, subprocess.TimeoutExpired, ValueError, KeyError, TypeError):
+        return None
+    return str(name).rstrip(".") or None
+
+
+def reachable_urls(host: str, port: int, dns_name: str | None = None) -> list[str]:
+    """Every URL a browser can open for this bind, the numeric one first."""
+    try:
+        numeric = f"[{host}]" if ipaddress.ip_address(host).version == 6 else host
+    except ValueError:
+        numeric = host
+    urls = [f"http://{numeric}:{port}/"]
+    if dns_name:
+        urls.append(f"http://{dns_name}:{port}/")
+    return urls
+
+
+def resolve_bind_host(host: str, tailscale: bool) -> tuple[str, str | None]:
+    """Decide the address to bind and the MagicDNS name to advertise, or refuse."""
+    if tailscale:
+        if host != DEFAULT_HOST:
+            raise ValueError("--tailscale picks the bind address itself; drop --host")
+        return resolve_tailscale_ipv4(), tailscale_dns_name()
+    if host.strip() in WILDCARD_HOSTS:
+        raise ValueError(
+            f"refusing to bind every interface ({host!r}): the workspace is unauthenticated "
+            "and a POST decodes on the GPU. Use --tailscale for the tailnet, or an explicit "
+            "--host address"
+        )
+    return host, None
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Serve a localhost-only selected-frame SAM3 calibration workspace; never tracks video."
+            "Serve a selected-frame SAM3 calibration workspace on loopback (default) or on this "
+            "machine's Tailscale address (--tailscale); never tracks video."
         )
     )
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
@@ -1824,7 +1912,22 @@ def main() -> None:
         ),
     )
     parser.add_argument("--resume", action="store_true")
-    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument(
+        "--host",
+        default=DEFAULT_HOST,
+        help=(
+            f"Address to bind (default {DEFAULT_HOST}). Wildcards (0.0.0.0, ::) are refused: "
+            "the workspace has no authentication."
+        ),
+    )
+    parser.add_argument(
+        "--tailscale",
+        action="store_true",
+        help=(
+            "Bind this machine's Tailscale IPv4 (from `tailscale ip -4`) so other devices on "
+            "the tailnet can open the workspace; prints the MagicDNS URL too."
+        ),
+    )
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--external-python", type=Path, default=MUGGLED_SAM_PYTHON)
     parser.add_argument("--model", type=Path, default=DEFAULT_MODEL)
@@ -1843,14 +1946,23 @@ def main() -> None:
         "--no-worker", action="store_true", help="Serve static/state routes without decoder."
     )
     args = parser.parse_args()
-    if args.host != "127.0.0.1":
-        parser.error("this utility is deliberately loopback-only; --host must be 127.0.0.1")
     args.config = args.config.resolve()
     try:
+        host, dns_name = resolve_bind_host(args.host, args.tailscale)
         workspace = make_workspace(args, Path.cwd().resolve())
-        server = ThreadingHTTPServer((args.host, args.port), make_handler(workspace))
-        print(f"Rapid calibration workspace: http://{args.host}:{server.server_port}/")
-        print(f"Manifest: {workspace.manifest_path}")
+        server = ThreadingHTTPServer((host, args.port), make_handler(workspace))
+        urls = reachable_urls(host, server.server_port, dns_name)
+        # Flushed so the URL is visible at once when stdout is a log file or a pipe.
+        print(f"Rapid calibration workspace: {urls[0]}", flush=True)
+        for url in urls[1:]:
+            print(f"Also reachable at: {url}", flush=True)
+        if host != DEFAULT_HOST:
+            print(
+                "Bound beyond loopback: no authentication, any client that reaches this address "
+                "can edit the workspace and trigger GPU decodes.",
+                flush=True,
+            )
+        print(f"Manifest: {workspace.manifest_path}", flush=True)
         try:
             try:
                 server.serve_forever()

@@ -11,6 +11,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -25,6 +26,8 @@ from battle.muggled_calibration_web import (
     CANDIDATE_REVIEW_LOCK_REASON,
     WorkerClient,
     Workspace,
+    reachable_urls,
+    resolve_bind_host,
 )
 from battle.muggled_calibration_web import make_workspace as create_workspace
 from battle.muggled_smoke import load_manual_seed_target_config, sha256_file
@@ -1853,6 +1856,163 @@ def test_main_closes_the_workspace_on_keyboard_interrupt(
 
     assert workspace.closed is True
     assert InterruptingServer.closed is True
+
+
+class _BindOnceServer(ThreadingHTTPServer):
+    """A real bind that records its address and returns from serve_forever at once."""
+
+    bound: list[tuple[str, int]] = []
+
+    def __init__(self, address: tuple[str, int], handler: object) -> None:
+        super().__init__(address, handler)  # type: ignore[arg-type]
+        type(self).bound.append((self.server_address[0], self.server_port))
+
+    def serve_forever(self, poll_interval: float = 0.5) -> None:
+        raise KeyboardInterrupt
+
+
+def _run_main_with(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *arguments: str
+) -> list[tuple[str, int]]:
+    module = __import__("battle.muggled_calibration_web", fromlist=["main"])
+    _BindOnceServer.bound = []
+    monkeypatch.setattr(module, "ThreadingHTTPServer", _BindOnceServer)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "battle-muggled-calibration-web",
+            "--no-worker",
+            "--output-dir",
+            str(tmp_path / "run"),
+            *arguments,
+        ],
+    )
+    module.main()
+    return _BindOnceServer.bound
+
+
+def _fake_tailscale(
+    ipv4: str = "100.64.0.7\n",
+    returncode: int = 0,
+    stderr: str = "",
+    dns_name: str | None = "fedora.example.ts.net.",
+):
+    def run(*arguments: str) -> subprocess.CompletedProcess[str]:
+        if arguments == ("ip", "-4"):
+            return subprocess.CompletedProcess(arguments, returncode, ipv4, stderr)
+        if arguments == ("status", "--json"):
+            body = json.dumps({"Self": {"DNSName": dns_name}}) if dns_name else "{}"
+            return subprocess.CompletedProcess(arguments, 0, body, "")
+        raise AssertionError(f"unexpected tailscale call {arguments}")
+
+    return run
+
+
+def test_main_binds_the_requested_host_and_prints_its_url(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    bound = _run_main_with(monkeypatch, tmp_path, "--host", "127.0.0.1", "--port", "0")
+
+    assert len(bound) == 1 and bound[0][0] == "127.0.0.1" and bound[0][1] > 0
+    out = capsys.readouterr().out
+    assert f"Rapid calibration workspace: http://127.0.0.1:{bound[0][1]}/" in out
+    assert "Bound beyond loopback" not in out
+
+
+def test_tailscale_flag_binds_the_tailnet_address_and_advertises_magicdns(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    module = __import__("battle.muggled_calibration_web", fromlist=["main"])
+    monkeypatch.setattr(module, "_run_tailscale", _fake_tailscale())
+    recorded: list[tuple[str, int]] = []
+
+    class RecordingServer:
+        server_port = 8765
+
+        def __init__(self, address: tuple[str, int], _handler: object) -> None:
+            recorded.append(address)
+
+        def serve_forever(self) -> None:
+            raise KeyboardInterrupt
+
+        def server_close(self) -> None:
+            return
+
+    monkeypatch.setattr(module, "ThreadingHTTPServer", RecordingServer)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "battle-muggled-calibration-web",
+            "--no-worker",
+            "--output-dir",
+            str(tmp_path / "run"),
+            "--tailscale",
+        ],
+    )
+    module.main()
+
+    assert recorded == [("100.64.0.7", 8765)]
+    out = capsys.readouterr().out
+    assert "Rapid calibration workspace: http://100.64.0.7:8765/" in out
+    assert "Also reachable at: http://fedora.example.ts.net:8765/" in out
+    assert "Bound beyond loopback" in out
+
+
+def test_tailscale_flag_fails_clearly_when_tailscale_is_down(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    module = __import__("battle.muggled_calibration_web", fromlist=["main"])
+    monkeypatch.setattr(
+        module,
+        "_run_tailscale",
+        _fake_tailscale(ipv4="", returncode=1, stderr="Tailscale is stopped."),
+    )
+    with pytest.raises(SystemExit):
+        _run_main_with(monkeypatch, tmp_path, "--tailscale")
+    err = capsys.readouterr().err
+    assert "tailscale is not running" in err and "Tailscale is stopped." in err
+    assert _BindOnceServer.bound == []
+
+
+def test_tailscale_flag_rejects_an_explicit_host() -> None:
+    with pytest.raises(ValueError, match="drop --host"):
+        resolve_bind_host("127.0.0.2", tailscale=True)
+
+
+@pytest.mark.parametrize("host", ["0.0.0.0", "::", "", "*"])
+def test_wildcard_hosts_are_refused(host: str) -> None:
+    with pytest.raises(ValueError, match="refusing to bind every interface"):
+        resolve_bind_host(host, tailscale=False)
+
+
+def test_reachable_urls_bracket_ipv6_and_add_the_dns_name() -> None:
+    assert reachable_urls("100.64.0.7", 8765, None) == ["http://100.64.0.7:8765/"]
+    assert reachable_urls("fd7a::1", 8765, "box.example.ts.net") == [
+        "http://[fd7a::1]:8765/",
+        "http://box.example.ts.net:8765/",
+    ]
+
+
+def test_served_frontend_uses_only_relative_urls(tmp_path: Path) -> None:
+    """The page must work from whatever host the browser reached, not only loopback."""
+    workspace = make_workspace(tmp_path)
+    server, base = serve(workspace)
+    try:
+        html = urllib.request.urlopen(f"{base}/").read().decode()
+        assets = re.findall(r'(?:src|href)="([^"]+)"', html)
+        assert assets and all(asset.startswith("/static/") for asset in assets)
+        pages = [html] + [
+            urllib.request.urlopen(f"{base}{asset}").read().decode() for asset in assets
+        ]
+    finally:
+        server.shutdown()
+        server.server_close()
+        workspace.close()
+    forbidden = re.compile(r"127\.0\.0\.1|localhost|https?://|wss?://", re.IGNORECASE)
+    for page in pages:
+        assert forbidden.search(page) is None, forbidden.search(page)
 
 
 def test_http_proposal_requires_human_accepted_frame_zero_candidate(tmp_path: Path) -> None:

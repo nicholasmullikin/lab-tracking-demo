@@ -3095,3 +3095,31 @@ this comparison makes no accuracy or cross-method identity claim.
   runs/sam3-policy-ablation-20260918/anchor_iou.json`; the agent appends the IoU columns to the
   ablation table. `off-r720-sched` and the reference must score identically (they are byte-equal
   over the first minute), which is the built-in check that the scorer read the right masks.
+
+### Sep 19: calibration workspace reachable over the tailnet (still not labelled)
+
+- **Exposure, and its stance.** `battle-muggled-calibration-web` was hard-wired to `127.0.0.1`
+  (`--host` existed but errored on any other value). It now accepts `--host` (default still
+  loopback) and `--tailscale`, which resolves this machine's Tailscale IPv4 with
+  `tailscale ip -4` and binds exactly that address, failing with a plain message when
+  tailscaled is down or the CLI is missing; wildcard binds (`0.0.0.0`, `::`) are refused
+  outright. The reason for the narrow shape: the workspace has **no authentication**, and a
+  prompt POST runs a MuggledSAM decode on `cuda:0`, so the only remote bind offered is one that
+  Tailscale's WireGuard layer already restricts to the operator's own devices. Inside the tailnet
+  it stays unauthenticated: any peer can edit the manifest or trigger decodes while it runs. The
+  server prints every reachable URL (numeric plus MagicDNS, `.Self.DNSName` from
+  `tailscale status --json`) and a one-line warning whenever it is bound beyond loopback, flushed
+  so the URL appears immediately in a log. The frontend already used root-relative URLs
+  (`fetch("/api/...")`, `/static/app.js`, `/static/style.css`), so no change was needed there;
+  a test now pins that no served page contains a `127.0.0.1`, `localhost`, `http(s)://` or
+  `ws(s)://` literal. Verified headlessly with the anchor session: bound
+  `100.64.0.7:8765`, `GET /api/state` answered via the IP and via
+  `host.example.ts.net`, assets loaded through the same host, loopback refused, then server
+  and worker stopped (port free, no GPU process, manifest still 0 candidates / 0 hidden). The
+  zero-code alternative is documented too: `tailscale serve --bg --https=8443
+  http://127.0.0.1:8765` keeps the bind on loopback and adds HTTPS (443 already carries another
+  serve rule on this machine; the operator user is set, so no sudo). No browser was opened and
+  nothing was labelled. Tests `tests/test_muggled_calibration_web.py` +10: real bind on the
+  requested host with the printed URL, `--tailscale` binding the monkeypatched address and
+  advertising MagicDNS, the down-tailscale error path, `--tailscale` with `--host` refused,
+  four wildcard refusals, IPv6 bracketing, and the relative-URL sweep over the served pages.
