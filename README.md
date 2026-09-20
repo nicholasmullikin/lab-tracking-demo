@@ -62,6 +62,15 @@ panel at once; guide
 [`docs/review-guide-2026-09-20-multiview-presets.md`](docs/review-guide-2026-09-20-multiview-presets.md),
 and the four prepared (not started) labeling sessions are in
 [`docs/labeling-sessions-2026-09-20.md`](docs/labeling-sessions-2026-09-20.md).
+The Sep 20 multicam block ("Multicam plan of Sep 20" below; ledger record "Closing the
+multicam plan") then asked two questions and answered them with numbers: SAM3's own object
+score detects the anchor-visible failures as a ranker (AUROC 0.91-0.96) but not yet as a
+calibrated gate (held-out P/R 0.36-0.62 / 0.44-0.64); rear_body and cabin seeds transfer from
+the other cameras automatically (0.80 / 0.95 held-out IoU) while chassis and interior do not,
+consensus-driven corrections score at the seed-only floor (0.590 / 0.663 vs 0.743 human) and no
+acceptance rule on their candidates reaches the bar, and a second recording was seeded and run
+with zero human input but is unscored until labelled. Verdict: multicam is a detector, not yet
+a corrector.
 Human QA dispositions are pending for every method, including the new agent seeds, the
 proposed `not_contact_eligible` intervals and the ensemble-v2 candidate, and no accuracy claim
 is made anywhere.
@@ -1659,6 +1668,68 @@ yellow screwdriver every arm's rear_body slot latches onto) is
 `docs/qa/first-minute-review-anchors.human-record.json`; the 20-arm table with its tie notes is
 `runs/anchor-scoreboard-20260919/anchor_iou.md`. Anchors are 13 frames on one view: they rank
 arms against each other and support no accuracy claim.
+
+#### Multicam plan of Sep 20: detect failure, remove the human, prove it generalizes
+
+SAM3 runs on nine cameras of recording 1 (eight statics + e4) at 1280 / `pm-append`; only C10379
+has human seeds, corrections and anchors. The seven other statics and e4 are **agent-seeded and
+unreviewed** (rear_body and cabin by the seed search below, chassis by the Sep 18 geometric
+transfer, interior unseeded). The plan file is
+`~/.cursor/plans/multicam_segmentation_transfer_8116dfb2.plan.md`; the ledger's closing record
+("Closing the multicam plan") answers its two goals with numbers. Every number is cross-view
+disagreement of one tracker or IoU against the 52 anchors on one view; nothing is accuracy.
+
+- `battle-detector-scorecard`: ten label-free detectors scored against the anchors per failure
+  class (AUROC, P/R at F1-max and at recall >= 0.8, leave-one-frame-out), a combined confidence
+  / abstain series per frame and part (`runs/detector-scorecard-20260920/<run>/`), proposed extra
+  anchor frames; `--no-truth` writes the series for an unlabelled run. SAM3's own object score
+  is the best detector (AUROC 0.91-0.96 in-sample); the combined detector's held-out P/R is
+  0.36-0.62 / 0.44-0.64.
+- `battle-anchor-frames-for-view`: maps the 13 C10379 anchor frames through the clock rules to
+  every view (`configs/qa/first_minute_review_anchors_<view_id>.json`) with the detector-selected
+  and random extras; `battle-anchor-export` / `battle-anchor-iou` take `--view`.
+- `battle-seed-truth-set` and `battle-seed-search plan|decode|score|sheet|transfer-*`: 68 human
+  masks as truth; 160 seeding strategies (box margin x negatives x boxes x pick) scored
+  leave-frames-out from other-view geometry; winners transferred to the eight other views and
+  accepted by >= 3-view consistency (`runs/seed-search-20260920/`). rear_body / cabin 0.80 /
+  0.95 held-out (automatic seeds), chassis / interior 0.53 / 0.47 (proposals only).
+- `battle-multiview-reprompt plan|decode|run`: where the others-only consensus contradicts a view,
+  a sphere -> box prompt -> SAM3 decode -> agent correction (`selected_by: agent`, provenance
+  `multiview_consensus`) -> tracker command; `--agent-correction-schedule` on `battle-muggled-smoke`
+  carries such corrections into a geometry-seeded run (`runs/multiview-reprompt-20260920/`).
+  Result: consensus-only 0.590 (iteration 2: 0.663) vs 0.743 with the human corrections vs a
+  0.591 seed-only floor; the accepted corrections were hand+chassis blobs. Verdict: multicam is a
+  detector, not yet a corrector.
+- `battle-correction-acceptance-search plan|decode|score|sheet`: the acceptance rule searched
+  on the 47 cells with human truth (area bands, decoder-score floors, hand-hull rules, ranking;
+  1,728 rules, leave-frames-out; `runs/correction-acceptance-search-20260920/`). No chassis rule
+  meets the bar (held-out 0.470 IoU, harm 0.20; oracle ceiling 0.596); ranking by the decoder's
+  own IoU estimate instead of the centroid ray is the one fixed improvement (0.438 -> 0.573).
+- `battle-fetch-assembly101-poses` and `--recording <label>` on the fetch / clock / camera /
+  reference / consensus / smoke / re-prompt tools: a second recording (`nusar_9061`, registry
+  `configs/assembly101/recordings.json`) fetched by HTTP Range, calibrated and clocked per
+  session. `battle-exemplar-seed plan|window|decode|accept|label-session|sheet` seeds it from a
+  DINOv2 exemplar library of recording 1's human masks by multi-view consistency
+  (`runs/rec2-automatic-20260920/`): rear_body and cabin seeded on 7 / 8 views with zero human
+  input, chassis / interior as proposals; the seven views agree on 3.3-3.6 of 7 per frame
+  (recording 1: 7.4-8.1 of 8); unscored until the human labels its 13 frames.
+- `battle-review-presets` and `battle-seed-proposal-sheets` are documented under "First-minute
+  v4 review" (v6 package, three presets, proposal sheets). Labeling sessions, in order of
+  value: `docs/labeling-sessions-2026-09-20.md`.
+
+```bash
+uv run battle-detector-scorecard --run runs/sam3-memory-arms-20260919/arms/pm-append   # see --help for the consensus/hull roots
+uv run battle-anchor-frames-for-view --view C10119
+uv run battle-seed-truth-set && uv run battle-seed-search plan && uv run scripts/overnight_queue.py runs/seed-search-20260920/jobs_1_search_decode.json
+uv run battle-seed-search score --exemplar-python /home/nick/.pyenv/versions/muggled_sam/bin/python
+uv run battle-multiview-reprompt plan --target-view C10379 --consensus-run runs/multiview-part-consensus-first-minute-r1280-others-only
+uv run battle-multiview-reprompt decode --plan runs/multiview-reprompt-20260920/C10379/iter1/reprompt_plan.json   # GPU, through the queue
+uv run battle-multiview-reprompt run --iteration-dir runs/multiview-reprompt-20260920/C10379/iter1
+uv run battle-correction-acceptance-search plan && uv run scripts/overnight_queue.py runs/correction-acceptance-search-20260920/jobs_1_decode.json
+uv run battle-correction-acceptance-search score && uv run battle-correction-acceptance-search sheet
+uv run battle-fetch-assembly101-view --recording nusar_9061 --view C10379 && uv run battle-fetch-assembly101-poses --recording nusar_9061
+uv run battle-exemplar-seed --recording nusar_9061 plan    # then window / decode (queue) / accept / label-session / sheet
+```
 
 ### First-minute review metrics (label-free triggers)
 

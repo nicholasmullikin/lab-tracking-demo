@@ -380,6 +380,36 @@ replaced self-consistency as the yardstick. The follow-up plan then ran through 
   human's disposition. Record:
   [ensemble v2](#sep-20-ensemble-reference-v2-the-named-candidate-plan-step-3-deciding-half-closes-the-resolution-and-dam4sam-follow-up-plan).
 
+#### Sep 20: the multicam block (detect failure, remove the human, prove it generalizes)
+
+One autonomous day against two goals; every number is cross-view disagreement or IoU against
+the 52 anchors on one view. Closing record, with the goals answered in plain terms:
+[closing](#closing-the-multicam-plan-the-two-goals-answered-with-numbers).
+
+- Detector scorecard (Track A): SAM3's object score is the best failure detector (AUROC
+  0.91-0.96 in-sample); leave-one-frame-out the combined detector's P/R is 0.36-0.62 /
+  0.44-0.64; consensus and hull undefined on a third of the cells; nothing scored on the
+  279-408 leak. Record: [scorecard](#sep-20-detector-scorecard-against-the-52-review-anchors-track-a-of-the-multicam-plan).
+- Seeds (B0-B3): rear_body / cabin transfer automatically (0.80 / 0.95 held-out), chassis /
+  interior do not (0.53 / 0.47); eight views rerun with the accepted seeds. Records:
+  [B0](#sep-20-b0-tooling-of-the-multicam-plan-anchors-mapped-to-every-view-commit-6c6cd66),
+  [B2](#sep-20-b2-of-the-multicam-plan-seeding-strategy-search-on-the-c10379-human-masks-and-transfer-commits-2861d2f-df1edff-afb8475),
+  [B3](#sep-20-b3-of-the-multicam-plan-eight-views-rerun-at-1280--append-with-the-search-seeds).
+- Corrections (B4): consensus-only 0.590 / 0.663 vs 0.743 human vs 0.591 seed-only floor; the
+  accepted corrections were hand+chassis blobs; an acceptance-rule search on the frames with
+  human truth found no rule that meets the bar (chassis held-out 0.470, harm 0.20; oracle
+  0.596), and one fixed improvement (rank by decoder score). Verdict: multicam is a detector,
+  not yet a corrector. Records: [tool](#sep-20-battle-multiview-reprompt-the-consensus-re-prompt-loop-b4-of-the-multicam-plan-tool-built-and-unit-tested-gpu-arms-not-run),
+  [arms](#sep-20-b4-arms-on-c10379-the-consensus-re-prompt-loop-run-multicam-plan-headline-commits-78f2eca-21da378-cf8007e),
+  [C10119](#sep-20-the-multiview-profile-takes-agent-corrections-c10119-as-re-prompt-target-plan-b4-second-target-commits-78f2eca-cf8007e),
+  [acceptance search](#sep-20-acceptance-rule-search-for-the-consensus-corrections-and-the-multicam-plan-closed-commits-12f48e9-833343d).
+- Recording 2 (Track C): fetched, calibrated, seeded and run with zero human input for
+  rear_body and cabin; seven views agree on 3.3-3.6 of 7 per frame; unscored until labelled.
+  Records: [C1](#sep-20-track-c1-of-the-multicam-plan-a-second-recording-fetched-and-prepared-nusar_9061),
+  [C2/C3](#sep-20-track-c2c3-recording-2-nusar_9061-seeded-and-run-with-zero-human-input-commits-78f2eca-21da378-cf8007e).
+- Viewer (Track D): one v6 recording with three presets. Record:
+  [v6](#sep-20-v6-review-surface-one-recording-with-three-blueprint-presets-track-d-of-the-multicam-plan).
+
 ### Plan versus actual
 
 What the plan said, what happened instead, and why, in one line each.
@@ -4579,3 +4609,132 @@ this comparison makes no accuracy or cross-method identity claim.
   the human's proposal review, then the run resumes from the seed frame for those slots (not
   built). The consensus re-prompt was not iterated past 1 on this recording. Whether any seeded
   part is right waits for the 13 anchors.
+
+### Sep 20: acceptance-rule search for the consensus corrections, and the multicam plan closed (commits `12f48e9`, `833343d`)
+
+- **Claim boundary first.** Every IoU below is against one person's choice of SAM3 decoder mask
+  on 16 frames of one view (C10379; the 13 anchor frames and the human correction frames 0 /
+  327 / 900 / 1235): it ranks acceptance rules against each other and is not accuracy. The
+  prompts come from the others-only consensus, whose member views were seeded by geometric
+  transfer of the C10379 human frame-0 masks. GPU: one queue job on
+  `runs/correction-acceptance-search-20260920/code-snapshot-12f48e9/` (decode, 27.6 s,
+  `gpu_check` ok, no `NVRM`/`Xid`); the consensus-only v2 arm was **not run** (its condition
+  was not met, below). CC BY-NC 4.0.
+- **Why.** The B4 arms located the chassis correctly from the other cameras and accepted the
+  wrong pixels: every accepted correction (296 / 475 / 1049, iteration 2 added 333 / 653 / 983
+  / 1326 / 1590) was a chassis+hand blob of 15-23k px against a ~5k px human chassis. Before
+  closing the plan the question was whether a different acceptance rule on the same candidates
+  would pick the human's mask, or abstain.
+- **Tool** (`battle-correction-acceptance-search plan|decode|score|sheet`,
+  `src/battle/correction_acceptance_search.py`, tests `tests/test_correction_acceptance_search.py`,
+  7 default-tier). Every truth cell (63 unique: 64 positives minus the duplicate at 900, plus
+  the hidden rear_body at 1700) is treated as a re-prompt onset; the geometric prompt is built
+  from the others-only consensus at that frame exactly as `battle-multiview-reprompt plan`
+  builds it (`onset_geometry` + `build_prompts`, margins 0.25 / 0.60, negatives at the other
+  parts' consensus centroids). The interior has no consensus, so its 16 cells are unprompted:
+  **47 cells** (chassis 16, rear_body 16, cabin 15), 214 prompts. Pools: the tool's `base` set;
+  the same boxes with negatives at the dataset hand joints or at the stabilized WiLoR landmarks
+  inside the box; every base mask minus the dilated (12 px) convex hull of the dataset / WiLoR
+  joints, largest component kept; `all`. Rule grid: area band vs the sphere's expected area
+  {[0.3, 3.0], [0.5, 2.0], [0.6, 1.5], [0.7, 1.3]} or vs the pm-append frame-0 seed area
+  (|log ratio| < {0.4, 0.7}) x decoder IoU-estimate floor {none, 0.5, 0.7, 0.9} (the image
+  decoder exposes no object score) x hand-hull overlap rule {none, dataset, WiLoR; reject > 20 %}
+  x other-part disc overlap {off, reject > 30 %} x ranking {centroid ray then score (the tool's),
+  decoder score then ray}: 1,728 rules. Metric per cell: IoU of the accepted candidate vs the
+  human mask; abstention neutral; harm = accepted with IoU < 0.4. Leave-frames-out as the seed
+  search (fit on all but 3 anchor frames, correction frames always in the fit, 13 rotations);
+  the fit objective is the highest mean accepted IoU among rules with fit harm <= 0.15 and fit
+  acceptance >= 0.25.
+- **Chassis (16 cells).** Current rule 0.438 mean IoU, everything accepted, **harm 0.50 (8/16)**.
+  Tightened bands 0.421-0.521 with harm 0.27-0.50; seed-relative bands 0.410 / 0.453, harm 0.44;
+  decoder floor 0.7: 0.510, harm 0.27 (0.9 abstains everywhere); dataset hand-hull overlap
+  rule **0.182, harm 0.71** (the hand is on the chassis: the human's own mask overlaps the joints'
+  hull by 0.5-0.85, so the rule keeps the candidates that missed the part); WiLoR hull 0.427,
+  harm 0.36 (gentler only where WiLoR sees no hand); other-part disc never fires; extra hand
+  negatives and hand subtraction leave the pick unchanged under ray ranking. **Ranking by the
+  decoder's own IoU estimate instead of the closest centroid ray: 0.573, everything accepted,
+  harm 0.19 (3/16)**, within 0.02 of the oracle on 12 of 16 cells; the three harmful picks
+  (300 / 600 / 650, 0.29-0.33) are cells where nothing in the pool exceeds 0.33. Best grid rule
+  in-sample (`score >= 0.5 + WiLoR overlap <= 0.2 + rank by score`) 0.633 / 50 % accepted / 0
+  harm on all cells, **leave-frames-out 0.470 / 56 % / harm 0.20 (4/20)**; five different
+  split winners. **Oracle ceiling** (best candidate in the pool under any rule): 0.596 mean, a
+  >= 0.6 candidate on 8 of 16 cells (10 with hand subtraction, which adds 300: 0.33 -> 0.77 and
+  1200: 0.57 -> 0.60). **Bar (held-out mean IoU >= 0.6, harm <= 0.15) not met**; the v2 arm was
+  not run, per the task's condition.
+- **rear_body and cabin clear the bar.** rear_body: current 0.640 / harm 0.19; chosen
+  `|log(area/seed)| < 0.4 + score >= 0.7 + dataset hand overlap <= 0.2` 0.836 / 75 % / 0 harm,
+  held-out **0.840 / 75 % / 0**, stable winner (10 of 13 splits). cabin: current 0.889 / 0 harm;
+  chosen `+WiLoR negatives, score >= 0.9, WiLoR overlap <= 0.2` 0.946 / 67 % / 0, held-out
+  **0.961 / 31 % / 0** (the 0.9 floor abstains on a third of frames). Neither part is where the
+  consensus-only arm lost its points.
+- **Reading.** The acceptance rule was the wrong place to look for 0.15 of anchor IoU. Two
+  things are true at once: (1) the tool's ranking is the mechanism behind the blobs, and a
+  fixed, unfitted change (decoder score first) removes half the harm; (2) the decoder does not
+  return the human's chassis from the consensus box in `[279,408)`, `[573,722)` and at 1700
+  (the hand covers the part and the other views' centroid sits on hand + interior), so no rule
+  on these candidates can reach the bar, and every filter that reaches 0 harm in-sample does
+  so by abstaining on half the cells and does not hold up leave-frames-out. What a corrector
+  needs is a better candidate, not a better gate: a prompt that separates the hand (the
+  sphere model over-predicts this grazing camera's footprint 1.2-4x on every frame), or a
+  second decoder opinion. Files: `runs/correction-acceptance-search-20260920/` (README with
+  every table, `search_report.json`, `v2_rule.json` with `meets_bar_held_out: false` for the
+  chassis, `acceptance_contact_sheet.png` at 300 / 327 / 600 / 1050 / 1235 / 1500).
+
+#### Closing the multicam plan: the two goals, answered with numbers
+
+**(a) Can we detect loss of confidence?** Partly, as a ranker; not yet as a gate. On the 52
+anchor cells (13 frames, one view, 9 / 14 / 11 failures on the three scored runs) SAM3's own
+object score is the one detector top-2 on every run, **AUROC 0.91-0.96 in-sample**, and the
+only one defined on every cell. The combined rank-average detector (top-3 by AUROC) reaches
+0.94-0.96 AUROC in-sample but, chosen and thresholded on 12 frames and scored on the 13th,
+**precision / recall 0.36-0.62 / 0.44-0.64** (4/7/5/36, 8/5/6/33, 7/5/4/36 TP/FP/FN/TN): the
+ranking transfers, the threshold does not. The consensus and hull detectors are **undefined on
+a third of the cells** (13 and 18 of 52: no other view tracks the interior, no hull where views
+disagree), and **nothing is scored on the 279-408 shape leak** the human reported, because no
+anchor cell in that window fails on any run (0 of 12). Track A's confidence series therefore
+runs as review context (abstain marks, 1,022 of 7,200 rows on `pm-append`), not as a gate;
+the B4 loop kept the 40 px consensus rule instead of a calibrated threshold.
+
+**(b) Can we stop relying on human segmentation?** For two of four parts' seeds, yes; for
+corrections, no. **Seeds:** a tight box at the centroid triangulated from the other cameras
+with the decoder's top-scored mask reproduces the human's rear_body / cabin at **0.80 / 0.95**
+held-out IoU (13 anchor frames, leave-frames-out) and was used to seed those parts on the
+seven other statics and e4 with all 10 observations agreeing (16 / 16 accepted); chassis /
+interior score **0.53 / 0.47** and stay human seeds (chassis: the Sep 18 agent seed carried
+over; interior: proposals only, unseeded on any other view). **Corrections:** consensus-only
+re-prompting on C10379 scores **0.590 (iteration 1) / 0.663 (iteration 2)** against **0.743**
+with the four human corrections and a **0.591** seed-only floor at 1280; the corrections it
+accepted were hand+chassis blobs. The acceptance-rule search above finds **no rule that
+reaches 0.6 held-out IoU with harm <= 0.15 on the chassis** (best 0.470 / harm 0.20; oracle
+ceiling 0.596), so the v2 arm was not run; ranking by the decoder score is the one fixed
+improvement (0.438 -> 0.573, harm 0.50 -> 0.19). **Recording 2** (`nusar_9061`, different
+subject) was seeded and run with **zero human input** for rear_body (7 views) and cabin (8)
+by exemplar ranking plus >= 3-view consistency, but the exemplar margins are near zero (-0.17
+to +0.18) and the seven views agree on only **3.3-3.6 of 7** per frame (recording 1: 7.4-8.1
+of 8); chassis / interior are 32 proposals; nothing is scored until the human labels its 13
+frames. **C10119**'s one consensus correction (rear_body 1533) raised its agreement with the
+other cameras from 0.872 to 0.997 and is held for scoring on 26 prepared frames; agreement
+late in the minute is with a majority sitting on the screwdriver, so it is not evidence yet.
+
+**What remains human:** the frame-0 seeds for the chassis and the interior (rear_body and
+cabin seed automatically on recording 1; on recording 2 the same two parts seeded but are
+unverified), every correction (four on C10379; the consensus writes corrections but they
+score below the seed-only floor), and the anchors that score all of it (52 cells on one view;
+three further sessions prepared, none labelled). The plan's stop rule applies verbatim:
+**multicam is a detector, not yet a corrector**.
+
+**Next experiment (one pick).** Re-run consensus-only on C10379 and C10119 with the tool's
+ranking changed to decoder-score-first (rule (g)), the current filters untouched, and score
+C10379 on the existing anchors and C10119 on its 26 frames as soon as they are labelled: one
+GPU hour, no fitted knob. Reason: it is the only change the search found that is both large
+(0.135 of mean IoU, harm halved at 100 % acceptance) and unfitted (a fixed rule, not a
+grid winner), it acts on the exact mechanism the arms exhibited (at 1050 the ray-nearest pick
+is a 24k px blob at IoU 0.24 and the decoder's top pick is 8.7k px at 0.76), and the result is
+diagnostic either way: if consensus-only leaves the 0.591 floor the corrector's remaining
+limit is the candidate set in the occlusion windows (oracle 0.596), which points at prompts
+(a size prior from the target view's own history rather than the sphere model, or a second
+decoder) rather than at more acceptance rules; if it does not move, the corrections were never
+the binding constraint and the consensus stays a detector. The alternatives have lower expected
+value now: more acceptance filters are selection artefacts on 16 cells; the interior needs the
+human e4 seed before any automatic seed can be compared; recording 2 needs its 13 labels before
+any knob is turned, and turning one first would make those labels confirmatory.

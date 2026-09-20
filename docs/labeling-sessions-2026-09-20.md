@@ -1,7 +1,11 @@
 # Labeling sessions prepared on Sep 20 (nothing started, nothing labelled)
 
-Four sessions for the human, each with the exact command, what to label, and the vocabulary.
-Everything below was prepared on CPU; no server is running and no GPU decode has happened.
+Four sessions for the human, each with the exact command, what to label, and the vocabulary,
+**in order of value**: (1) C10119 anchors, which score the C10119 consensus correction and the
+agent-seeded views on a second camera; (2) the 24 seed-proposal accept/reject decisions (about
+five minutes, no GPU); (3) recording 2 anchors on C10379, which score the zero-human-input run;
+(4) e4 anchors and the human interior seed. Everything below was prepared on CPU; no server is
+running and no GPU decode has happened.
 The calibration workspace decodes on the GPU when you label, so start a session only when the
 GPU queue is idle (`nvidia-smi` shows nothing but the idle 1.2 GB). Standing rule, unchanged:
 anchor masks are review evidence for ranking arms against each other on a handful of frames;
@@ -45,10 +49,18 @@ uv run battle-muggled-calibration-web \
 # afterwards:
 uv run battle-anchor-export export --view static-c10119
 uv run battle-anchor-iou --view static-c10119 \
-  --run runs/sam3-views-r1280-20260919/views/C10119 \
+  --run r1280=runs/sam3-views-r1280-20260919/views/C10119 \
   --run seeded=runs/sam3-views-r1280-pmappend-seeded-20260920/views/C10119 \
+  --run consensus-only=runs/multiview-reprompt-20260920/C10119/iter1/arms/consensus-only \
   --output runs/anchor-scoreboard-c10119-20260920/anchor_iou.json
 ```
+
+The third `--run` is the C10119 consensus correction held for scoring (`runs/multiview-reprompt-20260920/C10119/iter1/`,
+one agent correction, rear_body at 1533): its agreement with the other cameras rose from 0.872
+to 0.997, but after frame 1660 that majority sits on the screwdriver the recording-1 human named
+a distractor, so only these anchors can say whether the corrected slot is on the rear body. The
+`r1280` and `seeded` runs are the Sep 19 geometric-transfer seeds and the Sep 20 seed-search
+seeds on the same view.
 
 What to label. On each of the 26 frames accept one mask for **chassis**, **rear_body** and
 **cabin** wherever the part has a visible surface, and for the **interior** whenever you can see
@@ -131,21 +143,50 @@ candidates looked wrong; rear_body cells are the accepted B3 seeds shown for con
 (`decision_for_b3: accepted_seed` in the row header); cabin never disagreed across strategies and
 has no proposal.
 
-## (d) Recording 2 (`nusar_9061`), one view
+## (d) Recording 2 (`nusar_9061`), C10379, 13 frames
 
-Being prepared by the GPU worker. The expected config is
-`configs/qa/nusar_9061_review_anchors_c10379.json`; it did **not** exist when this document was
-written, so no command is given here. When it lands, the session is the same as (a) with
-`--recording nusar_9061`'s clip config
-(`configs/clips/assembly101_nusar_9061_four_part_reassembly_focused_all_static_g2.json`) and its
-per-view target policy, and the frames should be chosen from the contact sheet
+Config `configs/qa/nusar_9061_review_anchors_c10379.json` (target policy
+`configs/muggledsam_static_four_part_reassembly_focused_manual_seed_nusar_9061_static_c10379.json`):
+13 C10379 frames on the original 80 s proxy timeline, all inside the core span [300, 2100) and
+the run's [383, 2100): 8 detector-selected from the consensus-only run's confidence series
+(456, 986, 1616, 1810, 1878, 1958, 2018, 2078; >= 60 frames apart) and 5 seeded random (483,
+552, 1191, 1636, 2045). Workspace command (from `runs/rec2-automatic-20260920/README.md`,
+verified headless with `--no-worker`; add `--tailscale` to label from another device):
+
+```bash
+cd /home/nick/src/battle
+uv run battle-muggled-calibration-web \
+  --config configs/clips/assembly101_nusar_9061_four_part_reassembly_focused_all_static_g2.json \
+  --view static-c10379 \
+  --timestamps 15.200000,16.100000,18.400000,32.866667,39.700000,53.866667,54.533333,60.333333,62.600000,65.266667,67.266667,68.166667,69.266667 \
+  --manual-seed-target-config configs/muggledsam_static_four_part_reassembly_focused_manual_seed_nusar_9061_static_c10379.json \
+  --output-dir runs/human-review-anchors-nusar_9061-static-c10379
+```
+
+What to label. All four parts wherever visible (the rear bumper handled inside this window is a
+distractor, not a target: hidden plus a note if it is what a tracker would latch onto). This
+recording has a different subject who is about twice as fast, and proxy frame 0 sits inside
+`unscrew chassis`; the contact sheet
 `data/derived/assembly101/nusar-2021_action_both_9061-c02a_9061_user_id_2021-02-09_141537/contact_sheet_374.000-454.000.png`
-(the four parts lie apart on the table only from proxy frame ~75 to ~420; a fifth part, the rear
-bumper, is handled inside the window and is not a target).
+shows the parts apart on the table from about proxy frame 75 to 420. What these 13 frames
+score: the zero-human-input run (`runs/rec2-automatic-20260920/views/C10379/...`, rear_body and
+cabin seeded by exemplar ranking plus >= 3-view consistency) and its consensus-only re-prompt
+arm (`runs/rec2-automatic-20260920/reprompt/C10379/iter1/arms/consensus-only`). Scoring is the
+open tooling step: the runs live on the seed-window clip (frame 0 = proxy 383), so the anchor
+frames map by `proxy frame - 383`, and `battle-anchor-iou --view static-c10379` needs
+`--anchors` pointed at this workspace's export rather than recording 1's.
 
 ## Order and time
 
-(c) first (ten minutes, no GPU); then (a) (about 2 h at 4-5 minutes per frame, GPU decodes on
-demand); then (b) (about 2 h plus ten minutes for the seed workspace); (d) when its config exists.
+1. **(a) C10119 anchors** (about 2 h at 4-5 minutes per frame, GPU decodes on demand): scores
+   the C10119 consensus correction and the agent-seeded views on a second camera; doubles the
+   anchor evidence the detectors are ranked on.
+2. **(c) seed-proposal accept/reject** (24 cells, about five minutes, no GPU): the seeding
+   plan's acceptance rate per view and part.
+3. **(d) recording 2 anchors** (13 frames, about 1 h): the only thing that can score the
+   zero-human-input run.
+4. **(b) e4 anchors and the human interior seed** (about 2 h plus ten minutes): the interior
+   comparison arm the automatic seed needs.
+
 After each anchor session run the `export` and `anchor-iou` commands above; the scoreboards go
 beside `runs/anchor-scoreboard-20260919/` and the ledger gets the numbers with their counts.
