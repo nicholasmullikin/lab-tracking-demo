@@ -194,11 +194,17 @@ def filter_corrections(
 def worker_flags(
     args: argparse.Namespace, *, view_id: str | None, schedule: Path | None
 ) -> list[str]:
-    """Only non-default knobs are appended, so the tiny/1024 command stays byte-identical."""
+    """Only non-default knobs are appended, so the tiny/1024 command stays byte-identical.
+
+    `--sam2-model` reaches the worker only for DAM4SAM, which builds its own predictor from
+    the model name; the offline arms (SAMURAI, Grounded-SAM-2, the reviewed-seed control)
+    already receive the resolved `--sam2-config` / `--checkpoint` pair from `worker_command`
+    and refuse the DAM4SAM-only knob.
+    """
     flags: list[str] = []
     if view_id is not None:
         flags += ["--view-id", view_id]
-    if args.sam2_model != DEFAULT_SAM2_MODEL:
+    if args.method == "dam4sam" and args.sam2_model != DEFAULT_SAM2_MODEL:
         flags += ["--sam2-model", args.sam2_model]
     if int(args.input_size) != DEFAULT_INPUT_IMAGE_SIZE:
         flags += ["--input-size", str(int(args.input_size))]

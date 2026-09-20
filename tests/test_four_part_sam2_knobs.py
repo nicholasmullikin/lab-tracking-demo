@@ -129,6 +129,28 @@ def test_driver_knobs_become_worker_flags_only_when_set() -> None:
         "configs/samurai/sam2.1_hiera_l.yaml",
         Path("/home/nick/src/samurai/sam2/checkpoints/sam2.1_hiera_large.pt"),
     )
+    # The offline arms get the large pair through --sam2-config/--checkpoint and refuse the
+    # DAM4SAM-only --sam2-model knob (the first samurai-large queue job died on it).
+    samurai_args = driver.build_parser().parse_args(["samurai", "--sam2-model", "large"])
+    samurai_flags = driver.worker_flags(samurai_args, view_id=None, schedule=Path("/r/s.json"))
+    assert samurai_flags == ["--multi-keyframe-correction-schedule", "/r/s.json"]
+    samurai_command = driver.worker_command(
+        method="samurai",
+        run_directory=Path("/r/run"),
+        input_video=Path("/r/input.mp4"),
+        worker_contract_path=Path("/r/contract.json"),
+        source_offset_seconds=294.0,
+        frame_count=1800,
+        sam2_model="large",
+        extra_flags=samurai_flags,
+    )
+    assert "--sam2-model" not in samurai_command
+    assert samurai_command[samurai_command.index("--checkpoint") + 1] == (
+        "/home/nick/src/samurai/sam2/checkpoints/sam2.1_hiera_large.pt"
+    )
+    assert samurai_command[samurai_command.index("--sam2-config") + 1] == (
+        "configs/samurai/sam2.1_hiera_l.yaml"
+    )
     for method, spec in driver.METHODS.items():
         assert driver.method_sam2_files(method, "tiny") == (spec["config"], spec["checkpoint"])
     with pytest.raises(ValueError, match="no SAM2"):
