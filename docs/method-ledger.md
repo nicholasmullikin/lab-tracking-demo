@@ -3832,3 +3832,109 @@ this comparison makes no accuracy or cross-method identity claim.
   consensus or hull signal by construction until the other views track the interior (Track B).
   Deliverables: the module, tests, schemas, this entry; run roots under
   `runs/detector-scorecard-20260920/` (ignored).
+
+### Sep 20: `battle-multiview-reprompt`, the consensus re-prompt loop (B4 of the multicam plan; tool built and unit-tested, GPU arms not run)
+
+- **Claim boundary first.** Every correction this tool writes is agent-authored
+  (`selected_by: agent`, provenance `multiview_consensus`); no human reviews any of it. The
+  consensus it acts on measures disagreement between views of one tracker seeded by geometry,
+  not accuracy, and a candidate it accepts agrees with the other cameras, which does not make
+  it right. CPU only today: `plan` ran on the real consensus into a scratch directory (9 s) and
+  `decode` ran only against a stub decoder in the tests; the `decode` and `run` commands wait
+  for the GPU owner. CC BY-NC 4.0 applies to the dataset assets.
+- **Tool** (`src/battle/multiview_reprompt.py`, `battle-multiview-reprompt {plan,decode,run}`;
+  schemas appended to `schemas.py`: `MultiviewRepromptDetectorConfig`, `MultiviewRepromptPrompt`,
+  `MultiviewContradictionOnset`, `MultiviewRepromptPlan`, `RepromptCandidateScore`,
+  `RepromptDecision`, `MultiviewConsensusCorrectionProvenance`, `MultiviewConsensusProvenanceFile`,
+  `MultiviewRepromptDecisions`, `MultiviewRepromptRunCommand`). `plan` reads a consensus root
+  (`manifest.json`, `consensus_points.npz`) and the target view's tracked run, reuses the
+  builder's `episodes_from_errors` on the target's per-frame error, keeps episodes that
+  contradict the majority, merges runs closer than 15 frames and drops merged runs shorter than
+  10 (the ensemble v2 fallback rule), and gates each onset on >= 3 static views agreeing with the
+  consensus at that frame (the builder's `used/` arrays, so ego views enter only behind its pose
+  gate). Defaults: error > 40 raw px, >= 5 frames, 30 px agreement, 3 static views;
+  `--detector-config <json>` replaces any of those keys with Track A's calibrated values and
+  fingerprints the file into the plan. At an onset the consensus point becomes a sphere whose
+  radius is the median of the other views' mask equivalent-circle radii at depth, projected into
+  the target as two square boxes (margins 0.25 / 0.60) with negative points at the other parts'
+  projected consensus centroids (inside the box grown by 0.5) and, with `--hand-negatives`, the
+  dataset hand joints. `decode` runs every prompt through one warm calibration-worker
+  (`batch_decode` per onset frame), scores each candidate by the seed-transfer rule (area within
+  [0.3, 3.0] x the other views' expected area carried by the squared focal/depth ratio, centroid
+  ray within 1.5 radii; ranked by ray distance, then decoder IoU), derives a calibration from the
+  source run's (`derive_calibration`, hard-linked results, `derived_from_calibration`), appends
+  every decoded candidate as `selected_by: agent` (only the accepted one
+  `selected_for_correction`), and writes two schedules bound to one manifest hash:
+  `multi_keyframe_correction_schedule.json` (human-plus-consensus) and
+  `multi_keyframe_correction_schedule.consensus-only.json` (frame-0 seeds plus consensus
+  corrections). Source corrections at frames >= 1800 are left out of both (the first-minute run
+  never reaches them; the v4 policy's 8-per-target budget would otherwise be spent on 1800 and
+  2700) and listed as `source_corrections_dropped_out_of_range`; an accepted candidate that
+  would exceed the policy budget is recorded as rejected with `policy_keyframe_limit`.
+  `reprompt_decisions.json` holds every accept/reject and reason, `reprompt_provenance.json`
+  every correction's consensus fingerprint, onset, views used, target error, accepted score,
+  rejected alternatives and iteration; `agent_acceptances.jsonl` logs them with provenance
+  `multiview_consensus`, mirroring the visual-review tool. `run` emits the
+  `battle-muggled-smoke` command per arm (`--four-part-static-focused --max-frames 1800
+  --max-side-length 1280 --prompt-memory-semantics append --checkpoint-every 300`) and writes
+  `run_commands.{sh,json}`.
+- **Consensus-only arm.** Its schedule simply lacks the human-loop corrections at 327 / 900 /
+  1172 / 1235 (frame-0 seeds plus consensus corrections), rather than applying
+  `--drop-correction-frame`: a frame drop would also remove a consensus correction landing on a
+  human frame and errors when the frame is outside the run's budget, while the schedule's
+  fingerprint integrity (`_load_multi_keyframe_correction_schedule`) is identical either way. The
+  tracker's own loader was run on both derived schedules in the tests and reports
+  `agent_selected_correction_frame_indices` = the onsets.
+- **Checkpoint/resume.** A checkpoint at `k` holds the state ready to step `k` (frames `[0, k)`
+  and the corrections before `k`), so an arm may resume there only when every source
+  correction before `k` is also in its schedule; the consensus-only arm cannot resume past 327.
+  Two findings: (a) with the current consensus the earliest onset is 296, before every source
+  checkpoint, so both C10379 arms are full runs regardless; (b) the worker's `stream_identity`
+  hashes the *whole* `multi_keyframe_schedule_json`, so a resume under a schedule with added
+  later corrections would be refused as "a different stream" even when the prefix is identical.
+  `run` therefore emits full runs and keeps the qualifying resume in `resume_argv`
+  (`--prefer-resume` swaps it in); scoping the identity to the corrections before the resume
+  frame is a worker change for the GPU owner, not made here.
+- **Reference dependency.** The default consensus has `pm-append`, with the human corrections,
+  as a member, so consensus points near frames where C10379 agreed with the majority partly rest
+  on the corrected masks; the plan and every provenance record say so
+  (`reference_dependency_note`). `battle-build-multiview-part-consensus --exclude-view C10379`
+  (new, minimal) builds the consensus from the other eight views, and `plan --consensus-run`
+  then computes C10379's error itself with the builder's `distance_to_mask_px`. What remains
+  either way: the other views' frame-0 seeds came from the C10379 human masks. The loop removes
+  the human corrections, not the human seeds.
+- **Plan on the real consensus** (scratch run, 9.4 s; the README commands write under
+  `runs/multiview-reprompt-20260920/C10379/iter1/`): chassis onsets 296 `[296,313)` (error 43
+  px at onset, 6 static views, radius 44 mm, expected area 10.4k px), 475 `[475,515)` (42 px, 7
+  views, 51 mm, 11.0k px) and 1049 `[1049,1085)` (121 px, 7 views, 50 mm, 12.3k px), two prompts
+  and 2-3 negatives each; rear_body 1762 `[1762,1794)` blocked because only C10119, C10390 and e4
+  agree there (2 static views). The same three chassis runs are the ensemble v2 fallback
+  intervals. Two cautions for reading the arms: the C10379 chassis mask is ~5k px against an
+  expected 10-12k (the sphere model over-predicts a grazing camera's footprint; ratio ~0.5,
+  inside the band but worth remembering), and at 296 and 475 the onset error is 42-43 px, barely
+  over 40, with the consensus centroid ~45 proxy px above the mask centroid, which is about one
+  part radius and could be grazing-view geometry rather than a tracking failure; the detector
+  scorecard's threshold is what should decide, through `--detector-config`.
+- **Iteration.** `plan --previous-plan <iter k> --source-run <corrected run>` on a consensus
+  rebuilt with the corrected run as reference gives iteration `k+1`; the index is in the plan,
+  the decisions and every provenance record, the derived calibration carries the earlier
+  consensus corrections forward through `reprompt_provenance.json`, and the loop refuses
+  iteration 4.
+- **C10119 as target.** `plan` and `decode` work (decisions and masks are written); no schedule
+  can be derived because the C10119 run is a `--four-part-multiview-first-minute` run, whose
+  profile takes only its geometric seed manifest, the policy and schedule `view_id` contracts
+  still name the three original views, and there is no calibration record to derive from.
+  `run` emits its command as `BLOCKED` with that reason; the README lists it.
+- **Tests.** `tests/test_multiview_reprompt.py`, 12 default-tier tests: onset detection on a
+  consensus fixture (gap merge, short-run drop, static gate), detector file override, sphere
+  projection on the synthetic rig (radius recovered within 10 %, boxes contain the centroid,
+  negatives placed), the acceptance rule (area band and centroid ray beat a higher decoder
+  score), decode with a stub decoder writing real PNGs (decisions, derived calibration, both
+  schedules rebound to the manifest hash, out-of-range source correction dropped, the tracker's
+  own schedule loader accepting both, provenance sidecar and acceptance log), the policy budget,
+  the no-schedule path, resume-frame choice per arm, command emission for both arms with resume
+  variants, and the iteration cap; one `real_data` test runs `plan` on the pm-append consensus
+  and checks the three onsets. Default tier 566 passed / 9 skipped; ruff clean.
+- **Deliverables.** The module, schemas, tests, the `--exclude-view` flag, the CLI entry, this
+  entry, and `runs/multiview-reprompt-20260920/README.md` (ignored) with the exact plan / decode /
+  run / anchor-iou commands for C10379 and the blocked C10119 set. Nothing on the GPU was run.

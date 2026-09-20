@@ -360,7 +360,13 @@ def build_consensus(
     ego_views: tuple[str, ...] = (),
     frame_count: int = FRAME_COUNT,
     rules: ConsensusEpisodeRules = RULES,
+    exclude_views: tuple[str, ...] = (),
 ) -> MultiviewConsensusManifest:
+    """Build the consensus; `exclude_views` leaves views (even the reference) out entirely.
+
+    Excluding the reference view gives a consensus formed by the other cameras only, so a
+    re-prompt of that view is not scored against a consensus its own masks helped form.
+    """
     started = time.monotonic()
     repository_root = repository_root.resolve()
     rig = CameraRig.load(repository_root)
@@ -369,12 +375,14 @@ def build_consensus(
         landmarks2d = {
             view: np.asarray(archive[npz_key(view)], dtype=np.float64) for view in rig.views
         }
-    runs: dict[str, ViewRun] = {
-        REFERENCE_VIEW: load_view_run(
+    runs: dict[str, ViewRun] = {}
+    if REFERENCE_VIEW not in exclude_views:
+        runs[REFERENCE_VIEW] = load_view_run(
             repository_root, reference_run, view=REFERENCE_VIEW, frame_count=frame_count
         )
-    }
     for view, directory in (view_runs or discover_multiview_runs(repository_root)).items():
+        if view in exclude_views:
+            continue
         # Ego runs join only when asked for (moving cameras behind the wrist gate); the
         # canonical consensus is static-only.
         if is_ego(view) and view not in ego_views:
@@ -634,6 +642,16 @@ def main() -> None:
         help="Ego view (e.g. HMC_21179183) to add as a moving camera behind the wrist gate.",
     )
     parser.add_argument("--frame-count", type=int, default=FRAME_COUNT)
+    parser.add_argument(
+        "--exclude-view",
+        action="append",
+        default=[],
+        metavar="VIEW",
+        help=(
+            "Leave this view out of the consensus entirely (repeatable). Excluding C10379 "
+            "builds a consensus from the other cameras only, for re-prompting that view."
+        ),
+    )
     args = parser.parse_args()
     view_runs = (
         {item.split("=", 1)[0]: Path(item.split("=", 1)[1]) for item in args.view_run}
@@ -647,6 +665,7 @@ def main() -> None:
         view_runs=view_runs,
         ego_views=tuple(args.ego_view),
         frame_count=args.frame_count,
+        exclude_views=tuple(args.exclude_view),
     )
     for summary in manifest.summaries:
         print(
