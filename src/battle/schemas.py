@@ -3139,3 +3139,382 @@ class FixedTimestampHumanQARecord(VersionedModel):
             if path.is_absolute() or ".." in path.parts:
                 raise ValueError("human QA provenance must use repository-relative portable URIs")
         return self
+
+
+# -- detector scorecard (Track A) ----------------------------------------------------------
+#
+# Every number below is scored against the human review anchors: 13 frames of one view,
+# review evidence and not ground truth. Counts travel with every rate.
+
+
+class DetectorOperatingPoint(VersionedModel):
+    """Confusion counts at one suspicion threshold (predict failed when score >= threshold)."""
+
+    # None when the threshold differs per fold (leave-one-frame-out pooled counts).
+    threshold: float | None = None
+    tp: int = Field(ge=0)
+    fp: int = Field(ge=0)
+    fn: int = Field(ge=0)
+    tn: int = Field(ge=0)
+    precision: float | None = Field(default=None, ge=0, le=1)
+    recall: float | None = Field(default=None, ge=0, le=1)
+    f1: float | None = Field(default=None, ge=0, le=1)
+
+
+class DetectorScore(VersionedModel):
+    """One detector on one cell subset (`all` or a failure class)."""
+
+    detector: str = Field(min_length=1)
+    subset: str = Field(min_length=1)
+    cells: int = Field(ge=0)
+    positives: int = Field(ge=0)
+    negatives: int = Field(ge=0)
+    undefined: int = Field(ge=0)
+    auroc: float | None = Field(default=None, ge=0, le=1)
+    best_f1: DetectorOperatingPoint | None = None
+    recall_floor: DetectorOperatingPoint | None = None
+    # For class subsets: the same cells at the thresholds chosen on `all`.
+    at_overall_best_f1: DetectorOperatingPoint | None = None
+    at_overall_recall_floor: DetectorOperatingPoint | None = None
+
+
+class DetectorTruthCell(VersionedModel):
+    analysis_frame_index: int = Field(ge=0)
+    target: str = Field(min_length=1)
+    failure_class: str = Field(min_length=1)
+    anchor_state: str = Field(min_length=1)
+    outcome: str = Field(min_length=1)
+    iou: float | None = Field(default=None, ge=0, le=1)
+    run_area: int | None = Field(default=None, ge=0)
+    failed: bool | None = None
+
+
+class LeaveOneFrameOutFold(VersionedModel):
+    held_out_frame: int = Field(ge=0)
+    selected_detectors: tuple[str, ...]
+    best_f1_threshold: float | None = None
+    recall_floor_threshold: float | None = None
+
+
+class LeaveOneFrameOutResult(VersionedModel):
+    folds: tuple[LeaveOneFrameOutFold, ...]
+    pooled_auroc: float | None = Field(default=None, ge=0, le=1)
+    best_f1: DetectorOperatingPoint | None = None
+    recall_floor: DetectorOperatingPoint | None = None
+
+
+class DetectorConfidenceRow(VersionedModel):
+    """One frame x part row of the confidence series (`confidence.jsonl`)."""
+
+    analysis_frame_index: int = Field(ge=0)
+    target: str = Field(min_length=1)
+    detectors: dict[str, float | None]
+    combined_suspicion: float | None = Field(default=None, ge=0, le=1)
+    confidence: float | None = Field(default=None, ge=0, le=1)
+    abstain: bool
+    is_anchor_frame: bool = False
+    anchor_truth_failed: bool | None = None
+
+
+class DetectorScorecardManifest(VersionedModel):
+    manifest_kind: Literal["detector_scorecard"]
+    run_name: str = Field(min_length=1)
+    run_directory: str = Field(min_length=1)
+    run_observations: ArtifactFingerprint
+    anchor_set: ArtifactFingerprint
+    comparators: dict[str, str]
+    view: str = Field(min_length=1)
+    frame_count: int = Field(ge=1)
+    targets: tuple[str, ...] = Field(min_length=1)
+    anchor_frames: tuple[int, ...] = Field(min_length=1)
+    truth_rule: str = Field(min_length=1)
+    failure_class_frames: dict[str, tuple[int, ...]]
+    class_counts: dict[str, dict[str, int]]
+    truth_cells: tuple[DetectorTruthCell, ...] = Field(min_length=1)
+    detectors: tuple[str, ...] = Field(min_length=1)
+    detector_definitions: dict[str, str]
+    scores: tuple[DetectorScore, ...]
+    top_detectors: tuple[str, ...]
+    combined: tuple[DetectorScore, ...]
+    leave_one_frame_out: LeaveOneFrameOutResult
+    abstain_confidence_threshold: float | None = Field(default=None, ge=0, le=1)
+    confidence_uri: str = Field(min_length=1)
+    plot_uri: str | None = None
+    proposed_anchors_uri: str | None = None
+    generated_at: datetime
+    claim_boundary: str = Field(min_length=1)
+
+
+class ProposedAnchorFrame(VersionedModel):
+    analysis_frame_index: int = Field(ge=0)
+    selection: Literal["detector_ranked", "random"]
+    rank: int | None = Field(default=None, ge=1)
+    combined_suspicion: float | None = Field(default=None, ge=0, le=1)
+    target: str | None = None
+    reason: str = Field(min_length=1)
+
+
+class ProposedAnchorFrames(VersionedModel):
+    manifest_kind: Literal["proposed_anchor_frames"]
+    run_name: str = Field(min_length=1)
+    scorecard_uri: str = Field(min_length=1)
+    frame_step: int = Field(ge=1)
+    exclusion_radius_frames: int = Field(ge=0)
+    min_spacing_frames: int = Field(default=0, ge=0)
+    existing_anchor_frames: tuple[int, ...]
+    random_seed: int
+    frames: tuple[ProposedAnchorFrame, ...]
+    claim_boundary: str = Field(min_length=1)
+
+
+# -- multiview re-prompt loop (B4) ------------------------------------------------------------
+# Agent-authored later-frame corrections proposed by the eight-view consensus: a contradiction
+# onset becomes geometric prompts in the target view, the SAM3 image decoder answers, a
+# geometric rule picks one candidate, and the mask enters a derived correction schedule with
+# `selected_by: agent`, provenance `multiview_consensus`.  No human reviews any of it.
+
+MULTIVIEW_CONSENSUS_PROVENANCE = "multiview_consensus"
+MULTIVIEW_REPROMPT_MAX_ITERATIONS = 3
+MULTIVIEW_REPROMPT_ARMS = ("consensus-only", "human-plus-consensus")
+MultiviewRepromptArm = Literal["consensus-only", "human-plus-consensus"]
+
+
+class MultiviewRepromptDetectorConfig(VersionedModel):
+    """The contradiction gate that turns consensus episodes into re-prompt onsets.
+
+    The defaults are the consensus builder's own rules plus a majority size; a Track A
+    calibrated detector file carries the same keys and replaces them (`source: file`).
+    """
+
+    threshold_px: float = Field(gt=0)
+    agreement_px: float = Field(gt=0)
+    min_agreeing_static_views: int = Field(ge=2)
+    min_episode_frames: int = Field(ge=1)
+    merge_gap_frames: int = Field(ge=0)
+    min_run_frames: int = Field(ge=1)
+    source: Literal["default", "file"] = "default"
+    source_fingerprint: ArtifactFingerprint | None = None
+    description: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def require_fingerprint_for_files(self) -> MultiviewRepromptDetectorConfig:
+        if (self.source == "file") != (self.source_fingerprint is not None):
+            raise ValueError("a detector config read from a file must fingerprint that file")
+        return self
+
+
+class MultiviewRepromptPrompt(VersionedModel):
+    """One box prompt (plus negative points) for the target view at a contradiction onset."""
+
+    prompt_id: str = Field(pattern=r"^t\d{6}-b\d{2,}$")
+    target: str = Field(min_length=1)
+    variant: str = Field(min_length=1)
+    pixel_box: PixelBox
+    background_points: tuple[PixelPoint, ...] = ()
+    background_point_sources: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def require_one_source_per_point(self) -> MultiviewRepromptPrompt:
+        if len(self.background_point_sources) != len(self.background_points):
+            raise ValueError("every background point names what it marks")
+        return self
+
+
+class MultiviewContradictionOnset(VersionedModel):
+    """The first frame of a merged run where the target view contradicts the majority."""
+
+    target: str = Field(min_length=1)
+    onset_frame: int = Field(ge=1)
+    interval_end_frame_exclusive: int = Field(gt=0)
+    source_episodes: tuple[tuple[int, int], ...] = Field(min_length=1)
+    target_error_px: float = Field(ge=0)
+    max_target_error_px: float = Field(ge=0)
+    consensus_world_mm: tuple[float, float, float]
+    views_used: tuple[str, ...] = Field(min_length=2)
+    static_views_used: int = Field(ge=0)
+    view_error_px: dict[str, float] = Field(default_factory=dict)
+    radius_mm: float | None = Field(default=None, ge=0)
+    depth_mm: float | None = None
+    projected_centroid_proxy_px: tuple[float, float] | None = None
+    expected_area_px: float | None = Field(default=None, ge=0)
+    height_above_table_mm: float | None = None
+    prompts: tuple[MultiviewRepromptPrompt, ...] = ()
+    status: Literal["planned", "blocked"]
+    blocked_reason: str | None = None
+
+    @model_validator(mode="after")
+    def require_consistent_status(self) -> MultiviewContradictionOnset:
+        if self.status == "planned" and (not self.prompts or self.blocked_reason):
+            raise ValueError("a planned onset carries prompts and no blocked reason")
+        if self.status == "blocked" and (self.prompts or not self.blocked_reason):
+            raise ValueError("a blocked onset carries a reason and no prompts")
+        if self.interval_end_frame_exclusive <= self.onset_frame:
+            raise ValueError("an onset's interval ends after it starts")
+        return self
+
+
+class MultiviewRepromptPlan(VersionedModel):
+    """Geometric re-prompts for one target view, derived from a consensus run (CPU)."""
+
+    manifest_kind: Literal["multiview_reprompt_plan"]
+    target_view: str = Field(min_length=1)
+    target_view_id: str = Field(min_length=1)
+    iteration: int = Field(ge=1, le=MULTIVIEW_REPROMPT_MAX_ITERATIONS)
+    max_iterations: Literal[3] = MULTIVIEW_REPROMPT_MAX_ITERATIONS
+    previous_plan: ArtifactFingerprint | None = None
+    consensus_root_uri: str = Field(min_length=1)
+    consensus_manifest: ArtifactFingerprint
+    consensus_points: ArtifactFingerprint
+    consensus_includes_target_view: bool
+    consensus_reference_run_uri: str | None = None
+    reference_dependency_note: str = Field(min_length=1)
+    source_run_uri: str = Field(min_length=1)
+    source_run_manifest: ArtifactFingerprint
+    source_run_profile: Literal["four_part_static_focused", "four_part_multiview"]
+    source_schedule: ArtifactFingerprint | None = None
+    source_calibration_manifest: ArtifactFingerprint | None = None
+    source_geometric_seed_manifest: ArtifactFingerprint | None = None
+    source_checkpoint_frames: tuple[int, ...] = ()
+    source_correction_frames: tuple[int, ...] = ()
+    clip_config: ArtifactFingerprint
+    proxy: ArtifactFingerprint
+    proxy_dimensions: tuple[int, int]
+    proxy_to_raw_scale: float = Field(gt=0)
+    frame_count: int = Field(ge=1)
+    detector: MultiviewRepromptDetectorConfig
+    box_margins: tuple[float, ...] = Field(min_length=1)
+    hand_negatives: bool = False
+    onsets: tuple[MultiviewContradictionOnset, ...] = ()
+    selected_by: Literal["agent"] = "agent"
+    provenance: Literal["multiview_consensus"] = MULTIVIEW_CONSENSUS_PROVENANCE
+    claim_boundaries: tuple[str, ...] = Field(min_length=1)
+
+    @property
+    def planned_onsets(self) -> tuple[MultiviewContradictionOnset, ...]:
+        return tuple(onset for onset in self.onsets if onset.status == "planned")
+
+
+class RepromptCandidateScore(VersionedModel):
+    """One decoded mask and the geometric evidence the acceptance rule saw."""
+
+    prompt_id: str = Field(pattern=r"^t\d{6}-b\d{2,}$")
+    calibration_candidate_id: str | None = Field(default=None, pattern=r"^t\d{6}-b\d{2,}$")
+    candidate_index: int = Field(ge=0)
+    mask: ArtifactFingerprint
+    decoder_iou_estimate: float
+    mask_area_px: int = Field(ge=0)
+    area_ratio_vs_expected: float | None = Field(default=None, ge=0)
+    centroid_ray_distance_mm: float | None = Field(default=None, ge=0)
+    centroid_ray_distance_radii: float | None = Field(default=None, ge=0)
+    passed: bool
+    notes: tuple[str, ...] = ()
+
+
+class RepromptDecision(VersionedModel):
+    """Accept or reject, with every alternative, for one onset of one target."""
+
+    target: str = Field(min_length=1)
+    onset_frame: int = Field(ge=1)
+    decision: Literal["accepted", "rejected"]
+    reason: str = Field(min_length=1)
+    accepted: RepromptCandidateScore | None = None
+    candidates: tuple[RepromptCandidateScore, ...] = ()
+    selected_by: Literal["agent"] = "agent"
+    provenance: Literal["multiview_consensus"] = MULTIVIEW_CONSENSUS_PROVENANCE
+
+    @model_validator(mode="after")
+    def require_consistent_decision(self) -> RepromptDecision:
+        if (self.decision == "accepted") != (self.accepted is not None):
+            raise ValueError("an accepted decision names its candidate; a rejection names none")
+        if self.accepted is not None and not self.accepted.passed:
+            raise ValueError("an accepted candidate must pass the acceptance rule")
+        return self
+
+
+class MultiviewConsensusCorrectionProvenance(VersionedModel):
+    """Why one agent-authored mask sits in a derived correction schedule."""
+
+    candidate_id: str = Field(pattern=r"^t\d{6}-b\d{2,}$")
+    target: str = Field(min_length=1)
+    onset_frame: int = Field(ge=1)
+    iteration: int = Field(ge=1, le=MULTIVIEW_REPROMPT_MAX_ITERATIONS)
+    selected_by: Literal["agent"] = "agent"
+    provenance: Literal["multiview_consensus"] = MULTIVIEW_CONSENSUS_PROVENANCE
+    consensus_manifest: ArtifactFingerprint
+    consensus_includes_target_view: bool
+    consensus_reference_run_uri: str | None = None
+    reference_dependency_note: str = Field(min_length=1)
+    views_used: tuple[str, ...] = Field(min_length=2)
+    target_error_px: float = Field(ge=0)
+    accepted: RepromptCandidateScore
+    rejected_alternatives: tuple[RepromptCandidateScore, ...] = ()
+    mask: ArtifactFingerprint
+
+
+class MultiviewConsensusProvenanceFile(VersionedModel):
+    """Sidecar beside a derived calibration: every consensus correction it carries."""
+
+    manifest_kind: Literal["multiview_consensus_correction_provenance"]
+    derived_calibration_manifest: ArtifactFingerprint
+    carried_from: ArtifactFingerprint | None = None
+    corrections: tuple[MultiviewConsensusCorrectionProvenance, ...] = ()
+
+    @property
+    def candidate_ids(self) -> tuple[str, ...]:
+        return tuple(item.candidate_id for item in self.corrections)
+
+
+class MultiviewRepromptDecisions(VersionedModel):
+    """Output of `battle-multiview-reprompt decode`: decisions plus the derived schedules."""
+
+    manifest_kind: Literal["multiview_reprompt_decisions"]
+    plan: ArtifactFingerprint
+    target_view: str = Field(min_length=1)
+    iteration: int = Field(ge=1, le=MULTIVIEW_REPROMPT_MAX_ITERATIONS)
+    decode_state: Literal["decoded"]
+    decisions: tuple[RepromptDecision, ...] = ()
+    accepted_count: int = Field(ge=0)
+    rejected_count: int = Field(ge=0)
+    derived_calibration_manifest: ArtifactFingerprint | None = None
+    schedules: dict[str, ArtifactFingerprint] = Field(default_factory=dict)
+    schedule_blocked_reason: str | None = None
+    provenance_uri: str | None = None
+    correction_policy: ArtifactFingerprint | None = None
+    source_corrections_dropped_out_of_range: tuple[int, ...] = ()
+    runtime_seconds: float = Field(ge=0)
+    selected_by: Literal["agent"] = "agent"
+    provenance: Literal["multiview_consensus"] = MULTIVIEW_CONSENSUS_PROVENANCE
+    claim_boundaries: tuple[str, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def require_counts_to_match(self) -> MultiviewRepromptDecisions:
+        accepted = sum(d.decision == "accepted" for d in self.decisions)
+        if accepted != self.accepted_count or len(self.decisions) - accepted != self.rejected_count:
+            raise ValueError("decision counts must match the decisions listed")
+        if bool(self.schedules) == (self.schedule_blocked_reason is not None):
+            raise ValueError("either schedules were written or a reason says why not")
+        return self
+
+
+class MultiviewRepromptRunCommand(VersionedModel):
+    """The exact tracker command for one arm, as emitted by `battle-multiview-reprompt run`."""
+
+    arm: MultiviewRepromptArm
+    schedule: ArtifactFingerprint
+    mode: Literal["full_run", "checkpoint_resumed", "blocked"]
+    argv: tuple[str, ...] = Field(min_length=1)
+    resume_run_uri: str | None = None
+    resume_at: int | None = Field(default=None, ge=1)
+    resume_argv: tuple[str, ...] | None = None
+    later_correction_frames: tuple[int, ...] = ()
+    consensus_correction_frames: tuple[int, ...] = ()
+    dropped_human_correction_frames: tuple[int, ...] = ()
+    note: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def require_resume_fields_together(self) -> MultiviewRepromptRunCommand:
+        if (self.resume_run_uri is None) != (self.resume_at is None):
+            raise ValueError("a resume names both the prior run and the frame")
+        if self.mode == "checkpoint_resumed" and self.resume_at is None:
+            raise ValueError("a checkpoint-resumed command names where it resumes")
+        return self

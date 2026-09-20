@@ -3726,3 +3726,109 @@ this comparison makes no accuracy or cross-method identity claim.
   `runs/review-metrics-first-minute-v5/`, `runs/review-metrics-first-minute-v4-current/`, and the
   regenerated `runs/anchor-scoreboard-20260919/`. Plan todos `r-ensemble-v2` and `r-docs`
   completed; the extended experiments (E2-E9) stay pending.
+
+### Sep 20: detector scorecard against the 52 review anchors (Track A of the multicam plan)
+
+- **Claim boundary first.** Truth here is the human review anchors: 13 frames x 4 parts of one
+  view (C10379), review evidence and not ground truth. A cell is "failed" when the scored run's
+  anchor IoU is below 0.5 (a missing run mask is IoU 0) or, on the one hidden cell (1700,
+  rear_body), when the run has more than 300 px there (it does in every arm: the screwdriver).
+  Failure counts are **9 / 52** on `pm-append`, **14 / 52** on the old reference
+  (`off-r720-sched`, Sep 18) and **11 / 52** on `off-r1280-sched`; per class
+  (`occlusion_leak` = frames 300/370/400 in `[279,408)`; `rotation_swap` = 600/650/700 and
+  1050/1100/1150 in `[573,722)` / `[1020,1172)`; `distractor` = 1200/1500/1700; `outside` = 900)
+  the failures are 0 / 7 / 2 / 0, 0 / 9 / 5 / 0 and 0 / 8 / 3 / 0. So **no anchor cell fails
+  in the occlusion-leak window or at 900 on any of the three runs**: those classes have no
+  positives and every per-class AUROC / precision / recall there is undefined, reported as `-`.
+  No anchor frame lies in the 1235 correction region. Counts this small give wide intervals;
+  every table carries the counts (TP/FP/FN/TN), not only rates. CPU only; no GPU job ran.
+- **Tool.** `battle-detector-scorecard` (`src/battle/detector_scorecard.py`, tests
+  `tests/test_detector_scorecard.py`; schemas `DetectorScorecardManifest`,
+  `DetectorConfidenceRow`, `ProposedAnchorFrames` appended to `schemas.py`). Ten detectors, each
+  a per-frame per-part scalar from existing artifacts only (higher = more suspicious):
+  `sam3_score` = 1 - sigmoid(SAM3 `object_score`); `area_jump` = |area_t / median(area over the
+  previous 15 frames) - 1|; `area_vs_seed` = |log((area_t+1)/(area_0+1))|;
+  `tracker_disagreement_large` / `_tiny` = 1 - IoU with the `dam4sam-large-1024-sched-60s` /
+  `dam4sam-tiny-1024-sched-60s` mask on the same frame; `consensus_error_px` (C10379's error in
+  the eight-view consensus `per_frame`, 0 inside its own mask) and `consensus_contradicted`
+  (inside a majority-contradicting episode); `hull_disagreement` = 1 - hull-vs-mask IoU from
+  `hull_series.npz` and `hull_episode`; `overlap_other_parts` = fraction of the part's pixels
+  shared with another part's mask. Consensus and hull are undefined for the interior (no other
+  view tracks it) and where no hull exists: 13 and 18 of the 52 cells, excluded from those
+  detectors' counts. Each run is scored against the consensus / hull built on it
+  (`-r1280-pm-append`, `-r1280`, and the Sep 18 `first-minute` pair for the reference). Scoring:
+  rank AUROC (Mann-Whitney, ties half), precision / recall at the F1-maximising threshold and at
+  the highest threshold with recall >= 0.8, overall and per class; the combination is the mean
+  of the top-3 detectors' normalized ranks over the full 1800 x 4 series, scored in-sample and
+  leave-one-frame-out (top-3 and both thresholds chosen on 12 frames, the 13th scored, rotated).
+  36 s per run, ~21k mask decodes.
+- **Which detectors notice a failure** (overall AUROC on 52 cells; R>=0.8 point as
+  P / R (TP/FP/FN/TN)). `pm-append` (9 failed): `sam3_score` **0.960**, 0.62 / 0.89
+  (8/5/1/38); `area_vs_seed` 0.907, 0.50 / 0.89 (8/8/1/35); `area_jump` 0.866;
+  `tracker_disagreement_large` 0.848, 0.36 / 0.89 (8/14/1/29); `consensus_error_px` 0.832 on 39
+  cells, 0.50 / 0.80 (4/4/1/30); `tracker_disagreement_tiny` 0.819; `overlap_other_parts`
+  0.784; `hull_disagreement` 0.717 on 34 cells; the two episode booleans 0.585 / 0.575. Old
+  reference (14 failed): `hull_disagreement` **0.976** on 34 cells, 1.00 / 0.83 (5/0/1/28);
+  `sam3_score` 0.942, 0.75 / 0.86 (12/4/2/34); `area_vs_seed` 0.921, 0.75 / 0.86 (12/4/2/34);
+  `tracker_disagreement_tiny` 0.883; `consensus_error_px` 0.882 on 39 cells, 0.75 / 0.86
+  (6/2/1/30); `area_jump` 0.880; `consensus_contradicted` 0.842; `overlap_other_parts` 0.797;
+  `tracker_disagreement_large` 0.776; `hull_episode` 0.708. `off-r1280-sched` (11 failed):
+  `hull_disagreement` **0.983** on 34 cells, 0.67 / 1.00 (4/2/0/28); `sam3_score` 0.911,
+  0.56 / 0.82 (9/7/2/34); `area_vs_seed` 0.878; `tracker_disagreement_large` 0.831; `_tiny`
+  0.830; `hull_episode` 0.825; `consensus_error_px` 0.773; `area_jump` 0.772;
+  `consensus_contradicted` 0.735; `overlap_other_parts` 0.694. Reading: **SAM3's own object
+  score is the one detector that is top-2 on all three runs** (0.91-0.96) and the only one
+  defined on every cell; the seed-area drift is next (0.88-0.92). The hull disagreement is
+  near-perfect where it is defined on the two weaker runs but 0.72 on `pm-append`, and it is
+  blind to the interior, where 5 of `pm-append`'s 9 failures are. The consensus is a middling
+  detector here (0.77-0.88) and its episode boolean is weak (0.59-0.84): it fires on the
+  chassis in `[1049,1085)` but not on most anchor-visible failures. The DAM4SAM cross-tracker
+  check is 0.78-0.88 with 13-22 false positives at the recall floor: the two trackers disagree
+  in many places where the anchors say SAM3 is fine.
+- **Per class** (AUROC; classes with positives only). `rotation_swap` (24 cells): `pm-append`
+  `sam3_score` 0.98, `consensus_error_px` 0.98 (18 cells), `tracker_disagreement_large` 0.96,
+  `area_vs_seed` 0.91, `hull_disagreement` 0.64; reference `area_jump` 0.98, `hull_disagreement`
+  0.97, `consensus_error_px` 0.97, `tracker_disagreement_tiny` 0.96, `sam3_score` 0.92;
+  `off-r1280-sched` `hull_disagreement` 1.00, `hull_episode` 0.92, `tracker_disagreement_large`
+  0.90, `sam3_score` 0.87. `distractor` (12 cells, 2-5 failed): `hull_disagreement` 1.00 on all
+  three (8 cells; the rear_body screwdriver contradicts the hull), `sam3_score` 0.90 / 1.00 /
+  1.00, `area_vs_seed` 0.95 / 0.89 / 1.00, while the DAM4SAM disagreement is at or below chance
+  (0.35-0.80: DAM4SAM sits on the same screwdriver) and `overlap_other_parts` 0.37-0.57.
+- **Combined and the honest number.** Top-3 by AUROC: `pm-append` = `sam3_score`,
+  `area_vs_seed`, `area_jump`; reference and `off-r1280-sched` = `hull_disagreement`,
+  `sam3_score`, `area_vs_seed`. In-sample the rank-average scores AUROC 0.941 / 0.955 / 0.942
+  and, at its own R>=0.8 threshold, P / R 0.53 / 0.89 (8/7/1/36), 0.75 / 0.86 (12/4/2/34) and
+  0.75 / 0.82 (9/3/2/38). **Leave-one-frame-out** the same procedure gives pooled AUROC
+  0.835 / 0.927 / 0.885 and, at the recall-floor threshold chosen on the other 12 frames,
+  **P / R 0.36 / 0.44 (4/7/5/36), 0.62 / 0.57 (8/5/6/33) and 0.58 / 0.64 (7/5/4/36)**; at the
+  F1-max threshold 0.43 / 0.33, 0.53 / 0.57, 0.55 / 0.55. The ranking transfers (AUROC drops
+  0.03-0.11); the **threshold does not**: chosen at the lowest training positive it is brittle on
+  13 frames, and the in-sample recall of 0.82-0.89 falls to 0.44-0.64 held out. The detector
+  selection itself is stable (the same top-3 set in 9 / 11 / 11 of 13 folds). This is the number
+  Track B gates should be set from, not the in-sample one, and it says the detector today is a
+  ranker, not yet a calibrated gate.
+- **Confidence series.** `runs/detector-scorecard-20260920/<run>/confidence.jsonl` (7,200 rows =
+  1800 frames x 4 parts: every detector value, the combined suspicion, `confidence` = 1 -
+  suspicion, `abstain` = confidence <= the in-sample R>=0.8 point: 0.187 / 0.213 / 0.159),
+  `scorecard.{md,json}` and `confidence_timeline.png` (per part, anchor frames marked, red =
+  failed). Abstentions: `pm-append` 1,022 of 7,200 rows (chassis 277, interior 484, rear_body
+  261, cabin 0), reference 1,319, `off-r1280-sched` 833. The series is frame-noisy (no
+  smoothing); it is the raw input for a gate, not the gate.
+- **Proposed anchor frames for the human** (`pm-append/proposed_anchor_frames.json`; multiples
+  of 10, none within 20 frames of an existing anchor, proposals at least 20 apart, seed
+  20260920). Detector-ranked, by the most suspicious part: **220** interior (combined 0.99,
+  seed-area drift 2.06), **1750** rear_body (0.98, the screwdriver span), **480** chassis (0.96,
+  area jump 0.61; the consensus also contradicts `[475,494)`), **1540** rear_body (0.96),
+  **550** chassis (0.96), **500** interior (0.94), **1650** interior (0.93, SAM3 score 0.01),
+  **1730** rear_body (0.92). Random: **40, 80, 860, 1410, 1770**. The ranked frames test the
+  detectors' claims (three fall in the never-anchored `[475,560)` region where the consensus
+  flagged the chassis); the random ones test the detectors rather than confirm them. Mapping
+  these to other views is another worker's step.
+- **Not done / undefined.** No per-class threshold is meaningful with 2-9 positives; the per-class
+  tables use class-local thresholds and a second table shows every detector's per-class counts at
+  the overall threshold. `occlusion_leak` and `outside` have no failed cell on any run, so the
+  scorecard says nothing about detecting the 279-408 shape leak the human reported (the anchors
+  score those frames >= 0.5 on every arm). The 1235 region has no anchor. Interior cells have no
+  consensus or hull signal by construction until the other views track the interior (Track B).
+  Deliverables: the module, tests, schemas, this entry; run roots under
+  `runs/detector-scorecard-20260920/` (ignored).
