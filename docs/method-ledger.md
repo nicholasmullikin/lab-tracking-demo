@@ -3378,3 +3378,59 @@ this comparison makes no accuracy or cross-method identity claim.
   resolves into the snapshot and the SAM3 worker is spawned from the snapshot's
   `muggled_worker.py`, the SAM2 worker from its `four_part_video_worker.py`). Working-tree edits
   during the queue cannot reach a GPU job; each root's README names the snapshot commit.
+
+### Sep 19: SAM3 correction-memory arms on C10379 at 1280 (plan step 1b)
+
+- **Claim boundary first.** Six runs of the same tracker (MuggledSAM SAM3, `--max-side-length
+  1280`, policy off, the four-frame schedule `[327, 900, 1172, 1235]`) that change only the
+  memory-bank condition, scored against the 13-frame human review anchors on one view (review
+  evidence for ranking arms, not a dataset, not ground truth; arm means within ~0.02 do not
+  rank). No mask was reviewed. CC BY-NC 4.0. GPU: six queue jobs, one at a time, 03:26-04:07 UTC,
+  no `NVRM`/`Xid`; no viewer opened.
+- **Flags (commit `68d0b49`, the flags worker; unit tests only there, first GPU use here).**
+  `battle-muggled-smoke` / `muggled_worker.py` gained `--prompt-memory-semantics replace|append`
+  (`append` keeps the frame-0 seed and every correction in a prompt bank, default 32 entries,
+  `--max-prompt-memory`), `--keep-frame-memory-at-correction`, `--recent-first`, and
+  `--drop-correction-frame FRAME` (repeatable; the frame must be one the schedule corrects;
+  recorded as `cli_dropped_correction_frame_indices`). Defaults reproduce the earlier runs
+  exactly. Every manifest and `runtime_settings.json` now records `correction_memory_semantics`
+  (one of `replace|append_prompt_memory_and_reset|keep_frame_memory`),
+  `frame_memory_position_encoding` (`within_trained_range` for <= 6 frame memories,
+  `clamped_beyond_6` above; MuggledSAM's SAM3 clamps frame deltas past position 5) and a
+  `correction_memory_settings` record; checkpoints store the condition and a resume refuses a
+  checkpoint whose memory condition differs, while legacy checkpoints still resume into default
+  runs. The `recent-first` arm the plan listed was **dropped before running**
+  (`runs/sam3-memory-arms-20260919/jobs_recent_first_dropped.json`): the worker appends frame
+  memories oldest-first, so `is_recent_first=True` tells the fusion model the oldest entry is
+  the most recent and reverses the temporal position encoding instead of testing a memory
+  policy (`runtime_settings.is_recent_first_semantics` says so in every run).
+- **Runs** (`runs/sam3-memory-arms-20260919/`, `jobs_1_memory_arms.json` through
+  `scripts/overnight_queue.py`, `PYTHONPATH` on `code-snapshot-7380a9e/src`; provenance of the
+  first arm checked before the rest ran, and every arm's recorded semantics matches its flags).
+  All 1800/1800 frames, first output 4.2 s: `drop-900` (schedule 327 / 1172 / 1235) 327 s,
+  2.43 GiB, 7198 masks; `fm6` 342 s, 2.45 GiB; `pm-append` (append, 32, reset) 341 s, 2.54 GiB;
+  `pm-append-keepfm` (append, 32, keep) 342 s, 2.54 GiB; `pm-append-fm6` 355 s, 2.65 GiB, 7197
+  masks; `fm8` (`clamped_beyond_6`) 356 s, 2.55 GiB. Baseline `off-r1280-sched` (Sep 18) 348 s,
+  2.43 GiB. Two frame memories cost ~14 s and 0.02 GiB; the 32-entry prompt bank 0.11 GiB.
+- **Anchor IoU** (`battle-anchor-iou`; full table in the run README and in
+  `runs/anchor-scoreboard-20260919/anchor_iou.md`). Overall / `[279,408)` / `[573,722)` /
+  `[1020,1172)` / outside: `pm-append` **0.743** / 0.853 / 0.687 / 0.616 / 0.800;
+  `pm-append-keepfm` **0.743** / 0.854 / 0.687 / 0.618 / 0.800; `pm-append-fm6` 0.726 / 0.858 /
+  0.603 / 0.628 / 0.799; baseline `off-r1280-sched` 0.724 / 0.861 / 0.603 / 0.659 / 0.764; `fm6`
+  0.722 / 0.891 / 0.602 / 0.625 / 0.762; `fm8` 0.708 / 0.892 / 0.606 / 0.560 / 0.762; `drop-900`
+  0.691 / 0.861 / 0.603 / 0.628 / 0.677. 0 missing everywhere; hidden FP on (1700, rear_body)
+  1224-1265 px in every arm (the screwdriver). rear_body and cabin move by <= 0.02 in every arm.
+- **What moved, per cell.** `pm-append` (and `pm-append-keepfm`, within 0.01 of it on every
+  cell): chassis 700 0.00 -> 0.71 and 1150 0.51 -> 0.60, interior 650 0.46 -> 0.62, 700
+  0.20 -> 0.41 and 1200 0.00 -> 0.55; against chassis 1050 0.54 -> 0.00 and interior 370
+  0.64 -> 0.55. Keeping the frame memory at a correction changed nothing the anchors see. `fm6`
+  gains 370 (chassis 0.72 -> 0.88, interior 0.64 -> 0.85) and loses 1150 chassis 0.51 -> 0.15;
+  `fm8` adds chassis 1100 / 1150 0.44 / 0.51 -> 0.00 / 0.00 to that (the clamped arm empties the
+  window). `drop-900` is the baseline stream up to 900, then chassis 0.97 -> 0.32 and interior
+  0.84 -> 0.20 at 900 itself, chassis 1050 0.54 -> 0.07, 1100 0.44 -> 0.56.
+- **Reading.** Appending corrections to the prompt bank is the one memory change that moves
+  the mean past the 1280 baseline (+0.019, from `[573,722)` +0.08 and outside +0.04, at -0.04
+  inside `[1020,1172)`); the two append arms are tied. The 900-correction hypothesis is **not
+  confirmed at 1280**: dropping 900 lowers `[1020,1172)` (0.659 -> 0.628) and does not recover
+  the 720 seed-only number (~0.69) there. Frame memory 6 is neutral, 8 is worse. Nothing here
+  is adopted; the arms enter the scoreboard for the ensemble-v2 worker.
