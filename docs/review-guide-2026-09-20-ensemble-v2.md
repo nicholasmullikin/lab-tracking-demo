@@ -20,6 +20,14 @@ a candidate. Adopting it as the review reference is your disposition, not the ag
 rerun /home/nick/src/battle/runs/interaction-review-first-minute-v5/interaction_review_first_minute_v4.rrd
 ```
 
+From another computer on your tailnet: run `scripts/serve_review_over_tailscale.sh` here (it
+defaults to this recording and prints the connect command), and on the client run
+`scripts/rerun_client/install.sh` or `install.ps1` once, then
+`rerun --connect rerun+http://100.64.0.7:9876/proxy`. Use the native viewer, not the browser:
+the web viewer over plain http cannot decode the H.264 video (WebCodecs needs https), the native
+one decodes through a system `ffmpeg` >= 5.1 and must be the server's exact Rerun version
+(0.37.1). No authentication; the address is reachable inside the tailnet only.
+
 100 MB, all layers, built on `runs/ensemble-reference-first-minute-v2/` (policy
 `configs/ensemble_reference/first_minute_v2.json`) with the eight-view consensus rebuilt on the
 same primary run (`runs/multiview-part-consensus-first-minute-r1280-pm-append/`). The v4 package

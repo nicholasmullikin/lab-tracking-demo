@@ -1218,6 +1218,21 @@ the agent-proposed correction rows. What changed:
   `[0,1200)` for the other parts. Numbers against v4 and the frames to scrub are in
   [`docs/review-guide-2026-09-20-ensemble-v2.md`](docs/review-guide-2026-09-20-ensemble-v2.md).
 
+#### Reviewing a package from another computer (Tailscale, native viewer)
+
+`scripts/serve_review_over_tailscale.sh [recording.rrd]` runs `uv run rerun --serve-web` bound
+to this machine's Tailscale IPv4 (from `tailscale ip -4`, MagicDNS name from `tailscale status`;
+a clear error if tailscaled is down): web viewer on :9090, gRPC proxy on :9876, a 4GiB server
+buffer, CORS origins for both http URLs, and no authentication inside the tailnet. The web viewer
+loads but cannot decode the embedded H.264 over plain http (WebCodecs needs a secure context), so
+the client uses the **native** viewer: `scripts/rerun_client/install.sh` (macOS/Linux) or
+`install.ps1` (Windows) installs `uv`, `rerun-sdk==0.37.1` as a `uv tool` (the version must equal
+the server's `pyproject.toml` pin) and `ffmpeg` (Rerun decodes H.264 through a system `ffmpeg`
+>= 5.1 on PATH), then `connect.sh <server-ip>` opens
+`rerun --connect rerun+http://<server-ip>:9876/proxy`. `--https-port N` on the server script
+binds loopback for the `tailscale serve --bg --https=N` pattern used above by the calibration
+workspace. Details in [`scripts/rerun_client/README.md`](scripts/rerun_client/README.md).
+
 ##### Sep 17–18 follow-up: leak onset, 20 s hand layer, DAM4SAM first minute
 
 - **Leak-onset correction (not adopted).** Dense 1000-1180 evidence sheets show the black
