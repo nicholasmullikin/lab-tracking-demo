@@ -1176,6 +1176,16 @@ def main() -> None:
         help="Build without the dataset hand-pose layer and fine-grained labels.",
     )
     parser.add_argument(
+        "--multiview-consensus",
+        type=Path,
+        default=MULTIVIEW_CONSENSUS,
+        help=(
+            "Cross-view part consensus root from battle-build-multiview-part-consensus for the "
+            "assembly101_multiview layer; pick the build whose reference run is this package's "
+            "primary segmentation. The layer is skipped when the root has no manifest."
+        ),
+    )
+    parser.add_argument(
         "--verify-fingerprints",
         action="store_true",
         help="Re-read every input instead of trusting a digest cached against size and mtime.",
@@ -1205,6 +1215,7 @@ def main() -> None:
             assembly101_reference=(
                 None if args.no_assembly101_reference else args.assembly101_reference
             ),
+            multiview_consensus_root=args.multiview_consensus,
             verify_fingerprints=args.verify_fingerprints,
         )
     )
