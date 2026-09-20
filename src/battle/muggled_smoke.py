@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -2911,6 +2912,25 @@ def run_smoke(args: argparse.Namespace) -> Path:
     return run_directory
 
 
+CORE_METHOD_FAILED_EXIT_CODE = 3
+
+
+def core_method_failure(run_directory: Path) -> str | None:
+    """Blocker text when the run's core `objects` method recorded `failed`; None otherwise.
+
+    The manifest is written whether or not the worker survived, so a dead worker used to
+    leave a `failed` method status behind an exit code of 0, which a caller such as the
+    overnight queue read as success.
+    """
+    manifest = RunManifest.model_validate_json(
+        (run_directory / "manifest.json").read_text(encoding="utf-8")
+    )
+    for status in manifest.method_statuses:
+        if status.stage == "objects" and status.state is MethodState.FAILED:
+            return status.blocker or f"{status.method_name} failed"
+    return None
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Run a fixed headless SAM3 smoke or approved G3 candidate."
@@ -3178,6 +3198,10 @@ def main() -> None:
     except (OSError, ValueError, json.JSONDecodeError) as error:
         parser.error(str(error))
     print(f"Wrote MuggledSAM/SAM3 run: {run_directory}")
+    failure = core_method_failure(run_directory)
+    if failure is not None:
+        print(f"core method failed: {failure}", file=sys.stderr)
+        raise SystemExit(CORE_METHOD_FAILED_EXIT_CODE)
 
 
 if __name__ == "__main__":

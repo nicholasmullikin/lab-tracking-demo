@@ -9,9 +9,11 @@ from pathlib import Path
 
 import pytest
 
+from battle.fixtures import synthetic_run_manifest
 from battle.muggled_calibration import build_manifest, finalize_correction_schedule
 from battle.muggled_smoke import (
     CONCEPTS,
+    CORE_METHOD_FAILED_EXIT_CODE,
     E4_CANDIDATE_FRAMES,
     FOUR_PART_FOCUSED_FRAMES,
     FOUR_PART_FULL_FRAMES,
@@ -25,6 +27,7 @@ from battle.muggled_smoke import (
     _load_multi_keyframe_correction_schedule,
     _qa_method_name,
     _require_correction_frame_in_range,
+    core_method_failure,
     load_manual_seed_target_config,
     load_observations,
     load_text_target_config,
@@ -58,6 +61,8 @@ from battle.schemas import (
     ArtifactFingerprint,
     ChunkContinuityPolicy,
     G2PreprocessingManifest,
+    MethodState,
+    MethodStatus,
     MuggledSAMCalibrationCandidate,
     MuggledSAMEgoConditionConfig,
     MuggledSAMHybridInitializationConfig,
@@ -970,3 +975,65 @@ def test_correction_schedule_is_refused_on_a_clock_it_was_not_authored_against(
             proxy=types.SimpleNamespace(view_id="ego-hmc21179183"),
             analysis_fps=60.0,
         )
+
+
+def _write_manifest_with_objects_state(
+    run_directory: Path, state: MethodState, blocker: str | None = None
+) -> None:
+    fixture = synthetic_run_manifest()
+    statuses = tuple(
+        MethodStatus(
+            method_name="muggledsam-sam3-four-part-static-focused-reassembly",
+            stage="objects",
+            state=state,
+            blocker=blocker,
+        )
+        if status.stage == "objects"
+        else status
+        for status in fixture.method_statuses
+    )
+    manifest = fixture.model_copy(update={"method_statuses": statuses})
+    run_directory.mkdir(parents=True)
+    (run_directory / "manifest.json").write_text(manifest.model_dump_json(indent=2) + "\n")
+
+
+def test_core_method_failure_reads_only_the_objects_stage(tmp_path: Path) -> None:
+    ok = tmp_path / "ok"
+    _write_manifest_with_objects_state(ok, MethodState.SUCCEEDED)
+    assert core_method_failure(ok) is None
+
+    dead = tmp_path / "dead"
+    _write_manifest_with_objects_state(
+        dead, MethodState.FAILED, blocker="worker exited 1: NameError: name 'main' is not defined"
+    )
+    assert core_method_failure(dead) == "worker exited 1: NameError: name 'main' is not defined"
+
+    unnamed = tmp_path / "unnamed"
+    _write_manifest_with_objects_state(unnamed, MethodState.FAILED)
+    assert core_method_failure(unnamed) is not None
+
+
+def test_cli_exits_non_zero_when_the_core_method_recorded_failed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A dead worker leaves a written manifest behind; the queue must see a failure."""
+    import battle.muggled_smoke as smoke_module
+
+    argv = ["battle-muggled-smoke", "--view", "static-c10379", "--run-root", str(tmp_path)]
+    monkeypatch.setattr("sys.argv", argv)
+
+    dead = tmp_path / "dead-run"
+    _write_manifest_with_objects_state(dead, MethodState.FAILED, blocker="worker exited 1")
+    monkeypatch.setattr(smoke_module, "run_smoke", lambda _args: dead)
+    with pytest.raises(SystemExit) as exit_info:
+        smoke_module.main()
+    assert exit_info.value.code == CORE_METHOD_FAILED_EXIT_CODE
+    captured = capsys.readouterr()
+    assert f"Wrote MuggledSAM/SAM3 run: {dead}" in captured.out
+    assert "core method failed: worker exited 1" in captured.err
+
+    alive = tmp_path / "alive-run"
+    _write_manifest_with_objects_state(alive, MethodState.SUCCEEDED)
+    monkeypatch.setattr(smoke_module, "run_smoke", lambda _args: alive)
+    smoke_module.main()
+    assert f"Wrote MuggledSAM/SAM3 run: {alive}" in capsys.readouterr().out
