@@ -118,6 +118,9 @@ def test_apply_rule_ranks_by_ray_then_score_and_respects_pools() -> None:
     tie_a = _candidate("a", ray_radii=0.2, score=0.6)
     tie_b = _candidate("b", ray_radii=0.2, score=0.7)
     assert apply_rule(current_rule(), [tie_a, tie_b]) is tie_b
+    by_score = AcceptanceRuleSpec(name="g", ranking="score_then_ray")
+    assert apply_rule(by_score, [far_high_score, near_low_score]) is far_high_score
+    assert "decoder score then" in by_score.describe()
     assert apply_rule(current_rule(), [_candidate("x", ratio=5.0)]) is None
     variant = _candidate(
         "v", ray_radii=0.1, variant="consensus_sphere_box_margin_0.25|hand_negatives_dataset"
@@ -204,10 +207,11 @@ def test_leave_frames_out_picks_the_fit_winner_and_scores_held_frames() -> None:
 
 def test_grid_and_named_rules_are_the_documented_sizes() -> None:
     grid = rule_grid()
-    assert len(grid) == len(POOLS) * 6 * 4 * 3 * 2
+    assert len(grid) == len(POOLS) * 6 * 4 * 3 * 2 * 2
     assert len({r.name for r in grid}) == len(grid)
     named = named_rules()
     assert [r.name for r in named][:1] == ["a:current"]
+    assert sum(r.name.startswith("g:") for r in named) == 1
     assert sum(r.name.startswith("b:") for r in named) == 3
     assert sum(r.name.startswith("c:") for r in named) == 2
     assert sum(r.name.startswith("d:") for r in named) == 3

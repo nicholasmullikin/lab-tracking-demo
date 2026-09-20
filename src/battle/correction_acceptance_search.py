@@ -589,10 +589,17 @@ class AcceptanceRuleSpec(VersionedModel):
     max_hand_overlap: float = MAX_HAND_OVERLAP
     reject_other_part_overlap: bool = False
     max_other_part_overlap: float = MAX_OTHER_OVERLAP
-    ranking: Literal["ray_then_score"] = "ray_then_score"
+    # `ray_then_score` is the tool's ranking (closest centroid ray wins); `score_then_ray`
+    # takes the decoder's own top IoU estimate first and breaks ties by the ray.
+    ranking: Literal["ray_then_score", "score_then_ray"] = "ray_then_score"
 
     def describe(self) -> str:
         parts = [f"pool={self.pool}"]
+        parts.append(
+            "ranked by centroid ray then decoder score"
+            if self.ranking == "ray_then_score"
+            else "ranked by decoder score then centroid ray"
+        )
         if self.band_kind == "expected_area":
             parts.append(f"area in [{self.band_low}, {self.band_high}] x expected")
         else:
@@ -633,6 +640,7 @@ def named_rules() -> list[AcceptanceRuleSpec]:
     rules.append(
         AcceptanceRuleSpec(name="f:other_part_overlap<=0.3", reject_other_part_overlap=True)
     )
+    rules.append(AcceptanceRuleSpec(name="g:rank_by_decoder_score", ranking="score_then_ray"))
     for pool in POOLS[1:]:
         rules.append(current_rule(pool))
     return rules
@@ -656,25 +664,28 @@ def rule_grid() -> list[AcceptanceRuleSpec]:
             for floor in (None, *SCORE_FLOORS):
                 for hand in (None, "dataset", "wilor"):
                     for other in (False, True):
-                        name = "+".join(
-                            [
-                                pool,
-                                band_name,
-                                *([f"score>={floor}"] if floor is not None else []),
-                                *([f"hand_{hand}<=0.2"] if hand is not None else []),
-                                *(["other<=0.3"] if other else []),
-                            ]
-                        )
-                        grid.append(
-                            AcceptanceRuleSpec(
-                                name=name,
-                                pool=pool,
-                                min_decoder_score=floor,
-                                hand_rule=hand,
-                                reject_other_part_overlap=other,
-                                **band,
+                        for ranking in ("ray_then_score", "score_then_ray"):
+                            name = "+".join(
+                                [
+                                    pool,
+                                    band_name,
+                                    *([f"score>={floor}"] if floor is not None else []),
+                                    *([f"hand_{hand}<=0.2"] if hand is not None else []),
+                                    *(["other<=0.3"] if other else []),
+                                    *(["rank=score"] if ranking == "score_then_ray" else []),
+                                ]
                             )
-                        )
+                            grid.append(
+                                AcceptanceRuleSpec(
+                                    name=name,
+                                    pool=pool,
+                                    min_decoder_score=floor,
+                                    hand_rule=hand,
+                                    reject_other_part_overlap=other,
+                                    ranking=ranking,
+                                    **band,
+                                )
+                            )
     return grid
 
 
@@ -765,10 +776,15 @@ def candidate_passes(rule: AcceptanceRuleSpec, c: CandidateRecord) -> tuple[bool
 def apply_rule(
     rule: AcceptanceRuleSpec, candidates: Sequence[CandidateRecord]
 ) -> CandidateRecord | None:
-    """The accepted candidate under `rule` (ranked by ray distance, then decoder score)."""
+    """The accepted candidate under `rule` (see `AcceptanceRuleSpec.ranking`)."""
     passing = [c for c in candidates if c.in_pool(rule.pool) and candidate_passes(rule, c)[0]]
     if not passing:
         return None
+    if rule.ranking == "score_then_ray":
+        return min(
+            passing,
+            key=lambda c: (-c.decoder_score, c.ray_mm if c.ray_mm is not None else np.inf),
+        )
     return min(
         passing, key=lambda c: (c.ray_mm if c.ray_mm is not None else np.inf, -c.decoder_score)
     )
@@ -976,10 +992,37 @@ class LeaveFramesOut(VersionedModel):
     held_out_per_frame: dict[str, dict[str, float | None]]
 
 
+class OracleSummary(VersionedModel):
+    """The best candidate in a pool per cell: the ceiling any acceptance rule can reach."""
+
+    pool: str
+    mean_best_iou_all_cells: float
+    mean_best_iou_anchor_cells: float
+    cells_with_best_iou_ge_bar: int
+    best_iou_per_frame: dict[str, float]
+
+
+def oracle_summary(cells: Sequence[Cell], anchor_frames: Sequence[int], pool: str) -> OracleSummary:
+    anchors = set(anchor_frames)
+    best: dict[int, float] = {}
+    for cell in cells:
+        pool_candidates = [c for c in cell.candidates if c.in_pool(pool)]
+        best[cell.frame] = max((c.iou_vs_truth for c in pool_candidates), default=0.0)
+    anchor_values = [v for f, v in best.items() if f in anchors]
+    return OracleSummary(
+        pool=pool,
+        mean_best_iou_all_cells=float(np.mean(list(best.values()))) if best else 0.0,
+        mean_best_iou_anchor_cells=float(np.mean(anchor_values)) if anchor_values else 0.0,
+        cells_with_best_iou_ge_bar=sum(1 for v in best.values() if v >= BAR_IOU),
+        best_iou_per_frame={str(f): round(v, 3) for f, v in sorted(best.items())},
+    )
+
+
 class PartReport(VersionedModel):
     part: str
     cells: int
     anchor_cells: int
+    oracle: tuple[OracleSummary, ...] = ()
     named_rules: tuple[RuleRow, ...]
     grid_size: int
     chosen_rule: AcceptanceRuleSpec
@@ -1110,6 +1153,9 @@ def score_search(
             part=part,
             cells=len(part_cells),
             anchor_cells=sum(1 for c in part_cells if c.frame in anchors),
+            oracle=tuple(
+                oracle_summary(part_cells, plan.anchor_frames, pool) for pool in ("base", "all")
+            ),
             named_rules=tuple(_rows(named, part_cells, plan.anchor_frames)),
             grid_size=len(grid),
             chosen_rule=chosen,
@@ -1190,6 +1236,14 @@ def search_table(report: SearchReport) -> str:
     ]
     for part, p in report.parts.items():
         lines.append(f"## {part} ({p.cells} cells, {p.anchor_cells} on anchor frames)")
+        lines.append("")
+        for o in p.oracle:
+            lines.append(
+                f"Oracle ceiling, pool `{o.pool}` (best candidate per cell): mean IoU "
+                f"{o.mean_best_iou_all_cells:.3f} all cells / {o.mean_best_iou_anchor_cells:.3f} "
+                f"anchor cells; {o.cells_with_best_iou_ge_bar}/{p.cells} cells have any candidate "
+                f">= {BAR_IOU}."
+            )
         lines.append("")
         lines.append(
             "| rule | all cells: IoU \\| accept \\| harm | anchor cells: IoU \\| accept \\| harm |"
