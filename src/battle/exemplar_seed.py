@@ -865,6 +865,73 @@ class ConsistencyResult(VersionedModel):
     margin: dict[str, float] = Field(default_factory=dict)
     chosen: dict[str, str] = Field(default_factory=dict)
     height_above_table_mm: float | None = None
+    # Views whose pick was not among the consistency supporters but was chosen afterwards as
+    # the candidate nearest the reprojected multi-view point (geometry says where).
+    completed_views: tuple[str, ...] = ()
+
+
+def complete_from_point(
+    rig: CameraRig,
+    part: str,
+    result: ConsistencyResult,
+    per_view: Mapping[str, Sequence[Candidate]],
+    *,
+    used_keys: set[str] | None = None,
+) -> ConsistencyResult:
+    """Pick the part in the views that did not support the consistent point.
+
+    Once >= 3 views have fixed a 3D point, the remaining views get the candidate whose centroid
+    reprojects within the same 30 raw px of it with a radius in band (highest part similarity
+    among those); this is the Sep 18 geometric-transfer rule applied to the point the cameras
+    agreed on, and it is recorded as a completion, not as consistency evidence.
+    """
+    if not result.reached or result.world_point_mm is None or result.median_radius_mm is None:
+        return result
+    used_keys = used_keys or set()
+    point = np.asarray(result.world_point_mm)
+    chosen = dict(result.chosen)
+    reprojection = dict(result.reprojection_px)
+    radii = dict(result.radius_mm)
+    similarity = dict(result.similarity)
+    margin = dict(result.margin)
+    completed: list[str] = []
+    for view, candidates in per_view.items():
+        if view in chosen:
+            continue
+        projected = rig.project(view, point.reshape(1, 3))[0]
+        best: tuple[Candidate, float] | None = None
+        for candidate in candidates:
+            if candidate.key in used_keys or candidate.similarity.get(part, -1) <= -1:
+                continue
+            error = float(np.linalg.norm(projected - candidate.centroid_raw))
+            if error > CONSISTENCY_MAX_RAW_PX:
+                continue
+            if not (
+                RADIUS_BAND[0] * result.median_radius_mm
+                <= candidate.radius_mm
+                <= RADIUS_BAND[1] * result.median_radius_mm
+            ):
+                continue
+            if best is None or candidate.similarity[part] > best[0].similarity[part]:
+                best = (candidate, error)
+        if best is None:
+            continue
+        chosen[view] = best[0].key
+        reprojection[view] = best[1]
+        radii[view] = best[0].radius_mm
+        similarity[view] = best[0].similarity[part]
+        margin[view] = _margin(best[0], part)
+        completed.append(view)
+    return result.model_copy(
+        update={
+            "chosen": chosen,
+            "reprojection_px": reprojection,
+            "radius_mm": radii,
+            "similarity": similarity,
+            "margin": margin,
+            "completed_views": tuple(completed),
+        }
+    )
 
 
 def _margin(candidate: Candidate, part: str) -> float:
@@ -886,7 +953,7 @@ def find_consistent_part(
 
     Every pair of candidates from two views proposes a 3D point; the views whose best candidate
     (highest part similarity among those reprojecting within 30 raw px) supports it are counted;
-    the hypothesis with the most supporting views wins, ties broken by summed similarity. Needs
+    the hypothesis with the largest summed similarity over its in-band supporters wins. Needs
     >= 3 views, a point at least 60 mm from already-placed parts, and per-view radii within
     [0.5, 2.0] x their median.
     """
@@ -907,7 +974,7 @@ def find_consistent_part(
             reason=f"only {len(views)} views have ranked candidates (< {CONSISTENCY_MIN_VIEWS})",
         )
     best: ConsistencyResult | None = None
-    best_score = (-1, -np.inf)
+    best_score = (-np.inf, -1)
     for a, b in itertools.combinations(views, 2):
         for ca in shortlist[a]:
             for cb in shortlist[b]:
@@ -957,7 +1024,9 @@ def find_consistent_part(
                 ]
                 if len(in_band) < CONSISTENCY_MIN_VIEWS:
                     continue
-                score = (len(in_band), sum(supporters[v].similarity[part] for v in in_band))
+                # Summed similarity over the in-band supporters: more agreeing views help,
+                # but a lower-similarity object seen by one more camera does not beat the part.
+                score = (sum(supporters[v].similarity[part] for v in in_band), len(in_band))
                 if score > best_score:
                     best_score = score
                     reprojection = {
@@ -1099,12 +1168,19 @@ def accept(
         result = find_consistent_part(
             rig, plane, part, per_view, excluded_points=placed, used_keys=used_keys
         )
-        results[part] = result
         if result.reached and result.world_point_mm is not None:
+            result = complete_from_point(rig, part, result, per_view, used_keys=used_keys)
             placed.append(np.asarray(result.world_point_mm))
             used_keys.update(result.chosen.values())
+        results[part] = result
         print(
-            f"{part}: {'consistent' if result.reached else 'BLOCKED'} - {result.reason}", flush=True
+            f"{part}: {'consistent' if result.reached else 'BLOCKED'} - {result.reason}"
+            + (
+                f"; completed by reprojection in {sorted(result.completed_views)}"
+                if result.completed_views
+                else ""
+            ),
+            flush=True,
         )
 
     # Seed-window clip config (the run's proxies start at the seed frame) for the manifests.
@@ -1199,11 +1275,27 @@ def accept(
                     decoder_iou_estimate=c.decoder_iou,
                     mask_area_px=c.area_px,
                     sanity_pass=c is chosen,
-                    acceptance_basis="exemplar_multiview_consistency" if c is chosen else None,
+                    acceptance_basis=(
+                        (
+                            "centroid_ray"
+                            if view in result.completed_views
+                            else "exemplar_multiview_consistency"
+                        )
+                        if c is chosen
+                        else None
+                    ),
                     sanity_notes=(
                         f"exemplar similarity {c.similarity[part]:.3f}, "
                         f"margin {_margin(c, part):+.3f}",
                         f"implied radius {c.radius_mm:.0f} mm at depth {c.depth_mm:.0f} mm",
+                        *(
+                            (
+                                "completion: nearest candidate to the reprojected multi-view "
+                                "point, not a consistency supporter",
+                            )
+                            if c is chosen and view in result.completed_views
+                            else ()
+                        ),
                     ),
                     consistency_views_used=result.views_used if c is chosen else None,
                     consistency_reprojection_px=(
@@ -1351,9 +1443,9 @@ def seed_table(report: ExemplarSeedReport) -> str:
         f"# Exemplar seeding on {report.recording}, seed frame {report.seed_frame} "
         "(agent-selected; review evidence, not ground truth)",
         "",
-        "| part | rec-1 held-out IoU | gate | consistency | views | reprojection px | radius mm | "
-        "similarity (min-max) | margin (min-max) | used as seed |",
-        "|---|---|---|---|---|---|---|---|---|---|",
+        "| part | rec-1 held-out IoU | gate | consistency | views | completed views | "
+        "reprojection px | radius mm | similarity (min-max) | margin (min-max) | used as seed |",
+        "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for result in report.consistency:
         gate = "pass" if report.rec1_held_out_iou[result.part] >= report.seed_gate_iou else "FAIL"
@@ -1364,6 +1456,7 @@ def seed_table(report: ExemplarSeedReport) -> str:
         lines.append(
             f"| {result.part} | {report.rec1_held_out_iou[result.part]:.3f} | {gate} | "
             f"{'reached' if result.reached else 'BLOCKED'} | {len(result.views_used)} | "
+            f"{len(result.completed_views)} | "
             f"{(f'{min(reproj):.1f}-{max(reproj):.1f}' if reproj else '-')} | "
             f"{(f'{min(radii):.0f}-{max(radii):.0f}' if radii else '-')} | "
             f"{(f'{min(sims):.3f}-{max(sims):.3f}' if sims else '-')} | "
