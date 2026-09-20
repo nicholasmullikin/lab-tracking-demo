@@ -3002,9 +3002,125 @@ this comparison makes no accuracy or cross-method identity claim.
   passed, `real_data` 38 passed. Ruff clean.
 - **Not done, by instruction.** The anchor-frame labelling set-up (`x-anchor-setup`) and the
   labels themselves; no reference was swapped; the v4 package and the contact eligibility are
-  unchanged. (The set-up followed in the next section; the labels are still the human's.)
+  unchanged. (The set-up followed in the next section; the labels were made Sep 19 and scored
+  in the subsection below.)
 
-### Sep 18: human review anchors (labeling run prepared, not labelled)
+#### Anchor IoU (human, Sep 19): the anchors do not support the candidate
+
+- **Claim boundary first.** 13 human review anchors on one view (`static-c10379`, focused first
+  minute), 51 accepted SAM3 image-decoder masks and one hidden mark, chosen by one person in one
+  36-minute session. They rank arms against each other on those 52 cells; they are not a
+  dataset, not ground truth and not accuracy. Every IoU below is between a tracker mask and a
+  human-chosen decoder mask whose boundary is the decoder's. At the human's own correction frame
+  900 the reference and the anchors agree 0.97 / 0.84 / 0.82 / 0.97 (chassis / interior /
+  rear_body / cabin); that is about the noise between two SAM3 masks the same person picked on
+  different days, so per-cell differences under ~0.15, and arm means within ~0.02, are not a
+  ranking. CC BY-NC 4.0 covers the frames and everything derived from them. No GPU work: the
+  scorer reads PNGs. The calibration server the human used was left running (Tailscale bind,
+  pid noted in the session), untouched.
+- **Completeness.** 52 / 52 cells answered (`n/52 done` in the workspace): 51 accepted masks
+  and one hidden mark, rear_body at frame 1700. On the three `hidden_prompt` interior cells
+  (1050, 1100, 1150) the human accepted a mask (698, 1546, 4161 px), i.e. judged the interior
+  visible. Two decoder candidates were rejected before re-prompting (chassis 300, chassis 650);
+  the 32 "pending boxes" in the workspace are the drawn prompts of already-decoded candidates,
+  nothing outstanding. Exported with `battle-anchor-export export`: 51 labeled / 1 hidden / 0
+  unlabeled into `runs/human-review-anchors-first-minute/anchors/` and the committed decision
+  record `docs/qa/first-minute-review-anchors.human-record.json` (author = the git identity,
+  `reviewed_at` 2026-09-20T00:45:30Z = the manifest's last autosave; the workspace stores no
+  per-acceptance timestamps). `configs/qa/first_minute_review_anchors.json` carries the same
+  provenance; the test that compared the committed config with the builder now compares
+  everything but provenance and requires provenance to be filled.
+- **Scoring.** `battle-anchor-iou` over the 12 arms, the reference, `ensemble-reference-first-minute-v1`
+  and `dam4sam-four-part-reviewed-seed-60s-20260918t005416z` ->
+  `runs/sam3-policy-ablation-20260918/anchor_iou.{json,md}`. The scorer gained an `outside`
+  window mean (anchor frames in no window: 900, 1200, 1500, 1700) and `--sheet`, which renders
+  `anchors_vs_reference_vs_best.png` (rows = 13 frames, columns = human anchors | reference |
+  best arm, per-part IoU under each run tile) through `policy_ablation`'s crop / tile / grid
+  helpers. Built-in check passed: `off-r720-sched` and `reference` are identical on all 52
+  cells. No run mask needed resizing.
+
+  | arm | IoU ch | IoU in | IoU rb | IoU cab | IoU all | 279-408 | 573-722 | 1020-1172 | outside | missing | hidden FP px |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | **xg-r1280-sched** | 0.602 | 0.525 | 0.827 | 0.964 | **0.728** | 0.888 | 0.620 | 0.590 | 0.796 | 0 | 1224 |
+  | off-r1280-sched | 0.608 | 0.540 | 0.789 | 0.964 | 0.724 | 0.861 | 0.603 | 0.659 | 0.764 | 0 | 1228 |
+  | dam4sam-60s | 0.649 | 0.436 | 0.833 | 0.959 | 0.717 | 0.811 | 0.648 | 0.713 | 0.700 | 0 | 1236 |
+  | off-r1008-sched | 0.544 | 0.518 | 0.798 | 0.968 | 0.705 | 0.866 | 0.607 | 0.554 | 0.775 | 0 | 1235 |
+  | xg-r1008-sched | 0.500 | 0.498 | 0.798 | 0.968 | 0.689 | 0.866 | 0.573 | 0.534 | 0.764 | 0 | 1232 |
+  | ensemble-reference-v1 | 0.621 | 0.375 | 0.775 | 0.960 | 0.681 | 0.824 | 0.628 | 0.586 | 0.684 | 3 | 1306 |
+  | x-r720-sched | 0.576 | 0.406 | 0.773 | 0.960 | 0.677 | 0.825 | 0.597 | 0.597 | 0.686 | 0 | 1307 |
+  | g-r720-seed0 | 0.470 | 0.488 | 0.771 | 0.960 | 0.670 | 0.637 | 0.639 | 0.692 | 0.705 | 0 | 1283 |
+  | off-r720-sched = reference | 0.520 | 0.427 | 0.775 | 0.960 | 0.668 | 0.824 | 0.628 | 0.533 | 0.684 | 0 | 1306 |
+  | g-r720-sched | 0.495 | 0.427 | 0.775 | 0.960 | 0.662 | 0.824 | 0.600 | 0.533 | 0.685 | 0 | 1308 |
+  | xg-r720-sched (CANDIDATE) | 0.494 | 0.421 | 0.774 | 0.960 | 0.660 | 0.825 | 0.589 | 0.532 | 0.687 | 0 | 1309 |
+  | off-r720-seed0 | 0.427 | 0.384 | 0.766 | 0.960 | 0.632 | 0.624 | 0.618 | 0.695 | 0.598 | 0 | 1310 |
+  | x-r720-seed0 | 0.404 | 0.333 | 0.765 | 0.960 | 0.613 | 0.624 | 0.631 | 0.692 | 0.526 | 0 | 1302 |
+  | xg-r720-seed0 | 0.387 | 0.338 | 0.766 | 0.960 | 0.610 | 0.597 | 0.640 | 0.695 | 0.529 | 1 | 1303 |
+
+- **The reference against the human, per frame** (chassis / interior / rear_body / cabin):
+  300 0.75 / 0.79 / 0.80 / 0.96; 370 0.72 / 0.52 / 0.86 / 0.97; 400 0.95 / 0.74 / 0.87 / 0.97;
+  600 **0.27** / 0.54 / 0.88 / 0.98; 650 0.51 / 0.58 / 0.81 / 0.96; 700 **0.00** / **0.20** /
+  0.83 / 0.98; 900 0.97 / 0.84 / 0.82 / 0.97; 1050 **0.27** / **0.14** / 0.81 / 0.97; 1100
+  **0.00** / **0.15** / 0.87 / 0.96; 1150 **0.00** / **0.40** / 0.87 / 0.96; 1200 0.86 / **0.27**
+  / 0.88 / 0.96; 1500 0.81 / **0.10** / **0.00** / 0.87; 1700 0.65 / **0.30** / FP 1306 px /
+  0.97. The area ratios say what happened: in `[573,722)` and `[1020,1172)` the reference's
+  interior mask is 2.4-6.8x the human's and its chassis 0.09-0.55x, i.e. the interior slot is on
+  the part the human called chassis (the reported swap, now measured; visible in the sheet). The
+  1172 agent correction restored the chassis by 1200 (0.86) but not the interior (0.27); at 1150,
+  22 frames before it, the chassis is still 0.00. Late in the minute the reference's interior is
+  a third of the human's (1500, 1700) and its rear_body at 1500 is disjoint from the human's
+  588 px. Cabin 0.87-0.98 and rear_body 0.80-0.88 outside 1500 / 1700 are stable in every arm.
+  The one hidden mark (rear_body 1700) is contradicted by all 15 runs, which put 1.2-1.3k px on
+  the same yellow piece in the raised hand; the human may want a second look at that cell (the
+  export and scorer are re-runnable; the record would change).
+- **What each arm changed on the anchor cells** (|IoU| >= 0.05 against the reference).
+  `xg-r720-sched`: 650 chassis 0.51 -> 0.17 (0.25x the human's area), 650 interior 0.58 -> 0.45,
+  1500 interior 0.10 -> 0.15, nothing else; the `[1020,1172)` swap is untouched (chassis 0.27 /
+  0.00 / 0.00 in both). `g-r720-sched`: 600 interior +0.10, 650 chassis and interior as `xg`.
+  `x-r720-sched`: 1100 / 1150 chassis 0.00 -> 0.61 / 0.48 and 1100 interior +0.12, against 1150
+  interior 0.40 -> 0.00 and the same 650 chassis loss: exclusivity alone moved the swap window
+  toward the human and the gate undid it. Frame-0-only arms lose chassis 370 / 400 / 900
+  (0.00-0.21; the 327 and 900 corrections are needed) but have chassis 0.87 / 0.52 at
+  1100 / 1150 where the reference has 0.00; `g-r720-seed0`, called starved label-free (53 % /
+  34 % gated), has the best outside-window score of any 720 arm (interior 1200 / 1500 / 1700
+  0.89 / 0.73 / 0.68 vs 0.27 / 0.10 / 0.30). 1008 and 1280 gain at 300-400 (interior and
+  rear_body +0.06-0.13), at 1500 / 1700 (chassis 0.88-0.94, interior 0.62-0.91) and, at 1280,
+  chassis 1050 / 1100 / 1150 0.53 / 0.31-0.44 / 0.51; they lose 1200 interior (0.27 -> 0.00, all
+  four) and, for the two `xg`, 600 chassis (0.27 -> 0.00). `ensemble-reference-v1` has no
+  interior at 1050 / 1100 / 1150 (3 missing) and chassis 0.79 / 0.52 at 1100 / 1150.
+  `dam4sam-60s`: chassis 700 / 1100 / 1150 / 1700 0.64 / 0.79 / 0.52 / 0.84 and rear_body 1500
+  0.48, but interior 900 / 1050 0.02 / 0.00.
+- **Ranking, and agreement with the label-free ranking.** `xg-r1280-sched` 0.728 >
+  `off-r1280-sched` 0.724 > `dam4sam-60s` 0.717 > `off-r1008-sched` 0.705 > `xg-r1008-sched`
+  0.689 > `ensemble-reference-v1` 0.681 > `x-r720-sched` 0.677 > `g-r720-seed0` 0.670 > reference
+  0.668 > `g-r720-sched` 0.662 > `xg-r720-sched` 0.660 > `off-r720-seed0` 0.632 > `x-r720-seed0`
+  0.613 > `xg-r720-seed0` 0.610. The four 720 schedule arms are within 0.017 (no ranking among
+  them), and the direction is against the candidate. The anchors **disagree with the
+  self-consistency proxies** (fewest swap episodes, no starved slot and highest IoU-with-
+  reference picked `xg`; the "starved" `g-seed0` scores above it), **agree with the consensus /
+  hull direction** (the eight-view `xg` pass contradicted the C10379 chassis on more frames and
+  took the `[573,722)` hull IoU to 0.00; the anchors find no gain there either), and **reverse
+  the resolution rule**: 720 was kept because 1008 / 1280 opened disagreement episodes outside
+  the windows, and the anchors at 1500 / 1700 say those episodes were the higher resolutions
+  being right about the interior (0.62-0.91 vs 0.10 / 0.30) and the chassis (0.88-0.94 vs
+  0.81 / 0.65).
+- **Decision on the CANDIDATE: do not adopt `xg-r720-sched`.** 0.660 vs 0.668 overall; windows
+  0.825 / 0.589 / 0.532 vs 0.824 / 0.628 / 0.533; it fixed neither swap window and made frame 650
+  worse. The 13 anchors settle the Sep 18 ambiguity ("fix or a different failure") as "no change
+  in `[1020,1172)`, a different failure at 650". What the anchors put forward instead is the
+  1280 px encoder side (`off-` or `xg-r1280-sched`: +0.06 overall, +0.11 outside the windows,
+  2.8x the runtime), still only 0.59-0.66 inside the two swap windows, with DAM4SAM within 0.01
+  of it and best inside the windows. Neither is adopted; a reference swap needs the seven-view
+  and full-clip evidence, not 13 frames of one view.
+- **Deliverables.** `runs/sam3-policy-ablation-20260918/{anchor_iou.json,anchor_iou.md,anchors_vs_reference_vs_best.png}`,
+  `runs/human-review-anchors-first-minute/anchors/` (51 PNGs + `anchor_masks.json`), the README
+  section "Anchor IoU (human), Sep 19" in the ablation run, the signed
+  `docs/qa/first-minute-review-anchors.human-record.json` (tracked; the masks are not).
+- **Tests.** `tests/test_review_anchors.py`: the config test compares everything but provenance
+  and requires it filled; the table test covers the `outside` column and the sheet renderer on
+  synthetic frames; new default-tier test that the committed record is signed with 51 / 1 / 0
+  and the hidden cell is (1700, rear_body). Counts in the commit message.
+
+### Sep 18: human review anchors (labeling run prepared, not labelled Sep 18; labelled Sep 19)
 
 - **Claim boundary first.** Nothing in this section is a label. The agent prepared a labelling
   session and the tooling around it; no mask was drawn, accepted or marked hidden, and the

@@ -50,7 +50,11 @@ def _square(shape: tuple[int, int], x0: int, y0: int, size: int) -> np.ndarray:
 
 def test_committed_anchor_config_is_the_thirteen_frame_list() -> None:
     config = load_config(CONFIG)
-    assert config == build_first_minute_config()
+    # The builder leaves provenance null; the committed file carries the human's, filled in
+    # after the Sep 19 labelling session. Everything else must still match the builder.
+    assert config.model_copy(update={"provenance": ReviewAnchorProvenance()}) == (
+        build_first_minute_config()
+    )
     frames = tuple(frame.analysis_frame_index for frame in config.frames)
     assert frames == (300, 370, 400, 600, 650, 700, 900, 1050, 1100, 1150, 1200, 1500, 1700)
     assert config.targets == TARGETS
@@ -66,7 +70,8 @@ def test_committed_anchor_config_is_the_thirteen_frame_list() -> None:
     assert config.anchor_kind == "human_review_anchor"
     assert "not a dataset" in config.claim_boundary and "not ground truth" in config.claim_boundary
     assert "CC BY-NC 4.0" in config.license
-    assert config.provenance.author is None and config.provenance.reviewed_at is None
+    assert config.provenance.author and config.provenance.reviewed_at is not None
+    assert config.provenance.tool == "battle-muggled-calibration-web"
 
 
 def test_anchor_config_rejects_inconsistent_clocks_and_hidden_prompts() -> None:
@@ -272,7 +277,8 @@ def test_score_runs_over_synthetic_arms_and_markdown_table(tmp_path: Path) -> No
     good = by_name["perfect"]
     assert good.mean_iou == 1.0
     assert good.mean_iou_by_target == {t: 1.0 for t in TARGETS if t != "cabin"} | {"cabin": 1.0}
-    assert good.mean_iou_by_window == {"279-408": 1.0, "1020-1172": 1.0}
+    # Both synthetic frames sit inside a window, so the outside mean has nothing to average.
+    assert good.mean_iou_by_window == {"279-408": 1.0, "1020-1172": 1.0, "outside": None}
     assert good.counts == {
         "scored": 6,
         "run_mask_missing": 0,
@@ -292,16 +298,48 @@ def test_score_runs_over_synthetic_arms_and_markdown_table(tmp_path: Path) -> No
 
     table = markdown_table(report)
     assert table.splitlines()[0].startswith("| arm | IoU chassis | IoU interior |")
-    assert (
-        "| perfect | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 0 | 0 (0) | 6 / 1 |"
-        in table
-    )
+    assert "| IoU 279-408 | IoU 1020-1172 | IoU outside |" in table.splitlines()[0]
+    perfect_row = "| perfect | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | - | 0 |"
+    assert (perfect_row + " 0 (0) | 6 / 1 |") in table
     assert "| leaky |" in table and "1 (25)" in table
     assert "6 labeled, 1 hidden, 1 unlabeled" in table
 
     payload = json.loads(report.model_dump_json())
     assert payload["manifest_kind"] == "human_review_anchor_iou"
     assert payload["anchor_kind"] == "human_review_anchor"
+
+    # The contact sheet: rows = anchor frames, columns = anchors | reference | best arm.
+    mask_set, anchors_root = review_anchors.load_mask_set(anchors_root)
+    frames_bgr = {frame: np.full((*shape, 3), 90, dtype=np.uint8) for frame in mask_set.frames}
+    sheet = review_anchors.render_anchor_sheet(
+        report=report,
+        mask_set=mask_set,
+        anchors_root=anchors_root,
+        frames_bgr=frames_bgr,
+        reference_name="leaky",
+        reference_directory=Path(by_name["leaky"].run_directory),
+        best_name="perfect",
+        best_directory=Path(by_name["perfect"].run_directory),
+        output_path=tmp_path / "out" / "sheet.png",
+        tile_width=128,
+    )
+    image = np.asarray(Image.open(sheet))
+    assert image.shape[1] == 3 * 128
+    assert image.shape[0] > 2 * 128 * shape[0] // shape[1]  # two rows plus the title band
+
+
+def test_committed_human_record_is_signed_and_complete() -> None:
+    record = review_anchors.ReviewAnchorHumanRecord.model_validate_json(
+        (ROOT / review_anchors.DEFAULT_RECORD).read_text(encoding="utf-8")
+    )
+    assert record.author and record.reviewed_at is not None
+    assert record.counts == {"labeled": 51, "hidden": 1, "unlabeled": 0}
+    assert len(record.anchors) == 52
+    hidden = [(a.analysis_frame_index, a.target) for a in record.anchors if a.state == "hidden"]
+    assert hidden == [(1700, "rear_body")]
+    assert all(a.mask_sha256 for a in record.anchors if a.state == "labeled")
+    assert record.config.uri == "configs/qa/first_minute_review_anchors.json"
+    assert "not a dataset" in record.claim_boundary
 
 
 # ---------------------------------------------------------------- workspace prepare / export
@@ -429,12 +467,16 @@ def test_export_writes_labeled_hidden_and_unlabeled_anchors_with_fingerprints(
         MuggledSAMBoxCalibrationManifest.model_validate(updated.model_dump(mode="json")),
     )
 
+    # A config with null provenance, as the committed file was before the human labelled.
+    unsigned_config = tmp_path / "configs/qa/unsigned.json"
+    unsigned_config.parent.mkdir(parents=True)
+    unsigned_config.write_text(build_first_minute_config().model_dump_json(indent=2))
     record_path = tmp_path / "docs/qa/record.json"
     mask_set, mask_set_path, written_record = export_anchor_masks(
         workspace=workspace,
         repository_root=tmp_path,
         record_path=record_path,
-        config_path=CONFIG,
+        config_path=unsigned_config,
     )
     assert mask_set_path == workspace / "anchors/anchor_masks.json"
     assert mask_set.counts == {"labeled": 1, "hidden": 1, "unlabeled": 13 * 4 - 2}

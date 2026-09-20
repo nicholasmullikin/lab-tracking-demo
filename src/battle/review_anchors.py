@@ -54,6 +54,7 @@ DEFAULT_RECORD = Path("docs/qa/first-minute-review-anchors.human-record.json")
 SESSION_NAME = "anchor_session.json"
 MASK_SET_NAME = "anchors/anchor_masks.json"
 MASK_DIRECTORY = "anchors/masks"
+OUTSIDE_WINDOWS = "outside"
 
 Visibility = Literal["visible", "hidden_prompt"]
 AnchorState = Literal["labeled", "hidden", "unlabeled"]
@@ -722,6 +723,19 @@ def score_run(
     }
     for cell in cells:
         counts[cell.outcome] += 1
+
+    def inside_any_window(frame: int) -> bool:
+        return any(low <= frame < high for low, high in mask_set.windows.values())
+
+    by_window = {
+        name: _mean(c.iou for c in scored if window[0] <= c.analysis_frame_index < window[1])
+        for name, window in mask_set.windows.items()
+    }
+    # Anchor frames outside every declared window, so the table can separate "did the arm
+    # change the flagged windows" from "did it disturb the rest of the minute".
+    by_window[OUTSIDE_WINDOWS] = _mean(
+        c.iou for c in scored if not inside_any_window(c.analysis_frame_index)
+    )
     return AnchorRunScore(
         run_name=run_name,
         run_directory=str(run_directory),
@@ -731,10 +745,7 @@ def score_run(
             target: _mean(c.iou for c in scored if c.target == target)
             for target in mask_set.targets
         },
-        mean_iou_by_window={
-            name: _mean(c.iou for c in scored if window[0] <= c.analysis_frame_index < window[1])
-            for name, window in mask_set.windows.items()
-        },
+        mean_iou_by_window=by_window,
         counts=counts,
         hidden_false_positive_area=sum(
             c.run_area or 0 for c in cells if c.outcome == "hidden_false_positive"
@@ -779,11 +790,12 @@ def _fmt(value: float | None) -> str:
 
 def markdown_table(report: AnchorIoUReport) -> str:
     """Rows = arms; columns = per-part mean IoU, overall, per-window means, then counts."""
+    windows = [*report.windows, OUTSIDE_WINDOWS]
     header = [
         "arm",
         *[f"IoU {t}" for t in report.targets],
         "IoU all",
-        *[f"IoU {w}" for w in report.windows],
+        *[f"IoU {w}" for w in windows],
         "missing",
         "hidden FP (px)",
         "scored / unlabeled",
@@ -797,7 +809,7 @@ def markdown_table(report: AnchorIoUReport) -> str:
             run.run_name,
             *[_fmt(run.mean_iou_by_target.get(t)) for t in report.targets],
             _fmt(run.mean_iou),
-            *[_fmt(run.mean_iou_by_window.get(w)) for w in report.windows],
+            *[_fmt(run.mean_iou_by_window.get(w)) for w in windows],
             str(run.counts["run_mask_missing"]),
             f"{run.counts['hidden_false_positive']} ({run.hidden_false_positive_area})",
             f"{run.counts['scored']} / {run.counts['unlabeled_skipped']}",
@@ -808,9 +820,147 @@ def markdown_table(report: AnchorIoUReport) -> str:
     lines.append(
         f"Anchors: {counts.get('labeled', 0)} labeled, {counts.get('hidden', 0)} hidden, "
         f"{counts.get('unlabeled', 0)} unlabeled (skipped). Windows use the anchor frames "
-        "inside each. " + report.claim_boundary
+        f"inside each; `{OUTSIDE_WINDOWS}` is the anchor frames in no window. "
+        + report.claim_boundary
     )
     return "\n".join(lines) + "\n"
+
+
+# ------------------------------------------------------------------------------ contact sheet
+
+
+class _AnchorMaskSource:
+    """Duck-typed like `policy_ablation.LoadedRun` for the crop and tile helpers."""
+
+    def __init__(self, mask_set: ReviewAnchorMaskSet, anchors_root: Path) -> None:
+        self._mask_set = mask_set
+        self._root = anchors_root
+
+    def masks(self, frame: int) -> dict[str, np.ndarray | None]:
+        out: dict[str, np.ndarray | None] = {}
+        for target in self._mask_set.targets:
+            anchor = self._mask_set.anchor(frame, target)
+            out[target] = (
+                mask_cache.decode_mask_png(self._root / anchor.mask_uri)
+                if anchor.state == "labeled" and anchor.mask_uri is not None
+                else None
+            )
+        return out
+
+    def states(self, frame: int) -> dict[str, AnchorState]:
+        return {t: self._mask_set.anchor(frame, t).state for t in self._mask_set.targets}
+
+
+class _UnionMaskSource:
+    def __init__(self, *sources: object) -> None:
+        self._sources = sources
+
+    def masks(self, frame: int) -> dict[str, np.ndarray | None]:
+        out: dict[str, np.ndarray | None] = {}
+        for index, source in enumerate(self._sources):
+            for key, mask in source.masks(frame).items():  # type: ignore[attr-defined]
+                out[f"{index}:{key}"] = mask
+        return out
+
+
+def _iou_caption(score: AnchorRunScore, frame: int, targets: Sequence[str]) -> str:
+    cells = {c.target: c for c in score.cells if c.analysis_frame_index == frame}
+    parts = []
+    for target in targets:
+        cell = cells.get(target)
+        if cell is None:
+            continue
+        if cell.outcome == "scored":
+            parts.append(f"{target[:2]} {cell.iou:.2f}")
+        elif cell.outcome == "run_mask_missing":
+            parts.append(f"{target[:2]} miss")
+        elif cell.outcome == "hidden_false_positive":
+            parts.append(f"{target[:2]} FP{cell.run_area}")
+        elif cell.outcome == "hidden_correct":
+            parts.append(f"{target[:2]} hid ok")
+    return " ".join(parts)
+
+
+def _footer(tile: np.ndarray, text: str) -> np.ndarray:
+    import cv2
+
+    y = tile.shape[0] - 8
+    cv2.putText(tile, text, (6, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 3, cv2.LINE_AA)
+    cv2.putText(tile, text, (6, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (235, 235, 235), 1, cv2.LINE_AA)
+    return tile
+
+
+def render_anchor_sheet(
+    *,
+    report: AnchorIoUReport,
+    mask_set: ReviewAnchorMaskSet,
+    anchors_root: Path,
+    frames_bgr: dict[int, np.ndarray],
+    reference_name: str,
+    reference_directory: Path,
+    best_name: str,
+    best_directory: Path,
+    output_path: Path,
+    tile_width: int = 512,
+) -> Path:
+    """Rows = anchor frames; columns = human anchors | reference | best-by-anchor arm.
+
+    Reuses the ablation module's crop, tile and grid renderers so the sheet lines up with
+    `sheets/<arm>.png` and `best_vs_reference.png`. Per-part IoU (or `miss` / `FP<area>` /
+    `hid ok`) is written under each run tile; the anchor tile lists hidden and unlabeled cells.
+    """
+    import cv2
+
+    from . import policy_ablation
+
+    anchors = _AnchorMaskSource(mask_set, anchors_root)
+    reference = policy_ablation.load_run(reference_name, reference_directory)
+    best = policy_ablation.load_run(best_name, best_directory)
+    frames = mask_set.frames
+    sample = next(iter(frames_bgr.values()))
+    crop = policy_ablation.assembly_crop(
+        _UnionMaskSource(anchors, reference, best),  # type: ignore[arg-type]
+        frames,
+        dimensions=(sample.shape[1], sample.shape[0]),
+    )
+    scores = {run.run_name: run for run in report.runs}
+    rows = []
+    for frame in frames:
+        states = anchors.states(frame)
+        marks = [f"{t[:2]} {s}" for t, s in states.items() if s != "labeled"]
+        anchor_tile = policy_ablation.render_tile(
+            frames_bgr[frame],
+            anchors.masks(frame),
+            crop,
+            tile_width=tile_width,
+            caption=f"f{frame} human anchors",
+        )
+        if marks:
+            _footer(anchor_tile, " ".join(marks))
+        reference_tile = policy_ablation.render_tile(
+            frames_bgr[frame],
+            reference.masks(frame),
+            crop,
+            tile_width=tile_width,
+            caption=f"f{frame} {reference_name}",
+        )
+        _footer(reference_tile, _iou_caption(scores[reference_name], frame, mask_set.targets))
+        best_tile = policy_ablation.render_tile(
+            frames_bgr[frame],
+            best.masks(frame),
+            crop,
+            tile_width=tile_width,
+            caption=f"f{frame} {best_name}",
+        )
+        _footer(best_tile, _iou_caption(scores[best_name], frame, mask_set.targets))
+        rows.append(np.hstack([anchor_tile, reference_tile, best_tile]))
+    title = (
+        f"human anchors | {reference_name} | {best_name} (crop {crop}); "
+        f"IoU per part under each run tile; {mask_set.claim_boundary[:60]}..."
+    )
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(output_path), policy_ablation._grid(rows, 1, title))
+    return output_path
 
 
 # ---------------------------------------------------------------------------------- CLIs
@@ -884,6 +1034,27 @@ def iou_main() -> None:
     parser.add_argument(
         "--markdown", type=Path, default=None, help="table path (default: <output>.md)"
     )
+    parser.add_argument(
+        "--sheet",
+        type=Path,
+        default=None,
+        help=(
+            "also render a contact sheet: rows = anchor frames, columns = human anchors | "
+            "--sheet-reference | --sheet-best (frames decoded from the reference run's proxy)"
+        ),
+    )
+    parser.add_argument(
+        "--sheet-reference",
+        default="reference",
+        metavar="NAME",
+        help="run name (from --run) shown in the middle column",
+    )
+    parser.add_argument(
+        "--sheet-best",
+        default=None,
+        metavar="NAME",
+        help="run name shown in the right column (default: highest mean IoU, reference excluded)",
+    )
     args = parser.parse_args()
     root = _repository_root()
     try:
@@ -898,3 +1069,45 @@ def iou_main() -> None:
     print(table, end="")
     print(f"Report: {args.output}")
     print(f"Table: {markdown_path}")
+    if args.sheet is not None:
+        try:
+            print(f"Sheet: {_render_sheet_from_cli(args, report, repository_root=root)}")
+        except (OSError, ValueError, KeyError, RuntimeError) as error:
+            parser.error(str(error))
+
+
+def _render_sheet_from_cli(
+    args: argparse.Namespace, report: AnchorIoUReport, *, repository_root: Path
+) -> Path:
+    from . import policy_ablation
+
+    mask_set, anchors_root = load_mask_set(args.anchors)
+    by_name = {run.run_name: run for run in report.runs}
+    if args.sheet_reference not in by_name:
+        raise KeyError(f"--sheet-reference {args.sheet_reference!r} is not one of the --run names")
+    best_name = args.sheet_best
+    if best_name is None:
+        candidates = [
+            run
+            for run in report.runs
+            if run.run_name != args.sheet_reference and run.mean_iou is not None
+        ]
+        if not candidates:
+            raise ValueError("no run other than the sheet reference has a mean IoU")
+        best_name = max(candidates, key=lambda run: run.mean_iou or 0.0).run_name
+    if best_name not in by_name:
+        raise KeyError(f"--sheet-best {best_name!r} is not one of the --run names")
+    reference_directory = Path(by_name[args.sheet_reference].run_directory)
+    proxy = policy_ablation._proxy_for(repository_root, reference_directory)
+    frames_bgr = policy_ablation.decode_frames(proxy, mask_set.frames)
+    return render_anchor_sheet(
+        report=report,
+        mask_set=mask_set,
+        anchors_root=anchors_root,
+        frames_bgr=frames_bgr,
+        reference_name=args.sheet_reference,
+        reference_directory=reference_directory,
+        best_name=best_name,
+        best_directory=Path(by_name[best_name].run_directory),
+        output_path=args.sheet.resolve(),
+    )

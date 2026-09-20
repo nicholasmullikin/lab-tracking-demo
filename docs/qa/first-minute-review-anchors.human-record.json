@@ -2,398 +2,398 @@
   "schema_version": "1.0",
   "manifest_kind": "human_review_anchor_record",
   "anchor_kind": "human_review_anchor",
-  "author": null,
-  "reviewed_at": null,
+  "author": "Nicholas Mullikin",
+  "reviewed_at": "2026-09-20T00:45:30Z",
   "config": {
     "schema_version": "1.0",
     "uri": "configs/qa/first_minute_review_anchors.json",
-    "sha256": "4bf48e58e707ac2265357afaa85e0236d29792b25309cf981ec3eb1dee52cb60",
+    "sha256": "3542fa3ade8f9633b1c71b345a115316a1d975cbf3652839ae84c601693ce9b5",
     "source": "measured"
   },
   "mask_set": {
     "schema_version": "1.0",
     "uri": "runs/human-review-anchors-first-minute/anchors/anchor_masks.json",
-    "sha256": "d39774ffb54b5967549a32e85a4e88156ed030e8c09c2783587a282504427f46",
+    "sha256": "ae731f6142e40e70a2c9cebb501327140f16bf2c622893c80b3c41986c7b46d9",
     "source": "measured"
   },
   "calibration_manifest": {
     "schema_version": "1.0",
     "uri": "runs/human-review-anchors-first-minute/calibration_manifest.json",
-    "sha256": "c8b703907eb51a4d29a2a323e6f52c5660a08524cdcbf550a6142d0cfdd9efe1",
+    "sha256": "ab11046ac1f3ca10b723d763d2cb72c0ab20201b6dbdeaf84e947d5231f3b0d8",
     "source": "measured"
   },
   "counts": {
-    "labeled": 0,
-    "hidden": 0,
-    "unlabeled": 52
+    "labeled": 51,
+    "hidden": 1,
+    "unlabeled": 0
   },
   "anchors": [
     {
       "schema_version": "1.0",
       "analysis_frame_index": 300,
       "target": "chassis",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "bc4467b82ba1e096df322dc42ec29490866895a3d490ccee49bf039f5a855545"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 300,
       "target": "interior",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "6b25897155215fa58a59735a71d8f07144fae203624395378703ce775a761961"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 300,
       "target": "rear_body",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "838174c5719a1ec082cb5e690108d2d7abc4f8ab069c96f88a1b573d7e39ab71"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 300,
       "target": "cabin",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "1bc98d16fe67e8caea6d735a861ee8bdbe4da05071f1d4d5e3ef9d76c3f26e09"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 370,
       "target": "chassis",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "483defc15bb87d7d03fb9246c3d75675b46525fd1959a2e8f82e1f7b6229f95b"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 370,
       "target": "interior",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "03327ec0c9108e2ae015d7e3946c8da9b4e1476cdda671d1440c8672b4d2dbe3"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 370,
       "target": "rear_body",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "6ba640913e7b4b4e69346de2c118f5e85d473b85ad3682a61278d8328d3b5c45"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 370,
       "target": "cabin",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "19c997fe71f3c287dea6cf4174d8264ef1aaf6c54fa3652b58bbc7aa431ddd3e"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 400,
       "target": "chassis",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "5b51ac893b441a5fb939bd4b4706becc2c0768cebbfc3acf78509d49f16b93bd"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 400,
       "target": "interior",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "2f64218bbbfe3851c2aba7282f22bfcc6d6a85a90deb433ae89949a2b75d2a70"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 400,
       "target": "rear_body",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "e52d1c220e9ebf4f9e1d0dc5f691983559c4c05576a9b80de908909ad2c05da7"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 400,
       "target": "cabin",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "91862e94187b66e450a388a46f794f8c55de76cc302ab982669786ea5ac8446d"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 600,
       "target": "chassis",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "af66ccbb9a132f40d7f603297303d773a0c60e3ddf857710af262e6d594a74d4"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 600,
       "target": "interior",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "588f41b3d1754e2a9b0b9c58e50d8c7ba4a33cb1d8a8a65b53c48e19a18823d1"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 600,
       "target": "rear_body",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "8f21ccf2dc884617af44f49848c2e74650fd8e9cb71271883f3fd9d9f8480138"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 600,
       "target": "cabin",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "162840202489dec3f8a58423f7322570f2db3fa7bf470e9a46038c0e7986f8cd"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 650,
       "target": "chassis",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "b0fd71f64a338acb3007a31beb9a6302eee655403730fd1a77db9882c8489e71"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 650,
       "target": "interior",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "c4cc149af5afa2f779d5968b0cfcd2c44db6ea5c1cdb745f57d2943d08e1c55c"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 650,
       "target": "rear_body",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "b19940d696ea968dbc3340b2808ad51b2029300bef1cb1bb031aab1deaa59bb2"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 650,
       "target": "cabin",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "add125cddedaa64dd7545e1c8287a04b62a349d50a46b8d527ca222777e123f3"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 700,
       "target": "chassis",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "f7ce49f9e035e5989394e0bf774f16d24bc3fa61fb48462b6eecdb035afed81f"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 700,
       "target": "interior",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "ac5b6fc56f280aa1a4910344bc1e849e27a78034be6357a43c1864ec12fad1be"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 700,
       "target": "rear_body",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "ae4e76f320943948a26ff7b2a7c829e416dbb92987b8cbe53643a41303fd6c24"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 700,
       "target": "cabin",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "5f820527992b54d49ae775d53cb1658a1a82c6f28201bc4690e5563211006fc3"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 900,
       "target": "chassis",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "ca01a8165ff5785fc4325e1b43bec8166853b75ef61476f08ef4d75347011a97"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 900,
       "target": "interior",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "30a5664099eb679ffd5b7df35cec91405807ae6e8c5cd171c5a9b8da8b9a6437"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 900,
       "target": "rear_body",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "921c47ca388a18fbfba2b5aebe04c11b3f5a06c3b30b3cf3998db5a5a5aa90cf"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 900,
       "target": "cabin",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "3639a32580971e59b600d55ed6d594d85501038e0f4d6ffeb29b34bd631c33a4"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 1050,
       "target": "chassis",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "ab5e663313062c79f85f8ec344f9279bb27fc0079cef85615064cdd450e84b04"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 1050,
       "target": "interior",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "f517025e440b964107fcc78d89feadcf0af281d0beb898558edfcab7843e8efb"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 1050,
       "target": "rear_body",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "5dfdb71271d5b834f28aa46a261dd8cc83ecfdea62fdc5d968ab3eedf4a2cc1c"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 1050,
       "target": "cabin",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "f8f0d1653ad66e0108b4880b1b3e94a87383b50e458b7865d94e1a6ab2a2515c"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 1100,
       "target": "chassis",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "cac0dc14d18f8afaabba68d253badf7163f5bfd98cc59bddfd2db1362b8a819b"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 1100,
       "target": "interior",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "a01b66cd07e07c1bb2df9b54081b46626f27c3540537f0be9d4415dd4c35e308"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 1100,
       "target": "rear_body",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "5cf7c98c693544180239141f06cc4f055df42b84ac95bb13b90b12e353bd656b"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 1100,
       "target": "cabin",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "077dba40004f333d938728936b25b7a2ec9948775c5f064a267619e738b14ba4"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 1150,
       "target": "chassis",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "a555e457ee770993001939588a5913f78c522b92afbffeb935973ad6d9b14b4b"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 1150,
       "target": "interior",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "6e4778ecc2418dd0335d0be25232e0aa70358179cd460f3eab5fd03bac3c3ff1"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 1150,
       "target": "rear_body",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "8ea074e21df70254e83e99dc9765ec4de5e13107f3a56d3b577d51f3eba3c79a"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 1150,
       "target": "cabin",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "945a6e0f34f37d0a2686b63685cb4819622e5316b53de02696d3b901b46d23cd"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 1200,
       "target": "chassis",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "b25b88dc7593a420f9eac932fac085bfd2c9edfe8b26cee7f610fdae04112cbe"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 1200,
       "target": "interior",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "477bf5125527e23c73b49b3d1b5e34dc07f22d27150de96765f9163d9c293ce4"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 1200,
       "target": "rear_body",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "7fa98dd1568bdbaa27d75702c5a1ebfcb1ab1bb511c65ddc530823214825fbef"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 1200,
       "target": "cabin",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "c167bec7c66358459c904c7731aed92183aa9b0d1d84a39df35f0988f551112d"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 1500,
       "target": "chassis",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "51067abaacf7e3fcf3ac4c445226b00ad8c07582325c4d02049697449b2eeb3d"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 1500,
       "target": "interior",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "d884c15406c332655f3cd1100aa6e6249348f6d82dd0e503506329592105dfb8"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 1500,
       "target": "rear_body",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "d1777dbbe6a58fda22668f1754af7a16ac1ad89ce2b8f1c3a69b5322a5aed54c"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 1500,
       "target": "cabin",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "744a73fffb3f52f199585c51c79de90e4042aec82f0817844e6a519e445d7ac5"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 1700,
       "target": "chassis",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "ccca6db67271fa70d46a9b477fa66f52159de4382dda36b18c9ba01682c7704c"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 1700,
       "target": "interior",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "3732c0defddc31f4af88021119f30114aa1a3b5f65e83706bc2bc09b366ab243"
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 1700,
       "target": "rear_body",
-      "state": "unlabeled",
+      "state": "hidden",
       "mask_sha256": null
     },
     {
       "schema_version": "1.0",
       "analysis_frame_index": 1700,
       "target": "cabin",
-      "state": "unlabeled",
-      "mask_sha256": null
+      "state": "labeled",
+      "mask_sha256": "46d80f9999ef40252c0f3aa766a4328dbd2534220e656275737d1d85b75c5925"
     }
   ],
   "claim_boundary": "human_review_anchor masks are review evidence for scoring tracker arms against each other on a handful of frames; they are not a dataset, not ground truth, and support no accuracy claim. A human chose one SAM3 image-decoder mask per visible part, or marked the part hidden; the mask boundary is the decoder's, the choice is the human's.",
   "license": "CC BY-NC 4.0 (Assembly101 source frames); anchor masks and marks are derived from those frames and inherit the same non-commercial terms",
-  "notes": "Skeleton written by battle-anchor-export; author and reviewed_at stay null until the human who labelled fills them in."
+  "notes": null
 }

@@ -207,9 +207,9 @@
   "license": "CC BY-NC 4.0 (Assembly101 source frames); anchor masks and marks are derived from those frames and inherit the same non-commercial terms",
   "provenance": {
     "schema_version": "1.0",
-    "author": null,
-    "reviewed_at": null,
+    "author": "Nicholas Mullikin",
+    "reviewed_at": "2026-09-20T00:45:30Z",
     "tool": "battle-muggled-calibration-web",
-    "notes": null
+    "notes": "Labelled Sep 19 (local), 00:09-00:45 UTC Sep 20, over the tailnet bind. reviewed_at is the last autosave of the workspace manifest (the workspace stores no per-acceptance timestamps). 52/52 cells answered: 51 accepted masks, 1 hidden mark (rear_body at 1700); the interior on the three hidden_prompt frames 1050/1100/1150 was given a mask, not marked hidden. Two decoder candidates were rejected before re-prompting (chassis 300, chassis 650)."
   }
 }
