@@ -2382,8 +2382,97 @@ class FourPartTargetInitialization(VersionedModel):
         return self
 
 
+class Sam2ArmSettings(VersionedModel):
+    """Model size, input size and correction-schedule provenance of one SAM2-family arm.
+
+    Present on runs made after the shared-predictor wrapper; older manifests omit it and
+    implicitly mean tiny at 1024 with four independent models and no corrections.
+    """
+
+    sam2_model: Literal["tiny", "large"]
+    sam2_checkpoint_fingerprint: ArtifactFingerprint
+    # True when the measured checkpoint SHA-256 was compared against a hard-coded pin.
+    sam2_checkpoint_sha256_pinned: bool = False
+    # The yaml actually loaded: the checkout's own, or the battle-owned copy whose
+    # `image_size` was rewritten for a non-default input size.
+    sam2_config_fingerprint: ArtifactFingerprint
+    sam2_config_source: Literal["checkout", "battle_input_size_copy"] = "checkout"
+    input_image_size: int = Field(ge=256)
+    shared_predictor: bool
+    correction_schedule_fingerprint: ArtifactFingerprint | None = None
+    scheduled_correction_frame_indices: tuple[int, ...] = ()
+    dropped_correction_frame_indices: tuple[int, ...] = ()
+    correction_api: Literal["add_new_mask"] | None = None
+    # DAM4SAM corrects mid-stream right after tracking the frame; the offline SAM2 arms
+    # (SAMURAI, control) add every scheduled mask as a conditioning frame before
+    # `propagate_in_video`, which is the only order their API allows.
+    correction_timing: (
+        Literal["mid_stream_after_track", "all_conditioning_frames_before_propagation"] | None
+    ) = None
+    add_correction_to_drm: bool = False
+    correction_masks_resized_to_frame: bool = False
+    seed_masks_resized_to_frame: bool = False
+    # Smoke-only: the earliest scheduled keyframe's masks applied at this frame instead,
+    # so a 10 s run exercises `correct()`; the masks are then geometrically stale.
+    smoke_correction_frame: int | None = Field(default=None, ge=1)
+    smoke_correction_source_frame: int | None = Field(default=None, ge=1)
+    schedule_frame_zero_seeds_match_contract: bool | None = None
+
+    @model_validator(mode="after")
+    def require_consistent_correction_provenance(self) -> Sam2ArmSettings:
+        scheduled = bool(self.scheduled_correction_frame_indices)
+        if scheduled and (
+            self.correction_schedule_fingerprint is None
+            or self.correction_api is None
+            or self.correction_timing is None
+        ):
+            raise ValueError("scheduled corrections must name their schedule, API and timing")
+        if (self.smoke_correction_frame is None) != (self.smoke_correction_source_frame is None):
+            raise ValueError("a smoke correction records both its applied and source frame")
+        if self.smoke_correction_frame is not None and self.scheduled_correction_frame_indices != (
+            self.smoke_correction_frame,
+        ):
+            raise ValueError("a smoke correction run applies exactly its rebased frame")
+        if self.add_correction_to_drm and not scheduled and self.smoke_correction_frame is None:
+            raise ValueError("add_correction_to_drm is meaningless without corrections")
+        return self
+
+
+class VramProbe(VersionedModel):
+    """`torch.cuda` allocator counters after `frames_processed` analysis frames."""
+
+    frames_processed: int = Field(ge=1)
+    memory_allocated_bytes: int = Field(ge=0)
+    max_memory_allocated_bytes: int = Field(ge=0)
+    memory_reserved_bytes: int | None = Field(default=None, ge=0)
+
+
+class VramExtrapolation(VersionedModel):
+    """Linear projection of the per-frame memory slope between two probes."""
+
+    basis: Literal["linear_between_two_probes"]
+    from_frames: tuple[int, int]
+    slope_bytes_per_frame: float
+    extrapolate_to_frames: int = Field(ge=1)
+    projected_allocated_bytes: int = Field(ge=0)
+    projected_peak_bytes: int = Field(ge=0)
+    limit_bytes: int = Field(ge=0)
+    within_limit: bool
+
+    @model_validator(mode="after")
+    def require_consistent_projection(self) -> VramExtrapolation:
+        if self.from_frames[0] >= self.from_frames[1]:
+            raise ValueError("VRAM probes must be ordered by frames processed")
+        if self.within_limit != (self.projected_peak_bytes <= self.limit_bytes):
+            raise ValueError("within_limit must agree with the projected peak and the limit")
+        return self
+
+
 class FourPartSegmentationRunMetadata(VersionedModel):
-    """Provenance for one exact 20 s (or 60 s extension) arm in the four-part comparison."""
+    """Provenance for one exact 20 s (or 60 s extension) arm in the four-part comparison.
+
+    A 10 s (300-frame) run is the VRAM smoke for the SAM2 knobs; it is never compared.
+    """
 
     method_arm: Literal[
         "grounding_dino_sam2_open_vocabulary",
@@ -2392,7 +2481,7 @@ class FourPartSegmentationRunMetadata(VersionedModel):
         "dam4sam",
     ]
     requested_analysis_frame_range: FrameRange
-    requested_seconds: Literal[20.0, 60.0]
+    requested_seconds: Literal[10.0, 20.0, 60.0]
     target_order: tuple[
         Literal["chassis"], Literal["interior"], Literal["rear_body"], Literal["cabin"]
     ]
@@ -2408,6 +2497,9 @@ class FourPartSegmentationRunMetadata(VersionedModel):
     qa_artifact_uri: str | None = None
     target_initializations: tuple[FourPartTargetInitialization, ...]
     drm_memory_additions: dict[str, int] | None = None
+    sam2_settings: Sam2ArmSettings | None = None
+    vram_probes: tuple[VramProbe, ...] = ()
+    vram_extrapolation: VramExtrapolation | None = None
     ground_truth_accuracy_claim: Literal[False] = False
 
     @model_validator(mode="after")
@@ -2418,8 +2510,11 @@ class FourPartSegmentationRunMetadata(VersionedModel):
             or self.target_order != ("chassis", "interior", "rear_body", "cabin")
         ):
             raise ValueError(
-                "four-part segmentation arms require ordered frames [0, 600) or [0, 1800)"
+                "four-part segmentation arms require ordered frames [0, 600) or [0, 1800) "
+                "(or [0, 300) for the SAM2 VRAM smoke)"
             )
+        if self.vram_extrapolation is not None and len(self.vram_probes) < 2:
+            raise ValueError("a VRAM extrapolation must retain the probes it was computed from")
         received = tuple(item.target_id for item in self.target_initializations)
         if received != self.target_order:
             raise ValueError("initialization records must cover every ordered target")

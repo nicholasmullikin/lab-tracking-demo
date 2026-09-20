@@ -1,4 +1,9 @@
-"""External-environment worker for real four-target mask propagation."""
+"""External-environment worker for real four-target mask propagation.
+
+Runs under the method's own interpreter (samurai or grounded_sam2 pyenv), so it imports
+nothing from the battle package; `dam4sam_streaming` sits beside it and is imported as a
+top-level module.
+"""
 
 from __future__ import annotations
 
@@ -12,10 +17,43 @@ from time import perf_counter
 from typing import Any
 
 TARGETS = ("chassis", "interior", "rear_body", "cabin")
+DEFAULT_VIEW_ID = "static-c10379"
+DEFAULT_SAM2_MODEL = "tiny"
+DEFAULT_INPUT_SIZE = 1024
+DEFAULT_VRAM_PROBE_FRAMES = "30,300"
+SUPPORTED_FRAME_COUNTS = (300, 600, 1800)
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+def _streaming_module() -> Any:
+    # The script's own directory is already sys.path[0] when run as a worker; this only
+    # matters when the module is imported some other way.
+    here = str(Path(__file__).resolve().parent)
+    if here not in sys.path:
+        sys.path.append(here)
+    import dam4sam_streaming
+
+    return dam4sam_streaming
+
+
+def _frame_shape(frame_path: Path) -> tuple[int, int]:
+    from PIL import Image
+
+    with Image.open(frame_path) as image:
+        return image.height, image.width
+
+
+def _load_schedule(
+    path: Path | None,
+) -> tuple[dict[int, dict[str, dict[str, Any]]], dict[str, Any]]:
+    """Read the driver-resolved schedule: later corrections keyed by frame and target."""
+    if path is None:
+        return {}, {}
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return _streaming_module().corrections_by_frame(list(payload.get("corrections", []))), payload
 
 
 def _extract_frames(video: Path, directory: Path, frame_count: int) -> list[Path]:
@@ -51,11 +89,15 @@ def _box(mask: Any, width: int, height: int) -> dict[str, float]:
     }
 
 
-def _read_seed_masks(contract: dict[str, Any]) -> dict[str, Any]:
+def _read_seed_masks(
+    contract: dict[str, Any], frame_shape: tuple[int, int] | None = None
+) -> tuple[dict[str, Any], bool]:
+    """Reviewed frame-zero masks; resized nearest-neighbour only when the proxy differs."""
     import numpy as np
     from PIL import Image
 
     output: dict[str, Any] = {}
+    resized = False
     for seed in contract["reviewed_frame_zero_seeds"]:
         path = Path(seed["mask_path"])
         actual = hashlib.sha256(path.read_bytes()).hexdigest()
@@ -65,10 +107,13 @@ def _read_seed_masks(contract: dict[str, Any]) -> dict[str, Any]:
             mask = np.asarray(image.convert("L"), dtype=np.uint8) > 0
         if not mask.any():
             raise ValueError(f"reviewed seed is empty: {seed['target_id']}")
+        if frame_shape is not None and mask.shape != tuple(frame_shape):
+            mask = _streaming_module().fit_mask(mask, frame_shape)
+            resized = True
         output[seed["target_id"]] = mask
     if tuple(output) != TARGETS:
         raise ValueError("worker contract target order is invalid")
-    return output
+    return output, resized
 
 
 def _write_observations(
@@ -80,6 +125,7 @@ def _write_observations(
     masks_by_frame: dict[int, dict[str, Any]],
     confidences: dict[str, float],
     method: str,
+    view_id: str = DEFAULT_VIEW_ID,
 ) -> tuple[dict[str, int], dict[str, int]]:
     import cv2
     import numpy as np
@@ -123,7 +169,7 @@ def _write_observations(
             output.write(
                 json.dumps(
                     {
-                        "view_id": "static-c10379",
+                        "view_id": view_id,
                         "analysis_frame_index": index,
                         "source_seconds": source_offset_seconds + index / analysis_fps,
                         "objects": objects,
@@ -142,12 +188,24 @@ def _sam2_propagate(
     checkpoint: Path,
     initial_masks: dict[str, Any] | None,
     initial_boxes: dict[str, Any] | None,
+    corrections: dict[int, dict[str, dict[str, Any]]] | None = None,
+    probe_frames: tuple[int, ...] = (),
+    probes: list[dict[str, int]] | None = None,
+    correction_report: dict[str, Any] | None = None,
 ) -> dict[int, dict[str, Any]]:
+    """Offline SAM2 propagation over the extracted frames.
+
+    Scheduled corrections are added as conditioning frames *before* `propagate_in_video`,
+    at their scheduled indices: the offline API consolidates every prompt in its preflight
+    and refuses new prompts mid-propagation, so this is the only order it allows.  The
+    driver records that difference (`correction_timing`) in the manifest.
+    """
     import numpy as np
 
     sys.path.insert(0, str(sam2_root))
     from sam2.build_sam import build_sam2_video_predictor
 
+    streaming = _streaming_module()
     predictor = build_sam2_video_predictor(sam2_config, str(checkpoint), device="cuda:0")
     state = predictor.init_state(video_path=str(frames[0].parent), offload_video_to_cpu=True)
     selected = initial_masks if initial_masks is not None else initial_boxes or {}
@@ -163,12 +221,31 @@ def _sam2_propagate(
                 obj_id=object_id,
                 box=np.asarray(initial_boxes[target], dtype=np.float32),
             )
+    frame_shape = _frame_shape(frames[0])
+    for frame_index in sorted(corrections or {}):
+        for target, entry in (corrections or {})[frame_index].items():
+            if target not in selected:
+                continue
+            mask, resized = streaming.read_correction_mask(
+                entry["mask_path"], entry["mask_sha256"], frame_shape
+            )
+            if resized and correction_report is not None:
+                correction_report["correction_masks_resized_to_frame"] = True
+            predictor.add_new_mask(
+                state, frame_idx=frame_index, obj_id=TARGETS.index(target), mask=mask
+            )
+            if correction_report is not None:
+                correction_report.setdefault("corrections_applied", []).append(
+                    {"frame_index": frame_index, "target": target}
+                )
     output: dict[int, dict[str, Any]] = {}
     for frame_index, object_ids, logits in predictor.propagate_in_video(state):
         output[frame_index] = {
             TARGETS[int(object_id)]: (logits[position] > 0).cpu().numpy()
             for position, object_id in enumerate(object_ids)
         }
+        if probes is not None and frame_index + 1 in probe_frames:
+            probes.append(streaming.cuda_memory_probe(frame_index + 1))
     return output
 
 
@@ -225,35 +302,75 @@ def _grounding_boxes(
 
 
 def _dam4sam_propagate(
-    *, frames: list[Path], dam4sam_root: Path, initial_masks: dict[str, Any]
-) -> tuple[dict[int, dict[str, Any]], dict[str, int]]:
+    *,
+    frames: list[Path],
+    dam4sam_root: Path,
+    run_directory: Path,
+    initial_masks: dict[str, Any],
+    sam2_model: str = DEFAULT_SAM2_MODEL,
+    input_size: int = DEFAULT_INPUT_SIZE,
+    corrections: dict[int, dict[str, dict[str, Any]]] | None = None,
+    add_correction_to_drm: bool = False,
+    probe_frames: tuple[int, ...] = (),
+) -> tuple[dict[int, dict[str, Any]], dict[str, int], dict[str, Any]]:
+    """Four DAM4SAM DRM streams on one shared SAM2 predictor, corrected mid-stream."""
     import numpy as np
     from PIL import Image
 
     sys.path.insert(0, str(dam4sam_root))
-    from dam4sam_tracker import DAM4SAMTracker
-
-    trackers = {target: DAM4SAMTracker(tracker_name="sam21pp-T") for target in TARGETS}
+    streaming = _streaming_module()
+    predictor, provenance = streaming.build_shared_predictor(
+        dam4sam_root, sam2_model, input_size, run_directory / "sam2_config"
+    )
+    tracker_class = streaming.shared_predictor_tracker_class()
+    trackers = {
+        target: tracker_class(
+            predictor, input_image_size=input_size, add_correction_to_drm=add_correction_to_drm
+        )
+        for target in TARGETS
+    }
+    corrections = corrections or {}
     output: dict[int, dict[str, Any]] = {}
     drm_additions = {target: 0 for target in TARGETS}
     prior_additions = {target: -1 for target in TARGETS}
+    probes: list[dict[str, int]] = []
+    applied: list[dict[str, Any]] = []
+    masks_resized = False
     for frame_index, frame_path in enumerate(frames):
         with Image.open(frame_path) as image:
+            frame_shape = (image.height, image.width)
             masks: dict[str, Any] = {}
             for target in TARGETS:
+                tracker = trackers[target]
                 result = (
-                    trackers[target].initialize(image, initial_masks[target])
+                    tracker.initialize(image, initial_masks[target])
                     if frame_index == 0
-                    else trackers[target].track(image)
+                    else tracker.track(image)
                 )
-                if trackers[target].last_added != prior_additions[target]:
+                entry = corrections.get(frame_index, {}).get(target)
+                if entry is not None:
+                    correction_mask, resized = streaming.read_correction_mask(
+                        entry["mask_path"], entry["mask_sha256"], frame_shape
+                    )
+                    masks_resized = masks_resized or resized
+                    result = tracker.correct(image, correction_mask)
+                    applied.append({"frame_index": frame_index, "target": target})
+                if tracker.last_added != prior_additions[target]:
                     drm_additions[target] += 1
-                    prior_additions[target] = trackers[target].last_added
+                    prior_additions[target] = tracker.last_added
                 mask = np.asarray(result["pred_mask"], dtype=bool)
                 if mask.any():
                     masks[target] = mask
             output[frame_index] = masks
-    return output, drm_additions
+        if frame_index + 1 in probe_frames:
+            probes.append(streaming.cuda_memory_probe(frame_index + 1))
+    extra = {
+        "sam2": {**provenance, "add_correction_to_drm": bool(add_correction_to_drm)},
+        "vram_probes": probes,
+        "corrections_applied": applied,
+        "correction_masks_resized_to_frame": masks_resized,
+    }
+    return output, drm_additions, extra
 
 
 def _samurai_independent_streams(
@@ -263,12 +380,20 @@ def _samurai_independent_streams(
     sam2_config: str,
     checkpoint: Path,
     seeds: dict[str, Any],
-) -> dict[int, dict[str, Any]]:
-    """SAMURAI's mode is not multi-object safe; release one real predictor per target."""
+    corrections: dict[int, dict[str, dict[str, Any]]] | None = None,
+    probe_frames: tuple[int, ...] = (),
+    correction_report: dict[str, Any] | None = None,
+) -> tuple[dict[int, dict[str, Any]], list[dict[str, int]]]:
+    """SAMURAI's mode is not multi-object safe; release one real predictor per target.
+
+    VRAM probes are taken in every per-target stream and merged as the per-frame maximum.
+    """
     import torch
 
     output: dict[int, dict[str, Any]] = {frame: {} for frame in range(len(frames))}
+    probe_lists: list[list[dict[str, int]]] = []
     for target in TARGETS:
+        probes: list[dict[str, int]] = []
         stream = _sam2_propagate(
             frames=frames,
             sam2_root=sam2_root,
@@ -276,15 +401,20 @@ def _samurai_independent_streams(
             checkpoint=checkpoint,
             initial_masks={target: seeds[target]},
             initial_boxes=None,
+            corrections=corrections,
+            probe_frames=probe_frames,
+            probes=probes,
+            correction_report=correction_report,
         )
+        probe_lists.append(probes)
         for frame, masks in stream.items():
             output[frame].update(masks)
         torch.cuda.empty_cache()
-    return output
+    return output, _streaming_module().merge_probes(probe_lists)
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser()
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--method",
         choices=(
@@ -304,7 +434,40 @@ def main() -> None:
     parser.add_argument("--sam2-root", type=Path, required=True)
     parser.add_argument("--sam2-config", required=True)
     parser.add_argument("--checkpoint", type=Path, required=True)
-    args = parser.parse_args()
+    parser.add_argument("--view-id", default=DEFAULT_VIEW_ID)
+    parser.add_argument(
+        "--sam2-model",
+        choices=("tiny", "large"),
+        default=DEFAULT_SAM2_MODEL,
+        help="DAM4SAM only: which SAM2.1 Hiera checkpoint + yaml pair the shared predictor loads.",
+    )
+    parser.add_argument(
+        "--input-size",
+        type=int,
+        default=DEFAULT_INPUT_SIZE,
+        help="DAM4SAM only: tracker input_image_size and the yaml image_size (1024 or 1536).",
+    )
+    parser.add_argument(
+        "--multi-keyframe-correction-schedule",
+        type=Path,
+        default=None,
+        help="Driver-resolved schedule JSON; later corrections are applied via add_new_mask.",
+    )
+    parser.add_argument(
+        "--add-correction-to-drm",
+        action="store_true",
+        help="DAM4SAM only: let a correction frame count as a DRM addition (last_added).",
+    )
+    parser.add_argument(
+        "--vram-probe-frames",
+        default=DEFAULT_VRAM_PROBE_FRAMES,
+        help="Frames-processed counts at which torch.cuda allocator counters are recorded.",
+    )
+    return parser
+
+
+def main() -> None:
+    args = build_parser().parse_args()
 
     started = perf_counter()
     result: dict[str, Any] = {"state": "failed", "method": args.method, "initialization": {}}
@@ -316,14 +479,36 @@ def main() -> None:
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
         contract = json.loads(args.contract.read_text(encoding="utf-8"))
-        if tuple(contract["targets"]) != TARGETS or args.frame_count not in (600, 1800):
-            raise ValueError("worker only supports the 600- or 1800-frame ordered-target contract")
+        if tuple(contract["targets"]) != TARGETS or args.frame_count not in SUPPORTED_FRAME_COUNTS:
+            raise ValueError(
+                "worker only supports the 300- (smoke), 600- or 1800-frame ordered-target contract"
+            )
+        if args.method != "dam4sam" and (
+            args.sam2_model != DEFAULT_SAM2_MODEL or args.input_size != DEFAULT_INPUT_SIZE
+        ):
+            raise ValueError(
+                "--sam2-model/--input-size are DAM4SAM knobs; the offline SAM2 arms take their "
+                "checkpoint from --checkpoint/--sam2-config and image_size from that yaml"
+            )
+        probe_frames = _streaming_module().parse_probe_frames(args.vram_probe_frames)
+        corrections, schedule_payload = _load_schedule(args.multi_keyframe_correction_schedule)
         frames = _extract_frames(
             args.video, args.run_directory / "native" / "frames", args.frame_count
         )
-        seeds = _read_seed_masks(contract)
+        frame_shape = _frame_shape(frames[0])
+        seeds, seeds_resized = _read_seed_masks(contract, frame_shape)
         confidences = {target: 1.0 for target in TARGETS}
-        extra: dict[str, Any] = {}
+        extra: dict[str, Any] = {
+            "seed_masks_resized_to_frame": seeds_resized,
+            "vram_probe_frames": list(probe_frames),
+            "correction_masks_resized_to_frame": False,
+            "corrections_applied": [],
+        }
+        if schedule_payload:
+            extra["correction_schedule"] = {
+                key: value for key, value in schedule_payload.items() if key != "corrections"
+            }
+        probes: list[dict[str, int]] = []
         with torch.inference_mode(), torch.autocast("cuda", dtype=torch.float16):
             if args.method == "grounding_dino_sam2_open_vocabulary":
                 boxes, initialization = _grounding_boxes(
@@ -342,23 +527,40 @@ def main() -> None:
                         checkpoint=args.checkpoint,
                         initial_masks=None,
                         initial_boxes=boxes,
+                        corrections=corrections,
+                        probe_frames=probe_frames,
+                        probes=probes,
+                        correction_report=extra,
                     )
                     if boxes
                     else {}
                 )
             elif args.method == "dam4sam":
-                masks, additions = _dam4sam_propagate(
-                    frames=frames, dam4sam_root=args.sam2_root, initial_masks=seeds
+                masks, additions, dam4sam_extra = _dam4sam_propagate(
+                    frames=frames,
+                    dam4sam_root=args.sam2_root,
+                    run_directory=args.run_directory,
+                    initial_masks=seeds,
+                    sam2_model=args.sam2_model,
+                    input_size=args.input_size,
+                    corrections=corrections,
+                    add_correction_to_drm=args.add_correction_to_drm,
+                    probe_frames=probe_frames,
                 )
                 extra["initialization"] = {target: {"status": "succeeded"} for target in TARGETS}
                 extra["drm_memory_additions"] = additions
+                probes = dam4sam_extra.pop("vram_probes")
+                extra.update(dam4sam_extra)
             elif args.method == "samurai":
-                masks = _samurai_independent_streams(
+                masks, probes = _samurai_independent_streams(
                     frames=frames,
                     sam2_root=args.sam2_root,
                     sam2_config=args.sam2_config,
                     checkpoint=args.checkpoint,
                     seeds=seeds,
+                    corrections=corrections,
+                    probe_frames=probe_frames,
+                    correction_report=extra,
                 )
                 extra["initialization"] = {target: {"status": "succeeded"} for target in TARGETS}
             else:
@@ -369,8 +571,13 @@ def main() -> None:
                     checkpoint=args.checkpoint,
                     initial_masks=seeds,
                     initial_boxes=None,
+                    corrections=corrections,
+                    probe_frames=probe_frames,
+                    probes=probes,
+                    correction_report=extra,
                 )
                 extra["initialization"] = {target: {"status": "succeeded"} for target in TARGETS}
+        extra["vram_probes"] = probes
         coverage, variation = _write_observations(
             run_directory=args.run_directory,
             frames=frames,
@@ -379,6 +586,7 @@ def main() -> None:
             masks_by_frame=masks,
             confidences=confidences,
             method=args.method,
+            view_id=args.view_id,
         )
         result.update(
             {
