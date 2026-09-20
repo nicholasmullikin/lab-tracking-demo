@@ -294,6 +294,44 @@ def test_acceptance_rule_uses_area_band_and_centroid_ray(
     )
     assert rejected.decision == "rejected" and rejected.accepted is None
     assert "no candidate passed" in rejected.reason
+    assert decision.candidate_ranking == "ray" and rejected.candidate_ranking == "ray"
+
+
+def _two_passing_candidates(centroid: np.ndarray, half: float) -> list[tuple[np.ndarray, float]]:
+    """Both pass the filters; the ray prefers the centred disc, the decoder the offset one."""
+    return [
+        (_disc(centroid, half), 0.70),
+        (_disc(centroid + np.array([0.6 * half, 0.0]), 1.3 * half), 0.90),
+        (_disc(centroid, half / 5), 0.95),  # fails the area band under both rankings
+    ]
+
+
+def test_candidate_ranking_changes_the_pick_but_not_the_filters(
+    rig: mvg.CameraRig, tmp_path: Path
+) -> None:
+    centre = np.array([40.0, -30.0, -20.0])
+    onset, centroid, half = _onset(rig, "chassis", 500, centre, 40.0)
+    stub = tmp_path / "m.png"
+    stub.write_bytes(b"x")
+    candidates = [
+        (_score("t000500-b01", index, iou, stub), mask)
+        for index, (mask, iou) in enumerate(_two_passing_candidates(centroid, half))
+    ]
+    by_ray = mr.score_candidates(rig, target_view=TARGET_VIEW, onset=onset, candidates=candidates)
+    by_score = mr.score_candidates(
+        rig, target_view=TARGET_VIEW, onset=onset, candidates=candidates, ranking="decoder_score"
+    )
+    assert by_ray.accepted is not None and by_score.accepted is not None
+    assert by_ray.accepted.candidate_index == 0 and by_score.accepted.candidate_index == 1
+    assert (by_ray.candidate_ranking, by_score.candidate_ranking) == ("ray", "decoder_score")
+    assert "best by centroid ray" in by_ray.reason and "best by decoder IoU" in by_score.reason
+    # Same filters: the same candidates pass under both rankings.
+    assert [c.passed for c in by_ray.candidates] == [c.passed for c in by_score.candidates]
+    assert [c.passed for c in by_ray.candidates] == [True, True, False]
+    with pytest.raises(ValueError, match="unknown candidate ranking"):
+        mr.score_candidates(
+            rig, target_view=TARGET_VIEW, onset=onset, candidates=candidates, ranking="area"
+        )
 
 
 # -- decode with a stub decoder, schedule derivation, fingerprint rebinding --------------------
@@ -715,6 +753,56 @@ def test_decode_of_a_geometry_seeded_source_writes_an_agent_schedule(
     assert argv[argv.index("--agent-correction-schedule") + 1].endswith(mr.AGENT_SCHEDULE_NAME)
     assert "--multi-keyframe-correction-schedule" not in argv
     assert "--recording" not in argv
+
+
+def test_decode_records_the_candidate_ranking_on_decisions_provenance_and_schedules(
+    rig: mvg.CameraRig, tmp_path: Path
+) -> None:
+    """The same stub candidates decoded under both rankings pick different masks, and the
+    ranking is recorded on the decisions, the provenance sidecar, the agent schedule and the
+    acceptance log; the default is `ray`."""
+    chassis, centroid, half = _onset(rig, "chassis", 500, np.array([40.0, -30.0, -20.0]), 40.0)
+
+    def masks_for(prompt: dict[str, Any]) -> list[tuple[np.ndarray, float]]:
+        return _two_passing_candidates(centroid, half)
+
+    picks: dict[str, Any] = {}
+    cases = (("ray", True), ("decoder_score", True), ("decoder_score", False))
+    for ranking, schedule_capable in cases:
+        root = tmp_path / f"{ranking}-{'human' if schedule_capable else 'agent'}"
+        plan_path, _ = _plan(rig, root, onsets=(chassis,), schedule_capable=schedule_capable)
+        decoder = _StubDecoder(plan_path.parent / mr.CALIBRATION_DIR_NAME / "results", masks_for)
+        kwargs: dict[str, Any] = {} if ranking == "ray" else {"candidate_ranking": ranking}
+        decisions = mr.load_decisions(
+            mr.decode_plan(plan_path, repository_root=ROOT, decoder=decoder, rig=rig, **kwargs)
+        )
+        (decision,) = decisions.decisions
+        assert decision.decision == "accepted" and decision.accepted is not None
+        assert decisions.candidate_ranking == ranking and decision.candidate_ranking == ranking
+        calibration_dir = plan_path.parent / mr.CALIBRATION_DIR_NAME
+        provenance = MultiviewConsensusProvenanceFile.model_validate_json(
+            (calibration_dir / mr.PROVENANCE_NAME).read_text()
+        )
+        (record,) = provenance.corrections
+        assert record.candidate_ranking == ranking
+        assert record.accepted.candidate_index == decision.accepted.candidate_index
+        (log_line,) = (calibration_dir / "agent_acceptances.jsonl").read_text().splitlines()
+        assert json.loads(log_line)["candidate_ranking"] == ranking
+        if not schedule_capable:
+            schedule = MultiviewAgentCorrectionSchedule.model_validate_json(
+                (ROOT / decisions.schedules["consensus-only"].uri).read_text()
+            )
+            (correction,) = schedule.corrections
+            assert correction.candidate_ranking == ranking
+            assert correction.candidate_index == decision.accepted.candidate_index
+        picks[f"{ranking}-{schedule_capable}"] = decision.accepted
+    # Both prompts return the same three candidates; the ray picks the centred disc (index 0)
+    # of the box whose centroid ray is closest, the decoder score picks index 1 (0.90).
+    assert picks["ray-True"].candidate_index == 0
+    assert picks["decoder_score-True"].candidate_index == 1
+    assert picks["decoder_score-True"].mask_area_px > picks["ray-True"].mask_area_px
+    assert picks["decoder_score-False"].candidate_index == 1
+    assert picks["decoder_score-True"].decoder_iou_estimate == 0.90
 
 
 def test_decode_carries_a_previous_agent_schedule_forward(

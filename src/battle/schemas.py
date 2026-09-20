@@ -3315,6 +3315,12 @@ MULTIVIEW_CONSENSUS_PROVENANCE = "multiview_consensus"
 MULTIVIEW_REPROMPT_MAX_ITERATIONS = 3
 MULTIVIEW_REPROMPT_ARMS = ("consensus-only", "human-plus-consensus")
 MultiviewRepromptArm = Literal["consensus-only", "human-plus-consensus"]
+# How the accepted candidate is chosen among those that pass the acceptance filters: `ray` is
+# the seed-transfer rule (closest centroid ray to the consensus point, ties by the decoder's
+# IoU estimate); `decoder_score` takes the decoder's own IoU estimate first, ties by the ray
+# (rule (g) of the Sep 20 acceptance-rule search). The filters are the same under both.
+MULTIVIEW_REPROMPT_CANDIDATE_RANKINGS = ("ray", "decoder_score")
+MultiviewRepromptCandidateRanking = Literal["ray", "decoder_score"]
 
 
 class MultiviewRepromptDetectorConfig(VersionedModel):
@@ -3462,6 +3468,7 @@ class RepromptDecision(VersionedModel):
     reason: str = Field(min_length=1)
     accepted: RepromptCandidateScore | None = None
     candidates: tuple[RepromptCandidateScore, ...] = ()
+    candidate_ranking: MultiviewRepromptCandidateRanking = "ray"
     selected_by: Literal["agent"] = "agent"
     provenance: Literal["multiview_consensus"] = MULTIVIEW_CONSENSUS_PROVENANCE
 
@@ -3492,6 +3499,7 @@ class MultiviewConsensusCorrectionProvenance(VersionedModel):
     accepted: RepromptCandidateScore
     rejected_alternatives: tuple[RepromptCandidateScore, ...] = ()
     mask: ArtifactFingerprint
+    candidate_ranking: MultiviewRepromptCandidateRanking = "ray"
 
 
 class MultiviewConsensusProvenanceFile(VersionedModel):
@@ -3527,6 +3535,7 @@ class MultiviewRepromptDecisions(VersionedModel):
     correction_policy: ArtifactFingerprint | None = None
     source_corrections_dropped_out_of_range: tuple[int, ...] = ()
     runtime_seconds: float = Field(ge=0)
+    candidate_ranking: MultiviewRepromptCandidateRanking = "ray"
     selected_by: Literal["agent"] = "agent"
     provenance: Literal["multiview_consensus"] = MULTIVIEW_CONSENSUS_PROVENANCE
     claim_boundaries: tuple[str, ...] = Field(min_length=1)
@@ -3581,6 +3590,9 @@ class MultiviewAgentCorrection(VersionedModel):
     candidate_index: int = Field(ge=0)
     mask: ArtifactFingerprint
     iteration: int = Field(ge=1, le=MULTIVIEW_REPROMPT_MAX_ITERATIONS)
+    # Ranking that chose this candidate among those passing the filters (kept per correction
+    # because a schedule carries earlier iterations' corrections forward unchanged).
+    candidate_ranking: MultiviewRepromptCandidateRanking = "ray"
     selected_by: Literal["agent"] = "agent"
     provenance: Literal["multiview_consensus"] = MULTIVIEW_CONSENSUS_PROVENANCE
 

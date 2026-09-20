@@ -15,7 +15,10 @@ Three sub-commands, one per stage, so the GPU step is isolated:
 
 - `plan` (CPU): consensus run -> `reprompt_plan.json` with one onset per merged contradiction.
 - `decode` (GPU): one warm image-decoder worker -> `reprompt_decisions.json`, the derived
-  calibration and its two schedules, and a provenance sidecar.
+  calibration and its two schedules, and a provenance sidecar.  `--candidate-ranking ray`
+  (default) keeps the seed-transfer pick (closest centroid ray); `decoder_score` keeps the same
+  filters and takes the decoder's own IoU estimate first (rule (g) of the Sep 20 acceptance
+  search); the ranking is recorded on every decision, provenance record and agent correction.
 - `run` (CPU): the `battle-muggled-smoke` commands, resumed from the nearest checkpoint before
   the earliest onset when one exists and is consistent with the arm, else a full run.
 
@@ -73,6 +76,7 @@ from .multiview_seed_transfer import (
 from .schemas import (
     MULTIVIEW_CONSENSUS_PROVENANCE,
     MULTIVIEW_REPROMPT_ARMS,
+    MULTIVIEW_REPROMPT_CANDIDATE_RANKINGS,
     MULTIVIEW_REPROMPT_MAX_ITERATIONS,
     ArtifactFingerprint,
     G2PreprocessingManifest,
@@ -86,6 +90,7 @@ from .schemas import (
     MultiviewConsensusCorrectionProvenance,
     MultiviewConsensusProvenanceFile,
     MultiviewContradictionOnset,
+    MultiviewRepromptCandidateRanking,
     MultiviewRepromptDecisions,
     MultiviewRepromptDetectorConfig,
     MultiviewRepromptPlan,
@@ -972,8 +977,18 @@ def score_candidates(
     max_ray_radii: float = SEED_RULES.max_centroid_ray_distance_radii,
     min_area_ratio: float = SEED_RULES.min_area_ratio,
     max_area_ratio: float = SEED_RULES.max_area_ratio,
+    ranking: MultiviewRepromptCandidateRanking = "ray",
 ) -> RepromptDecision:
-    """The seed-transfer acceptance rule: area band and centroid ray, ranked by ray distance."""
+    """The seed-transfer acceptance filters (area band, centroid ray), then one ranking.
+
+    `ray` (default): closest centroid ray wins, ties by the decoder's IoU estimate.
+    `decoder_score`: highest decoder IoU estimate wins, ties by the ray. The filters are
+    identical; only the pick among passing candidates differs, and the decision records which.
+    """
+    if ranking not in MULTIVIEW_REPROMPT_CANDIDATE_RANKINGS:
+        raise ValueError(
+            f"unknown candidate ranking {ranking!r}; one of {MULTIVIEW_REPROMPT_CANDIDATE_RANKINGS}"
+        )
     point = np.asarray(onset.consensus_world_mm, dtype=np.float64)
     radius = onset.radius_mm or 0.0
     expected = onset.expected_area_px
@@ -1025,23 +1040,36 @@ def score_candidates(
         )
     passing = [c for c in scored if c.passed]
     if passing:
-        best = max(
-            passing,
-            key=lambda c: (-(c.centroid_ray_distance_mm or 0.0), c.decoder_iou_estimate),
-        )
+        if ranking == "decoder_score":
+            best = max(
+                passing,
+                key=lambda c: (c.decoder_iou_estimate, -(c.centroid_ray_distance_mm or 0.0)),
+            )
+            how = (
+                f"best by decoder IoU {best.decoder_iou_estimate:.2f} (centroid ray "
+                f"{best.centroid_ray_distance_mm or 0.0:.0f} mm = "
+                f"{best.centroid_ray_distance_radii or 0.0:.2f} radii), area x"
+                f"{best.area_ratio_vs_expected or 0.0:.2f}"
+            )
+        else:
+            best = max(
+                passing,
+                key=lambda c: (-(c.centroid_ray_distance_mm or 0.0), c.decoder_iou_estimate),
+            )
+            how = (
+                f"best by centroid ray {best.centroid_ray_distance_mm or 0.0:.0f} mm "
+                f"({best.centroid_ray_distance_radii or 0.0:.2f} radii), area x"
+                f"{best.area_ratio_vs_expected or 0.0:.2f}, decoder IoU "
+                f"{best.decoder_iou_estimate:.2f}"
+            )
         return RepromptDecision(
             target=onset.target,
             onset_frame=onset.onset_frame,
             decision="accepted",
-            reason=(
-                f"{len(passing)} of {len(scored)} candidates pass; best by centroid ray "
-                f"{best.centroid_ray_distance_mm or 0.0:.0f} mm "
-                f"({best.centroid_ray_distance_radii or 0.0:.2f} radii), area x"
-                f"{best.area_ratio_vs_expected or 0.0:.2f}, decoder IoU "
-                f"{best.decoder_iou_estimate:.2f}"
-            ),
+            reason=f"{len(passing)} of {len(scored)} candidates pass; {how}",
             accepted=best,
             candidates=tuple(scored),
+            candidate_ranking=ranking,
         )
     best_ray = min(
         (c.centroid_ray_distance_radii for c in scored if c.centroid_ray_distance_radii),
@@ -1056,6 +1084,7 @@ def score_candidates(
             + (f" (closest centroid ray {best_ray:.2f} radii)" if best_ray is not None else "")
         ),
         candidates=tuple(scored),
+        candidate_ranking=ranking,
     )
 
 
@@ -1133,6 +1162,7 @@ def decode_plan(
     device: str = "cuda:0",
     correction_policy: Path = DEFAULT_CORRECTION_POLICY,
     rig: CameraRig | None = None,
+    candidate_ranking: MultiviewRepromptCandidateRanking = "ray",
 ) -> Path:
     """Decode every planned prompt with one warm worker, accept, derive the schedules.
 
@@ -1141,8 +1171,14 @@ def decode_plan(
     `decode_result.json`, `reprompt_decisions.json`, and when the source run applied a
     correction schedule, `calibration/` (derived calibration with the new agent candidates,
     the `human-plus-consensus` and `consensus-only` schedules, `reprompt_provenance.json`,
-    `agent_acceptances.jsonl`).
+    `agent_acceptances.jsonl`).  `candidate_ranking` (see `score_candidates`) is recorded on
+    every decision, every provenance record, every agent correction and the decisions file.
     """
+    if candidate_ranking not in MULTIVIEW_REPROMPT_CANDIDATE_RANKINGS:
+        raise ValueError(
+            f"unknown candidate ranking {candidate_ranking!r}; one of "
+            f"{MULTIVIEW_REPROMPT_CANDIDATE_RANKINGS}"
+        )
     from .muggled_agent_correction import derive_calibration
     from .muggled_calibration import (
         finalize_correction_schedule,
@@ -1338,7 +1374,11 @@ def decode_plan(
                     )
                 )
         decision = score_candidates(
-            rig, target_view=plan.target_view, onset=onset, candidates=candidates
+            rig,
+            target_view=plan.target_view,
+            onset=onset,
+            candidates=candidates,
+            ranking=candidate_ranking,
         )
         if decision.decision == "accepted" and (schedule_capable or agent_schedule_capable):
             count = later_per_target.get(onset.target, 0) + 1
@@ -1505,22 +1545,10 @@ def decode_plan(
                         c for c in decision.candidates if c is not decision.accepted
                     ),
                     mask=decision.accepted.mask,
+                    candidate_ranking=decision.candidate_ranking,
                 )
             )
-            log_lines.append(
-                json.dumps(
-                    {
-                        "candidate_id": decision.accepted.calibration_candidate_id,
-                        "candidate_index": decision.accepted.candidate_index,
-                        "intended_target": decision.target,
-                        "analysis_frame_index": decision.onset_frame,
-                        "provenance": MULTIVIEW_CONSENSUS_PROVENANCE,
-                        "selected_by": "agent",
-                        "iteration": plan.iteration,
-                        "rationale": decision.reason,
-                    }
-                )
-            )
+            log_lines.append(_acceptance_log_line(decision, plan.iteration))
         provenance_path.write_text(
             MultiviewConsensusProvenanceFile(
                 manifest_kind="multiview_consensus_correction_provenance",
@@ -1566,6 +1594,7 @@ def decode_plan(
                     candidate_index=decision.accepted.candidate_index,
                     mask=decision.accepted.mask,
                     iteration=plan.iteration,
+                    candidate_ranking=decision.candidate_ranking,
                 )
             )
             provenance_records.append(
@@ -1585,22 +1614,10 @@ def decode_plan(
                         c for c in decision.candidates if c is not decision.accepted
                     ),
                     mask=decision.accepted.mask,
+                    candidate_ranking=decision.candidate_ranking,
                 )
             )
-            log_lines.append(
-                json.dumps(
-                    {
-                        "candidate_id": decision.accepted.calibration_candidate_id,
-                        "candidate_index": decision.accepted.candidate_index,
-                        "intended_target": decision.target,
-                        "analysis_frame_index": decision.onset_frame,
-                        "provenance": MULTIVIEW_CONSENSUS_PROVENANCE,
-                        "selected_by": "agent",
-                        "iteration": plan.iteration,
-                        "rationale": decision.reason,
-                    }
-                )
-            )
+            log_lines.append(_acceptance_log_line(decision, plan.iteration))
         if new_records:
             provenance_path = calibration_dir / PROVENANCE_NAME
             provenance_path.write_text(
@@ -1663,6 +1680,7 @@ def decode_plan(
         correction_policy=fingerprint(policy_path, repository_root) if schedule_capable else None,
         source_corrections_dropped_out_of_range=dropped_out_of_range,
         runtime_seconds=time.monotonic() - started,
+        candidate_ranking=candidate_ranking,
         claim_boundaries=CLAIM_BOUNDARIES,
     )
     if schedule_capable and not schedules:
@@ -1670,6 +1688,23 @@ def decode_plan(
     path = iteration_dir / DECISIONS_NAME
     path.write_text(output.model_dump_json(indent=2) + "\n", encoding="utf-8")
     return path
+
+
+def _acceptance_log_line(decision: RepromptDecision, iteration: int) -> str:
+    assert decision.accepted is not None
+    return json.dumps(
+        {
+            "candidate_id": decision.accepted.calibration_candidate_id,
+            "candidate_index": decision.accepted.candidate_index,
+            "intended_target": decision.target,
+            "analysis_frame_index": decision.onset_frame,
+            "provenance": MULTIVIEW_CONSENSUS_PROVENANCE,
+            "selected_by": "agent",
+            "iteration": iteration,
+            "candidate_ranking": decision.candidate_ranking,
+            "rationale": decision.reason,
+        }
+    )
 
 
 def _seed_slot(
@@ -2073,6 +2108,16 @@ def main() -> None:
     decode.add_argument("--model", type=Path, default=None)
     decode.add_argument("--device", default="cuda:0")
     decode.add_argument("--correction-policy", type=Path, default=DEFAULT_CORRECTION_POLICY)
+    decode.add_argument(
+        "--candidate-ranking",
+        choices=MULTIVIEW_REPROMPT_CANDIDATE_RANKINGS,
+        default="ray",
+        help=(
+            "how the accepted candidate is chosen among those passing the filters: ray = "
+            "closest centroid ray (default, the seed-transfer rule); decoder_score = the "
+            "decoder's own IoU estimate first, ties by ray (rule (g))"
+        ),
+    )
 
     run = commands.add_parser("run", help="emit the battle-muggled-smoke command per arm (CPU)")
     run.add_argument("--iteration-dir", type=Path, required=True)
@@ -2112,6 +2157,7 @@ def main() -> None:
             model=args.model,
             device=args.device,
             correction_policy=args.correction_policy,
+            candidate_ranking=args.candidate_ranking,
         )
         decisions = load_decisions(path)
         for decision in decisions.decisions:
@@ -2120,6 +2166,7 @@ def main() -> None:
                 f"({decision.reason})"
             )
         print(
+            f"candidate ranking {decisions.candidate_ranking}; "
             f"{decisions.accepted_count} accepted, {decisions.rejected_count} rejected; schedules "
             + (
                 ", ".join(f"{k}={v.uri}" for k, v in decisions.schedules.items())
