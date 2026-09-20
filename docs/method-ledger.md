@@ -3508,3 +3508,53 @@ this comparison makes no accuracy or cross-method identity claim.
   and a weak interior (0.423; 1500 / 1700 0.35 / 0.16 against 0.70 / 0.85). **No DAM4SAM arm
   beats `off-r1280-sched` on `all` by more than 0.01**, so the plan's seven-view DAM4SAM pass is
   not started. Nothing is adopted.
+
+### Sep 19: anchor scoreboard over every first-minute arm (plan step 3, scoring half)
+
+- **Claim boundary first.** `runs/anchor-scoreboard-20260919/anchor_iou.{json,md}`: 19 arms x
+  52 human review anchor cells on one view (13 frames), scored with `battle-anchor-iou`. Review
+  evidence for ranking arms against each other, not a dataset, not ground truth, no accuracy
+  claim; means within ~0.02 are noise and two arms within 0.01 on `all` are tied (the plan's
+  rule). The ensemble v2 and any reference decision are **not** made here; README.md and the
+  review guide are untouched. CC BY-NC 4.0. CPU only.
+- **Table** (`IoU all`, then `[279,408)` / `[573,722)` / `[1020,1172)` / outside; rows grouped and
+  sorted by `all`). References: `ensemble-reference-v1` 0.681 (3 missing), `reference` =
+  `off-r720-sched` 0.668. SAM3 resolution: `xg-r1280-sched` 0.728 / 0.888 / 0.620 / 0.590 /
+  0.796, `off-r1280-sched` 0.724 / 0.861 / 0.603 / 0.659 / 0.764 (tied), `off-r1920-sched` 0.708,
+  `off-r1008-sched` 0.705 (tied), `off-r720-sched` 0.668. SAM3 memory arms at 1280:
+  `pm-append-keepfm` **0.743** / 0.854 / 0.687 / 0.618 / 0.800, `pm-append` **0.743** / 0.853 /
+  0.687 / 0.616 / 0.800 (tied, best overall), `pm-append-fm6` 0.726, `fm6` 0.722 (tied with each
+  other and with the 1280 baseline), `fm8` 0.708, `drop-900` 0.691. SAM2 arms: `dam4sam-60s`
+  0.717 / 0.811 / 0.648 / 0.713 / 0.700, `dam4sam-large-1024-sched-60s` 0.715 / 0.808 / 0.677 /
+  0.684 / 0.695 (tied), `dam4sam-tiny-1024-sched-60s` 0.700 / 0.816 / 0.638 / **0.745** / 0.619,
+  `dam4sam-large-1024-seed0-60s` 0.644 (2 missing), `samurai-large-1024-seed0-60s` 0.634. Not
+  in the table: `dam4sam-large-1536-sched-1080p-60s` (`vram_gate`), `samurai-large-1024-sched-60s`
+  (`unsupported`), `recent-first` (not run). The 1920 masks were downsampled nearest to the
+  720p anchors (`resized_run_mask`); `off-r720-sched` and `reference` score identically (the
+  scorer's built-in check).
+- **Best per window.** `[279,408)` `fm8` 0.892 / `fm6` 0.891 / `xg-r1280-sched` 0.888 (tied);
+  `[573,722)` the two `pm-append` arms 0.687; `[1020,1172)` `dam4sam-tiny-1024-sched-60s` 0.745
+  (`dam4sam-60s` 0.713 next); outside the two `pm-append` arms 0.800, `pm-append-fm6` 0.799,
+  `xg-r1280-sched` 0.796 (tied). No arm leads every window: DAM4SAM leads the `[1020,1172)`
+  swap window, SAM3-1280 with the appended prompt bank leads `[573,722)` and the outside frames.
+- **Sheet.** `anchors_vs_reference_vs_best.png`: human anchors | old reference (`off-r720-sched`)
+  | `pm-append` (the simpler of the two tied best arms), 13 rows, per-part IoU under each run
+  tile, `battle-anchor-iou --sheet ... --sheet-reference reference --sheet-best pm-append`.
+- **Reading, restated from the run READMEs.** (1) Appending corrections to the prompt bank is
+  the one memory change that clears the 0.01 band over `off-r1280-sched` (+0.019; from
+  `[573,722)` +0.08 and outside +0.04, at -0.04 inside `[1020,1172)`). (2) `drop-900` does not
+  confirm the 900-correction hypothesis at 1280: `[1020,1172)` 0.659 -> 0.628 and frame 900 lost.
+  (3) DAM4SAM large with the schedule (0.715) is tied with SAM3-1280 and 0.028 below `pm-append`;
+  it has the best chassis of all arms (0.697) and the weakest interior of the scheduled arms
+  (0.423). No DAM4SAM arm beats `off-r1280-sched` by more than 0.01, so the seven-view DAM4SAM
+  pass was not started. (4) Cabin and rear_body are unchanged across all 19 arms; every arm puts
+  1.2-1.3k px on the hidden (1700, rear_body) cell. (5) VRAM: SAM3 1280 2.43-2.65 GiB, DAM4SAM
+  shared-predictor 6.07-6.85 GiB torch peak (7.48 GiB nvidia-smi maximum), large@1536 projected
+  14.79 GiB and gated, SAMURAI large 2.64 GiB.
+- **Deliverables.** Commits `7380a9e` (smoke driver exit 3 on a failed core method), `73040c6`,
+  `49b6159`, `8ee1b9f` (ledger), `6eed418` (`--sam2-model` forwarded only to the DAM4SAM worker);
+  run roots `runs/sam3-memory-arms-20260919/`, `runs/dam4sam-arms-20260919/`,
+  `runs/anchor-scoreboard-20260919/`, each with a README and a `code-snapshot-<commit>/` naming
+  the committed code its queue ran. Next, by instruction for a later worker: ensemble v2
+  (primary/fallback by anchors, fallback intervals label-free), v5 rebuild, README and review
+  guide.
