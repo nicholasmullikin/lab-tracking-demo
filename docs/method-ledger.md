@@ -4361,3 +4361,221 @@ this comparison makes no accuracy or cross-method identity claim.
   heavy for a small client (the two component files take the same presets). The hidden / not
   visible vocabulary in the workspace is a button plus a note, not a typed distractor field.
   The arm anchor numbers quoted in the guide are the Sep 19 scoreboard's; nothing was re-scored.
+
+### Sep 20: B4 arms on C10379, the consensus re-prompt loop run (multicam plan headline; commits `78f2eca`, `21da378`, `cf8007e`)
+
+- **Claim boundary first.** Anchor IoU is against one person's choice of SAM3 decoder masks on
+  13 frames of one view (51 labelled cells + 1 hidden): review evidence that ranks arms against
+  each other, not accuracy, not a dataset, not ground truth. Every correction the loop wrote is
+  agent-authored (`selected_by: agent`, provenance `multiview_consensus`); "accepted" means the
+  other cameras agree with the mask, not that it is right. GPU: five queue passes on
+  `runs/multiview-reprompt-20260920/code-snapshot-0c62799/` (decode 7 s, three arms 329-357 s,
+  iteration-2 arm 359 s, two more decodes 7-8 s), every `gpu_check` ok, no `NVRM`/`Xid`.
+  CC BY-NC 4.0.
+- **Others-only consensus** (`runs/multiview-part-consensus-first-minute-r1280-others-only/`,
+  `--exclude-view C10379`, reference `pm-append` named but excluded, seven Sep 19 `-r1280` statics
+  + e4 behind the pose gate, 60 s): chassis / rear_body / cabin on 1800 frames each with 7.05 /
+  6.70 / 7.13 mean views, 25 / 59 / 17 episodes, interior none (no other view tracks it). This
+  removes the human-corrected reference from the consensus; what it does not remove is that
+  the seven statics and e4 were seeded at frame 0 by geometric transfer of the C10379 human
+  frame-0 masks. The loop is free of human *corrections*, not of human *seeds*.
+- **Plan** (`C10379/iter1/reprompt_plan.json`, default detector: error > 40 raw px for >= 5
+  frames, >= 3 statics agree within 30 px, merge 15 / min run 10): the same three chassis
+  onsets as with the pm-append consensus, 296 `[296,313)` (43 px at onset, 6 statics), 475
+  `[475,515)` (42 px, 7), 1049 `[1049,1085)` (121 px, 7); rear_body 1762 blocked (2 statics).
+  The 60 px sensitivity variant (`variants/thr60/`, `detector_thr60.json`) keeps only chassis
+  1067 `[1067,1081)`: 296 and 475 are 40-60 px onsets, about one part radius on a grazing
+  camera. Arms were run for the default plan only; the scorecard said thresholds do not
+  transfer leave-one-out, so none was taken from it.
+- **Decode** (one warm worker, 6 prompts): all three onsets **accepted**, no rejections (8/8,
+  6/8, 7/8 candidates pass the area band and centroid-ray rule; best by ray distance 16 / 10 /
+  18 mm = 0.37 / 0.19 / 0.36 radii, area 1.48 / 1.55 / 1.89 x expected, decoder IoU 0.59 / 0.68
+  / 0.60). The accepted chassis masks are **15,373 / 17,084 / 23,288 px** where the human's
+  chassis on this view is about 5k px: each covers the chassis *and the hand holding it*
+  (`calibration/results/t000296-b02_candidate-02_review.png`). The expected area the sphere
+  model predicts for the grazing camera is 10-12k px, so a hand+chassis blob sits inside the
+  [0.3, 3.0] band and its centroid lies near the consensus ray; the rule cannot separate part
+  from hand. That is the mechanism behind every number below.
+- **Arms** (all `--max-side-length 1280 --prompt-memory-semantics append --checkpoint-every 300`,
+  full runs; `anchor_iou.md`): IoU all / chassis / interior / rear_body / cabin, windows
+  279-408 / 573-722 / 1020-1172 / outside, hidden FP px, worker elapsed, peak VRAM.
+
+  | arm | later corrections | all | ch | int | rb | cab | 279-408 | 573-722 | 1020-1172 | outside | hidden FP | s | GiB |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | pm-append (human) | 327 900 1172 1235 | **0.743** | 0.637 | 0.585 | 0.790 | 0.962 | 0.853 | 0.687 | 0.616 | 0.800 | 1265 | 341 | 2.54 |
+  | off-r1280-sched | 327 900 1172 1235 | 0.724 | 0.608 | 0.540 | 0.789 | 0.964 | 0.861 | 0.603 | 0.659 | 0.764 | 1228 | - | - |
+  | seed-only-720 (Sep 18) | none | 0.632 | 0.427 | 0.384 | 0.766 | 0.960 | 0.624 | 0.618 | 0.695 | 0.598 | 1310 | - | - |
+  | **seed-only-1280** (new) | none | **0.591** | 0.404 | 0.228 | 0.789 | 0.959 | 0.648 | 0.628 | 0.579 | 0.527 | 1252 | 329 | 2.39 |
+  | **consensus-only** iter 1 | 296 475 1049 (agent) | **0.590** | 0.291 | 0.316 | 0.810 | 0.959 | 0.573 | 0.651 | 0.637 | 0.517 | 1226 | 343 | 2.48 |
+  | consensus-only iter 2 | + 333 653 983 1326 1590 | 0.663 | 0.519 | 0.397 | 0.787 | 0.959 | 0.653 | 0.661 | 0.747 | 0.606 | 1251 | 359 | 2.77 |
+  | human-plus-consensus | 296 327 475 900 1049 1172 1235 | 0.730 | 0.591 | 0.585 | 0.791 | 0.960 | 0.823 | 0.679 | 0.560 | 0.834 | 1207 | 357 | 2.71 |
+
+  Consensus corrections came from an others-only consensus whose member views were seeded by
+  geometric transfer of the C10379 human frame-0 masks (the remaining human dependency).
+  **seed-only at 1280 is 0.591**, below the Sep 18 seed-only at 720 (0.632; interior 0.23 vs
+  0.38), so the first-minute floor at the run resolution had never been measured and is lower
+  than assumed. consensus-only iteration 1 lands exactly on that floor (0.590): three agent
+  chassis corrections moved the chassis from 0.404 to 0.291 and the interior from 0.228 to
+  0.316 (a chassis blob that includes the hand frees the interior slot), net zero. Adding the
+  same corrections to the human ones costs 0.013 (0.743 -> 0.730), all on the chassis.
+- **Iterations.** Iteration 2 (`C10379/iter2/`, same others-only consensus, source = the
+  iteration-1 run): **five new chassis onsets** 333 `[333,475)`, 653 `[653,682)`, 983
+  `[983,1040)`, 1326 `[1326,1565)`, 1590 `[1590,1800)`; the first corrections made the chassis
+  contradict the other cameras for 400+ frames instead of 90. All five accepted (masks
+  11.6-20.1k px), the arm scores 0.663 (chassis 0.519, interior 0.397). Iteration 3
+  (`C10379/iter3/`): two chassis onsets (1605, 1639), both rejected `policy_keyframe_limit`
+  (chassis already has 8 later corrections; policy v4 allows 8), nothing to run; the loop's cap
+  of 3 was reached anyway.
+- **Verdict (plan stop rule).** consensus-only is 0.153 (iteration 1) and 0.080 (iteration 2)
+  below pm-append, both far past 0.03, on the one view that has anchors: **multicam is a
+  detector, not yet a corrector.** The consensus finds the frames where C10379 disagrees with
+  the other cameras (the three onsets are the ensemble v2 fallback intervals), but the
+  correction it authors from a sphere + box prompt is a hand+chassis blob the geometric rule
+  cannot reject. What a corrector would need, in order of evidence: a hand-aware acceptance
+  (dataset hand joints as negatives were available, `--hand-negatives`, not used here; the seed
+  search found hand-joint negatives cost 0.1-0.3 IoU at frame 0, so this is not obviously a
+  fix), a size prior from the target view's own history rather than the sphere model on a
+  grazing camera, or a second decoder opinion. Track C (recording 2) runs with the detector
+  framing: the consensus flags, the human scores.
+- **Deliverables.** `runs/multiview-reprompt-20260920/` (README results section, `C10379/iter{1,2,3}/`,
+  `variants/thr60/`, `jobs_*.json`, `queue.log`, `logs/`); the others-only consensus root; this
+  entry. Tooling changes that this run needed are in the B4/C10119 entry below.
+
+### Sep 20: the multiview profile takes agent corrections; C10119 as re-prompt target (plan B4 second target; commits `78f2eca`, `cf8007e`)
+
+- **Claim boundary first.** No anchors exist for C10119: nothing here is scored. The one number
+  is cross-view agreement of one tracker with the other cameras (one of which, C10379, carried
+  the human corrections), and after frame 1660 the majority's rear_body slot sits on the
+  screwdriver the recording-1 human named a distractor, so agreeing more with the majority late
+  in the minute is not evidence of being right. The correction is agent-authored
+  (`selected_by: agent`, provenance `multiview_consensus`). GPU: two queue jobs (decode 6.5 s,
+  arm 370 s incl. export) on `code-snapshot-21da378`, `gpu_check` ok. CC BY-NC 4.0.
+- **Why a change was needed.** The B4 tool's `run` emitted the C10119 command as `BLOCKED`: the
+  `--four-part-multiview-first-minute` profile took only its geometric seed manifest, the human
+  schedule/policy contracts name three view ids, and the calibration-manifest contract forbids
+  agent seeds by design (`agent-selected masks are later-frame corrections only, never seeds`),
+  so a geometry-seeded run cannot carry a `MuggledSAMMultiKeyframeCorrectionSchedule` at all.
+  Widening the Literals would not have helped.
+- **Change (minimal, tested).** A separate record for exactly this case:
+  `MultiviewAgentCorrectionSchedule` (`schemas.py`; view id by pattern, bound by fingerprint to
+  the clip config, the proxy, the geometric seed manifest and the plan; one
+  `MultiviewAgentCorrection` per target x frame with slot, candidate id, mask fingerprint,
+  iteration, `selected_by: agent`, provenance `multiview_consensus`; a `provenance_file` naming the
+  loop's `reprompt_provenance.json`). `battle-muggled-smoke --agent-correction-schedule <json>`
+  (multiview profile only): the seeds still come from `--geometric-seed-manifest`; the loader
+  checks the schedule's fingerprints, that every correction names a slot the manifest seeded and
+  lies inside the frame budget, re-hashes every mask, and hands the worker the same
+  `{seeds, corrections, memory_semantics}` payload a human schedule produces (no worker change).
+  Run metadata: `FourPartMultiviewRunMetadata.later_corrections` gains `multiview_consensus`
+  with `agent_correction_schedule_fingerprint` and `agent_correction_frames` (the profile's
+  `requested_seconds`/frame-count rule and `recording_label` were relaxed in the same hunk for
+  recording 2, see the C2 entry). `battle-multiview-reprompt decode` writes this schedule for a
+  geometry-seeded source instead of a blocked reason (consensus-only arm only; a geometry-seeded
+  view has no human corrections to add, so `human-plus-consensus` is reported as blocked with
+  that reason), carries the previous iteration's agent schedule forward, applies the policy
+  budget, and `run` emits `--agent-correction-schedule`. The human `view_id` Literals on the
+  policy/schedule contracts are untouched. Tests: `tests/test_multiview_reprompt.py` (agent
+  schedule derivation with slot assignment and mask hashes, carry-forward across iterations,
+  emitted command) and `tests/test_exemplar_seed.py` (the smoke loader: payload, slot/budget/
+  manifest-drift refusals).
+- **C10119, iteration 1** (`runs/multiview-reprompt-20260920/C10119/iter1/`). Consensus
+  `runs/multiview-part-consensus-first-minute-r1280-excl-c10119/` (`--exclude-view C10119`,
+  reference `pm-append` *included* as a member: the human-corrected C10379 run is in this
+  majority, unlike the C10379 arms). Plan: one onset, **rear_body 1533 `[1533,1800)`**, error 281
+  px, 6 statics agree, radius 25 mm, expected area 1,280 px. Decode: accepted (8/8 pass; ray 2 mm
+  = 0.10 radii, area x1.41, decoder IoU 0.93). Run: the r1280 C10119 run's command plus the
+  agent schedule, 1800 frames, 327 s, 2.42 GiB, presence 1.00 / 1.00 / 1.00 (chassis, rear_body,
+  cabin).
+- **Agreement before/after** (recording-1 consensus rebuilt with the corrected C10119 run
+  replacing the Sep 19 one, `runs/multiview-part-consensus-first-minute-r1280-c10119-reprompt-iter1/`,
+  73 s): C10119 rear_body agreement **0.872 -> 0.997**, mean error 20.5 -> 0.7 px; its 13
+  contradicting rear_body episodes over `[1525,1785)` reduce to one, `[1525,1530)`; episodes over
+  all views 105 -> 90; chassis / cabin agreement 1.00 / 1.00 unchanged. Held for human scoring:
+  `configs/qa/first_minute_review_anchors_static_c10119.json` (26 frames) is the session; once
+  its record exists the command is
+  `uv run battle-anchor-iou --view static-c10119 --run r1280=runs/sam3-views-r1280-20260919/views/C10119 --run consensus-only=runs/multiview-reprompt-20260920/C10119/iter1/arms/consensus-only --output runs/multiview-reprompt-20260920/C10119/iter1/anchor_iou.json`.
+  What the anchors must decide: whether the rear_body C10119 now agrees with the other six on is
+  the rear body or the screwdriver.
+
+### Sep 20: Track C2/C3, recording 2 (`nusar_9061`) seeded and run with zero human input (commits `78f2eca`, `21da378`, `cf8007e`)
+
+- **Claim boundary first.** No human touched this recording: no seed, no correction, no anchor.
+  Upstream human input that remains and is named: the DINOv2 exemplar library is recording 1's
+  64 human masks on C10379, and the gate that allowed `rear_body` and `cabin` (and refused
+  `chassis` and `interior`) is the seed search's held-out IoU on recording 1 (0.795 / 0.949 pass,
+  0.525 / 0.465 fail the 0.6 rule), so **chassis and interior seeding is not automatic** and was
+  not attempted as seeds. Every mask is agent-selected; consensus, contradiction and confidence
+  numbers are one tracker disagreeing with itself across cameras, not accuracy. GPU: three
+  queue passes (seed decode 317 s; 7 views 331-340 s each, 17:25-18:05 UTC; re-prompt decode 7 s
+  and arm 356 s) on `code-snapshot-78f2eca` / `-21da378`, every `gpu_check` ok, no `NVRM`/`Xid`.
+  CC BY-NC 4.0. Full detail: `runs/rec2-automatic-20260920/README.md`.
+- **Tool** (`battle-exemplar-seed plan|window|decode|accept|label-session|sheet`,
+  `src/battle/exemplar_seed.py`, tests `tests/test_exemplar_seed.py`). Seed frame by the dataset
+  hand joints (highest lowest-joint height above the fitted table plane over 5 frames inside
+  [300, 422)): **383**, 57 mm. Table region = the hand joints of the window dropped onto the
+  plane, grown 120 mm; 208 grid points at 55 mm x 2 box radii (32 / 55 mm) projected per view =
+  **3,234 SAM3 image-decoder prompts**, one warm worker per view. Candidates filtered to an
+  18-95 mm implied radius on the plane and de-duplicated (<= 220 per view), ranked per part by
+  max cosine to that part's exemplars. Consistency: top-6 per view, every pair of views proposes
+  a point, supporters reproject within 30 raw px, the largest summed similarity over >= 3
+  supporters with radii within [0.5, 2.0] x median wins, parts placed in gate order with a 60 mm
+  exclusion; remaining views completed by the nearest in-band candidate to the reprojected
+  point (`acceptance_basis: centroid_ray`, recorded as a completion). New seed provenance
+  `exemplar_multiview_consistency` across the seed / run / consensus schemas. `window` writes a
+  seed-window clip (`configs/clips/..._all_static_seed383_g2.json`: proxy frames [383, 2100)
+  re-encoded frame-exact with the proxy recipe, offsets shifted, frame 0 = proxy 383) because
+  the tracker seeds at frame 0 of the video it is given. `--recording` / `--analysis-frame-offset`
+  on the consensus builder, `--recording` on `battle-muggled-smoke` (multiview profile: any
+  static view, budget from `--max-frames`) and on `battle-multiview-reprompt plan`;
+  `battle-detector-scorecard --no-truth <scorecard.json>` writes only `confidence.jsonl` /
+  timeline / `confidence_only.json` with the detector set and abstain threshold carried from a
+  scored run.
+- **Seeding outcome** (`runs/rec2-seed-proposals-20260920/seed_table.md`). All four parts reached
+  consistency: chassis 5 supporting views + 3 completed (reprojection 5.6-28.3 px, radii 21-60 mm,
+  similarity 0.49-0.73, margin -0.10..+0.15), interior 7 + 0 (2.3-18.0 px, 18-48 mm, 0.54-0.69,
+  -0.13..+0.05), rear_body 5 + 2 (4.9-29.5 px, 19-66 mm, 0.39-0.70, -0.09..+0.18), cabin 6 + 2
+  (2.0-24.6 px, 19-55 mm, 0.39-0.74, -0.17..+0.06). **The margins are small and often negative**:
+  the appearance ranking barely separates the parts; geometry makes the picks consistent but
+  only says "an object is here". By eye (`seed_picks_contact_sheet.png`) the rear_body pick is the
+  green-sticker piece and the cabin pick the roofed cabin at the arm's base in the views
+  inspected, while the interior pick sits on the black block that is most likely the chassis and
+  the chassis pick on the small piece in the hands: the gate refused exactly the two parts whose
+  picks look wrong. Used as seeds: rear_body (7 views) and cabin (8); C10119 got no in-band
+  rear_body candidate and, with one part, was **not run** (2-part minimum). Chassis and interior
+  (and every part's alternatives) are proposals for the human: 32 cells under `proposals/`.
+- **Runs** (`runs/rec2-automatic-20260920/views/`): 7 static views, 1,717 frames each, worker
+  309-310 s, peak VRAM 2.39 GiB, presence rear_body 0.77-1.00 (C10404 0.77), cabin 0.83-1.00
+  (C10379 0.83).
+- **Consensus** (`consensus/`, reference C10379, seven statics, 46 s; wrist check at the offset
+  frames median 0.0005 mm): rear_body on 1717 frames with 3.55 mean views, 87 episodes,
+  agreement C10379 1.00 / C10095 0.69 / C10115 0.52 / C10118 0.76 / C10390 0.76 / C10395 0.84 /
+  C10404 0.56; cabin 3.32 mean views, 119 episodes, C10379 contradicted 78 frames, agreement
+  C10379 0.90 / 0.66 / 0.74 / **C10118 0.09** / 0.49 / 0.93 / 0.81; 206 episodes in all.
+  Recording 1's eight views agreed on 7.4-8.1 views per frame at 0.86-1.00; here 3.3-3.6 of 7 at
+  0.09-0.93. The automatic seeds are consistent at one frame and diverge over the minute.
+- **Re-prompt on C10379** (`reprompt/C10379/iter1/`, others-only consensus): 12 onsets, 4 planned
+  (cabin 74; rear_body 771, 867, 977), 8 blocked (only 2 statics agree). All 4 accepted (masks
+  2.3-4.8k px, decoder IoU 0.13-0.74). Arm: 1717 frames, 326 s, 2.54 GiB, cabin presence 0.83 ->
+  0.93; against the rebuilt consensus C10379's cabin contradicts the majority on **144 frames
+  (from 78)**, agreement 0.90 -> 0.87. Same reading as recording 1 (detector, not corrector).
+  Contact sheet `c10379_consensus_only_contact_sheet.png` (proxy 383 / 683 / ... / 2099): rear_body
+  stays on the green-sticker piece; the cabin slot spends most of the minute on the hands.
+- **Confidence** (`detector/`, `--no-truth`, thresholds from recording 1's pm-append scorecard:
+  `sam3_score` + `area_vs_seed` + `area_jump`, abstain <= 0.187): seeded run 519 / 3,434 rows
+  abstain (15.1 %; cabin 519, rear_body 0), consensus-only run 345 / 3,434 (10.0 %; cabin 344,
+  rear_body 1). Nothing scored; fewer abstentions is not evidence the cabin improved.
+- **Labelling session prepared** (`configs/qa/nusar_9061_review_anchors_c10379.json`, target
+  policy `configs/muggledsam_static_four_part_reassembly_focused_manual_seed_nusar_9061_static_c10379.json`):
+  13 C10379 frames on the original 80 s proxy timeline, 8 detector-selected from the
+  consensus-only run's confidence (456, 986, 1616, 1810, 1878, 1958, 2018, 2078; >= 60 apart) and
+  5 seeded random (483, 552, 1191, 1636, 2045); the workspace command is in the README and was
+  verified headless (`--no-worker`, `/api/state` returns the recording-2 config, proxy and 13
+  timestamps). Open: scoring maps proxy frames to the seed-window run (minus 383) or needs a
+  run on the untrimmed clip; `battle-anchor-iou --view static-c10379` needs `--anchors` pointed
+  at the recording-2 export.
+- **Open / not done.** e4 was not seeded or run (mono ego view; the exemplars are RGB and the
+  trimmed timeline would need the ego pose offset plumbed through the ego gate, which
+  `--analysis-frame-offset` does but was not exercised). The chassis and interior seeds wait for
+  the human's proposal review, then the run resumes from the seed frame for those slots (not
+  built). The consensus re-prompt was not iterated past 1 on this recording. Whether any seeded
+  part is right waits for the 13 anchors.

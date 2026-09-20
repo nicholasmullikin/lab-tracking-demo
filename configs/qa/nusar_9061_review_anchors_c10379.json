@@ -1,0 +1,240 @@
+{
+  "schema_version": "1.0",
+  "manifest_kind": "human_review_anchor_config",
+  "config_id": "nusar_9061-review-anchors-c10379",
+  "anchor_kind": "human_review_anchor",
+  "clip_config": "configs/clips/assembly101_nusar_9061_four_part_reassembly_focused_all_static_g2.json",
+  "view_id": "static-c10379",
+  "manual_seed_target_config": "configs/muggledsam_static_four_part_reassembly_focused_manual_seed_nusar_9061_static_c10379.json",
+  "analysis_fps": 30,
+  "source_offset_seconds": 374.0,
+  "targets": [
+    "chassis",
+    "interior",
+    "rear_body",
+    "cabin"
+  ],
+  "frames": [
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 456,
+      "proxy_seconds": 15.2,
+      "source_seconds": 389.2,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": "detector-selected (suspicion 0.940); a fifth part (rear bumper) is handled in this window: distractor, not a target",
+      "origin": "extra_detector_selected",
+      "source_analysis_frame_index": null,
+      "residual_pose_frames": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 483,
+      "proxy_seconds": 16.1,
+      "source_seconds": 390.1,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": "random draw; a fifth part (rear bumper) is handled in this window: distractor, not a target",
+      "origin": "extra_random",
+      "source_analysis_frame_index": null,
+      "residual_pose_frames": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 552,
+      "proxy_seconds": 18.4,
+      "source_seconds": 392.4,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": "random draw; a fifth part (rear bumper) is handled in this window: distractor, not a target",
+      "origin": "extra_random",
+      "source_analysis_frame_index": null,
+      "residual_pose_frames": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 986,
+      "proxy_seconds": 32.86666666666667,
+      "source_seconds": 406.8666666666667,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": "detector-selected (suspicion 0.974); a fifth part (rear bumper) is handled in this window: distractor, not a target",
+      "origin": "extra_detector_selected",
+      "source_analysis_frame_index": null,
+      "residual_pose_frames": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1191,
+      "proxy_seconds": 39.7,
+      "source_seconds": 413.7,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": "random draw; a fifth part (rear bumper) is handled in this window: distractor, not a target",
+      "origin": "extra_random",
+      "source_analysis_frame_index": null,
+      "residual_pose_frames": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1616,
+      "proxy_seconds": 53.86666666666667,
+      "source_seconds": 427.8666666666667,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": "detector-selected (suspicion 0.975); a fifth part (rear bumper) is handled in this window: distractor, not a target",
+      "origin": "extra_detector_selected",
+      "source_analysis_frame_index": null,
+      "residual_pose_frames": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1636,
+      "proxy_seconds": 54.53333333333333,
+      "source_seconds": 428.5333333333333,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": "random draw; a fifth part (rear bumper) is handled in this window: distractor, not a target",
+      "origin": "extra_random",
+      "source_analysis_frame_index": null,
+      "residual_pose_frames": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1810,
+      "proxy_seconds": 60.333333333333336,
+      "source_seconds": 434.3333333333333,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": "detector-selected (suspicion 0.918); a fifth part (rear bumper) is handled in this window: distractor, not a target",
+      "origin": "extra_detector_selected",
+      "source_analysis_frame_index": null,
+      "residual_pose_frames": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1878,
+      "proxy_seconds": 62.6,
+      "source_seconds": 436.6,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": "detector-selected (suspicion 0.975); a fifth part (rear bumper) is handled in this window: distractor, not a target",
+      "origin": "extra_detector_selected",
+      "source_analysis_frame_index": null,
+      "residual_pose_frames": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1958,
+      "proxy_seconds": 65.26666666666667,
+      "source_seconds": 439.26666666666665,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": "detector-selected (suspicion 0.975); a fifth part (rear bumper) is handled in this window: distractor, not a target",
+      "origin": "extra_detector_selected",
+      "source_analysis_frame_index": null,
+      "residual_pose_frames": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 2018,
+      "proxy_seconds": 67.26666666666667,
+      "source_seconds": 441.26666666666665,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": "detector-selected (suspicion 0.975); a fifth part (rear bumper) is handled in this window: distractor, not a target",
+      "origin": "extra_detector_selected",
+      "source_analysis_frame_index": null,
+      "residual_pose_frames": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 2045,
+      "proxy_seconds": 68.16666666666667,
+      "source_seconds": 442.1666666666667,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": "random draw; a fifth part (rear bumper) is handled in this window: distractor, not a target",
+      "origin": "extra_random",
+      "source_analysis_frame_index": null,
+      "residual_pose_frames": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 2078,
+      "proxy_seconds": 69.26666666666667,
+      "source_seconds": 443.26666666666665,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": "detector-selected (suspicion 0.975); a fifth part (rear bumper) is handled in this window: distractor, not a target",
+      "origin": "extra_detector_selected",
+      "source_analysis_frame_index": null,
+      "residual_pose_frames": null
+    }
+  ],
+  "windows": {},
+  "hidden_prompt_interval": null,
+  "claim_boundary": "human_review_anchor masks are review evidence for scoring tracker arms against each other on a handful of frames; they are not a dataset, not ground truth, and support no accuracy claim. A human chose one SAM3 image-decoder mask per visible part, or marked the part hidden; the mask boundary is the decoder's, the choice is the human's. Frames were chosen by the detector confidence series of the automatic run on nusar_9061 (seed frame 383) and a seeded random draw, not by a human.",
+  "license": "CC BY-NC 4.0 (Assembly101 source frames); anchor masks and marks are derived from those frames and inherit the same non-commercial terms",
+  "provenance": {
+    "schema_version": "1.0",
+    "author": null,
+    "reviewed_at": null,
+    "tool": "battle-muggled-calibration-web",
+    "notes": null
+  },
+  "frame_mapping": null,
+  "workspace_timestamps": "15.200000,16.100000,18.400000,32.866667,39.700000,53.866667,54.533333,60.333333,62.600000,65.266667,67.266667,68.166667,69.266667"
+}
