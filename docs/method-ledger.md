@@ -4203,3 +4203,46 @@ this comparison makes no accuracy or cross-method identity claim.
   minimum three observations. The plan's stop rule ("automatic interior seed fails on >= 4
   views -> run B3 with the human seed") applies: there is no human interior seed on the other
   views, so B3 runs three parts and records the interior as the open problem.
+
+### Sep 20: B3 of the multicam plan, eight views rerun at 1280 / append with the search seeds
+
+- **Claim boundary first.** Label-free. Eight runs of the same tracker (MuggledSAM SAM3,
+  `--max-side-length 1280`, policy off, `--prompt-memory-semantics append`; with no later
+  corrections the 32-entry bank holds only the seed, so this is the reference's pm-append
+  condition and nothing more) whose only change against the Sep 19 `-r1280` runs is the
+  seeds: rear_body and cabin from the B2 search (accepted by cross-view consistency), chassis
+  the Sep 18 agent seed carried over, interior omitted (B2 gate). Consensus and hull numbers
+  are cross-view disagreement of one tracker, not accuracy; nothing is adopted. GPU: one
+  queue pass of 8 jobs on `code-snapshot-df1edff`, 15:15-16:04 UTC, all `succeeded`, every
+  `gpu_check` ok, no `NVRM`/`Xid`. CC BY-NC 4.0.
+- **Runs** (`runs/sam3-views-r1280-pmappend-seeded-20260920/views/<VIEW>/...-r1280-pm-append`,
+  `README.md` / `views_table.md`). 1800/1800 frames each, 5305-5400 masks (3 parts), worker
+  elapsed 325-331 s (Sep 19: 326-352 s), first output 4.2-4.4 s, peak VRAM 2.39 GiB on every
+  view (the bank costs nothing without corrections). Presence unchanged to two decimals
+  except C10395 (rear_body 1.00 -> 0.99, cabin 0.99 -> 0.98, chassis now missing from 594
+  as at 720 px).
+- **Consensus** (`runs/multiview-part-consensus-first-minute-r1280-pm-append-seeded/`, 72 s,
+  reference `pm-append`, `--ego-view HMC_21179183`; `summary.md` = `battle-compare-multiview-builds`
+  against the Sep 19 `-r1280-pm-append` root). C10379 chassis contradicted by the majority
+  78 -> 81 frames (`[621,627)` new, the rest within 2 frames); **rear_body 37 -> 0 frames**
+  (`[1662,1667)` `[1762,1794)` gone: the seven re-seeded views now sit on the same yellow
+  piece as the reference's rear_body slot after 1660, the screwdriver the human named
+  `distractor_confusion`); cabin none in both; C10379 agreement 0.94 / 0.97 / 1.00 -> 0.95 /
+  0.99 / 1.00; **episodes over all views 105 (7) -> 80 (6)**; mean views per consensus frame
+  7.38 / 7.61 / 8.12 -> 7.45 / 7.88 / 8.15. Per view, rear_body C10095 / C10115 / C10404 0.97 ->
+  1.00, cabin C10390 0.96 -> 1.00 (the seed with IoU 0.39 to its Sep 18 predecessor), C10395
+  cabin 0.58 -> 0.56, e4 rear_body 0.63 -> 0.60.
+- **Hull** (`runs/multiview-visual-hull-first-minute-r1280-pm-append-seeded/`, 844 s). Frames
+  with hull 1509 / 1209 / 1726 -> 1535 / 1262 / 1737, but median voxels **408 / 208 / 780 ->
+  350 / 176 / 619**: the tighter seeds carve a smaller hull, and the larger C10379 masks
+  exceed it more: hull-vs-mask median IoU on C10379 chassis 0.450 -> 0.397, **rear_body 0.447
+  -> 0.343**, cabin 0.576 -> 0.513; hull episodes 250 (29) -> 233 (**45**), the new C10379
+  rear_body episodes covering `[504,701)` and `[732,966)`; the other views' own rear_body
+  hull-vs-mask IoU is unchanged (0.60-0.79, C10118 0.34, C10395 0.37, e4 0.03).
+- **Reading.** The search seeds buy centroid agreement among the eight views (fewer
+  episodes, no late rear_body contradiction) at the price of a smaller hull that the
+  reference's masks disagree with more. Both are one tracker agreeing or disagreeing with
+  itself across cameras; which seed is right needs the anchors on the other views (B1). The
+  Sep 19 `-r1280-pm-append` roots stay canonical; these roots sit beside them. The interior is
+  the open problem it was: no other view tracks it, its search prior was the run's own mask,
+  and it failed the 0.6 gate.
