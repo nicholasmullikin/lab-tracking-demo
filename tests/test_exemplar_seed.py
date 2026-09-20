@@ -182,6 +182,23 @@ def test_table_grid_covers_the_hand_region_on_the_plane() -> None:
     assert "hand joints" in source
 
 
+def test_anchor_frame_selection_spaces_ranked_frames_and_seeds_the_random_draw() -> None:
+    suspicion = {f: 0.0 for f in range(300, 2100)}
+    for f in (500, 510, 520, 900, 1500, 1501):
+        suspicion[f] = 0.9
+    suspicion[1200] = 0.5
+    ranked, randoms = es.select_anchor_frames(
+        suspicion, frame_range=(383, 2100), top=3, random_count=2, min_spacing=60, seed=1
+    )
+    assert ranked == [500, 900, 1500]  # 510/520/1501 are within 60 frames of a chosen frame
+    assert len(randoms) == 2 and all(383 <= f < 2100 for f in randoms)
+    assert all(abs(f - r) >= 20 for f in randoms for r in ranked)
+    again = es.select_anchor_frames(
+        suspicion, frame_range=(383, 2100), top=3, random_count=2, min_spacing=60, seed=1
+    )
+    assert again == (ranked, randoms)
+
+
 # -- muggled_smoke: multiview profile on another recording, agent corrections ----------------
 
 

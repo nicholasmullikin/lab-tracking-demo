@@ -62,7 +62,13 @@ from .multiview_seed_transfer import (
     square_box,
     view_id_for,
 )
-from .schemas import ArtifactFingerprint, G2PreprocessingManifest, PixelBox, VersionedModel
+from .schemas import (
+    ArtifactFingerprint,
+    G2PreprocessingManifest,
+    PixelBox,
+    RunManifest,
+    VersionedModel,
+)
 from .seed_search import DINOV2_SCRIPT, _crop_box
 
 OUTPUT_ROOT = Path("runs/rec2-seed-proposals-20260920")
@@ -1478,6 +1484,227 @@ def seed_table(report: ExemplarSeedReport) -> str:
     return "\n".join(lines)
 
 
+# -- labelling session and contact sheet ----------------------------------------------------
+
+
+def select_anchor_frames(
+    suspicion_by_frame: Mapping[int, float],
+    *,
+    frame_range: tuple[int, int],
+    top: int = 8,
+    random_count: int = 5,
+    min_spacing: int = 60,
+    seed: int = 20260920,
+) -> tuple[list[int], list[int]]:
+    """Detector-ranked frames (greedy, `min_spacing` apart) plus a seeded random draw.
+
+    Suspicion is per proxy frame (the max over parts of the combined detector suspicion);
+    random frames avoid the ranked ones by `min_spacing // 3` so both sets test the detector
+    rather than confirm it.
+    """
+    ranked: list[int] = []
+    for frame, _ in sorted(suspicion_by_frame.items(), key=lambda kv: (-kv[1], kv[0])):
+        if not (frame_range[0] <= frame < frame_range[1]):
+            continue
+        if all(abs(frame - chosen) >= min_spacing for chosen in ranked):
+            ranked.append(frame)
+        if len(ranked) >= top:
+            break
+    rng = np.random.default_rng(seed)
+    pool = [
+        f
+        for f in range(frame_range[0], frame_range[1])
+        if all(abs(f - chosen) >= max(1, min_spacing // 3) for chosen in ranked)
+    ]
+    randoms = sorted(
+        int(f) for f in rng.choice(pool, size=min(random_count, len(pool)), replace=False)
+    )
+    return sorted(ranked), randoms
+
+
+def write_label_session(
+    repository_root: Path,
+    *,
+    recording: Assembly101Recording,
+    view: str,
+    confidence_path: Path,
+    seed_frame: int,
+    output: Path,
+    top: int = 8,
+    random_count: int = 5,
+    min_spacing: int = 60,
+    seed: int = 20260920,
+) -> tuple[Path, str]:
+    """Anchor config (recording's all-static clip, original proxy timeline) for one view.
+
+    The confidence series indexes the seed-window run (frame `t` = proxy frame `seed_frame +
+    t`); anchors are written on the original proxy timeline so the workspace opens them on
+    the untrimmed clip. No windows exist yet (no human report on this recording).
+    """
+    from .anchor_frames_for_view import (
+        SOURCE_MANUAL_SEED_TARGET_CONFIG,
+        write_manual_seed_target_config,
+    )
+    from .review_anchors import ReviewAnchorConfig, ReviewAnchorFrame
+
+    config_path = Path(recording.all_static_clip_config)
+    config = G2PreprocessingManifest.model_validate_json(
+        (repository_root / config_path).read_text(encoding="utf-8")
+    )
+    offset = config.proxy_timing.source_seconds_for_frame("analysis", 0)  # type: ignore[arg-type]
+    suspicion: dict[int, float] = {}
+    for line in confidence_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        value = row.get("combined_suspicion")
+        if value is None:
+            continue
+        frame = seed_frame + int(row["analysis_frame_index"])
+        suspicion[frame] = max(suspicion.get(frame, 0.0), float(value))
+    core = recording.core_proxy_frame_range
+    frame_range = (max(core[0], seed_frame), core[1])
+    ranked, randoms = select_anchor_frames(
+        suspicion,
+        frame_range=frame_range,
+        top=top,
+        random_count=random_count,
+        min_spacing=min_spacing,
+        seed=seed,
+    )
+    view_id = view_id_for(view)
+    target_config = write_manual_seed_target_config(
+        template=Path(SOURCE_MANUAL_SEED_TARGET_CONFIG),
+        view_id=view_id,
+        clip_config=config_path,
+        output=Path("configs")
+        / (
+            "muggledsam_static_four_part_reassembly_focused_manual_seed_"
+            f"{recording.label}_{view_id.replace('-', '_')}.json"
+        ),
+        repository_root=repository_root,
+    )
+    frames = []
+    for frame in sorted(set(ranked) | set(randoms)):
+        frames.append(
+            ReviewAnchorFrame(
+                analysis_frame_index=frame,
+                proxy_seconds=frame / 30.0,
+                source_seconds=offset + frame / 30.0,
+                expected_visible={t: "visible" for t in TARGETS},
+                note=(
+                    f"detector-selected (suspicion {suspicion.get(frame, 0.0):.3f})"
+                    if frame in ranked
+                    else "random draw"
+                )
+                + "; a fifth part (rear bumper) is handled in this window: distractor, not a "
+                "target",
+                origin="extra_detector_selected" if frame in ranked else "extra_random",
+            )
+        )
+    anchor_config = ReviewAnchorConfig(
+        manifest_kind="human_review_anchor_config",
+        config_id=f"{recording.label}-review-anchors-{view.lower()}",
+        clip_config=config_path.as_posix(),
+        view_id=view_id,
+        manual_seed_target_config=relative_uri(target_config, repository_root),
+        analysis_fps=30,
+        source_offset_seconds=offset,
+        targets=TARGETS,
+        frames=tuple(frames),
+        windows={},
+        hidden_prompt_interval=None,
+        claim_boundary=(
+            "human_review_anchor masks are review evidence for scoring tracker arms against each "
+            "other on a handful of frames; they are not a dataset, not ground truth, and support "
+            "no accuracy claim. A human chose one SAM3 image-decoder mask per visible part, or "
+            "marked the part hidden; the mask boundary is the decoder's, the choice is the "
+            "human's. Frames were chosen by the detector confidence series of the automatic run on "
+            f"{recording.label} (seed frame {seed_frame}) and a seeded random draw, not by a human."
+        ),
+        license=(
+            "CC BY-NC 4.0 (Assembly101 source frames); anchor masks and marks are derived from "
+            "those frames and inherit the same non-commercial terms"
+        ),
+        workspace_timestamps=",".join(
+            f"{f / 30.0:.6f}" for f in sorted(set(ranked) | set(randoms))
+        ),
+    )
+    output = repository_root / output
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(anchor_config.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    command = (
+        f"uv run battle-muggled-calibration-web --config {config_path.as_posix()} --view {view_id} "
+        f"--timestamps {anchor_config.workspace_timestamps} "
+        f"--manual-seed-target-config {relative_uri(target_config, repository_root)} "
+        f"--output-dir runs/human-review-anchors-{recording.label}-{view_id}"
+    )
+    return output, command
+
+
+def render_run_sheet(
+    repository_root: Path,
+    *,
+    run_directory: Path,
+    frames: Sequence[int],
+    seed_frame: int,
+    output: Path,
+    tile_width: int = 640,
+) -> Path:
+    """Contact sheet of run frames with the run's masks drawn (proxy frame numbers labelled)."""
+    from .multiview_consensus import load_view_run
+
+    run = load_view_run(repository_root, run_directory, view="", frame_count=10**6)
+    manifest = RunManifest.model_validate_json(
+        (run_directory / "manifest.json").read_text(encoding="utf-8")
+    )
+    proxy_uri = (
+        manifest.four_part_multiview.proxy_fingerprint.uri
+        if manifest.four_part_multiview is not None
+        else manifest.four_part_focused.proxy_fingerprint.uri  # type: ignore[union-attr]
+    )
+    video = repository_root / proxy_uri
+    palette = {
+        "chassis": (0, 255, 255),
+        "interior": (255, 120, 0),
+        "rear_body": (0, 255, 0),
+        "cabin": (255, 0, 255),
+    }
+    tiles = []
+    for frame in frames:
+        image = _read_frame(video, frame)
+        for target in run.targets:
+            mask = run.mask(frame, target)
+            if mask is None:
+                continue
+            contours, _ = cv2.findContours(
+                mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+            )
+            cv2.drawContours(image, contours, -1, palette.get(target, (255, 255, 255)), 2)
+        cv2.putText(
+            image,
+            f"run frame {frame} = proxy {seed_frame + frame}",
+            (12, 36),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1.0,
+            (0, 255, 255),
+            2,
+            cv2.LINE_AA,
+        )
+        scale = tile_width / image.shape[1]
+        tiles.append(cv2.resize(image, (tile_width, int(image.shape[0] * scale))))
+    columns = 2
+    rows = []
+    for start in range(0, len(tiles), columns):
+        row = tiles[start : start + columns]
+        while len(row) < columns:
+            row.append(np.zeros_like(tiles[0]))
+        rows.append(np.hstack(row))
+    output.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(output), np.vstack(rows))
+    return output
+
+
 # -- CLI -----------------------------------------------------------------------------------
 
 
@@ -1510,6 +1737,22 @@ def main() -> None:
     accept_cmd.add_argument("--decode-result", type=Path, default=None)
     accept_cmd.add_argument("--seed-window-config", type=Path, default=None)
     accept_cmd.add_argument("--exemplar-python", type=Path, default=MUGGLED_SAM_PYTHON)
+    session = commands.add_parser(
+        "label-session", help="anchor config for the human from the confidence series (CPU)"
+    )
+    session.add_argument("--view", default=None, help="dataset view (default: primary static)")
+    session.add_argument("--confidence", type=Path, required=True, help="confidence.jsonl")
+    session.add_argument("--seed-frame", type=int, required=True)
+    session.add_argument("--output", type=Path, required=True)
+    session.add_argument("--top", type=int, default=8)
+    session.add_argument("--random", type=int, default=5)
+    session.add_argument("--min-spacing", type=int, default=60)
+    session.add_argument("--seed", type=int, default=20260920)
+    sheet = commands.add_parser("sheet", help="contact sheet of run frames with masks (CPU)")
+    sheet.add_argument("--run", type=Path, required=True)
+    sheet.add_argument("--frame", type=int, action="append", required=True)
+    sheet.add_argument("--seed-frame", type=int, required=True)
+    sheet.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     root = args.repository_root.resolve()
     output = root / args.output_root
@@ -1544,6 +1787,30 @@ def main() -> None:
     elif args.command == "decode":
         loaded = load_plan(args.plan)
         path = run_decode(root, loaded, output_dir=output, device=args.device)
+        print(f"-> {path}")
+    elif args.command == "label-session":
+        path, command = write_label_session(
+            root,
+            recording=recording,
+            view=args.view or recording.primary_static_view,
+            confidence_path=args.confidence.resolve(),
+            seed_frame=args.seed_frame,
+            output=args.output,
+            top=args.top,
+            random_count=args.random,
+            min_spacing=args.min_spacing,
+            seed=args.seed,
+        )
+        print(f"-> {path}")
+        print(command)
+    elif args.command == "sheet":
+        path = render_run_sheet(
+            root,
+            run_directory=args.run.resolve(),
+            frames=tuple(args.frame),
+            seed_frame=args.seed_frame,
+            output=args.output.resolve(),
+        )
         print(f"-> {path}")
     else:
         path = accept(

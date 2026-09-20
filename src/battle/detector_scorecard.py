@@ -1233,6 +1233,136 @@ def write_scorecard(
     return manifest
 
 
+def write_confidence_only(
+    *,
+    run_name: str,
+    run_directory: Path,
+    series: DetectorSeries,
+    comparators: Mapping[str, Path],
+    view: str,
+    repository_root: Path,
+    output_dir: Path,
+    top_detectors: Sequence[str],
+    abstain_confidence: float | None,
+    thresholds_from: Path,
+) -> Path:
+    """Confidence series for a run without anchors (`--no-truth`).
+
+    Nothing is scored: the detector choice and the abstain threshold are *carried over* from a
+    scored scorecard on another run (`thresholds_from`, e.g. recording 1's `pm-append`), and
+    the rank normalisation is over this run's own frames. The output is the raw input for a
+    gate on a recording with no labels yet, not a calibrated detector.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    normalized_full = {name: normalized_ranks(series.values[name]) for name in DETECTORS}
+    combined_series = rank_average(normalized_full, tuple(top_detectors))
+    rows: list[DetectorConfidenceRow] = []
+    for frame in range(series.frame_count):
+        for column, target in enumerate(series.targets):
+            combined = float(combined_series[frame, column])
+            defined = math.isfinite(combined)
+            confidence = 1.0 - combined if defined else None
+            rows.append(
+                DetectorConfidenceRow(
+                    analysis_frame_index=frame,
+                    target=target,
+                    detectors={
+                        name: (
+                            float(series.values[name][frame, column])
+                            if math.isfinite(float(series.values[name][frame, column]))
+                            else None
+                        )
+                        for name in DETECTORS
+                    },
+                    combined_suspicion=_clip01(combined) if defined else None,
+                    confidence=_clip01(confidence) if confidence is not None else None,
+                    abstain=(
+                        True
+                        if confidence is None
+                        else (abstain_confidence is not None and confidence <= abstain_confidence)
+                    ),
+                )
+            )
+    with (output_dir / "confidence.jsonl").open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(row.model_dump_json() + "\n")
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    frames = np.arange(series.frame_count)
+    figure, axes = plt.subplots(
+        len(series.targets), 1, figsize=(14, 2.2 * len(series.targets)), sharex=True
+    )
+    axes = np.atleast_1d(axes)
+    for column, (axis, target) in enumerate(zip(axes, series.targets, strict=True)):
+        confidence_series = 1.0 - combined_series[:, column]
+        axis.plot(frames, confidence_series, color="#333333", linewidth=0.8)
+        if abstain_confidence is not None:
+            axis.axhline(abstain_confidence, color="#888888", linestyle=":", linewidth=0.8)
+            axis.fill_between(
+                frames,
+                0,
+                1,
+                where=np.isfinite(confidence_series) & (confidence_series <= abstain_confidence),
+                color="#f4c7c3",
+                alpha=0.35,
+                linewidth=0,
+            )
+        axis.set_ylim(-0.02, 1.02)
+        axis.set_ylabel(target)
+        axis.grid(True, alpha=0.2)
+    axes[-1].set_xlabel("analysis frame")
+    axes[0].set_title(
+        f"{run_name}: confidence = 1 - rank-average of {', '.join(top_detectors)}; no anchors on "
+        "this run (thresholds carried over, nothing scored)",
+        fontsize=9,
+    )
+    figure.tight_layout()
+    figure.savefig(output_dir / "confidence_timeline.png", dpi=110)
+    plt.close(figure)
+    abstain_by_target = {
+        target: int(sum(1 for r in rows if r.target == target and r.abstain))
+        for target in series.targets
+    }
+    summary = {
+        "manifest_kind": "detector_confidence_only",
+        "run_name": run_name,
+        "run_directory": relative_uri(run_directory.resolve(), repository_root),
+        "run_observations": _fingerprint(
+            run_directory / "observations.jsonl", repository_root
+        ).model_dump(mode="json"),
+        "comparators": {
+            name: relative_uri(path.resolve(), repository_root)
+            for name, path in comparators.items()
+        },
+        "view": view,
+        "frame_count": series.frame_count,
+        "targets": list(series.targets),
+        "top_detectors": list(top_detectors),
+        "abstain_confidence_threshold": abstain_confidence,
+        "thresholds_carried_from": _fingerprint(thresholds_from, repository_root).model_dump(
+            mode="json"
+        ),
+        "rows": len(rows),
+        "abstain_rows_by_target": abstain_by_target,
+        "abstain_fraction": sum(abstain_by_target.values()) / max(1, len(rows)),
+        "confidence_uri": relative_uri(output_dir / "confidence.jsonl", repository_root),
+        "plot_uri": relative_uri(output_dir / "confidence_timeline.png", repository_root),
+        "generated_at": datetime.now(UTC).isoformat(),
+        "claim_boundary": (
+            "No anchors exist on this run: nothing here is scored. The detector set and the "
+            "abstain threshold come from a scorecard on another run and may not transfer (the "
+            "recording-1 scorecard found its thresholds do not transfer leave-one-frame-out); "
+            "the series is the raw input for a gate, not the gate."
+        ),
+    }
+    path = output_dir / "confidence_only.json"
+    path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
 # ------------------------------------------------------------------------------------ CLI
 
 
@@ -1272,8 +1402,59 @@ def main() -> None:
         default=None,
         help=f"anchor frames classed distractor (default {DEFAULT_DISTRACTOR_FRAMES})",
     )
+    parser.add_argument(
+        "--no-truth",
+        type=Path,
+        default=None,
+        metavar="SCORECARD_JSON",
+        help=(
+            "write only confidence.jsonl and the timeline for a run without anchors, carrying "
+            "the top detectors and abstain threshold from this scored scorecard.json"
+        ),
+    )
+    parser.add_argument(
+        "--target",
+        action="append",
+        default=None,
+        help="targets (parts) of the run when --no-truth (default: the four parts)",
+    )
     args = parser.parse_args()
     root = Path.cwd().resolve()
+    if args.no_truth is not None:
+        run_name, run_directory = resolve_run_directory(args.run)
+        reference = json.loads(args.no_truth.read_text(encoding="utf-8"))
+        comparators_nt: dict[str, Path] = {}
+        for key, value in (("consensus", args.consensus), ("hull", args.hull)):
+            if value is not None:
+                comparators_nt[key] = value.resolve()
+        targets = (
+            tuple(args.target) if args.target else ("chassis", "interior", "rear_body", "cabin")
+        )
+        series = compute_series(
+            run_directory=run_directory,
+            targets=targets,
+            frame_count=args.frame_count,
+            view=args.view,
+            dam4sam_large=None,
+            dam4sam_tiny=None,
+            consensus_dir=comparators_nt.get("consensus"),
+            hull_dir=comparators_nt.get("hull"),
+        )
+        output_dir = (args.output_root / run_name).resolve()
+        path = write_confidence_only(
+            run_name=run_name,
+            run_directory=run_directory,
+            series=series,
+            comparators=comparators_nt,
+            view=args.view,
+            repository_root=root,
+            output_dir=output_dir,
+            top_detectors=tuple(reference["top_detectors"]),
+            abstain_confidence=reference.get("abstain_confidence_threshold"),
+            thresholds_from=args.no_truth.resolve(),
+        )
+        print(path.read_text(encoding="utf-8"), end="")
+        return
     try:
         run_name, run_directory = resolve_run_directory(args.run)
         mask_set, anchors_root = load_mask_set(args.anchors)
