@@ -91,6 +91,37 @@ def calibration_id_from_output_directory(output_directory: Path) -> str:
     return calibration_id
 
 
+def legacy_default_view(config_path: Path) -> str | None:
+    """The e4 default applies only to the original ego screen config this tool was built for."""
+    return E4_VIEW_ID if Path(config_path).name == DEFAULT_CONFIG.name else None
+
+
+def resolve_view_id(
+    config: G2PreprocessingManifest, view_id: str | None, *, config_path: Path | None = None
+) -> str:
+    """The proxy view to calibrate: the named one, or the only one the config has.
+
+    There is no built-in default view for other configs: one with several proxies (the
+    all-static clip config) needs an explicit `--view`, and the chosen id must be one of its
+    proxies. The legacy e4 screen config keeps its e4 default so old invocations still work.
+    """
+    available = [item.view_id for item in config.proxies]
+    if view_id is None and config_path is not None:
+        view_id = legacy_default_view(config_path)
+    if view_id is None:
+        if len(available) != 1:
+            raise ValueError(
+                "selected G2 configuration has several proxies; pass --view, one of: "
+                + ", ".join(available)
+            )
+        return available[0]
+    if view_id not in available:
+        raise ValueError(
+            f"selected G2 configuration does not contain {view_id} (has: {', '.join(available)})"
+        )
+    return view_id
+
+
 def build_manifest(
     *,
     repository_root: Path,
@@ -98,13 +129,15 @@ def build_manifest(
     timestamps: tuple[float, ...],
     result_directory: Path,
     calibration_id: str,
-    view_id: str = E4_VIEW_ID,
+    view_id: str | None = None,
 ) -> MuggledSAMBoxCalibrationManifest:
-    """Create a schema-validated calibration header for one approved proxy view."""
+    """Create a schema-validated calibration header for one approved proxy view.
+
+    `view_id=None` is only legal for a single-proxy config, where it resolves to that proxy.
+    """
     config = G2PreprocessingManifest.model_validate_json(config_path.read_text())
-    proxy = next((item for item in config.proxies if item.view_id == view_id), None)
-    if proxy is None:
-        raise ValueError(f"selected G2 configuration does not contain {view_id}")
+    view_id = resolve_view_id(config, view_id, config_path=config_path)
+    proxy = next(item for item in config.proxies if item.view_id == view_id)
     source_offset_seconds = config.proxy_timing.source_seconds_for_frame("analysis", 0)
     for timestamp in timestamps:
         frame_reference(
@@ -502,6 +535,7 @@ def run_interactive(args: argparse.Namespace) -> Path:
             timestamps=timestamps,
             result_directory=output_directory / "results",
             calibration_id=calibration_id,
+            view_id=args.view,
         )
         _write_manifest(manifest_path, manifest)
     (output_directory / "results" / "masks").mkdir(parents=True, exist_ok=True)
@@ -557,6 +591,11 @@ def main() -> None:
         )
     )
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
+    parser.add_argument(
+        "--view",
+        default=None,
+        help="proxy view id in --config; required when the config holds several proxies",
+    )
     parser.add_argument("--run-root", type=Path, default=Path("runs"))
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--timestamps", default="0,10,30,50")

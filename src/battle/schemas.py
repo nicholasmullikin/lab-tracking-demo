@@ -1065,14 +1065,20 @@ class MuggledSAMSupersededTrackingPlan(VersionedModel):
         return self
 
 
+# Any approved proxy view id (`static-c10119`, `ego-hmc21179183`, ...). The calibration
+# workspace and the manual-seed target policy accept every view of a clip config; the
+# correction policy/schedule and the run profiles below still name the views they permit.
+CALIBRATION_VIEW_ID_PATTERN = r"^(static|ego)-[a-z0-9]+$"
+
+
 class MuggledSAMBoxCalibrationManifest(VersionedModel):
-    """Gitignored, reviewable manual-box calibration for the selected e4 proxy."""
+    """Gitignored, reviewable manual-box calibration for one approved proxy view."""
 
     manifest_kind: Literal["muggledsam_sam3_box_calibration"]
     calibration_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]*$")
     base_g2_config: str = Field(min_length=1)
     base_g2_config_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    view_id: Literal["static-c10379", "ego-hmc21110305", "ego-hmc21179183"]
+    view_id: str = Field(pattern=CALIBRATION_VIEW_ID_PATTERN)
     proxy: ArtifactFingerprint
     source: ArtifactFingerprint
     proxy_dimensions: VideoDimensions
@@ -1303,7 +1309,7 @@ class MuggledSAMManualSeedTargetConfig(VersionedModel):
     manifest_kind: Literal["muggledsam_sam3_manual_seed_targets"]
     config_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]*$")
     base_g2_config: str = Field(min_length=1)
-    view_id: Literal["static-c10379", "ego-hmc21110305", "ego-hmc21179183"]
+    view_id: str = Field(pattern=CALIBRATION_VIEW_ID_PATTERN)
     targets: tuple[str, ...] = Field(min_length=1)
     target_descriptors: tuple[MuggledSAMManualSeedTargetDescriptor, ...] = ()
 

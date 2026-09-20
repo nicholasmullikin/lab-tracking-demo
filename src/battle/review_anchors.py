@@ -79,6 +79,9 @@ class ReviewAnchorProvenance(VersionedModel):
     notes: str | None = None
 
 
+FrameOrigin = Literal["anchor", "mapped_anchor", "extra_detector_selected", "extra_random"]
+
+
 class ReviewAnchorFrame(VersionedModel):
     """One anchor frame on the focused clip's analysis clock."""
 
@@ -89,6 +92,30 @@ class ReviewAnchorFrame(VersionedModel):
     # `visible` means one accepted mask is expected.
     expected_visible: dict[str, Visibility]
     note: str | None = None
+    # Filled by `battle-anchor-frames-for-view`: the C10379 anchor frame this frame was mapped
+    # from and the pose-clock residual of the mapping (target pose frame minus source pose
+    # frame; negative means this view's frame is earlier). Null on the source view's own list.
+    origin: FrameOrigin | None = None
+    source_analysis_frame_index: int | None = Field(default=None, ge=0)
+    residual_pose_frames: int | None = None
+
+
+class AnchorFrameMapping(VersionedModel):
+    """How a per-view anchor list was derived from the C10379 list through the clock rules."""
+
+    source_config: ArtifactFingerprint
+    source_view_id: str = Field(min_length=1)
+    source_view: str = Field(min_length=1)
+    target_view: str = Field(min_length=1)
+    clock_rules: ArtifactFingerprint
+    source_pose_offset_frames: int
+    target_pose_offset_frames: int
+    # Constant analysis-frame shift `target = source + shift` implied by the two offsets.
+    analysis_frame_shift: int
+    convention: str = Field(min_length=1)
+    extra_frames_source: str | None = None
+    extra_frames_pending: bool = False
+    extra_frames_note: str | None = None
 
 
 class ReviewAnchorConfig(VersionedModel):
@@ -110,6 +137,10 @@ class ReviewAnchorConfig(VersionedModel):
     claim_boundary: str = Field(min_length=1)
     license: str = Field(min_length=1)
     provenance: ReviewAnchorProvenance = Field(default_factory=ReviewAnchorProvenance)
+    # Present only on configs written by `battle-anchor-frames-for-view`.
+    frame_mapping: AnchorFrameMapping | None = None
+    # The `--timestamps` argument the calibration workspace accepts for these frames.
+    workspace_timestamps: str | None = None
 
     @model_validator(mode="after")
     def require_consistent_frames(self) -> ReviewAnchorConfig:
@@ -158,13 +189,43 @@ def load_config(path: Path) -> ReviewAnchorConfig:
     return ReviewAnchorConfig.model_validate_json(path.read_text(encoding="utf-8"))
 
 
-def build_first_minute_config() -> ReviewAnchorConfig:
-    """The Sep 18 anchor list on the focused C10379 clock (analysis frames, 30 fps)."""
+SOURCE_VIEW_ID = "static-c10379"
+SOURCE_CLIP_CONFIG = "configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_g2.json"
+SOURCE_MANUAL_SEED_TARGET_CONFIG = (
+    "configs/muggledsam_static_four_part_reassembly_focused_manual_seed.json"
+)
+FIRST_MINUTE_ANCHOR_FRAMES = (300, 370, 400, 600, 650, 700, 900, 1050, 1100, 1150, 1200, 1500, 1700)
+
+
+def view_paths(view_id: str) -> tuple[Path, Path, Path]:
+    """(config, workspace, human record) for one view; C10379 keeps the original names."""
+    if view_id == SOURCE_VIEW_ID:
+        return DEFAULT_CONFIG, DEFAULT_WORKSPACE, DEFAULT_RECORD
+    suffix = view_id.replace("-", "_")
+    return (
+        Path(f"configs/qa/first_minute_review_anchors_{suffix}.json"),
+        Path(f"runs/human-review-anchors-first-minute-{view_id}"),
+        Path(f"docs/qa/first-minute-review-anchors-{view_id}.human-record.json"),
+    )
+
+
+def build_first_minute_config(
+    *,
+    view_id: str = SOURCE_VIEW_ID,
+    clip_config: str = SOURCE_CLIP_CONFIG,
+    manual_seed_target_config: str = SOURCE_MANUAL_SEED_TARGET_CONFIG,
+    config_id: str = "first-minute-review-anchors-c10379",
+) -> ReviewAnchorConfig:
+    """The Sep 18 anchor list on the focused clock (analysis frames, 30 fps).
+
+    The defaults are the C10379 list the human labelled; another view's list is derived from
+    it by `battle-anchor-frames-for-view`, never by re-using these frame indices.
+    """
     fps, offset = 30, 294.0
     targets = ("chassis", "interior", "rear_body", "cabin")
     hidden_interval = (1024, 1172)
     frames = []
-    for index in (300, 370, 400, 600, 650, 700, 900, 1050, 1100, 1150, 1200, 1500, 1700):
+    for index in FIRST_MINUTE_ANCHOR_FRAMES:
         inside = hidden_interval[0] <= index < hidden_interval[1]
         expected: dict[str, Visibility] = {
             target: ("hidden_prompt" if inside and target == "interior" else "visible")
@@ -185,12 +246,10 @@ def build_first_minute_config() -> ReviewAnchorConfig:
         )
     return ReviewAnchorConfig(
         manifest_kind="human_review_anchor_config",
-        config_id="first-minute-review-anchors-c10379",
-        clip_config="configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_g2.json",
-        view_id="static-c10379",
-        manual_seed_target_config=(
-            "configs/muggledsam_static_four_part_reassembly_focused_manual_seed.json"
-        ),
+        config_id=config_id,
+        clip_config=clip_config,
+        view_id=view_id,
+        manual_seed_target_config=manual_seed_target_config,
         analysis_fps=fps,
         source_offset_seconds=offset,
         targets=targets,
@@ -539,17 +598,34 @@ def export_anchor_masks(
     return mask_set, mask_set_path, written_record
 
 
-def load_mask_set(anchors: Path) -> tuple[ReviewAnchorMaskSet, Path]:
-    """Accept the workspace directory or the mask-set JSON itself."""
+def load_mask_set(anchors: Path, *, view_id: str | None = None) -> tuple[ReviewAnchorMaskSet, Path]:
+    """Accept the workspace directory or the mask-set JSON itself.
+
+    With `view_id` the set must have been labelled on that view; a missing set is reported
+    as "not labelled yet" for that view rather than as a bare file error.
+    """
     path = anchors.resolve()
     if path.is_dir():
         path = path / MASK_SET_NAME
     if not path.is_file():
+        if view_id is not None:
+            config, workspace, record = view_paths(view_id)
+            raise FileNotFoundError(
+                f"no human review anchors exist for {view_id}: {path} is missing. Prepare "
+                f"the session with `battle-anchor-frames-for-view` ({config}), then "
+                f"`battle-anchor-export prepare --view {view_id}` ({workspace}), label it, and "
+                f"`battle-anchor-export export --view {view_id}` ({record})."
+            )
         raise FileNotFoundError(
             f"anchor mask set is unavailable: {path} (run battle-anchor-export first)"
         )
     root = path.parent.parent if path.parent.name == "anchors" else path.parent
-    return ReviewAnchorMaskSet.model_validate_json(path.read_text(encoding="utf-8")), root
+    mask_set = ReviewAnchorMaskSet.model_validate_json(path.read_text(encoding="utf-8"))
+    if view_id is not None and mask_set.view_id != view_id:
+        raise ValueError(
+            f"anchor mask set {path} was labelled on {mask_set.view_id}, not {view_id}"
+        )
+    return mask_set, root
 
 
 # ------------------------------------------------------------------------------ scoring
@@ -763,8 +839,9 @@ def score_runs(
     anchors: Path,
     runs: Sequence[str],
     repository_root: Path,
+    view_id: str | None = None,
 ) -> AnchorIoUReport:
-    mask_set, anchors_root = load_mask_set(anchors)
+    mask_set, anchors_root = load_mask_set(anchors, view_id=view_id)
     mask_set_path = anchors_root / MASK_SET_NAME
     scores = []
     for argument in runs:
@@ -983,33 +1060,48 @@ def export_main() -> None:
         )
     )
     commands = parser.add_subparsers(dest="command", required=True)
+    view_help = (
+        f"view id (default {SOURCE_VIEW_ID}); picks the per-view config, workspace and record "
+        "paths written by battle-anchor-frames-for-view unless overridden"
+    )
     prepare = commands.add_parser(
         "prepare", help="create the calibration workspace with the anchor frames configured"
     )
-    prepare.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
-    prepare.add_argument("--output-dir", type=Path, default=DEFAULT_WORKSPACE)
+    prepare.add_argument("--view", default=SOURCE_VIEW_ID, help=view_help)
+    prepare.add_argument("--config", type=Path, default=None)
+    prepare.add_argument("--output-dir", type=Path, default=None)
     export = commands.add_parser(
         "export", help="write anchors/anchor_masks.json and the docs/qa human-record skeleton"
     )
-    export.add_argument("--workspace", type=Path, default=DEFAULT_WORKSPACE)
+    export.add_argument("--view", default=SOURCE_VIEW_ID, help=view_help)
+    export.add_argument("--workspace", type=Path, default=None)
     export.add_argument("--config", type=Path, default=None)
-    export.add_argument("--record", type=Path, default=DEFAULT_RECORD)
+    export.add_argument("--record", type=Path, default=None)
     export.add_argument("--no-record", action="store_true")
     args = parser.parse_args()
     root = _repository_root()
+    default_config, default_workspace, default_record = view_paths(args.view)
     try:
         if args.command == "prepare":
+            config_path = (args.config or default_config).resolve()
+            if not config_path.is_file():
+                raise FileNotFoundError(
+                    f"no anchor config for {args.view}: {config_path}; write it with "
+                    "battle-anchor-frames-for-view"
+                )
             manifest_path = prepare_workspace(
-                config_path=args.config.resolve(), output_dir=args.output_dir, repository_root=root
+                config_path=config_path,
+                output_dir=args.output_dir or default_workspace,
+                repository_root=root,
             )
             print(f"Prepared anchor workspace: {manifest_path.parent}")
             print(f"Manifest: {manifest_path}")
         else:
             mask_set, mask_set_path, record_path = export_anchor_masks(
-                workspace=args.workspace,
+                workspace=args.workspace or default_workspace,
                 repository_root=root,
                 config_path=args.config.resolve() if args.config else None,
-                record_path=None if args.no_record else args.record.resolve(),
+                record_path=None if args.no_record else (args.record or default_record).resolve(),
             )
             print(f"Anchor mask set: {mask_set_path}")
             print(f"Counts: {json.dumps(mask_set.counts)}")
@@ -1027,7 +1119,21 @@ def iou_main() -> None:
             "unlabeled anchors skipped and counted. Review evidence, not accuracy."
         )
     )
-    parser.add_argument("--anchors", type=Path, default=DEFAULT_WORKSPACE)
+    parser.add_argument(
+        "--view",
+        default=SOURCE_VIEW_ID,
+        help=(
+            f"view id whose anchors to score (default {SOURCE_VIEW_ID}); sets the default "
+            "--anchors workspace and refuses a mask set labelled on another view. Fails "
+            "plainly when that view has not been labelled yet."
+        ),
+    )
+    parser.add_argument(
+        "--anchors",
+        type=Path,
+        default=None,
+        help="anchor workspace or mask-set JSON (default: the --view workspace)",
+    )
     parser.add_argument(
         "--run",
         action="append",
@@ -1062,8 +1168,12 @@ def iou_main() -> None:
     )
     args = parser.parse_args()
     root = _repository_root()
+    if args.anchors is None:
+        args.anchors = view_paths(args.view)[1]
     try:
-        report = score_runs(anchors=args.anchors, runs=args.run, repository_root=root)
+        report = score_runs(
+            anchors=args.anchors, runs=args.run, repository_root=root, view_id=args.view
+        )
     except (OSError, ValueError, KeyError) as error:
         parser.error(str(error))
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -1086,7 +1196,7 @@ def _render_sheet_from_cli(
 ) -> Path:
     from . import policy_ablation
 
-    mask_set, anchors_root = load_mask_set(args.anchors)
+    mask_set, anchors_root = load_mask_set(args.anchors, view_id=args.view)
     by_name = {run.run_name: run for run in report.runs}
     if args.sheet_reference not in by_name:
         raise KeyError(f"--sheet-reference {args.sheet_reference!r} is not one of the --run names")

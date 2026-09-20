@@ -50,6 +50,7 @@ from .muggled_calibration import (
     load_correction_policy,
     next_pending_box_id,
     parse_timestamps,
+    resolve_view_id,
 )
 from .muggled_smoke import (
     DEFAULT_MODEL,
@@ -60,6 +61,7 @@ from .muggled_smoke import (
     sha256_file,
 )
 from .schemas import (
+    G2PreprocessingManifest,
     MuggledSAMBoxCalibrationManifest,
     MuggledSAMCalibrationCandidate,
     MuggledSAMCalibrationHiddenTarget,
@@ -1676,7 +1678,12 @@ def make_handler(workspace: Workspace) -> type[BaseHTTPRequestHandler]:
 
 
 def make_workspace(args: argparse.Namespace, repository_root: Path) -> Workspace:
-    view_id = getattr(args, "view", "ego-hmc21179183")
+    # No built-in default view: `None` resolves to the config's only proxy or is refused.
+    view_id = resolve_view_id(
+        G2PreprocessingManifest.model_validate_json(Path(args.config).read_text()),
+        getattr(args, "view", None),
+        config_path=Path(args.config),
+    )
     output_directory = (
         args.output_dir.resolve()
         if args.output_dir is not None
@@ -1897,8 +1904,11 @@ def main() -> None:
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument(
         "--view",
-        choices=("static-c10379", "ego-hmc21110305", "ego-hmc21179183"),
-        default="ego-hmc21179183",
+        default=None,
+        help=(
+            "proxy view id in --config (e.g. static-c10119 on the all-static config, "
+            "ego-hmc21179183 on the e4 config); required when the config holds several proxies"
+        ),
     )
     parser.add_argument("--run-root", type=Path, default=Path("runs"))
     parser.add_argument("--output-dir", type=Path)

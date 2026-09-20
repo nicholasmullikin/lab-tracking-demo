@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0",
+  "manifest_kind": "muggledsam_sam3_manual_seed_targets",
+  "config_id": "static-four-part-reassembly-focused-static-c10404",
+  "base_g2_config": "configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_all_static_g2.json",
+  "view_id": "static-c10404",
+  "targets": [
+    "chassis",
+    "interior",
+    "rear_body",
+    "cabin"
+  ],
+  "target_descriptors": [
+    {
+      "schema_version": "1.0",
+      "target_id": "chassis",
+      "display_alias": "black lower chassis",
+      "mask_semantics": "visible_surface_only"
+    },
+    {
+      "schema_version": "1.0",
+      "target_id": "interior",
+      "display_alias": "black interior block",
+      "mask_semantics": "visible_surface_only"
+    },
+    {
+      "schema_version": "1.0",
+      "target_id": "rear_body",
+      "display_alias": "yellow rounded body shell",
+      "mask_semantics": "visible_surface_only"
+    },
+    {
+      "schema_version": "1.0",
+      "target_id": "cabin",
+      "display_alias": "yellow windowed cabin",
+      "mask_semantics": "visible_surface_only"
+    }
+  ]
+}

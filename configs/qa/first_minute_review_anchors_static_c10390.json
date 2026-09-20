@@ -1,0 +1,280 @@
+{
+  "schema_version": "1.0",
+  "manifest_kind": "human_review_anchor_config",
+  "config_id": "first-minute-review-anchors-c10390",
+  "anchor_kind": "human_review_anchor",
+  "clip_config": "configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_all_static_g2.json",
+  "view_id": "static-c10390",
+  "manual_seed_target_config": "configs/muggledsam_static_four_part_reassembly_focused_manual_seed_static_c10390.json",
+  "analysis_fps": 30,
+  "source_offset_seconds": 294.0,
+  "targets": [
+    "chassis",
+    "interior",
+    "rear_body",
+    "cabin"
+  ],
+  "frames": [
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 301,
+      "proxy_seconds": 10.033333333333333,
+      "source_seconds": 304.03333333333336,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "mapped_anchor",
+      "source_analysis_frame_index": 300,
+      "residual_pose_frames": 0
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 371,
+      "proxy_seconds": 12.366666666666667,
+      "source_seconds": 306.3666666666667,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "mapped_anchor",
+      "source_analysis_frame_index": 370,
+      "residual_pose_frames": 0
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 401,
+      "proxy_seconds": 13.366666666666667,
+      "source_seconds": 307.3666666666667,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "mapped_anchor",
+      "source_analysis_frame_index": 400,
+      "residual_pose_frames": 0
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 601,
+      "proxy_seconds": 20.033333333333335,
+      "source_seconds": 314.03333333333336,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "mapped_anchor",
+      "source_analysis_frame_index": 600,
+      "residual_pose_frames": 0
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 651,
+      "proxy_seconds": 21.7,
+      "source_seconds": 315.7,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "mapped_anchor",
+      "source_analysis_frame_index": 650,
+      "residual_pose_frames": 0
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 701,
+      "proxy_seconds": 23.366666666666667,
+      "source_seconds": 317.3666666666667,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "mapped_anchor",
+      "source_analysis_frame_index": 700,
+      "residual_pose_frames": 0
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 901,
+      "proxy_seconds": 30.033333333333335,
+      "source_seconds": 324.03333333333336,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "mapped_anchor",
+      "source_analysis_frame_index": 900,
+      "residual_pose_frames": 0
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1051,
+      "proxy_seconds": 35.03333333333333,
+      "source_seconds": 329.0333333333333,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "hidden_prompt",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": "interior may be occluded here; choose hidden or draw the visible surface",
+      "origin": "mapped_anchor",
+      "source_analysis_frame_index": 1050,
+      "residual_pose_frames": 0
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1101,
+      "proxy_seconds": 36.7,
+      "source_seconds": 330.7,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "hidden_prompt",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": "interior may be occluded here; choose hidden or draw the visible surface",
+      "origin": "mapped_anchor",
+      "source_analysis_frame_index": 1100,
+      "residual_pose_frames": 0
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1151,
+      "proxy_seconds": 38.36666666666667,
+      "source_seconds": 332.3666666666667,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "hidden_prompt",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": "interior may be occluded here; choose hidden or draw the visible surface",
+      "origin": "mapped_anchor",
+      "source_analysis_frame_index": 1150,
+      "residual_pose_frames": 0
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1201,
+      "proxy_seconds": 40.03333333333333,
+      "source_seconds": 334.0333333333333,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "mapped_anchor",
+      "source_analysis_frame_index": 1200,
+      "residual_pose_frames": 0
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1501,
+      "proxy_seconds": 50.03333333333333,
+      "source_seconds": 344.0333333333333,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "mapped_anchor",
+      "source_analysis_frame_index": 1500,
+      "residual_pose_frames": 0
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1701,
+      "proxy_seconds": 56.7,
+      "source_seconds": 350.7,
+      "expected_visible": {
+        "chassis": "visible",
+        "interior": "visible",
+        "rear_body": "visible",
+        "cabin": "visible"
+      },
+      "note": null,
+      "origin": "mapped_anchor",
+      "source_analysis_frame_index": 1700,
+      "residual_pose_frames": 0
+    }
+  ],
+  "windows": {
+    "279-408": [
+      280,
+      409
+    ],
+    "573-722": [
+      574,
+      723
+    ],
+    "1020-1172": [
+      1021,
+      1173
+    ]
+  },
+  "hidden_prompt_interval": [
+    1025,
+    1173
+  ],
+  "claim_boundary": "human_review_anchor masks are review evidence for scoring tracker arms against each other on a handful of frames; they are not a dataset, not ground truth, and support no accuracy claim. A human chose one SAM3 image-decoder mask per visible part, or marked the part hidden; the mask boundary is the decoder's, the choice is the human's.",
+  "license": "CC BY-NC 4.0 (Assembly101 source frames); anchor masks and marks are derived from those frames and inherit the same non-commercial terms",
+  "provenance": {
+    "schema_version": "1.0",
+    "author": null,
+    "reviewed_at": null,
+    "tool": "battle-muggled-calibration-web",
+    "notes": "Frames mapped from static-c10379 through the clock rules by battle-anchor-frames-for-view; nothing labelled yet."
+  },
+  "frame_mapping": {
+    "schema_version": "1.0",
+    "source_config": {
+      "schema_version": "1.0",
+      "uri": "configs/qa/first_minute_review_anchors.json",
+      "sha256": "3542fa3ade8f9633b1c71b345a115316a1d975cbf3652839ae84c601693ce9b5",
+      "source": "measured"
+    },
+    "source_view_id": "static-c10379",
+    "source_view": "C10379",
+    "target_view": "C10390",
+    "clock_rules": {
+      "schema_version": "1.0",
+      "uri": "configs/assembly101/clock_rules.json",
+      "sha256": "bda2d8bbab39cd64cf90888367ee2aeecbec35253d3aba4b8e3ef9d402ee960c",
+      "source": "measured"
+    },
+    "source_pose_offset_frames": 9,
+    "target_pose_offset_frames": 7,
+    "analysis_frame_shift": 1,
+    "convention": "target_frame = floor((source_pose_frame - target.proxy_start_raw_frame - target.pose_offset_frames) / target.raw_frames_per_proxy_frame); source_pose_frame = source_rule.pose_frame(source_frame); half frames round down so the mapped frame is never later than the C10379 frame; residual = target_pose_frame - source_pose_frame",
+    "extra_frames_source": null,
+    "extra_frames_pending": true,
+    "extra_frames_note": "no file matched runs/detector-scorecard-20260920/*/proposed_anchor_frames.json; rerun battle-anchor-frames-for-view once Track A has written its proposed_anchor_frames.json to append those frames"
+  },
+  "workspace_timestamps": "10.033333,12.366667,13.366667,20.033333,21.700000,23.366667,30.033333,35.033333,36.700000,38.366667,40.033333,50.033333,56.700000"
+}
