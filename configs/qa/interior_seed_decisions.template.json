@@ -1,0 +1,226 @@
+{
+  "schema_version": "1.0",
+  "manifest_kind": "seed_proposal_decisions",
+  "author": null,
+  "author_type": "human",
+  "reviewed_at": null,
+  "instructions": "For each cell set decision to 'accept' with accepted_candidate = the candidate index that is the part (and only the part), or 'reject' with accepted_candidate null when no candidate is; 'unsure' is allowed. Fill author and reviewed_at (UTC ISO 8601). The agent then copies each decision into the proposal.json human_decision field and records the acceptance rate per view and part; nothing is re-run without your say.",
+  "decision_vocabulary": [
+    "accept",
+    "reject",
+    "unsure"
+  ],
+  "generated_at": "2026-09-22T01:29:33.599858+00:00",
+  "cells": [
+    {
+      "view": "C10095",
+      "part": "interior",
+      "analysis_frame_index": 0,
+      "proposal": "runs/labeling-sessions-20260921/interior_proposals/C10095/interior_f000000/proposal.json",
+      "contact_sheet": "runs/labeling-sessions-20260921/interior_proposal_sheets/C10095.png",
+      "candidates": [
+        {
+          "index": 0,
+          "strategy": "decoder rank 0 (score 0.63, area x0.55 expected, luminance 30)",
+          "mask_sha256": "b1f7199612b8d6c5cc3a4dae5db27bd593cc9db221743785c816406c600f6a0b",
+          "area_px": 780
+        },
+        {
+          "index": 1,
+          "strategy": "decoder rank 1 (score 0.62, area x0.78 expected, luminance 20)",
+          "mask_sha256": "133a4de5d432de21eb47be64a7b6199ecec21432d55c4557b8375e0749f2756e",
+          "area_px": 1105
+        },
+        {
+          "index": 2,
+          "strategy": "decoder rank 2 (score 0.59, area x0.57 expected, luminance 19)",
+          "mask_sha256": "7e90f5777d247cacd0d11897dbca67d04d909cbef287d1edd993550ea8731f90",
+          "area_px": 803
+        }
+      ],
+      "decision": null,
+      "accepted_candidate": null,
+      "note": ""
+    },
+    {
+      "view": "C10115",
+      "part": "interior",
+      "analysis_frame_index": 0,
+      "proposal": "runs/labeling-sessions-20260921/interior_proposals/C10115/interior_f000000/proposal.json",
+      "contact_sheet": "runs/labeling-sessions-20260921/interior_proposal_sheets/C10115.png",
+      "candidates": [
+        {
+          "index": 0,
+          "strategy": "decoder rank 0 (score 0.68, area x0.89 expected, luminance 35)",
+          "mask_sha256": "bc2d4c8fd32b6e732870e1bbfd24dc86c9429f3b0ce8d78ba237e78d81734cc1",
+          "area_px": 1498
+        },
+        {
+          "index": 1,
+          "strategy": "decoder rank 1 (score 0.60, area x0.71 expected, luminance 111)",
+          "mask_sha256": "109d37a285bda83252cc41d5f8d0319cf0ae8530251070da02dc7dbdad795c62",
+          "area_px": 1203
+        },
+        {
+          "index": 2,
+          "strategy": "decoder rank 2 (score 0.55, area x0.37 expected, luminance 48)",
+          "mask_sha256": "96ebf2e485859949671fcbc87b6668b30d26417e59122bdddf61b829e7d462f8",
+          "area_px": 620
+        }
+      ],
+      "decision": null,
+      "accepted_candidate": null,
+      "note": ""
+    },
+    {
+      "view": "C10118",
+      "part": "interior",
+      "analysis_frame_index": 0,
+      "proposal": "runs/labeling-sessions-20260921/interior_proposals/C10118/interior_f000000/proposal.json",
+      "contact_sheet": "runs/labeling-sessions-20260921/interior_proposal_sheets/C10118.png",
+      "candidates": [
+        {
+          "index": 0,
+          "strategy": "decoder rank 0 (score 0.79, area x1.52 expected, luminance 6)",
+          "mask_sha256": "a9964ce74bc51c1cb2d0dded8302a0cde88ccf64e5f98882385d902654fdd1fc",
+          "area_px": 3660
+        },
+        {
+          "index": 1,
+          "strategy": "decoder rank 1 (score 0.73, area x1.20 expected, luminance 5)",
+          "mask_sha256": "6daa744a4b80748ac490b864b58c75e7e958daa61bdffeaaacfebe670379bffa",
+          "area_px": 2882
+        },
+        {
+          "index": 2,
+          "strategy": "decoder rank 2 (score 0.69, area x1.39 expected, luminance 7)",
+          "mask_sha256": "e9999508e348b0875b1ce02157e7de10380b535e9c3de4e4464a7d65984131b1",
+          "area_px": 3346
+        }
+      ],
+      "decision": null,
+      "accepted_candidate": null,
+      "note": ""
+    },
+    {
+      "view": "C10119",
+      "part": "interior",
+      "analysis_frame_index": 0,
+      "proposal": "runs/labeling-sessions-20260921/interior_proposals/C10119/interior_f000000/proposal.json",
+      "contact_sheet": "runs/labeling-sessions-20260921/interior_proposal_sheets/C10119.png",
+      "candidates": [
+        {
+          "index": 0,
+          "strategy": "decoder rank 0 (score 0.66, area x0.72 expected, luminance 24)",
+          "mask_sha256": "ed73f20027cca6f51873d08bad838243f00b6ecff173aea1720eb0aa35cd7db9",
+          "area_px": 1632
+        },
+        {
+          "index": 1,
+          "strategy": "decoder rank 1 (score 0.59, area x0.33 expected, luminance 26)",
+          "mask_sha256": "830bb2809c5a5e044f0ff7056e31337485e0f6cdc4e0c2207568538efed4a105",
+          "area_px": 746
+        },
+        {
+          "index": 2,
+          "strategy": "decoder rank 2 (score 0.53, area x1.77 expected, luminance 123)",
+          "mask_sha256": "e9350b39084d75c7626d9cf48d36ef7a6c24726d7ed0a65529ffaf98ac5f1911",
+          "area_px": 4003
+        }
+      ],
+      "decision": null,
+      "accepted_candidate": null,
+      "note": ""
+    },
+    {
+      "view": "C10390",
+      "part": "interior",
+      "analysis_frame_index": 0,
+      "proposal": "runs/labeling-sessions-20260921/interior_proposals/C10390/interior_f000000/proposal.json",
+      "contact_sheet": "runs/labeling-sessions-20260921/interior_proposal_sheets/C10390.png",
+      "candidates": [
+        {
+          "index": 0,
+          "strategy": "decoder rank 0 (score 0.87, area x0.92 expected, luminance 32)",
+          "mask_sha256": "513dd378c36fc3778610f6a9c73c0d636d9106082cffd203ff02cf66fc6537d5",
+          "area_px": 1068
+        },
+        {
+          "index": 1,
+          "strategy": "decoder rank 1 (score 0.86, area x0.84 expected, luminance 30)",
+          "mask_sha256": "571101f24d0708a171b38f1916ca067a7b600997130b6bb34a4fc0f9756992f7",
+          "area_px": 968
+        },
+        {
+          "index": 2,
+          "strategy": "decoder rank 2 (score 0.78, area x1.20 expected, luminance 40)",
+          "mask_sha256": "92ead45bf538f0594eae93130b99af0e28233a552df2029b5f4ff6ee4de6d548",
+          "area_px": 1383
+        }
+      ],
+      "decision": null,
+      "accepted_candidate": null,
+      "note": ""
+    },
+    {
+      "view": "C10395",
+      "part": "interior",
+      "analysis_frame_index": 0,
+      "proposal": "runs/labeling-sessions-20260921/interior_proposals/C10395/interior_f000000/proposal.json",
+      "contact_sheet": "runs/labeling-sessions-20260921/interior_proposal_sheets/C10395.png",
+      "candidates": [
+        {
+          "index": 0,
+          "strategy": "decoder rank 0 (score 0.76, area x1.78 expected, luminance 114)",
+          "mask_sha256": "62637c0274661f9e9c199072178fa89480aaaa4a34646b72c235759c756ff518",
+          "area_px": 2269
+        },
+        {
+          "index": 1,
+          "strategy": "decoder rank 1 (score 0.71, area x2.21 expected, luminance 113)",
+          "mask_sha256": "d93a49af6e2260c0b745ea2bd876f51fd58f77386f2932803b57694818a00b49",
+          "area_px": 2815
+        },
+        {
+          "index": 2,
+          "strategy": "decoder rank 2 (score 0.59, area x1.52 expected, luminance 113)",
+          "mask_sha256": "d5848264b8e6db71794264c29c8222f87c6baf1d4d5051bcf6e4948b675b7ac3",
+          "area_px": 1936
+        }
+      ],
+      "decision": null,
+      "accepted_candidate": null,
+      "note": ""
+    },
+    {
+      "view": "C10404",
+      "part": "interior",
+      "analysis_frame_index": 0,
+      "proposal": "runs/labeling-sessions-20260921/interior_proposals/C10404/interior_f000000/proposal.json",
+      "contact_sheet": "runs/labeling-sessions-20260921/interior_proposal_sheets/C10404.png",
+      "candidates": [
+        {
+          "index": 0,
+          "strategy": "decoder rank 0 (score 0.43, area x1.33 expected, luminance 96)",
+          "mask_sha256": "4dd006fa43cb0256fd3c998dc2a6ce7af2113ba4f45f1b6119297e232046fffd",
+          "area_px": 2339
+        },
+        {
+          "index": 1,
+          "strategy": "decoder rank 1 (score 0.41, area x0.74 expected, luminance 32)",
+          "mask_sha256": "e4477560a952e00510fd4d01583feb493855270aec9bde0a48b72ddd89cebc01",
+          "area_px": 1298
+        },
+        {
+          "index": 2,
+          "strategy": "decoder rank 2 (score 0.29, area x1.60 expected, luminance 95)",
+          "mask_sha256": "60a28fc94b9c209e9ea671d4ce90c4508fdda856d5757ff9f9f876965001d389",
+          "area_px": 2815
+        }
+      ],
+      "decision": null,
+      "accepted_candidate": null,
+      "note": ""
+    }
+  ]
+}

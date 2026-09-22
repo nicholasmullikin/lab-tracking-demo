@@ -418,6 +418,21 @@ of GPU: three prompts detected at frame 0, the transparent 6-well plate and the 
 found nothing. A toolchain smoke with no accuracy claim. Record:
 [FineBio first look](#sep-21-finebio-first-look-sam3-zero-shot-text-prompts-on-one-first-person-clip).
 
+#### Sep 21, night: the labelling sessions acted on
+
+The human labelled C10119 (63 cells), e4 (52 + 23 hidden) and decided the 24 seed proposals
+(chassis 7/8 and rear_body 8/8 accepted, interior 1/8). Acted on in one pass: the accepted
+candidates became seeds; the interior was seeded at frame 0 on five statics from two human
+masks (C10379 f0 x C10119 f41; hand-luminance rule needed; e4 blocked, the part is behind its
+camera); eight views rerun with four parts; the C10119 rear_body correction that raised
+agreement to 0.997 scores **0.00 on six labelled frames** (screwdriver; the decoder rated it
+0.95), so a `--distractor-guard` reading the human `hidden` marks now blocks such onsets; the
+four-part consensus proposes interior corrections on C10379 but chassis-sized ones
+(consensus-only-ds interior 0.288 -> 0.363, all 0.659 unchanged vs 0.743 human); the fourth slot
+destabilises the chassis on C10119 (0.758 -> 0.339) and the guarded re-prompt repairs it (0.667)
+while tracking the interior on that camera for the first time (0.74-0.87 over 1651-1771).
+Record: [Sep 21, night](#sep-21-night-the-three-labelling-sessions-acted-on-human-accepted-seeds-an-interior-seed-from-two-human-masks-the-four-part-rerun-the-c10119-rear_body-finding-and-a-distractor-guard).
+
 ### Plan versus actual
 
 What the plan said, what happened instead, and why, in one line each.
@@ -4954,3 +4969,205 @@ any knob is turned, and turning one first would make those labels confirmatory.
   the four decisions, own-process exclusion, strict parity against a verbatim copy of the
   88ba96e function, provenance round trip, `gpu_check`/`gpu_recheck` events); default tier 646
   passed, ruff clean. No GPU job was run.
+
+### Sep 21, night: the three labelling sessions acted on (human-accepted seeds, an interior seed from two human masks, the four-part rerun, the C10119 rear_body finding and a distractor guard)
+
+- **Claim boundary first.** Everything scored below is against one person's choice of SAM3
+  image-decoder masks on a handful of frames of one camera at a time (C10379 51 + 1 hidden
+  cells on 13 frames; C10119 63 + 1 hidden on 26; e4 52 + 23 hidden on 26): **review evidence
+  that ranks arms against each other, not ground truth**, not a dataset, no accuracy claim. The
+  human's 24 seed-proposal decisions are one person's choice among agent decoder candidates on
+  one frame per cell. The interior seeds on six views are agent-selected from geometry and held
+  until the human confirms them (session (e)); every consensus correction is agent-authored.
+  GPU: `runs/multiview-seeds-human-accepted-20260921/` decode 33 s; eight view runs 332-352 s
+  worker each (`runs/sam3-views-r1280-4part-20260921/`, queue 52 min incl. export, 2.39 GiB peak
+  every view); five C10379 arms and one C10119 arm 390-432 s worker (2.54-2.99 GiB); every job
+  ran beside the human's calibration workspace worker (PID 2071175, 1.2 GiB), named to the guard,
+  never touched; no `NVRM`/`Xid`. Code snapshots `code-snapshot-4551b73`, `-eceae60`, `-259b4f7`.
+  CC BY-NC 4.0.
+- **The three sessions (numbers; records committed in `4066572`).**
+  (a) C10119: 63 labelled / 1 hidden (interior 401) / 40 skipped (rear_body on 17 frames, cabin
+  on 23); chassis and interior on all 26 frames. (b) e4: 52 / 23 hidden / 29 skipped; interior
+  labelled on 10 frames (224, 304, 484, 604, 654, 1104, 1154, 1204, 1414, 1654) and hidden on 14;
+  rear_body hidden on 9 (304, 374, 484, 504, 554, 864, 1054, 1504, 1544). (c) seed proposals,
+  `configs/qa/seed_proposal_decisions_2026-09-21.json` (edited in the template, copied out,
+  template restored): **chassis 7 / 8 accepted** (C10390 undecided) despite the part's 0.525
+  held-out IoU on C10379, **rear_body 8 / 8** (candidate 0 everywhere = the B3 seed itself),
+  **interior 1 / 8** (C10390 at 427; the seven rejections name the hand, the chassis or the
+  boundary). Scoreboards as labelled (`docs/qa/anchor-scoreboard-{c10119,e4}-20260920.md`):
+  C10119 r1280 0.474 all (chassis 0.758, rear_body 0.839, cabin 0.859, interior 0.000 with 25
+  cells missing: no slot); e4 r1280 chassis 0.845, rear_body 0.262, cabin 0.831, interior 0.000
+  (10 missing), **hidden FP 48,705 px over 8 rear_body cells** (1.2-20.4k px each).
+- **The C10119 rear_body finding, verbatim from the anchors.** The one consensus correction
+  written for C10119 on Sep 20 (rear_body 1533, both rankings) raised its agreement with the
+  other cameras from 0.872 to 0.997 and dropped its rear_body anchor IoU from **0.839 to 0.270**:
+  IoU **0.00 on all six labelled rear_body frames 1541-1771** (r1280 there 0.82-0.88), the
+  corrected slot being 1.0-1.7k px on the yellow screwdriver where the top-down human sees the
+  rear body. The majority the correction joined sits on the screwdriver: the recording-1 human
+  marked C10379 rear_body hidden at 1700 with `distractor_confusion`, and the e4 human marked
+  rear_body hidden at 1504 and 1544 (and on 7 more frames) with the r1280 e4 run putting
+  1.2-20.4k px there. Agreement with the majority late in the minute measured agreement with the
+  distractor. **Did the decoder know?** No: the accepted candidate at 1533 (`t001533-b01#3`) had
+  the pool's top decoder IoU estimate 0.95 (pool 0.66-0.95; the ray pick 0.93), and the
+  tracker's own rear_body object score on C10119 does not fall after 1533 (median 8.31 over
+  `[1533,1800)` vs 8.81 before; the corrected runs 7.97 / 8.31, predicted IoU 0.90-0.93); on
+  C10379 pm-append the rear_body score dips only from 8.00 to 7.14 over `[1660,1800)`. The
+  acceptance-search pool at C10379 1700 (hidden cell, 6 prompts) held 24 candidates with decoder
+  IoU 0.26-0.61, so the "rule" that would have abstained there (score >= 0.7) accepts the C10119
+  1533 pick at 0.95. Neither the decoder nor the tracker separates the screwdriver from the
+  rear body; only the human marks do.
+- **Distractor guard (`battle-multiview-reprompt plan --distractor-guard`, default on; commit
+  `42a9a14`).** An onset of a part is blocked when a human anchor record on **any** view marks
+  that part hidden within +-60 frames of it, frames mapped through the clock rules (e4 1504 ->
+  C10379 1500 -> C10119 1501); every mark, its record fingerprint and the suppressed onsets are
+  written on the plan (`distractor_guard`), the reason on the onset says "review evidence ...
+  not ground truth". Re-planned on the Sep 20 excl-C10119 consensus the guard **suppresses
+  rear_body 1533** (e4 marks at 1504 / 1544, 32 frames away; `--no-distractor-guard` plans it);
+  on C10379's Sep 20 plan it touches nothing (no human marks the chassis hidden). Its cost shows
+  on the ego camera: e4's interior `hidden` marks at 704 / 864 / 1054 / 1504 are out-of-frame
+  marks (the C10119 human sees the interior at 701 / 861 / 1051 / 1501), and on the four-part
+  C10379 plan below they suppress four of the five interior onsets; a per-view `hidden` reason
+  (out of frame vs distractor) is the missing field, so both arms were run.
+- **Task 1, human-accepted seeds (`battle-human-accepted-seeds apply`, commit `4551b73`).**
+  `runs/multiview-seeds-human-accepted-20260921/<VIEW>/seed_manifest.json` (8): every accepted
+  proposal candidate is the view's seed with provenance `agent_proposed_human_accepted`
+  (decisions-file fingerprint and the human's note on the seed; `acceptance_basis:
+  human_accepted_proposal`); C10390 chassis undecided keeps the B3 (Sep 18) seed; each decision
+  is copied into its `proposal.json`; per-part provenance now flows into the run metadata
+  (`mixed_per_part` at the manifest level). IoU of the accepted chassis with the B3 chassis it
+  replaces: 0.98 on C10119 and e4 (the human picked what the Sep 18 transfer had); rear_body
+  identical (1.00) on all eight.
+- **Task 2, interior from two human masks (`interior-plan|decode|accept`, commits `4551b73`,
+  `eceae60`).** The interior is *not* on the table at frame 0: it is in the subject's left hand
+  on every camera (293 mm above the fitted plane). Triangulated from the C10379 human frame-0 seed
+  and the C10119 human anchor at frame 41 (the earliest human interior mask on a second camera,
+  40 analysis frames later; the C10119 f41 -> f81 centroid motion is **2.4 px** < 5, the C10379
+  run's own interior centroid drifts 17 px over 0-40): centre (-115.9, 280.5, -33.2) mm,
+  reprojection 11.3 / 11.1 raw px, radius 26.1 mm (28.3 / 24.0 per view); the same-instant
+  variant (C10379 run mask f40 x human f41) lands 12 mm away at 3.7 / 3.4 px. Check in hand at
+  C10379 300 x C10119 301 x e4 304 (three human masks, one pose instant): 10.3 / 3.0 / 2.1 raw
+  px, and the two-static point projects 9.4 px from the human e4 centroid: the three sessions'
+  masks agree geometrically. The frame-0 sphere projected into the seven statics as the search
+  winner prompt (m0.25, one box, other-part centroid negatives: none fell inside any box) and
+  decoded (33 s). Acceptance: decoder top score among candidates inside [0.3, 3.0] x the two human
+  masks' area carried by focal/depth **and with median luminance <= 2 x the human masks' (31 on
+  both cameras)**, then joint triangulation of the picks with the two human observations (>= 3
+  views inside 30 raw px). The luminance rule was added after the first decode: on C10395 and
+  C10404 the hand holding the part (luminance 95-124) passed the centroid and area rules.
+  Outcome per view (`interior/interior_report.md`): **C10095, C10115, C10119, C10390, C10404
+  accepted** (6 views agree, 1.6-13.0 raw px, areas 780-1632 px, luminance 24-35); **C10118 not
+  accepted** (its pick reprojects 39 px, a dark blob of 3.7k px); **C10395 not accepted** (all
+  four candidates are the hand); **e4 blocked** (the interior is behind the head camera at
+  frames 0 and 4, depth -18 / -16 mm; the first human e4 interior mask is 224, which a per-slot
+  start frame would take: not built, the B3 report's gap stands). The accepted C10119 candidate
+  vs the human's C10119 mask at 41: IoU 0.08, centroid 28.7 px (the hand moved between 0 and
+  41); the four-part run's interior mask at 41 vs that human mask: **0.65** (below). Proposal
+  sheets for the human, one row per view: `runs/labeling-sessions-20260921/interior_proposal_sheets/`,
+  template `configs/qa/interior_seed_decisions.template.json`; session (e) in
+  `docs/labeling-sessions-2026-09-20.md`. Provenance `geometric_from_two_human_views` until then.
+- **Task 3, eight views at 1280 pm-append with four parts** (`runs/sam3-views-r1280-4part-20260921/`;
+  the seeds above; C10118, C10395 and e4 ran with three parts). 1800 / 1800 frames each, worker
+  332-352 s, first output 4.3-4.6 s, 2.39 GiB; presence 0.96-1.00 everywhere. Three jobs were
+  first refused by the worker guard because the human opened a video player (`showtime`, 389 MiB,
+  reported by nvidia-smi as python3) and were re-queued with its PID tolerated
+  (`README_guard_note.md`); nothing was killed. **Consensus** (reference pm-append,
+  `runs/multiview-part-consensus-first-minute-r1280-4part-20260921/`, 100 s; others-only and
+  excl-C10119 roots beside it): the interior now has a consensus on **1800 frames from 3.7 mean
+  views** (Sep 20: none), which the human-corrected C10379 agrees with on **0.97** of frames
+  (C10404 1.00, C10115 0.92, C10119 0.90, C10095 0.83, **C10390 0.22**: its interior drifts, mean
+  error 106 px); C10379 rear_body is now contradicted on **139 frames** (`[1524,1533)`
+  `[1664,1800)`; Sep 20 seeded build: 0), i.e. the seven other views no longer sit where C10379's
+  rear_body slot sits after 1664, which is the screwdriver; chassis agreement of **C10115 fell
+  0.95 -> 0.12** and C10404 0.96 -> 0.79; episodes over all views 80 -> 145. **Hull**
+  (`runs/multiview-visual-hull-first-minute-r1280-4part-20260921/`, 918 s): interior hull on 675
+  frames, median 27 voxels, hull-vs-mask IoU 0.05-0.25 on the views that carry it; chassis hull
+  frames 1535 -> 978 and C10379 chassis hull-vs-mask 0.397 -> 0.226 (the smaller, disagreeing
+  chassis set carves less). `summary_vs_seeded_with_hull.md` has every row.
+- **What the four-part seeds did on the two views with anchors** (`docs/qa/anchor-scoreboard-{c10119,e4}-20260921.md`;
+  a run without a slot scores 0 on that part's labelled cells, so `all` is comparable):
+
+  | view / run | ch | int | rb | cab | all | hidden FP px |
+  | --- | --- | --- | --- | --- | --- | --- |
+  | C10119 r1280 (Sep 19 seeds, 3 parts) | 0.758 | 0.000 (25 missing) | 0.839 | 0.859 | 0.474 | 0 |
+  | C10119 seeded-3part (B3) | 0.758 | 0.000 | 0.842 | 0.948 | 0.478 | 0 |
+  | C10119 consensus-only-ds (Sep 20, rear_body 1533) | 0.758 | 0.000 | **0.270** | 0.862 | 0.392 | 0 |
+  | C10119 human-accepted-4part | **0.339** | 0.114 | 0.838 | 0.949 | 0.350 | 5,133 |
+  | C10119 4part + guarded consensus-only-ds (6 corrections) | 0.667 | **0.290** | 0.833 | 0.945 | **0.554** | 3,795 |
+  | e4 r1280 | 0.845 | 0.000 (10 missing) | 0.262 | 0.831 | 0.558 | 48,705 (8 cells) |
+  | e4 seeded-3part | 0.842 | 0.000 | 0.262 | 0.940 | 0.567 | 20,083 |
+  | e4 human-accepted-4part | 0.851 | 0.000 | **0.349** | 0.938 | 0.589 | **16,474** (7 cells) |
+
+  C10119, per cell: the geometric interior seed **is on the interior while it is in the hand**
+  (IoU vs the human 0.65 / 0.67 / 0.79 / 0.35 at 41 / 81 / 221 / 301) and is lost when the part
+  is placed inside the chassis (0.00-0.08 from 371 to 1201); worse, from 371 the **interior slot
+  takes the chassis** (interior run masks 4.9-6.0k px where the chassis anchor is 4.6-5.6k px;
+  the chassis slot shrinks to 0.3-1.8k px, IoU 0.00-0.15 through 1051): the human-accepted
+  chassis seed is 0.98 IoU with the B3 seed that held 0.758, so the loss is the fourth slot, not
+  the seed. The guarded re-prompt on the 4-part excl-C10119 consensus (plan: chassis 367, 495,
+  704, 1484, 1557 and interior 1163 accepted, 5.1-7.1k px, decoder 0.54-0.86; interior 1081
+  suppressed by the e4 mark at 1054, rear_body 1529 blocked by the 2-static-view gate) restores
+  the chassis to 0.667 (371-1201 back to 0.60-0.95) and puts the interior at **0.74-0.87 on
+  1651-1771** after the 1163 correction (0.39 at 1501 / 1541): the first interior tracked on a
+  second camera. e4: rear_body 0.262 -> 0.349 and hidden FP 48.7k -> 16.5k px with the same
+  rear_body seed (IoU 1.00), so again the change is the slot set; the cabin seed 0.83 -> 0.94.
+- **Task 3, C10379 arms from the four-part others-only consensus** (`runs/multiview-reprompt-20260921/`;
+  plan: chassis 477, 604, 1049 and interior 1124 planned; interior 665 / 719 / 804 / 1466 and
+  rear_body 1525 suppressed by the guard; the 296 chassis onset of Sep 20 no longer exists because
+  the other views' chassis moved; `variants/no-guard/` plans and accepts all nine, interior 1466
+  rejected by the policy budget). Accepted interior masks are **4.9k / 2.5k / 1.2k / 9.4k px**
+  against a human interior of ~1-2k px on this view: the sphere radius from the other views'
+  interior slots is 49-50 mm where the human masks give 26 mm, because those slots leak onto the
+  chassis once the part is placed. All / ch / int / rb / cab, windows, hidden FP, worker s, GiB
+  (`docs/qa/anchor-scoreboard-c10379-arms-20260921.md`):
+
+  | arm | later corrections | all | ch | int | rb | cab | 279-408 | 573-722 | 1020-1172 | outside | hidden FP | s | GiB |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | pm-append (human) | 327 900 1172 1235 | **0.743** | 0.637 | 0.585 | 0.790 | 0.962 | 0.853 | 0.687 | 0.616 | 0.800 | 1265 | 341 | 2.54 |
+  | seed-only-1280 | none | 0.591 | 0.404 | 0.228 | 0.789 | 0.959 | 0.648 | 0.628 | 0.579 | 0.527 | 1252 | 329 | 2.39 |
+  | consensus-only-ds iter 1 (Sep 20, 3-part consensus) | 296 475 1049 | 0.659 | 0.609 | 0.288 | 0.788 | 0.959 | 0.720 | 0.694 | 0.677 | 0.566 | 1266 | 341 | 2.48 |
+  | **consensus-only-ds 4-part, guard** | 477 604 1049, int 1124 | **0.659** | 0.534 | **0.363** | 0.790 | 0.959 | 0.648 | 0.649 | 0.749 | 0.603 | 1219 | 424 | 2.54 |
+  | consensus-only-ds 4-part, no guard | + int 665 719 804, rb 1525 | 0.659 | 0.543 | 0.356 | 0.789 | 0.958 | 0.648 | 0.649 | 0.686 | 0.656 | 1241 | 432 | 2.76 |
+  | **human-plus-consensus-ds 4-part, guard** | human + 477 604 1049 1124 | **0.742** | 0.636 | 0.583 | 0.790 | 0.961 | 0.853 | 0.663 | 0.609 | 0.822 | 1261 | 427 | 2.76 |
+  | human-plus-consensus-ds 4-part, no guard | human + all nine | 0.741 | 0.638 | 0.580 | 0.790 | 0.960 | 0.853 | 0.663 | 0.607 | 0.821 | 1274 | 418 | 2.99 |
+
+  Interior per anchor frame, seed-only / ds Sep 20 / ds 4-part guard / pm-append: 900 0.00 /
+  0.14 / 0.15 / 0.84; 1050 0.00 / 0.10 / 0.09 / 0.09; 1100 0.00 / 0.14 / **0.84** / 0.26; 1150
+  0.00 / 0.43 / 0.43 / 0.48; 1200 0.00 / 0.28 / 0.26 / 0.55; 1500 0.00 / 0.00 / 0.17 / 0.68;
+  1700 0.34 / 0.00 / 0.17 / 0.87. The 1100 gain precedes the 1124 interior correction and comes
+  from the chassis corrections (477 / 604 instead of 296 / 475) freeing the slot; the frames
+  after 1124 do not move (1150 0.43 -> 0.43, 1200 0.28 -> 0.26), and the no-guard arm's three
+  extra interior corrections move 700 not at all (0.20) and 900 to 0.78. Chassis 0.609 -> 0.534
+  because the 4-part consensus no longer flags 296 (370 / 400 fall back to 0.14 / 0.08 from
+  0.64 / 0.85).
+- **Answer to the question asked.** The interior on C10379 moves from 0.288 to **0.363** under
+  consensus-only-ds (0.585 human); the gap to pm-append stays **0.084** (0.659 vs 0.743) and is
+  still the interior (0.222 of it) plus 0.10 of chassis lost with the 296 onset. The other views
+  now *see* the interior, but what they track after the part is placed is interior-plus-chassis
+  (radius 49 mm vs 26), so the correction the consensus authors is the wrong size and the
+  decoder's top pick at that box is a blob; the one place the interior is tracked well on a
+  second camera is C10119 after its own 1163 correction (0.74-0.87 over 1651-1771). Adding the
+  four-part consensus corrections to the human's costs nothing (0.742 vs 0.743). Verdict
+  unchanged in kind, moved in detail: multicam detects; on the chassis it corrects at the
+  human's level when the 296 window is flagged (Sep 20) and 0.10 below when it is not (today);
+  on the interior it now proposes but the proposals are chassis-sized. What remains human:
+  chassis and interior frame-0 seeds (the human confirmed the chassis ones today and rejected 7
+  of 8 interior rest-frame ones), the four C10379 corrections as the reference, every anchor,
+  and the `hidden` marks that the guard now reads.
+- **Blocked / open.** Per-slot start frame in the multiview profile: not built (e4 interior at
+  224 and a direct human C10119 interior seed at 41 both need it; the interior is behind e4's
+  camera at 0-4). The guard's `hidden` has no out-of-frame vs distractor field; e4's interior
+  marks are the former and suppress interior onsets. The four-part multiplex destabilises the
+  chassis slot on C10119 (0.758 -> 0.339 with a seed 0.98 IoU to the old one) and C10115
+  (agreement 0.95 -> 0.12): slot interplay, not seeds, and the re-prompt loop repairs it on the
+  one view that has anchors. The other agent's VRAM-aware queue guard (`8a3ee2a`) landed during
+  this pass; the last decode was re-run with the queue-level `--allow-gpu-neighbour`. Recording
+  2's 13 frames are being labelled (the server on 8765 stayed up throughout).
+- **Deliverables.** Commits `4066572` (records, decisions, tables), `88ba96e` (worker
+  `--allow-gpu-neighbour`), `4551b73` + `eceae60` (`battle-human-accepted-seeds`), `42a9a14`
+  (distractor guard), `259b4f7` (tests), this entry's commit (docs/qa tables, sessions doc, this
+  entry). Roots: `runs/multiview-seeds-human-accepted-20260921/` (8 manifests, `decisions_report.md`,
+  `interior/interior_report.md`, code snapshot), `runs/labeling-sessions-20260921/`,
+  `configs/qa/interior_seed_decisions.template.json`, `runs/sam3-views-r1280-4part-20260921/`
+  (8 runs, queue logs, `README_guard_note.md`), the three consensus roots and the hull root
+  named above, `runs/multiview-reprompt-20260921/` (`C10379/iter1/`, `variants/no-guard/C10379/iter1/`,
+  `C10119/iter1/`, `anchor_iou_{arms,c10119,e4}.{json,md}`, stage scripts, queue logs).

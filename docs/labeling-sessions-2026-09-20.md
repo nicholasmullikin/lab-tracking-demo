@@ -1,4 +1,11 @@
-# Labeling sessions prepared on Sep 20 (nothing started, nothing labelled)
+# Labeling sessions prepared on Sep 20 (three labelled on Sep 21; see the outcome lines)
+
+**Sep 21 status.** Sessions (a), (b) and (c) were completed by the human on Sep 21; (d)
+recording 2 is in progress in the calibration workspace on port 8765. The outcome of each is
+one line at the end of its section; the numbers are in the ledger's Sep 21 entry. A fifth
+session, (e) confirming the seven interior seeds, was prepared by the agent on Sep 21 (ten
+minutes, no GPU). Standing rule unchanged: anchor masks and decisions are review evidence,
+not ground truth.
 
 Four sessions for the human, each with the exact command, what to label, and the vocabulary,
 **in order of value**: (1) C10119 anchors, which score the C10119 consensus correction and the
@@ -80,6 +87,16 @@ confirm them. Use hidden for the interior before it is placed and for any part u
 use hidden plus a note when a distractor (screwdriver, another yellow part) is what is visible
 where the part should be. The workspace header counts `n/104 done`.
 
+**Outcome (Sep 21).** 63 labelled / 1 hidden (interior 401) / 40 skipped (rear_body on 17
+frames, cabin on 23; the human labelled chassis and interior on all 26 frames, rear_body and
+cabin on 9 and 3). Record `docs/qa/first-minute-review-anchors-static-c10119.human-record.json`,
+table `docs/qa/anchor-scoreboard-c10119-20260920.md`: r1280 0.474 all (chassis 0.758, rear_body
+0.839, cabin 0.859, interior 0.000 with 25 cells missing because the run had no interior slot);
+the 1533 consensus correction, both rankings, drops rear_body to **0.270**: IoU **0.00 on all
+six labelled rear_body frames 1541-1771** (r1280 there: 0.82-0.88), the corrected slot sitting on
+the screwdriver (1.0-1.7k px) where the human sees the rear body from above. The interior cells
+score the Sep 21 four-part rerun (ledger).
+
 ## (b) e4 (HMC_21179183) anchors and the human interior seed
 
 Two workspaces. The anchor workspace is prepared
@@ -126,6 +143,17 @@ interior candidates the seed search proposed at e4 frame 430 are in session (c);
 interior here by hand is what the automatic seed will be compared against (agreement within 0.02
 IoU on the same views would make the automatic seed the run condition).
 
+**Outcome (Sep 21).** Anchor workspace: 52 labelled / 23 hidden / 29 skipped (interior labelled
+at 224, 304, 484, 604, 654, 1104, 1154, 1204, 1414, 1654 and hidden on 14 frames; rear_body
+hidden on 9: 304, 374, 484, 504, 554, 864, 1054, 1504, 1544). Record
+`docs/qa/first-minute-review-anchors-ego-hmc21179183.human-record.json`, table
+`docs/qa/anchor-scoreboard-e4-20260920.md`: the r1280 e4 run scores chassis 0.845, rear_body
+**0.262**, cabin 0.831, interior 0.000 (10 missing, no slot), all 0.558, and puts **48,705 px of
+rear_body over the 8 hidden rear_body cells** (1.2-20.4k px each). The seed workspace was not
+labelled; instead the interior is seeded from the C10379 frame-0 mask and the C10119 anchor at 41
+(ledger), and e4's interior stays blocked: the part is behind the head camera at e4 frames 0-4
+(first human e4 interior mask at 224; a per-slot start frame was not built).
+
 ## (c) Seed-search proposals: 24 accept/reject decisions (about ten minutes)
 
 `battle-seed-proposal-sheets` rendered one contact sheet per view under
@@ -148,6 +176,15 @@ proposals because their C10379 held-out IoU failed the 0.6 gate (0.525 / 0.465),
 candidates looked wrong; rear_body cells are the accepted B3 seeds shown for confirmation
 (`decision_for_b3: accepted_seed` in the row header); cabin never disagreed across strategies and
 has no proposal.
+
+**Outcome (Sep 21).** 24 decisions in `configs/qa/seed_proposal_decisions_2026-09-21.json`
+(edited in place in the template, copied out, template restored): chassis **7 / 8 accepted**
+(C10390 left undecided), rear_body **8 / 8** (candidate 0 everywhere, the B3 seed itself),
+interior **1 / 8** (C10390 at 427, "mostly avoided getting the screwdriver"; the other seven
+rejected: hand, chassis or the wrong boundary). Applied by `battle-human-accepted-seeds apply`
+into `runs/multiview-seeds-human-accepted-20260921/` (provenance
+`agent_proposed_human_accepted`); the interior decisions are recorded but the interior is seeded
+at frame 0, not 427 (session (e)).
 
 ## (d) Recording 2 (`nusar_9061`), C10379, 13 frames
 
@@ -181,6 +218,29 @@ arm (`runs/rec2-automatic-20260920/reprompt/C10379/iter1/arms/consensus-only`). 
 open tooling step: the runs live on the seed-window clip (frame 0 = proxy 383), so the anchor
 frames map by `proxy frame - 383`, and `battle-anchor-iou --view static-c10379` needs
 `--anchors` pointed at this workspace's export rather than recording 1's.
+
+## (e) Interior seeds at frame 0: 7 accept/reject decisions (about ten minutes, no GPU)
+
+Prepared Sep 21 by `battle-human-accepted-seeds interior-accept`. The interior is in the
+subject's left hand at frame 0 on every camera (not on the table); its centre was triangulated
+from your C10379 frame-0 mask and your C10119 anchor at frame 41, projected into each static view
+as one box (margin 0.25) and decoded; the decoder's top-scored candidate inside the area band
+and not brighter than twice your masks (the hand is 3-4x) was accepted when it triangulates with
+the others (details in the ledger). Sheets, one per view, one row each:
+`runs/labeling-sessions-20260921/interior_proposal_sheets/<VIEW>.png` (C10095, C10115, C10118,
+C10119, C10390, C10395, C10404; e4 has none, the interior is behind the head camera at frame 0).
+The candidate marked `is_accepted_seed` in
+`runs/labeling-sessions-20260921/interior_proposals/<VIEW>/interior_f000000/proposal.json` is
+what the Sep 21 four-part runs were seeded with (provenance `geometric_from_two_human_views`,
+held until you confirm); C10118 and C10395 have no accepted candidate (C10118's candidate was
+dropped by the consistency filter, C10395 sees only the back of the hand) and ran with three
+parts.
+
+Record decisions in `configs/qa/interior_seed_decisions.template.json` (copy to
+`configs/qa/interior_seed_decisions_<date>.json`, fill `author`, `reviewed_at`, per cell
+`decision` and `accepted_candidate`). Accepting the marked candidate changes the seed's
+provenance to `agent_proposed_human_accepted`; accepting another one, or rejecting all, means
+that view's four-part run is rerun with your choice (or three parts).
 
 ## Order and time
 
