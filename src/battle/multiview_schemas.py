@@ -20,7 +20,20 @@ GEOMETRIC_SEED_PROVENANCE = "geometric_seed_transfer"
 # Sep 20 recording-2 seeding: DINOv2 exemplars of recording 1's human masks rank SAM3 grid
 # candidates, accepted by >= 3-view triangulation; no geometry from other views' masks.
 EXEMPLAR_SEED_PROVENANCE = "exemplar_multiview_consistency"
-SeedProvenance = Literal["geometric_seed_transfer", "exemplar_multiview_consistency"]
+# Sep 21: a seed-search proposal the human accepted in the decisions file (the mask is the
+# agent decoder's, the choice is the human's); an interior seed decoded from the sphere two
+# human masks (C10379 frame 0, C10119 frame 41) triangulate, accepted by consistency and held
+# `until the human confirms`; and the manifest-level value when parts carry different ones.
+HUMAN_ACCEPTED_SEED_PROVENANCE = "agent_proposed_human_accepted"
+TWO_HUMAN_VIEWS_SEED_PROVENANCE = "geometric_from_two_human_views"
+MIXED_SEED_PROVENANCE = "mixed_per_part"
+SeedProvenance = Literal[
+    "geometric_seed_transfer",
+    "exemplar_multiview_consistency",
+    "agent_proposed_human_accepted",
+    "geometric_from_two_human_views",
+    "mixed_per_part",
+]
 MULTIVIEW_CLAIM_BOUNDARIES: tuple[str, ...] = (
     "Seeds on views other than C10379 were chosen by an agent from geometry (table-plane "
     "transfer of the human frame-0 masks) and a back-projection IoU rule; no human reviewed them.",
@@ -72,6 +85,8 @@ class SeedCandidate(VersionedModel):
             # Sep 20 recording 2: exemplar-ranked candidate whose centroid triangulates with
             # >= 3 static views' top candidates at the seed frame, radii in band.
             "exemplar_multiview_consistency",
+            # Sep 21: the human accepted this candidate in the seed-proposal decisions file.
+            "human_accepted_proposal",
         ]
         | None
     ) = None
@@ -171,7 +186,10 @@ class ConsensusViewSource(VersionedModel):
     observations: ArtifactFingerprint
     is_ego: bool
     seed_provenance: Literal[
-        "human_reviewed", "geometric_seed_transfer", "exemplar_multiview_consistency"
+        "human_reviewed",
+        "geometric_seed_transfer",
+        "exemplar_multiview_consistency",
+        "mixed_per_part",
     ]
     targets: tuple[str, ...] = Field(min_length=1)
     frame_count: int = Field(ge=1)

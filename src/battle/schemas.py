@@ -2012,9 +2012,12 @@ class GeometricSeedProvenance(VersionedModel):
     backprojection_iou: float | None = Field(default=None, ge=0, le=1)
     area_ratio_vs_expected: float | None = Field(default=None, ge=0)
     selected_by: Literal["agent"] = "agent"
-    provenance: Literal["geometric_seed_transfer", "exemplar_multiview_consistency"] = (
-        "geometric_seed_transfer"
-    )
+    provenance: Literal[
+        "geometric_seed_transfer",
+        "exemplar_multiview_consistency",
+        "agent_proposed_human_accepted",
+        "geometric_from_two_human_views",
+    ] = "geometric_seed_transfer"
 
 
 class FourPartMultiviewRunMetadata(VersionedModel):
@@ -2045,9 +2048,10 @@ class FourPartMultiviewRunMetadata(VersionedModel):
     seed_manifest_fingerprint: ArtifactFingerprint
     seeds: tuple[GeometricSeedProvenance, ...] = Field(min_length=2)
     blocked_targets: dict[str, str] = Field(default_factory=dict)
-    seed_provenance: Literal["geometric_seed_transfer", "exemplar_multiview_consistency"] = (
-        "geometric_seed_transfer"
-    )
+    # `mixed_per_part` (Sep 21): the parts carry different provenances, see `seeds[].provenance`.
+    seed_provenance: Literal[
+        "geometric_seed_transfer", "exemplar_multiview_consistency", "mixed_per_part"
+    ] = "geometric_seed_transfer"
     # `none` is the Sep 18-20 first-minute condition; `multiview_consensus` marks a run that
     # applied agent corrections from `battle-multiview-reprompt` (`agent_correction_*` below).
     later_corrections: Literal["none", "multiview_consensus"] = "none"

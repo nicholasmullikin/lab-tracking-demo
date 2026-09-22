@@ -429,7 +429,7 @@ def _load_geometric_seed_manifest(
                 "mask_path": str(mask_path),
                 "mask_sha256": part.accepted.mask.sha256,
                 "selected_by": "agent",
-                "provenance": manifest.provenance,
+                "provenance": part.provenance,
             }
         )
         provenance.append(
@@ -441,7 +441,7 @@ def _load_geometric_seed_manifest(
                 "candidate_index": part.accepted.candidate_index,
                 "backprojection_iou": part.accepted.backprojection_iou,
                 "area_ratio_vs_expected": part.accepted.area_ratio_vs_expected,
-                "provenance": manifest.provenance,
+                "provenance": part.provenance,
             }
         )
     if len(seeds) < manifest.rules.min_parts_to_run:
