@@ -55,6 +55,7 @@ from .assembly101_fetch_view import RECORDING_ID, proxy_path
 from .assembly101_pose_schemas import Assembly101ClockRule
 from .digest_cache import sha256_file as _sha256
 from .fs_common import relative_uri
+from .mask_ops import mask_iou
 from .multiview_geometry import CameraRig
 from .schemas import ArtifactFingerprint, FrameObservations, VersionedModel, fingerprint
 
@@ -374,12 +375,7 @@ def read_video_frame(video: Path, index: int) -> np.ndarray:
 
 def iou(a: np.ndarray, b: np.ndarray) -> float | None:
     """Intersection over union of two boolean masks; None when both are empty."""
-    if a.shape != b.shape:
-        raise ValueError(f"mask shapes differ: {a.shape} vs {b.shape}")
-    union = int(np.count_nonzero(a | b))
-    if union == 0:
-        return None
-    return float(np.count_nonzero(a & b) / union)
+    return mask_iou(a, b, empty_union=None)
 
 
 def keyframes(step: int = KEYFRAME_STEP, count: int = KEYFRAME_COUNT) -> tuple[int, ...]:

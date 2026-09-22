@@ -35,6 +35,7 @@ from .ensemble_reference_schemas import (
 )
 from .exploratory_comparison import _file_fingerprint
 from .four_part_contract import ANALYSIS_FPS, TARGETS
+from .mask_ops import mask_area, mask_centroid, mask_iou
 from .schemas import (
     ArtifactFingerprint,
     EnsembleReferenceRunMetadata,
@@ -88,23 +89,6 @@ SEGMENTATION_EPISODE_TYPES = (
 # --------------------------------------------------------------------------------------
 # Geometry helpers
 # --------------------------------------------------------------------------------------
-
-
-def mask_area(mask: np.ndarray | None) -> int:
-    return int(mask.sum()) if mask is not None else 0
-
-
-def mask_centroid(mask: np.ndarray) -> tuple[float, float] | None:
-    ys, xs = np.nonzero(mask)
-    if xs.size == 0:
-        return None
-    return float(xs.mean()), float(ys.mean())
-
-
-def mask_iou(left: np.ndarray | None, right: np.ndarray | None) -> float | None:
-    if left is None or right is None:
-        return None
-    return review._mask_iou(left, right)
 
 
 def cluster_intervals(frames: Iterable[int]) -> tuple[tuple[int, int], ...]:
@@ -205,7 +189,7 @@ class EnsembleDecider:
         centroid = mask_centroid(mask)
         if centroid is None:
             return None, None, False
-        iou = review._mask_iou(mask, last.mask)
+        iou = mask_iou(mask, last.mask)
         jump = math.hypot(centroid[0] - last.centroid[0], centroid[1] - last.centroid[1])
         allowance = target.sanity.continuity_allowance(frame - last.frame)
         passes = iou >= target.sanity.min_iou_with_last_accepted or jump <= allowance
@@ -234,7 +218,7 @@ class EnsembleDecider:
             fired.append("area_below_rolling_median_fraction")
         if rules.other_target_iou_above is not None:
             overlaps = [
-                review._mask_iou(primary, other)
+                mask_iou(primary, other)
                 for other in others.values()
                 if other is not None and other.any()
             ]

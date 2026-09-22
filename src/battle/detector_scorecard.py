@@ -28,6 +28,8 @@ from pathlib import Path
 import numpy as np
 
 from . import mask_cache
+from .mask_ops import mask_iou
+from .mask_ops import overlap_fraction_union as overlap_fraction
 from .muggled_smoke import relative_uri
 from .review_anchors import (
     MASK_SET_NAME,
@@ -431,18 +433,9 @@ def _iou(a: np.ndarray | None, b: np.ndarray | None) -> float:
         from .review_anchors import _resize_nearest
 
         b = _resize_nearest(b, a.shape)
-    union = int(np.logical_or(a, b).sum())
-    return float(np.logical_and(a, b).sum() / union) if union else float("nan")
-
-
-def overlap_fraction(mask: np.ndarray | None, others: Sequence[np.ndarray | None]) -> float:
-    if mask is None or not mask.any():
-        return float("nan")
-    shared = np.zeros(mask.shape, dtype=bool)
-    for other in others:
-        if other is not None and other.shape == mask.shape:
-            shared |= other
-    return float(np.logical_and(mask, shared).sum() / mask.sum())
+    value = mask_iou(a, b, empty_union=float("nan"))
+    assert value is not None
+    return value
 
 
 def area_jump_series(areas: np.ndarray, window: int = AREA_JUMP_WINDOW) -> np.ndarray:

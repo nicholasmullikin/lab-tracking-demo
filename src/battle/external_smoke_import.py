@@ -18,11 +18,11 @@ import subprocess
 from pathlib import Path
 
 import numpy as np
-from PIL import Image
 
 from .digest_cache import sha256_file
 from .exporter import export_run
 from .fs_common import relative_uri
+from .mask_ops import decode_mask_png
 from .schemas import (
     AdapterMetadata,
     ArtifactFingerprint,
@@ -281,8 +281,7 @@ def import_dam4sam(args: argparse.Namespace) -> Path:
     dimensions: tuple[int, int] | None = None
     observations: list[FrameObservations] = []
     for index, mask_path in enumerate(masks):
-        with Image.open(mask_path) as image:
-            mask = np.asarray(image.convert("L")) > 0
+        mask = decode_mask_png(mask_path)
         height, width = mask.shape
         dimensions = (width, height)
         ys, xs = np.where(mask)

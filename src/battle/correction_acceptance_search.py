@@ -49,6 +49,7 @@ from . import mask_cache
 from .assembly101_camera_fit import PoseMembers
 from .assembly101_clock_offset import is_ego
 from .four_part_contract import TARGETS
+from .mask_ops import overlap_fraction
 from .multiview_consensus import load_consensus, load_view_run, relative_uri
 from .multiview_geometry import CameraRig
 from .multiview_reprompt import build_prompts, onset_geometry
@@ -254,11 +255,6 @@ def subtract_hand(mask: np.ndarray, hull: np.ndarray) -> np.ndarray | None:
         return None
     largest = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
     return labels == largest
-
-
-def overlap_fraction(mask: np.ndarray, other: np.ndarray) -> float:
-    area = int(np.count_nonzero(mask))
-    return float(np.count_nonzero(np.logical_and(mask, other)) / area) if area else 0.0
 
 
 def _points_px(hands: Mapping[str, np.ndarray]) -> dict[str, tuple[tuple[float, float], ...]]:

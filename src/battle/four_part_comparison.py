@@ -6,10 +6,8 @@ import argparse
 import hashlib
 from pathlib import Path
 
-import numpy as np
 import rerun as rr
 import rerun.blueprint as rrb
-from PIL import Image
 
 from .exporter import _rgba_mask_png
 from .four_part_contract import (
@@ -20,6 +18,7 @@ from .four_part_contract import (
     relative_uri,
     sha256_file,
 )
+from .mask_ops import decode_mask_png
 from .schemas import (
     ArtifactFingerprint,
     FourPartSegmentationComparisonIndex,
@@ -114,8 +113,7 @@ def _render(
         mask_path = (run_directory / item.mask.uri).resolve()
         if not mask_path.is_relative_to(run_directory) or not mask_path.is_file():
             raise FileNotFoundError(f"missing mask {item.mask.uri}")
-        with Image.open(mask_path) as image:
-            mask = np.asarray(image.convert("L"), dtype=np.uint8) > 0
+        mask = decode_mask_png(mask_path)
         if mask.shape != (height, width):
             raise ValueError(f"mask dimension mismatch: {mask_path}")
         rr.log(

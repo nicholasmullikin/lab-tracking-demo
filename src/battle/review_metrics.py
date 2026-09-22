@@ -33,6 +33,7 @@ from .interaction_review_v4 import (
     SEGMENTATION_CONTACT_ELIGIBLE_THROUGH,
     SOURCE_START_SECONDS,
 )
+from .mask_ops import mask_iou, overlap_fraction
 from .review_metrics_schemas import (
     ColorBand,
     ContactIntervalRecord,
@@ -161,11 +162,6 @@ def hand_box_union(hands: Sequence[object], dimensions: tuple[int, int]) -> np.n
     return union
 
 
-def overlap_fraction(mask: np.ndarray, region: np.ndarray) -> float:
-    total = int(mask.sum())
-    return float(np.logical_and(mask, region).sum() / total) if total else 0.0
-
-
 # --------------------------------------------------------------------------------------
 # 1. Segmentation identity-swap geometry
 # --------------------------------------------------------------------------------------
@@ -197,15 +193,11 @@ def frame_geometry(
     exchange: dict[tuple[str, str], float | None] = {}
     for a, b in PART_PAIRS:
         left, right = masks.get(a), masks.get(b)
-        pair_iou[(a, b)] = (
-            review._mask_iou(left, right) if left is not None and right is not None else None
-        )
+        pair_iou[(a, b)] = mask_iou(left, right) if left is not None and right is not None else None
         prior_a = previous.get(a) if previous else None
         prior_b = previous.get(b) if previous else None
         if left is not None and right is not None and prior_a is not None and prior_b is not None:
-            exchange[(a, b)] = min(
-                review._mask_iou(left, prior_b), review._mask_iou(right, prior_a)
-            )
+            exchange[(a, b)] = min(mask_iou(left, prior_b), mask_iou(right, prior_a))
         else:
             exchange[(a, b)] = None
     return FrameGeometry(frame, areas, centroids, pair_iou, exchange)

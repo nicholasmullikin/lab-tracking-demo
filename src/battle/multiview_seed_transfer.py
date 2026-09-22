@@ -27,14 +27,16 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-import cv2
 import numpy as np
 
+from . import mask_ops
 from .assembly101_camera_fit import PoseMembers
 from .assembly101_clock_offset import is_ego
 from .assembly101_pose_schemas import ASSEMBLY101_HAND_SIDES
 from .digest_cache import sha256_file
 from .four_part_contract import TARGETS
+from .mask_ops import decode_mask_png as load_mask
+from .mask_ops import mask_iou as iou
 from .multiview_geometry import CameraRig, TablePlane
 from .multiview_schemas import (
     MULTIVIEW_CLAIM_BOUNDARIES,
@@ -102,18 +104,12 @@ def proxy_focal_px(rig: CameraRig, view: str) -> float:
     return float(rig.camera(view).intrinsic_matrix[0][0]) / proxy_to_raw_scale(view)
 
 
-def load_mask(path: Path) -> np.ndarray:
-    mask = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
-    if mask is None:
-        raise FileNotFoundError(f"mask is unavailable: {path}")
-    return mask > 0
-
-
 def mask_centroid(mask: np.ndarray) -> np.ndarray:
-    ys, xs = np.nonzero(mask)
-    if xs.size == 0:
+    """Pixel-centred `[x, y]` centroid in proxy pixels; an empty mask is an error here."""
+    centroid = mask_ops.mask_centroid(mask, pixel_center=True)
+    if centroid is None:
         raise ValueError("mask is empty")
-    return np.array([xs.mean() + 0.5, ys.mean() + 0.5])
+    return np.array(centroid)
 
 
 # -- geometry ---------------------------------------------------------------------------------
@@ -229,11 +225,6 @@ def ray_point_distance(
     if along <= 0:
         return float("inf")
     return float(np.linalg.norm(offset - along * directions[0]))
-
-
-def iou(a: np.ndarray, b: np.ndarray) -> float:
-    union = np.logical_or(a, b).sum()
-    return float(np.logical_and(a, b).sum() / union) if union else 0.0
 
 
 def bounding_box(

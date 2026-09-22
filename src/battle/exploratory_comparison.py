@@ -14,15 +14,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 import rerun as rr
 import rerun.blueprint as rrb
-from PIL import Image
 
 from .build_phases import PhaseTimer
 from .digest_cache import sha256_file
 from .exporter import HAND_CONNECTIONS, HAND_LANDMARK_NAMES, _rgba_mask_png
 from .fs_common import relative_uri
+from .mask_ops import decode_mask_png
 from .schemas import (
     ArtifactFingerprint,
     ClockName,
@@ -562,8 +561,7 @@ def _log_masks(
         mask_path = (run_directory / item.mask.uri).resolve()
         if not mask_path.is_relative_to(run_directory) or not mask_path.is_file():
             raise FileNotFoundError(f"referenced comparison mask is unavailable: {item.mask.uri}")
-        with Image.open(mask_path) as image:
-            binary = np.asarray(image.convert("L"), dtype=np.uint8) > 0
+        binary = decode_mask_png(mask_path)
         if binary.shape != (height, width):
             raise ValueError(f"mask dimensions do not match the shared video: {mask_path}")
         rr.log(

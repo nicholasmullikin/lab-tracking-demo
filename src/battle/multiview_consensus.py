@@ -24,10 +24,9 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import cv2
 import numpy as np
 
-from . import mask_cache
+from . import mask_cache, mask_ops
 from .assembly101_camera_fit import PoseMembers
 from .assembly101_clock_offset import WINDOW_START_POSE_FRAME, is_ego, npz_key
 from .assembly101_pose_schemas import ASSEMBLY101_WRIST_INDEX
@@ -159,13 +158,9 @@ def discover_multiview_runs(
 
 
 def mask_centroid_raw(mask: np.ndarray, scale: float) -> np.ndarray | None:
-    moments = cv2.moments(mask.astype(np.uint8), binaryImage=True)
-    if moments["m00"] <= 0:
-        return None
-    return (
-        np.array([moments["m10"] / moments["m00"] + 0.5, moments["m01"] / moments["m00"] + 0.5])
-        * scale
-    )
+    """Pixel-centred centroid scaled to raw sensor pixels, None on an empty mask."""
+    centroid = mask_ops.mask_centroid(mask, pixel_center=True, scale=scale)
+    return None if centroid is None else np.array(centroid)
 
 
 def distance_to_mask_px(mask: np.ndarray, pixel_proxy: np.ndarray) -> float:

@@ -15,7 +15,9 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import numpy as np
-from PIL import Image
+
+from . import mask_ops
+from .mask_ops import decode_mask_png
 
 DEFAULT_TARGETS = ("chassis", "interior", "rear_body", "cabin")
 CLAIM = "cross-method disagreement between two segmentation runs; not ground-truth accuracy"
@@ -52,10 +54,10 @@ def mask_iou(a: np.ndarray | None, b: np.ndarray | None) -> tuple[float | None, 
         return 0.0, "missing_in_a"
     if b is None:
         return 0.0, "missing_in_b"
-    union = np.logical_or(a, b).sum()
-    if union == 0:
+    value = mask_ops.mask_iou(a, b, empty_union=None)
+    if value is None:
         return None, "both_missing"
-    return float(np.logical_and(a, b).sum() / union), "both_present"
+    return value, "both_present"
 
 
 def load_mask_index(run_directory: Path) -> dict[int, dict[str, Path]]:
@@ -81,8 +83,7 @@ def load_mask_index(run_directory: Path) -> dict[int, dict[str, Path]]:
 def read_mask(path: Path | None) -> np.ndarray | None:
     if path is None or not path.is_file():
         return None
-    with Image.open(path) as image:
-        mask = np.asarray(image.convert("L")) > 0
+    mask = decode_mask_png(path)
     return mask if mask.any() else None
 
 

@@ -32,6 +32,7 @@ from .exploratory_comparison import (
 from .fine_substep_contract import load_contract as load_fine_substep_contract
 from .fine_substep_contract import substep_for_frame
 from .four_part_contract import ANALYSIS_FPS, FRAME_COUNT, TARGETS, load_contract
+from .mask_ops import mask_iou
 from .schemas import (
     ArtifactFingerprint,
     ClockName,
@@ -315,11 +316,6 @@ def measure_against_distance_map(
     return palm, fingertip, minimum, minimum == 0.0
 
 
-def _mask_iou(left: np.ndarray, right: np.ndarray) -> float:
-    union = np.logical_or(left, right).sum()
-    return float(np.logical_and(left, right).sum() / union) if union else 0.0
-
-
 def segmentation_review_triggers(
     reference: LoadedSource,
     control: LoadedSource | None,
@@ -350,7 +346,7 @@ def segmentation_review_triggers(
             if prior is not None:
                 prior_area, prior_x, prior_y = summaries[part]
                 current_area, current_x, current_y = current_summary
-                temporal_iou = _mask_iou(prior, current)
+                temporal_iou = mask_iou(prior, current)
                 if temporal_iou < 0.5:
                     triggers.append(
                         SegmentationReviewTrigger(
@@ -381,7 +377,7 @@ def segmentation_review_triggers(
                         )
                     )
             if other is not None and hands.observations[frame].hands:
-                cross_iou = _mask_iou(current, other)
+                cross_iou = mask_iou(current, other)
                 if cross_iou < 0.5:
                     triggers.append(
                         SegmentationReviewTrigger(
