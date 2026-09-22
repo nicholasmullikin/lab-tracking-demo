@@ -369,6 +369,43 @@ class ExemplarDecoderClient:
         self._client.close()
 
 
+def record_candidate_source(
+    iteration_dir: Path,
+    *,
+    candidate_source: str,
+    references: Path | None,
+    exemplar_set: str,
+    exemplar_variant: str,
+    repository_root: Path,
+) -> Path:
+    """Sidecar beside a decode: which candidate source produced the decisions.
+
+    The decision and provenance schemas are human contracts hashed into schedules, so the
+    source is recorded here rather than on them; `decoder_iou_estimate` on the decisions is the
+    detection score whenever the source is not the image decoder.
+    """
+    payload = {
+        "candidate_source": candidate_source,
+        "exemplar_references": (
+            _fingerprint(references, repository_root) if references is not None else None
+        ),
+        "exemplar_set": exemplar_set,
+        "exemplar_variant": exemplar_variant,
+        "score_semantics": (
+            "decoder IoU estimate"
+            if candidate_source == "image_decoder"
+            else "SAM3 detection score scaled by the presence score (candidates with api "
+            "muggledsam_sam3_exemplar_detector); image-decoder candidates keep their IoU "
+            "estimate under `both`"
+        ),
+        "recorded_at": datetime.now(UTC).isoformat(),
+    }
+    path = iteration_dir / "candidate_source.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
 def decoder_for_source(
     candidate_source: str,
     *,
@@ -653,6 +690,426 @@ def meets_bar(metrics: Mapping[str, Any]) -> bool:
     return iou is not None and iou >= BAR_IOU and (harm is None or harm <= BAR_HARM)
 
 
+# --------------------------------------------------------------------------- truth plans
+
+
+def build_truth_plan(
+    repository_root: Path,
+    *,
+    view: str,
+    view_id: str,
+    anchors: Path,
+    consensus_root: Path,
+    output_dir: Path,
+    extra_positives: Sequence[tuple[int, str, Path]] = (),
+    seed_run: Path | None = None,
+) -> Path:
+    """An `AcceptanceSearchPlan` for any view: every human anchor cell as a re-prompt onset.
+
+    The acceptance-search module builds this for C10379 from the seed-search truth set; this
+    is the same construction (others-only consensus sphere -> two boxes with margins
+    0.25 / 0.60 and other-part negatives) for a view's anchor mask set, so C10119 gets the same
+    harness. No hand variants: the pools compared here are the image decoder's base pool and
+    the exemplar pool.
+    """
+    from .assembly101_clock_offset import is_ego
+    from .correction_acceptance_search import (
+        BOX_MARGINS,
+        CLAIM_BOUNDARIES,
+        AcceptanceSearchPlan,
+        CellGeometry,
+        FramePlan,
+        TruthCell,
+    )
+    from .multiview_consensus import load_consensus, load_view_run
+    from .multiview_geometry import CameraRig
+    from .multiview_reprompt import build_prompts, onset_geometry
+    from .multiview_seed_transfer import proxy_focal_px
+    from .seed_search import proxy_for_view
+
+    repository_root = repository_root.resolve()
+    mask_set, anchors_root = load_mask_set(anchors, view_id=view_id)
+    proxy, (width, height) = proxy_for_view(repository_root, view)
+    shape = (height, width)
+    rig = CameraRig.load(repository_root)
+    consensus_dir = (repository_root / consensus_root).resolve()
+    consensus = load_consensus(consensus_dir / "manifest.json")
+    if any(s.view == view for s in consensus.sources):
+        raise ValueError(f"the consensus {consensus_dir.name} includes {view}; use an excl build")
+    with np.load(consensus_dir / "consensus_points.npz") as archive:
+        views = tuple(str(v) for v in archive["views"])
+        points = {t: np.asarray(archive[f"consensus/{t}"])[:FIRST_MINUTE] for t in TARGETS}
+        used = {
+            t: {v: np.asarray(archive[f"used/{t}/{v}"], dtype=bool)[:FIRST_MINUTE] for v in views}
+            for t in TARGETS
+        }
+    runs = {
+        s.view: load_view_run(
+            repository_root,
+            repository_root / s.run_directory_uri,
+            view=s.view,
+            frame_count=FIRST_MINUTE,
+        )
+        for s in consensus.sources
+    }
+    seed_area: dict[str, int | None] = {}
+    if seed_run is not None:
+        masks0 = read_run_masks(seed_run, 1).get(0, {})
+        for part in TARGETS:
+            path = masks0.get(part)
+            seed_area[part] = int(mask_cache.decode_mask_png(Path(path)).sum()) if path else None
+    focal = proxy_focal_px(rig, view)
+
+    cells: dict[tuple[int, str], dict[str, Any]] = {}
+    for anchor in mask_set.anchors:
+        if anchor.state == "labeled" and anchor.mask_uri is not None:
+            cells[(anchor.analysis_frame_index, anchor.target)] = {
+                "role": "positive",
+                "source": "anchors",
+                "mask": anchors_root / anchor.mask_uri,
+                "area": anchor.area_pixels,
+            }
+        elif anchor.state == "hidden":
+            cells[(anchor.analysis_frame_index, anchor.target)] = {
+                "role": "hidden",
+                "source": "anchors",
+                "mask": None,
+                "area": None,
+            }
+    for frame, part, mask_path in extra_positives:
+        cells.setdefault(
+            (frame, part),
+            {
+                "role": "positive",
+                "source": "corrections",
+                "mask": mask_path,
+                "area": int(mask_cache.decode_mask_png(mask_path).sum()),
+            },
+        )
+    frames = sorted({frame for frame, _ in cells})
+    frame_plans = []
+    prompt_count = 0
+    unprompted = 0
+    for frame in frames:
+        geometry: dict[str, CellGeometry] = {}
+        for part in TARGETS:
+            point = points[part][frame]
+            if np.isnan(point).any():
+                continue
+            masks = {}
+            poses = {}
+            for other_view in views:
+                if not used[part][other_view][frame]:
+                    continue
+                mask = runs[other_view].mask(frame, part)
+                if mask is not None:
+                    masks[other_view] = mask
+                    poses[other_view] = (
+                        rig.pose_frame(other_view, frame) if is_ego(other_view) else None
+                    )
+            g = onset_geometry(
+                rig,
+                target_view=view,
+                point_world_mm=point,
+                masks_by_view=masks,
+                pose_frames=poses,
+                target_pose_frame=rig.pose_frame(view, frame) if is_ego(view) else None,
+            )
+            if g is None or np.isnan(g.centroid_proxy_px).any():
+                continue
+            geometry[part] = CellGeometry(
+                part=part,
+                consensus_world_mm=tuple(float(v) for v in point),
+                radius_mm=g.radius_mm,
+                depth_mm=g.depth_mm,
+                expected_area_px=g.expected_area_px,
+                centroid_proxy_px=(float(g.centroid_proxy_px[0]), float(g.centroid_proxy_px[1])),
+                projected_radius_px=float(g.radius_mm * focal / g.depth_mm),
+                views_used=tuple(masks),
+            )
+        counter = 1
+        frame_cells = []
+        for part in TARGETS:
+            entry = cells.get((frame, part))
+            if entry is None:
+                continue
+            common = dict(
+                frame=frame,
+                part=part,
+                role=entry["role"],
+                source=entry["source"],
+                mask=(
+                    fingerprint(entry["mask"], repository_root)
+                    if entry["mask"] is not None
+                    else None
+                ),
+                truth_area_px=entry["area"],
+                seed_area_px=seed_area.get(part),
+            )
+            g = geometry.get(part)
+            if g is None:
+                frame_cells.append(
+                    TruthCell(
+                        **common,
+                        unprompted_reason=(
+                            f"no consensus for {part} at this frame in {consensus_dir.name}"
+                        ),
+                    )
+                )
+                unprompted += 1
+                continue
+            centroid = np.asarray(g.centroid_proxy_px)
+            others = {o: np.asarray(geometry[o].centroid_proxy_px) for o in geometry if o != part}
+            prompts = build_prompts(
+                target=part,
+                frame=frame,
+                centroid_proxy_px=centroid,
+                half_size_px=g.projected_radius_px,
+                shape=shape,
+                other_centroids=others,
+                hand_joints=None,
+                margins=BOX_MARGINS,
+                counter_start=counter,
+            )
+            counter += len(prompts)
+            prompt_count += len(prompts)
+            frame_cells.append(TruthCell(**common, prompts=tuple(prompts)))
+        frame_plans.append(
+            FramePlan(
+                frame=frame,
+                geometry=geometry,
+                hands_dataset_px={},
+                hands_wilor_px={},
+                cells=tuple(frame_cells),
+            )
+        )
+    anchors_json = anchors_root / "anchors" / "anchor_masks.json"
+    plan = AcceptanceSearchPlan(
+        manifest_kind="correction_acceptance_search_plan",
+        target_view=view,
+        proxy=proxy,
+        proxy_dimensions=(width, height),
+        consensus_root_uri=relative_uri(consensus_dir, repository_root),
+        consensus_manifest=fingerprint(consensus_dir / "manifest.json", repository_root),
+        consensus_points=fingerprint(consensus_dir / "consensus_points.npz", repository_root),
+        truth_set=fingerprint(anchors_json, repository_root),
+        wilor_observations=fingerprint(anchors_json, repository_root),
+        seed_run_uri=relative_uri(seed_run, repository_root) if seed_run else "",
+        box_margins=tuple(float(m) for m in BOX_MARGINS),
+        hand_hull_dilation_px=0,
+        frames=tuple(frame_plans),
+        prompt_count=prompt_count,
+        cell_count=len(cells),
+        unprompted_cells=unprompted,
+        anchor_frames=tuple(mask_set.frames),
+        always_fit_frames=tuple(sorted({f for (f, _, _) in extra_positives})),
+        generated_at=datetime.now(UTC),
+        claim_boundaries=(
+            *CLAIM_BOUNDARIES,
+            f"Truth cells here are the {view} human review anchors ({mask_set.counts}); "
+            "wilor_observations points at the anchor set because this plan carries no hand "
+            "variants.",
+        ),
+    )
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / "plan.json"
+    path.write_text(plan.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+def c10379_correction_positives(repository_root: Path) -> list[tuple[int, str, Path]]:
+    """The human correction masks at 0 / 327 / 900 / 1235 (the acceptance search's extra truth)."""
+    references, _ = c10379_human_references(repository_root)
+    return [(r["frame"], r["target"], Path(r["mask_path"])) for r in references]
+
+
+def decode_control(
+    repository_root: Path, plan_path: Path, *, output_dir: Path, device: str = "cuda:0"
+) -> Path:
+    """The image-decoder control pool for a truth plan (GPU; the calibration worker)."""
+    from .correction_acceptance_search import load_plan, run_decode
+
+    plan = load_plan(plan_path)
+    return run_decode(repository_root, plan, output_dir=output_dir, device=device)
+
+
+# ---------------------------------------------------------------------------- pool compare
+
+
+def _gate_box(prompts: Sequence[Any]) -> tuple[float, float, float, float] | None:
+    boxes = [p.pixel_box for p in prompts]
+    if not boxes:
+        return None
+    return (
+        float(min(b.x1 for b in boxes)),
+        float(min(b.y1 for b in boxes)),
+        float(max(b.x2 for b in boxes)),
+        float(max(b.y2 for b in boxes)),
+    )
+
+
+def load_pool_cells(
+    repository_root: Path,
+    *,
+    plan_path: Path,
+    decode_dir: Path | None,
+    pass_dir: Path,
+    exemplar_sets: Sequence[str] = ("same_view", "cross_view"),
+) -> list[PoolCell]:
+    """Every prompted positive truth cell with its decoder-pool and exemplar-pool candidates."""
+    from .correction_acceptance_search import load_plan
+
+    plan = load_plan(plan_path)
+    decoded = (
+        json.loads((decode_dir / "decode_result.json").read_text(encoding="utf-8"))["decoded"]
+        if decode_dir is not None
+        else {}
+    )
+    rows = _load_kept_rows(pass_dir)
+    cells: list[PoolCell] = []
+    for frame_plan in plan.frames:
+        for cell in frame_plan.cells:
+            if cell.role != "positive" or cell.mask is None or not cell.prompts:
+                continue
+            truth = mask_cache.decode_mask_png(repository_root / cell.mask.uri)
+            g = frame_plan.geometry[cell.part]
+            gate = _gate_box(cell.prompts)
+            candidates: list[PoolCandidate] = []
+            for prompt in cell.prompts:
+                result = decoded.get(prompt.prompt_id)
+                if result is None:
+                    continue
+                for option in result["candidates"]:
+                    mask = mask_cache.decode_mask_png(decode_dir / option["mask_uri"])  # type: ignore[operator]
+                    centroid = None
+                    ys, xs = np.nonzero(mask)
+                    if ys.size:
+                        centroid = (float(xs.mean()), float(ys.mean()))
+                    iou_value = mask_iou(mask, truth)
+                    candidates.append(
+                        PoolCandidate(
+                            pool="decoder:base",
+                            key=f"{prompt.prompt_id}:{option['candidate_index']}",
+                            score=float(option["iou_score"]),
+                            area_px=int(mask.sum()),
+                            centroid_px=centroid,
+                            iou_vs_truth=float(iou_value if iou_value is not None else 0.0),
+                            inside_box=(
+                                gate is not None
+                                and centroid is not None
+                                and gate[0] <= centroid[0] < gate[2]
+                                and gate[1] <= centroid[1] < gate[3]
+                            ),
+                        )
+                    )
+            used_frames: tuple[int, ...] = ()
+            for set_name in exemplar_sets:
+                for variant in VARIANTS:
+                    more, used = exemplar_candidates_for_cell(
+                        pass_dir,
+                        rows,
+                        frame=frame_plan.frame,
+                        part=cell.part,
+                        set_name=set_name,
+                        variant=variant,
+                        truth_mask=truth,
+                        gate_box=gate,
+                    )
+                    candidates.extend(more)
+                    if set_name == "same_view" and used:
+                        used_frames = used
+            cells.append(
+                PoolCell(
+                    frame=frame_plan.frame,
+                    part=cell.part,
+                    truth_area_px=int(cell.truth_area_px or truth.sum()),
+                    expected_area_px=g.expected_area_px,
+                    projected_radius_px=g.projected_radius_px,
+                    centroid_proxy_px=g.centroid_proxy_px,
+                    candidates=tuple(candidates),
+                    reference_frames_used=used_frames,
+                )
+            )
+    return cells
+
+
+def compare_pools(
+    cells: Sequence[PoolCell],
+    *,
+    pools: Sequence[str],
+    anchor_frames: Sequence[int],
+) -> dict[str, Any]:
+    """Per part and pool: oracle, current-rule metrics, and leave-frames-out with a score floor."""
+    parts = tuple(dict.fromkeys(c.part for c in cells))
+    report: dict[str, Any] = {"parts": {}, "pools": list(pools), "cells": len(cells)}
+    for part in parts:
+        part_cells = [c for c in cells if c.part == part]
+        frames = sorted({c.frame for c in part_cells if c.frame in set(anchor_frames)})
+        entry: dict[str, Any] = {"cells": len(part_cells), "pools": {}}
+        for pool in pools:
+            in_sample = pool_metrics(part_cells, pool)
+            held = leave_frames_out_pool(part_cells, pool, frames=frames)
+            entry["pools"][pool] = {
+                "in_sample": in_sample,
+                "leave_frames_out": held,
+                "meets_bar": meets_bar(held),
+                "per_cell": [
+                    {
+                        "frame": c.frame,
+                        "oracle": max(
+                            (x.iou_vs_truth for x in c.candidates if x.pool.startswith(pool)),
+                            default=0.0,
+                        ),
+                        "accepted_iou": (
+                            (lambda ch: ch.iou_vs_truth if ch else None)(
+                                accept_from_pool(
+                                    [x for x in c.candidates if x.pool.startswith(pool)],
+                                    expected_area_px=c.expected_area_px,
+                                    centroid_proxy_px=c.centroid_proxy_px,
+                                    projected_radius_px=c.projected_radius_px,
+                                )
+                            )
+                        ),
+                        "candidates": sum(1 for x in c.candidates if x.pool.startswith(pool)),
+                    }
+                    for c in part_cells
+                ],
+            }
+        report["parts"][part] = entry
+    return report
+
+
+def compare_table(report: Mapping[str, Any], *, title: str) -> str:
+    lines = [
+        f"### {title}",
+        "",
+        "| part | pool | cells | oracle mean IoU | cells with a >= 0.6 candidate | accepted | "
+        "accepted mean IoU | harm (accepted < 0.4) | held-out mean IoU | held-out acceptance | "
+        "held-out harm | bar (>= 0.6, harm <= 0.15) |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|",
+    ]
+
+    def f(value: Any, digits: int = 3) -> str:
+        return "-" if value is None else f"{value:.{digits}f}"
+
+    for part, entry in report["parts"].items():
+        for pool, block in entry["pools"].items():
+            s = block["in_sample"]
+            h = block["leave_frames_out"]
+            lines.append(
+                f"| {part} | `{pool}` | {s['cells']} | {f(s['oracle_mean_iou'])} | "
+                f"{s['oracle_cells_at_least_0.6']} / {s['cells']} | "
+                f"{s['accepted']} / {s['cells']} | "
+                f"{f(s['accepted_mean_iou'])} | {s['harm']} / {s['accepted']} "
+                f"({f(s['harm_rate'], 2)}) | {f(h.get('held_out_mean_iou'))} | "
+                f"{f(h.get('held_out_acceptance_rate'), 2)} | "
+                f"{h.get('held_out_harm', '-')} / {h.get('held_out_accepted', '-')} "
+                f"({f(h.get('held_out_harm_rate'), 2)}) | {'yes' if block['meets_bar'] else 'no'} |"
+            )
+    lines.append("")
+    return "\n".join(lines)
+
+
 # ------------------------------------------------------------------------------------- CLI
 
 
@@ -755,6 +1212,53 @@ def main() -> None:
     run_pass.add_argument("--external-python", type=Path, default=None)
     run_pass.add_argument("--allow-gpu-neighbour", type=int, action="append", default=None)
 
+    truth_plan = commands.add_parser(
+        "truth-plan", help="every human anchor cell of a view as a re-prompt onset (CPU)"
+    )
+    truth_plan.add_argument("--view", choices=sorted(VIEW_IDS), required=True)
+    truth_plan.add_argument(
+        "--anchors", type=Path, default=None, help="anchor workspace (default: the view's)"
+    )
+    truth_plan.add_argument(
+        "--consensus-root", type=Path, required=True, help="a consensus built without the view"
+    )
+    truth_plan.add_argument(
+        "--seed-run", default=None, help="run whose frame-0 masks give seed areas"
+    )
+    truth_plan.add_argument("--output-dir", type=Path, required=True)
+    truth_plan.add_argument(
+        "--with-c10379-corrections",
+        action="store_true",
+        help="add the human correction masks at 0/327/900/1235 as truth cells (C10379 only)",
+    )
+
+    decode = commands.add_parser(
+        "decode-control", help="image-decoder control pool for a truth plan (GPU)"
+    )
+    decode.add_argument("--plan", type=Path, required=True)
+    decode.add_argument("--output-dir", type=Path, required=True)
+    decode.add_argument("--device", default="cuda:0")
+    decode.add_argument("--allow-gpu-neighbour", type=int, action="append", default=None)
+
+    compare = commands.add_parser(
+        "compare", help="exemplar pool vs decoder pool on the truth cells (CPU)"
+    )
+    compare.add_argument("--plan", type=Path, required=True)
+    compare.add_argument(
+        "--decode-dir", type=Path, default=None, help="decode-control output (the control pool)"
+    )
+    compare.add_argument(
+        "--pass",
+        dest="pass_dir",
+        type=Path,
+        required=True,
+        help="sam3_appearance pass with kept masks",
+    )
+    compare.add_argument(
+        "--output", type=Path, required=True, help="report JSON (a .md is written beside it)"
+    )
+    compare.add_argument("--title", default="Pool comparison")
+
     args = parser.parse_args()
     root = Path.cwd().resolve()
     try:
@@ -762,6 +1266,56 @@ def main() -> None:
             _references_main(args, root)
         elif args.command == "pass":
             _pass_main(args, root)
+        elif args.command == "truth-plan":
+            anchors = args.anchors or (root / view_paths(VIEW_IDS[args.view])[1])
+            seed_run = resolve_run_directory(str(args.seed_run))[1] if args.seed_run else None
+            path = build_truth_plan(
+                root,
+                view=args.view,
+                view_id=VIEW_IDS[args.view],
+                anchors=anchors,
+                consensus_root=args.consensus_root,
+                output_dir=args.output_dir,
+                extra_positives=(
+                    c10379_correction_positives(root) if args.with_c10379_corrections else ()
+                ),
+                seed_run=seed_run,
+            )
+            from .correction_acceptance_search import load_plan
+
+            plan = load_plan(path)
+            print(
+                f"Truth plan: {path} ({plan.cell_count} cells, {plan.unprompted_cells} unprompted, "
+                f"{plan.prompt_count} prompts on {len(plan.frames)} frames)"
+            )
+        elif args.command == "decode-control":
+            path = decode_control(root, args.plan, output_dir=args.output_dir, device=args.device)
+            print(f"Decode: {path}")
+        elif args.command == "compare":
+            from .correction_acceptance_search import load_plan
+
+            plan = load_plan(args.plan)
+            cells = load_pool_cells(
+                root, plan_path=args.plan, decode_dir=args.decode_dir, pass_dir=args.pass_dir
+            )
+            pools = ["exemplar:same_view:posneg", "exemplar:same_view:pos"]
+            if any(
+                c.pool.startswith("exemplar:cross_view") for cell in cells for c in cell.candidates
+            ):
+                pools += ["exemplar:cross_view:posneg", "exemplar:cross_view:pos"]
+            if args.decode_dir is not None:
+                pools.insert(0, "decoder:base")
+            report = compare_pools(cells, pools=pools, anchor_frames=plan.anchor_frames)
+            report["plan"] = fingerprint(args.plan, root).model_dump(mode="json")
+            report["pass"] = relative_uri(args.pass_dir, root)
+            report["decode_dir"] = relative_uri(args.decode_dir, root) if args.decode_dir else None
+            report["claim_boundary"] = CLAIM_BOUNDARY
+            report["generated_at"] = datetime.now(UTC).isoformat()
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(json.dumps(report, indent=1) + "\n", encoding="utf-8")
+            table = compare_table(report, title=args.title)
+            args.output.with_suffix(".md").write_text(table, encoding="utf-8")
+            print(table)
     except (OSError, ValueError, KeyError) as error:
         parser.error(str(error))
 

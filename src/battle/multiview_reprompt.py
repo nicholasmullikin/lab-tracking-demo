@@ -35,7 +35,7 @@ import json
 import os
 import shlex
 import time
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -1300,8 +1300,14 @@ def decode_plan(
     correction_policy: Path = DEFAULT_CORRECTION_POLICY,
     rig: CameraRig | None = None,
     candidate_ranking: MultiviewRepromptCandidateRanking = "ray",
+    decoder_factory: Callable[[Path, Path, Path], Any] | None = None,
 ) -> Path:
     """Decode every planned prompt with one warm worker, accept, derive the schedules.
+
+    `decoder_factory(proxy_path, results_directory, stderr_path)` replaces the calibration
+    worker as the candidate source (`battle.exemplar_pool.decoder_for_source`, the
+    `--candidate-source exemplar_detector|both` branch); the acceptance filters and ranking
+    downstream are unchanged, so `decoder_iou_estimate` is then the detection score.
 
     GPU step (the worker is the calibration workspace's isolated image decoder); with an
     injected `decoder` (tests) nothing touches a GPU.  Writes, beside the plan:
@@ -1415,14 +1421,18 @@ def decode_plan(
     owns = decoder is None
     if decoder is None:
         proxy_path = _verify(repository_root, plan.proxy, "target proxy")
-        decoder = _worker(
-            proxy_path=proxy_path,
-            results_directory=results_directory,
-            stderr_path=iteration_dir / "decode_worker.stderr.log",
-            external_python=external_python,
-            model=model,
-            device=device,
-        )
+        stderr_path = iteration_dir / "decode_worker.stderr.log"
+        if decoder_factory is not None:
+            decoder = decoder_factory(proxy_path, results_directory, stderr_path)
+        else:
+            decoder = _worker(
+                proxy_path=proxy_path,
+                results_directory=results_directory,
+                stderr_path=stderr_path,
+                external_python=external_python,
+                model=model,
+                device=device,
+            )
     decoded: list[dict[str, Any]] = []
     try:
         for frame in sorted({int(r["frame_index"]) for r in requests}):
@@ -2283,6 +2293,20 @@ def main() -> None:
             "decoder's own IoU estimate first, ties by ray (rule (g))"
         ),
     )
+    decode.add_argument(
+        "--candidate-source",
+        choices=("image_decoder", "exemplar_detector", "both"),
+        default="image_decoder",
+        help=(
+            "where candidates come from: the box-prompted image decoder (default, the control), "
+            "SAM3 visual-exemplar detections gated to the prompt box (battle.exemplar_pool; "
+            "needs --exemplar-references), or both merged in one worker"
+        ),
+    )
+    decode.add_argument("--exemplar-references", type=Path, default=None)
+    decode.add_argument("--exemplar-set", default="same_view")
+    decode.add_argument("--exemplar-variant", default="posneg")
+    decode.add_argument("--allow-gpu-neighbour", type=int, action="append", default=None)
 
     run = commands.add_parser("run", help="emit the battle-muggled-smoke command per arm (CPU)")
     run.add_argument("--iteration-dir", type=Path, required=True)
@@ -2318,6 +2342,35 @@ def main() -> None:
         )
         _print_plan(load_plan(path), path)
     elif args.command == "decode":
+        decoder_factory = None
+        if args.candidate_source != "image_decoder":
+            from .exemplar_pool import decoder_for_source, record_candidate_source
+
+            def decoder_factory(
+                proxy_path: Path, results_directory: Path, stderr_path: Path
+            ) -> Any:
+                return decoder_for_source(
+                    args.candidate_source,
+                    proxy_path=proxy_path,
+                    results_directory=results_directory,
+                    stderr_path=stderr_path,
+                    references=args.exemplar_references,
+                    external_python=args.external_python,
+                    model=args.model,
+                    device=args.device,
+                    exemplar_set=args.exemplar_set,
+                    exemplar_variant=args.exemplar_variant,
+                    allow_gpu_neighbours=args.allow_gpu_neighbour or (),
+                )
+
+            record_candidate_source(
+                args.plan.resolve().parent,
+                candidate_source=args.candidate_source,
+                references=args.exemplar_references,
+                exemplar_set=args.exemplar_set,
+                exemplar_variant=args.exemplar_variant,
+                repository_root=root,
+            )
         path = decode_plan(
             args.plan,
             repository_root=root,
@@ -2326,6 +2379,7 @@ def main() -> None:
             device=args.device,
             correction_policy=args.correction_policy,
             candidate_ranking=args.candidate_ranking,
+            decoder_factory=decoder_factory,
         )
         decisions = load_decisions(path)
         for decision in decisions.decisions:

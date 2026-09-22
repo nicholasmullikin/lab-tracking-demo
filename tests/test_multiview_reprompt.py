@@ -658,6 +658,37 @@ def _plan(
     return path, extras
 
 
+def test_decode_uses_the_candidate_source_factory_and_closes_it(
+    rig: mvg.CameraRig, tmp_path: Path
+) -> None:
+    """`--candidate-source exemplar_detector|both` hands decode_plan a decoder factory."""
+    chassis, chassis_centroid, chassis_half = _onset(
+        rig, "chassis", 500, np.array([40.0, -30.0, -20.0]), 40.0
+    )
+    plan_path, _ = _plan(rig, tmp_path, onsets=(chassis,))
+    made: list[tuple[Path, Path, Path]] = []
+    decoders: list[_StubDecoder] = []
+
+    def factory(proxy_path: Path, results_directory: Path, stderr_path: Path) -> _StubDecoder:
+        made.append((proxy_path, results_directory, stderr_path))
+        decoder = _StubDecoder(
+            results_directory, _masks_for_factory({500: (chassis_centroid, chassis_half)})
+        )
+        decoders.append(decoder)
+        return decoder
+
+    decisions_path = mr.decode_plan(
+        plan_path, repository_root=ROOT, rig=rig, decoder_factory=factory
+    )
+
+    assert len(made) == 1
+    assert made[0][1] == plan_path.parent / mr.CALIBRATION_DIR_NAME / "results"
+    assert made[0][2] == plan_path.parent / "decode_worker.stderr.log"
+    assert decoders[0].closed is True  # decode_plan owns a decoder it asked the factory for
+    decisions = mr.load_decisions(decisions_path)
+    assert decisions.accepted_count == 1
+
+
 def _masks_for_factory(good_by_frame: dict[int, tuple[np.ndarray, float]]) -> Any:
     def masks_for(prompt: dict[str, Any]) -> list[tuple[np.ndarray, float]]:
         frame = int(prompt["frame_index"])
