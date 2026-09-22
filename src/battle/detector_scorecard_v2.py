@@ -528,7 +528,7 @@ def leave_one_record_out(records: Sequence[RecordScore], k: int = v1.TOP_K) -> l
 
     Detectors are rank-normalised within each record (the confidence series' units); the
     threshold chosen on the training records is applied to the held-out record's combined
-    rank-average.
+    rank-average. Only detectors defined on at least half the training cells are eligible.
     """
     out = []
     for held in records:
@@ -547,7 +547,11 @@ def leave_one_record_out(records: Sequence[RecordScore], k: int = v1.TOP_K) -> l
                 pieces.append(v1.normalized_ranks(r.values[name])[frames, columns])
                 raw_pieces.append(r.values[name][frames, columns])
             normalized_train[name] = np.concatenate(pieces)
-            aurocs[name] = v1.auroc(np.concatenate(raw_pieces), truth_train)
+            raw_train = np.concatenate(raw_pieces)
+            # A detector defined on fewer than half the training cells (the C10379-only
+            # comparators, the distractor reference) cannot be chosen for another camera.
+            coverage = float(np.isfinite(raw_train).mean()) if raw_train.size else 0.0
+            aurocs[name] = v1.auroc(raw_train, truth_train) if coverage >= 0.5 else None
         chosen = v1.select_top_detectors(aurocs, k=k)
         if not chosen:
             continue
@@ -614,8 +618,9 @@ def named_tests(
                     ],
                     dtype=float,
                 )
-                # Fraction of the record's cells this cell is at least as suspicious as.
-                ranks[name] = float(np.mean(others <= value))
+                # Mid-rank: the fraction of the record's cells strictly below this value plus half
+                # the ties, so a detector that is constant over the record sits at 0.5, not 1.
+                ranks[name] = float(np.mean(others < value) + 0.5 * np.mean(others == value))
             flagged = sorted(
                 (name for name, rank in ranks.items() if rank is not None and rank >= 0.9),
                 key=lambda n: -(ranks[n] or 0),
