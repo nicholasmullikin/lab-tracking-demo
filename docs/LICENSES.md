@@ -84,6 +84,15 @@ inputs outside Git.
   prediction is made on Assembly101 frames and masks and inherits CC BY-NC 4.0. The
   ObjectRelator fallback (`wangzeze/ObjectRelator-Exo2Ego-Small`, LLaVA/PSALM stack, likewise
   non-commercial) was not installed or run.
+- **FineBio (Sep 21):** videos and images obtained under the FineBio licence agreement
+  (Yagi et al., IJCV 2025; access by signed agreement via `github.com/aistairc/FineBio`,
+  credentials by email), which limits use to non-commercial research/development and
+  requires citation; the dataset is gated, so treat redistribution as forbidden. Everything
+  under `data/raw/finebio/`, the `data/derived/finebio/` proxy and the
+  `runs/finebio-sam3-smoke-20260921/` outputs (masks, contact sheet, RRD) are covered by
+  those terms and stay outside Git. The SAM3 zero-shot smoke on one clip makes no accuracy
+  claim; its outputs are not evidence for any FineBio-related result and are not to be shown
+  outside the local procedure without a rights determination.
 
 ## Dependency and future-model review
 

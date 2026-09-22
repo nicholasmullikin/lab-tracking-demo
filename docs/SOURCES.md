@@ -374,12 +374,39 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
   the `wangzeze/ObjectRelator-Exo2Ego-Small` checkpoint were not needed because LM-EEC installed
   and constructed on CPU within the 90 min box.
 
-## Candidate source: FineBio
+## Approved local source: FineBio (Sep 21, 2026)
 
-- Status: `pending access and license review`; no application or download is performed
-  by session one.
-- Constraint: the plan describes noncommercial and citation requirements. Record the
-  signed agreement/version and permitted display scope before handling a clip.
+- Status: `access granted`; local handling approved for the non-commercial research
+  smoke recorded in `docs/method-ledger.md` ("Sep 21: FineBio first look"). No
+  determination has been made about demos, job-seeking or any display beyond the local
+  procedure; obtain one before sharing anything derived from these videos.
+- Dataset: FineBio, "FineBio: A Fine-Grained Video Dataset of Biological Experiments with
+  Hierarchical Annotation", Takuma Yagi, Misaki Ohashi, Yifei Huang, Ryosuke Furuta, Shungo
+  Adachi, Toutai Mitsuyama, Yoichi Sato; International Journal of Computer Vision 133,
+  7352-7367 (2025), `https://doi.org/10.1007/s11263-025-02523-2`; arXiv 2402.00293. Data
+  release and licence form via the AIST repository `https://github.com/aistairc/FineBio`
+  (the code there is MIT; the videos, metadata and annotations are not).
+- Access: by signed FineBio licence agreement submitted through the form linked from that
+  repository; the dataset link and credentials were sent to the user by email after approval.
+  Terms as stated there: non-commercial research/development use only; citation of the IJCV
+  paper required. The signed agreement and the download date are the user's records; the
+  repository holds no copy of either.
+- Downloaded and extracted under `data/raw/finebio/` (gitignored), with the `7z` extraction
+  logs beside each directory: `finebio_videos_fpv_test` (35 first-person MP4s at 1920x1440,
+  5.8 GB), `finebio_videos_fpv_all_w640` (226 first-person MP4s downscaled to 640 px wide,
+  6.3 GB), `finebio_videos_tpv_test` (12 GB) and `finebio_videos_tpv_valid` (14 GB)
+  third-person views, and `finebio_object_detection_images` (249 MB). No annotation files
+  were read by the Sep 21 smoke.
+- Clip handled so far: `finebio_videos_fpv_test/finebio_videos/P03_01_01.mp4` (SHA-256
+  `cfa11f06333cb00aaca4b348aaa9f405fb633741bd913939012fe5a2f2f1e896`), source interval
+  60.000-80.000 s, as the 600-frame 1280x960 30 fps proxy
+  `data/derived/finebio/P03_01_01/P03_01_01_060.000-080.000_1280x960_30fps.mp4` (SHA-256
+  `0691edeb48312d563c3cd55498c749219b6bf0fb74f3257cc8a1736a6811fddf`). The proxy, masks,
+  contact sheet and RRD under `runs/finebio-sam3-smoke-20260921/` are derivatives under the
+  same terms and stay outside Git.
+- Repository policy: no FineBio frame, video, mask or checksum-bearing manifest of a frame
+  is committed; `configs/` holds no FineBio clip config because the Assembly101 G2 manifest
+  schema does not describe this source (see the ledger entry).
 
 ## Candidate source: creator-uploaded video
 

@@ -410,6 +410,14 @@ the 52 anchors on one view. Closing record, with the goals answered in plain ter
 - Viewer (Track D): one v6 recording with three presets. Record:
   [v6](#sep-20-v6-review-surface-one-recording-with-three-blueprint-presets-track-d-of-the-multicam-plan).
 
+#### Sep 21: FineBio first look
+
+FineBio access granted and the archives extracted (non-commercial research licence). One
+20-second first-person trim, five text prompts, SAM3 zero-shot detect-then-track, 2 min 20 s
+of GPU: three prompts detected at frame 0, the transparent 6-well plate and the tube racks
+found nothing. A toolchain smoke with no accuracy claim. Record:
+[FineBio first look](#sep-21-finebio-first-look-sam3-zero-shot-text-prompts-on-one-first-person-clip).
+
 ### Plan versus actual
 
 What the plan said, what happened instead, and why, in one line each.
@@ -4850,3 +4858,58 @@ any knob is turned, and turning one first would make those labels confirmatory.
   C10379/iter2,C10119/iter1}/`, `anchor_iou_arms.{json,md}`, `jobs_7..10_*.json`, `queue.log`,
   `logs/`, `code-snapshot-625321a/`; the two rebuilt consensus roots named above; README results
   section; `docs/labeling-sessions-2026-09-20.md` (a); this entry.
+
+### Sep 21: FineBio first look (SAM3 zero-shot text prompts on one first-person clip)
+
+- **What.** The first FineBio footage handled in this repository: a smoke to see what the
+  existing SAM3 toolchain does on wet-lab first-person video, visualised in Rerun. Not an
+  experiment; nothing is measured against ground truth and no accuracy is claimed.
+- **Source and licence.** FineBio (Yagi et al., IJCV 2025), access by signed licence
+  agreement, non-commercial research only, credentials received by email; the `fpv_test`,
+  `fpv_all_w640`, `tpv_test`, `tpv_valid` video archives and the object-detection image set
+  were downloaded and extracted under `data/raw/finebio/` (gitignored). Frames, videos, masks
+  and the RRD are never committed or redistributed. Entries in `docs/SOURCES.md` and
+  `docs/LICENSES.md`.
+- **Clip.** `P03_01_01.mp4` (1920x1440, 29.97 fps, 168 s, head-mounted), source 60.000-80.000 s
+  where the subject pipettes into a 6-well plate. Proxy 1280x960, 30 fps CFR, exactly 600
+  frames, same libx264 arguments as the Assembly101 G2 proxies (checksums in the run
+  manifest).
+- **Route.** Approach A (reuse `battle-muggled-smoke`) was rejected in under ten minutes of
+  reading: its text-prompt path is bound by `require_smoke_range` to exactly the approved
+  first 10 s, and `G2PreprocessingManifest` is `assembly101_g2_preprocessing` with pinned
+  Hugging Face provenance fields; forging that for a FineBio clip would be dishonest and
+  loosening it is not a smoke-sized change. Approach B instead: `scripts/finebio_sam3_smoke.py`
+  (committed) with a `track` phase under the MuggledSAM interpreter that copies
+  `muggled_worker.py`'s calls (`get_detector_context`, `encode_image` at max side 1280,
+  `encode_exemplars(text=...)`, `generate_detections` at threshold 0.40, top score per prompt,
+  `encode_prompt_memory_from_mask`, `step_video_masking_multiplex` with 1 prompt / 4 frame
+  memory entries, `encode_frame_memory`), the worker's GPU guard with
+  `--allow-gpu-neighbour 2071175`, and an `export` phase under the Battle interpreter that
+  writes the RRD with the exporter's archetypes (AssetVideo + VideoFrameReference, RGBA
+  EncodedImage masks, labelled Boxes2D, Scalars series, pinned blueprint), a six-frame contact
+  sheet and `manifest.json`.
+- **Prompts and frame-0 result.** `pipette` 0.863 (4 candidates), `centrifuge` 0.746 (1),
+  `pipette tip box` 0.867 (8; the top pick is a red-lidded box at the left of the bench, not
+  verifiable as a tip box from the frames); `6-well plate` no detection (presence 0.108),
+  `tube rack` no detection (presence 0.113). Three slots tracked.
+- **Runtime.** 139.8 s wall for 600 frames (load 4.4 s, detection 0.6 s, about 22.5 s per 100
+  frames), peak VRAM 2.51 GiB allocated (3.05 GiB reserved), GPU busy 22:41:24-22:43:45 local.
+  GPU coordination with the concurrent multiview chain: checked at 22:35, 22:38, 22:40, 22:41
+  (hull in its CPU stage, no tracker process, only the calibration worker on the GPU); the
+  chain's hull finished at 22:44:04 and its stage 2 stopped on its own error at 22:44:17, so
+  no tracker job was ever blocked.
+- **Observations on this clip** (details in the run README): the transparent 6-well plate,
+  central and hand-held at frame 0, has no mask on any frame; `tube rack` found none of the
+  three visible racks; the pipette mask excludes the gripping glove and survives that
+  occlusion on every tracked frame, but the slot drops 29 frames (106-111, 305-310, 330-346)
+  each time the pipette is carried to the right frame edge during a pan, reacquiring by
+  itself; the centrifuge and tip-box slots have output on all 600 frames through the pans
+  (neither is occluded in this clip); the two manual pipettes on the bench are never tracked
+  (one slot per prompt).
+- **Claim boundary.** Detector scores, object scores and predicted IoU are the model's own
+  numbers; masks were looked at on six frames and a handful more, not reviewed; nothing here
+  says how SAM3 performs on FineBio.
+- **Deliverables.** `runs/finebio-sam3-smoke-20260921/` (README, `recording.rrd`,
+  `contact_sheet.png`, `observations.jsonl`, `masks/`, `manifest.json`, phase logs),
+  `scripts/finebio_sam3_smoke.py`, `docs/SOURCES.md` and `docs/LICENSES.md` entries, this
+  entry. View: `uv run rerun runs/finebio-sam3-smoke-20260921/recording.rrd`.
