@@ -92,6 +92,10 @@ IN_HAND_CHECK = {REFERENCE_VIEW: 300, C10119_VIEW: 301, E4_VIEW: 304}
 STATIC_MOTION_MAX_PX = 5.0
 BOX_MARGIN = 0.25
 AREA_BAND = (0.3, 3.0)
+# The interior is a black part: a candidate whose median luminance exceeds this multiple of the
+# human masks' median (31 on both C10379 f0 and C10119 f41) is the hand holding it (the frame-0
+# decode measured hand candidates at 95-124 against 20-40 for the part), not the interior.
+LUMINANCE_RATIO_MAX = 2.0
 CONSISTENCY_MIN_VIEWS = 3
 CONSISTENCY_MAX_RAW_PX = 30.0
 PROPOSALS_ROOT = Path("runs/labeling-sessions-20260921/interior_proposals")
@@ -397,6 +401,7 @@ class HumanMaskObservation(VersionedModel):
     centroid_proxy_px: tuple[float, float]
     area_px: int
     source: str
+    median_luminance: float | None = None
 
 
 class InteriorTriangulation(VersionedModel):
@@ -477,6 +482,24 @@ def reference_frame0_interior(repository_root: Path) -> Path:
     return path
 
 
+def read_proxy_frame(repository_root: Path, view: str, frame: int) -> np.ndarray | None:
+    proxy, _ = proxy_for_view(repository_root, view)
+    capture = cv2.VideoCapture(str(repository_root / proxy.uri))
+    try:
+        capture.set(cv2.CAP_PROP_POS_FRAMES, frame)
+        ok, image = capture.read()
+    finally:
+        capture.release()
+    return image if ok else None
+
+
+def median_luminance(frame_bgr: np.ndarray | None, mask: np.ndarray) -> float | None:
+    if frame_bgr is None or frame_bgr.shape[:2] != mask.shape or not mask.any():
+        return None
+    grey = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+    return float(np.median(grey[mask]))
+
+
 def _observation(
     rig: CameraRig,
     repository_root: Path,
@@ -497,6 +520,7 @@ def _observation(
             centroid_proxy_px=(float(centroid[0]), float(centroid[1])),
             area_px=int(mask.sum()),
             source=source,
+            median_luminance=median_luminance(read_proxy_frame(repository_root, view, frame), mask),
         ),
         mask,
     )
@@ -864,6 +888,13 @@ class InteriorCandidate(VersionedModel):
     area_ratio_vs_expected: float | None
     in_area_band: bool
     centroid_proxy_px: tuple[float, float]
+    median_luminance: float | None = None
+    luminance_ratio_vs_human: float | None = None
+    in_luminance_band: bool = True
+
+    @property
+    def eligible(self) -> bool:
+        return self.in_area_band and self.in_luminance_band
 
 
 class InteriorViewOutcome(VersionedModel):
@@ -898,11 +929,15 @@ def _load_candidates(
     item: InteriorViewPlan,
     decoded: dict[str, Any],
     view_dir: Path,
+    *,
+    human_luminance: float | None,
 ) -> list[tuple[InteriorCandidate, np.ndarray]]:
     assert item.prompt is not None
     result = decoded.get(item.prompt.prompt_id)
     if result is None:
         return []
+    frame_path = view_dir / "results" / "frames" / f"frame-{item.analysis_frame_index:06d}.jpg"
+    frame = cv2.imread(str(frame_path)) if frame_path.is_file() else None
     out: list[tuple[InteriorCandidate, np.ndarray]] = []
     for candidate in result["candidates"]:
         mask_path = view_dir / candidate["mask_uri"]
@@ -912,6 +947,10 @@ def _load_candidates(
             continue
         ratio = area / item.expected_area_px if item.expected_area_px else None
         centroid = mask_centroid(mask)
+        luminance = median_luminance(frame, mask)
+        luminance_ratio = (
+            luminance / human_luminance if luminance is not None and human_luminance else None
+        )
         out.append(
             (
                 InteriorCandidate(
@@ -922,6 +961,11 @@ def _load_candidates(
                     area_ratio_vs_expected=ratio,
                     in_area_band=ratio is not None and AREA_BAND[0] <= ratio <= AREA_BAND[1],
                     centroid_proxy_px=(float(centroid[0]), float(centroid[1])),
+                    median_luminance=luminance,
+                    luminance_ratio_vs_human=luminance_ratio,
+                    in_luminance_band=(
+                        luminance_ratio is None or luminance_ratio <= LUMINANCE_RATIO_MAX
+                    ),
                 ),
                 mask,
             )
@@ -944,15 +988,25 @@ def accept_interior(
     interior_dir = repository_root / output_root / "interior"
     candidates_by_view: dict[str, list[tuple[InteriorCandidate, np.ndarray]]] = {}
     picks: dict[str, tuple[InteriorCandidate, np.ndarray]] = {}
+    human_luminances = [
+        o.median_luminance for o in plan.primary.observations if o.median_luminance is not None
+    ]
+    human_luminance = float(np.median(human_luminances)) if human_luminances else None
     for item in plan.views:
         if item.prompt is None:
             continue
         decoded = decoded_all.get(item.view, {}).get("decoded", {})
-        candidates = _load_candidates(repository_root, item, decoded, interior_dir / item.view)
+        candidates = _load_candidates(
+            repository_root,
+            item,
+            decoded,
+            interior_dir / item.view,
+            human_luminance=human_luminance,
+        )
         candidates_by_view[item.view] = candidates
-        in_band = [c for c in candidates if c[0].in_area_band]
-        if in_band:
-            picks[item.view] = in_band[0]
+        eligible = [c for c in candidates if c[0].eligible]
+        if eligible:
+            picks[item.view] = eligible[0]
     # Joint consistency: the two human observations plus every view's pick, one point.
     points: dict[str, np.ndarray] = {}
     poses: dict[str, int] = {}
@@ -982,6 +1036,8 @@ def accept_interior(
         "reprojection_raw_px": errors,
         "filter_raw_px": CONSISTENCY_MAX_RAW_PX,
         "human_observations_replaced_by_picks": sorted(human_views & set(picks)),
+        "human_median_luminance": human_luminance,
+        "luminance_ratio_max": LUMINANCE_RATIO_MAX,
         "distance_from_primary_mm": (
             None
             if np.isnan(result.points[0]).any()
@@ -1016,8 +1072,16 @@ def accept_interior(
                 decision="not_accepted",
                 reason=(
                     f"no candidate inside the area band {AREA_BAND} x expected "
-                    f"{item.expected_area_px:.0f} px"
-                    if item.expected_area_px
+                    f"{item.expected_area_px:.0f} px with median luminance <= "
+                    f"{LUMINANCE_RATIO_MAX:.1f} x the human masks' "
+                    f"({human_luminance:.0f}); candidate luminances "
+                    + ", ".join(
+                        f"{c.median_luminance:.0f}"
+                        for c in records
+                        if c.median_luminance is not None
+                    )
+                    + " (the hand holding the interior)"
+                    if item.expected_area_px and human_luminance is not None
                     else "no expected area"
                 ),
                 candidates=records,
@@ -1036,6 +1100,11 @@ def accept_interior(
                     else f"only {len(used)} consistent views (< {CONSISTENCY_MIN_VIEWS})"
                 )
             )
+            if pick.median_luminance is not None and human_luminance is not None:
+                reason += (
+                    f"; median luminance {pick.median_luminance:.0f} vs the human masks' "
+                    f"{human_luminance:.0f}"
+                )
             iou_h = dist_h = None
             if item.view in human_masks:
                 human_mask, human_frame = human_masks[item.view]
@@ -1198,8 +1267,10 @@ def write_interior_proposal(
             {
                 "strategy": (
                     f"decoder rank {rank} (score {candidate.decoder_iou_estimate:.2f}, "
-                    f"area x{candidate.area_ratio_vs_expected:.2f} expected)"
+                    f"area x{candidate.area_ratio_vs_expected:.2f} expected, luminance "
+                    f"{candidate.median_luminance:.0f})"
                     if candidate.area_ratio_vs_expected is not None
+                    and candidate.median_luminance is not None
                     else f"decoder rank {rank}"
                 ),
                 "mask_uri": target.name,
@@ -1322,9 +1393,10 @@ def interior_table(plan: InteriorSeedPlan, report: InteriorReport) -> str:
         if joint.get("distance_from_primary_mm") is not None
         else "Joint triangulation failed.",
         "",
-        "| view | decision | pick | decoder score | area px | area ratio | views used | "
-        "reproj raw px | vs human same view (IoU / px) | candidates in band | reason |",
-        "|---|---|---|---|---|---|---|---|---|---|---|",
+        "| view | decision | pick | decoder score | area px | area ratio | luminance | "
+        "views used | reproj raw px | vs human same view (IoU / px) | candidates eligible | "
+        "reason |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for o in report.outcomes:
         pick = next((c for c in o.candidates if c.candidate_index == o.pick), None)
@@ -1333,11 +1405,12 @@ def interior_table(plan: InteriorSeedPlan, report: InteriorReport) -> str:
             f"{'-' if pick is None else f'{pick.decoder_iou_estimate:.2f}'} | "
             f"{'-' if pick is None else pick.area_px} | "
             f"{_opt(None if pick is None else pick.area_ratio_vs_expected)} | "
+            f"{_opt(None if pick is None else pick.median_luminance, 0)} | "
             f"{len(o.consistency_views_used) if o.consistency_views_used else '-'} | "
             f"{_opt(o.consistency_reprojection_raw_px, 1)} | "
             f"{_opt(o.iou_vs_human_same_view)} / "
             f"{_opt(o.centroid_distance_vs_human_same_view_px, 1)} | "
-            f"{sum(c.in_area_band for c in o.candidates)} / {len(o.candidates)} | {o.reason} |"
+            f"{sum(c.eligible for c in o.candidates)} / {len(o.candidates)} | {o.reason} |"
         )
     lines.append("")
     return "\n".join(lines) + "\n"
