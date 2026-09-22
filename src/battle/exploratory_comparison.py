@@ -9,7 +9,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import subprocess
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,6 +17,7 @@ from typing import Any
 import rerun as rr
 import rerun.blueprint as rrb
 
+from . import media_probe
 from .build_phases import PhaseTimer
 from .digest_cache import sha256_file
 from .exporter import HAND_CONNECTIONS, HAND_LANDMARK_NAMES, _rgba_mask_png
@@ -393,28 +393,8 @@ def _load_method(spec: MethodSpec, *, repository_root: Path, frame_count: int) -
 
 
 def _video_info(video_path: Path) -> tuple[int, int, tuple[int, int]]:
-    completed = subprocess.run(
-        [
-            "ffprobe",
-            "-v",
-            "error",
-            "-count_frames",
-            "-select_streams",
-            "v:0",
-            "-show_entries",
-            "stream=width,height,avg_frame_rate,nb_read_frames",
-            "-of",
-            "json",
-            str(video_path),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    stream = json.loads(completed.stdout)["streams"][0]
-    numerator, denominator = stream["avg_frame_rate"].split("/")
-    fps = round(int(numerator) / int(denominator))
-    return int(stream["nb_read_frames"]), fps, (int(stream["width"]), int(stream["height"]))
+    """`(frames, fps, (width, height))` through the cached probe (`nb_read_frames`, as before)."""
+    return media_probe.video_info(video_path)
 
 
 def _validate_shared_contract(methods: list[LoadedMethod]) -> ArtifactFingerprint:
