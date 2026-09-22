@@ -354,3 +354,196 @@ def test_cli_runs_without_inhibit_and_gpu_check(tmp_path: Path) -> None:
     code = queue.main([str(path), "--no-inhibit", "--no-gpu-check", "--log", str(log)])
     assert code == 0
     assert _events(log)[1]["detail"] == "gpu check disabled"
+
+
+# --------------------------------------------------------------------------- job writers
+
+# The bytes `egoexo_correspondence.prepare` (indent 1) and `kineo_multiview.prepare` (indent 2)
+# wrote before their `queue_job` copies were folded onto `overnight_queue.queue_job`.
+EGOEXO_JOBS_TEXT = """{
+ "jobs": [
+  {
+   "name": "lm-eec-egoexo-correspondence",
+   "argv": [
+    "/repo/scripts/lm_eec_driver.py",
+    "--run-dir",
+    "/repo/runs/x",
+    "--mode",
+    "sequence"
+   ],
+   "cwd": "/home/nick/src/LM-EEC",
+   "timeout_s": 1800,
+   "env": {
+    "CUDA_VISIBLE_DEVICES": "0",
+    "PYTHONUNBUFFERED": "1"
+   },
+   "interpreter": [
+    "/home/nick/src/LM-EEC/.venv/bin/python"
+   ]
+  }
+ ]
+}
+"""
+KINEO_JOBS_TEXT = """{
+  "jobs": [
+    {
+      "name": "kineo-multiview-known",
+      "argv": [
+        "pixi",
+        "run",
+        "python",
+        "/repo/scripts/kineo_multiview_runner.py"
+      ],
+      "cwd": "/k",
+      "timeout_s": 1800,
+      "env": {
+        "CUDA_VISIBLE_DEVICES": "0"
+      },
+      "interpreter": []
+    }
+  ]
+}
+"""
+
+
+def test_queue_job_and_write_jobs_reproduce_both_callers_files_byte_for_byte(
+    tmp_path: Path,
+) -> None:
+    egoexo = queue.job_list(
+        queue.queue_job(
+            name="lm-eec-egoexo-correspondence",
+            argv=[
+                "/repo/scripts/lm_eec_driver.py",
+                "--run-dir",
+                "/repo/runs/x",
+                "--mode",
+                "sequence",
+            ],
+            cwd=Path("/home/nick/src/LM-EEC"),
+            timeout_s=1800,
+            env={"CUDA_VISIBLE_DEVICES": "0", "PYTHONUNBUFFERED": "1"},
+            interpreter=["/home/nick/src/LM-EEC/.venv/bin/python"],
+        )
+    )
+    kineo = queue.job_list(
+        queue.queue_job(
+            name="kineo-multiview-known",
+            argv=["pixi", "run", "python", "/repo/scripts/kineo_multiview_runner.py"],
+            cwd="/k",
+            timeout_s=1800,
+            env={"CUDA_VISIBLE_DEVICES": "0"},
+        )
+    )
+    spec = queue.write_jobs(tmp_path / "a" / "jobs_egoexo.json", egoexo, indent=1)
+    assert spec.jobs[0].command[0] == "/home/nick/src/LM-EEC/.venv/bin/python"
+    assert (tmp_path / "a" / "jobs_egoexo.json").read_text(encoding="utf-8") == EGOEXO_JOBS_TEXT
+    queue.write_jobs(tmp_path / "jobs_kineo.json", kineo)
+    assert (tmp_path / "jobs_kineo.json").read_text(encoding="utf-8") == KINEO_JOBS_TEXT
+    assert queue.load_spec(tmp_path / "jobs_kineo.json").jobs[0].cwd == "/k"
+
+
+def test_queue_job_carries_the_guard_fields_only_when_set_and_write_jobs_validates(
+    tmp_path: Path,
+) -> None:
+    job = queue.queue_job(
+        name="smoke",
+        argv=["battle-dam4sam-video"],
+        cwd=".",
+        timeout_s=60,
+        interpreter=["uv", "run"],
+        expected_peak_vram_bytes=2 * 1024**3,
+    )
+    assert list(job) == [
+        "name",
+        "argv",
+        "cwd",
+        "timeout_s",
+        "env",
+        "interpreter",
+        "expected_peak_vram_bytes",
+    ]
+    spec = queue.job_list(job, log_path=Path("runs/x/queue.log"))
+    assert spec["log_path"] == "runs/x/queue.log"
+    assert queue.write_jobs(tmp_path / "jobs.json", spec).jobs[0].expected_peak_vram_bytes == 2**31
+    with pytest.raises(ValueError):
+        queue.write_jobs(
+            tmp_path / "bad.json",
+            queue.job_list(queue.queue_job(name="bad name", argv=["x"], cwd=".", timeout_s=1)),
+        )
+    assert not (tmp_path / "bad.json").exists()
+
+
+# --------------------------------------------------------------------------- code snapshot
+
+
+def _git(repo: Path, *parts: str) -> str:
+    import subprocess
+
+    return subprocess.run(
+        ["git", "-C", str(repo), *parts], check=True, capture_output=True, text=True
+    ).stdout.strip()
+
+
+def _fixture_repository(tmp_path: Path) -> Path:
+    repo = tmp_path / "repo"
+    (repo / "src" / "battle").mkdir(parents=True)
+    (repo / "src" / "battle" / "worker.py").write_text("VERSION = 1\n", encoding="utf-8")
+    (repo / "README.md").write_text("readme\n", encoding="utf-8")
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "-c", "user.email=t@example.com", "-c", "user.name=t", "add", ".")
+    _git(repo, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-q", "-m", "one")
+    return repo
+
+
+def test_code_snapshot_archives_the_commit_records_it_and_is_idempotent(tmp_path: Path) -> None:
+    repo = _fixture_repository(tmp_path)
+    sha = _git(repo, "rev-parse", "HEAD")
+    short = _git(repo, "rev-parse", "--short", "HEAD")
+    # Edits outside the archived paths (the README, an untracked script) do not make it dirty.
+    (repo / "README.md").write_text("edited\n", encoding="utf-8")
+    (repo / "test.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+    root = tmp_path / "runs" / "pass"
+    snapshot = queue.code_snapshot(root, repository_root=repo)
+    assert snapshot.directory == (root / f"code-snapshot-{short}").resolve()
+    assert snapshot.sha == sha and snapshot.short_sha == short and not snapshot.dirty
+    assert not snapshot.reused
+    assert snapshot.pythonpath == snapshot.directory / "src"
+    assert (snapshot.directory / "src" / "battle" / "worker.py").read_text() == "VERSION = 1\n"
+    assert not (snapshot.directory / "README.md").exists()
+    record = json.loads((snapshot.directory / "snapshot.json").read_text(encoding="utf-8"))
+    assert record["sha"] == sha and record["paths"] == ["src/battle"] and record["dirty"] is False
+    assert record["pythonpath"] == str(snapshot.pythonpath)
+    again = queue.code_snapshot(root, repository_root=repo)
+    assert again.reused and again.directory == snapshot.directory
+    # Something else at the target is refused rather than overwritten.
+    other = tmp_path / "runs" / "other"
+    (other / f"code-snapshot-{short}").mkdir(parents=True)
+    (other / f"code-snapshot-{short}" / "stray").write_text("x")
+    with pytest.raises(SystemExit, match="not a snapshot"):
+        queue.code_snapshot(other, repository_root=repo)
+
+
+def test_code_snapshot_refuses_a_dirty_archived_tree_unless_allowed(tmp_path: Path) -> None:
+    repo = _fixture_repository(tmp_path)
+    (repo / "src" / "battle" / "worker.py").write_text("VERSION = 2\n", encoding="utf-8")
+    root = tmp_path / "runs" / "pass"
+    with pytest.raises(SystemExit, match="uncommitted changes under src/battle"):
+        queue.code_snapshot(root, repository_root=repo)
+    assert not root.exists()
+    snapshot = queue.code_snapshot(root, repository_root=repo, allow_dirty=True)
+    assert snapshot.dirty
+    # The archive is of the commit, not the working tree.
+    assert (snapshot.directory / "src" / "battle" / "worker.py").read_text() == "VERSION = 1\n"
+    record = json.loads((snapshot.directory / "snapshot.json").read_text(encoding="utf-8"))
+    assert record["dirty"] is True
+
+
+def test_code_snapshot_cli_prints_the_pythonpath_line(tmp_path: Path, capsys) -> None:
+    repo = _fixture_repository(tmp_path)
+    root = tmp_path / "runs" / "pass"
+    code = queue.code_snapshot_main([str(root), "--repository-root", str(repo), "--commit", "HEAD"])
+    out = capsys.readouterr().out
+    short = _git(repo, "rev-parse", "--short", "HEAD")
+    assert code == 0
+    assert f"# every job: env.PYTHONPATH={(root / f'code-snapshot-{short}').resolve()}/src" in out
+    assert f"git archive {short} src/battle" in out

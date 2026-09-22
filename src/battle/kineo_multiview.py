@@ -52,6 +52,7 @@ import yaml
 from pydantic import Field
 
 from . import assembly101_reference as a101
+from . import overnight_queue
 from .assembly101_fetch_view import RECORDING_ID, STATIC_VIEWS, proxy_path
 from .assembly101_pose_schemas import (
     ASSEMBLY101_JOINT_NAMES,
@@ -815,18 +816,15 @@ def runner_argv(
 def queue_job(
     *, name: str, argv: Sequence[str], kineo_root: Path, timeout_s: int
 ) -> dict[str, Any]:
-    return {
-        "jobs": [
-            {
-                "name": name,
-                "argv": list(argv),
-                "cwd": str(kineo_root.resolve()),
-                "timeout_s": timeout_s,
-                "env": {"CUDA_VISIBLE_DEVICES": "0"},
-                "interpreter": [],
-            }
-        ]
-    }
+    return overnight_queue.job_list(
+        overnight_queue.queue_job(
+            name=name,
+            argv=argv,
+            cwd=kineo_root.resolve(),
+            timeout_s=timeout_s,
+            env={"CUDA_VISIBLE_DEVICES": "0"},
+        )
+    )
 
 
 def prepare(
@@ -920,11 +918,8 @@ def prepare(
         name=f"kineo-multiview-{arm}", argv=argv, kineo_root=kineo_root, timeout_s=TIMEOUT_S[arm]
     )
     job_path = repository_root / queue_dir / f"jobs_t4_kineo_{arm}.json"
-    job_path.parent.mkdir(parents=True, exist_ok=True)
-    job_path.write_text(json.dumps(job, indent=2) + "\n", encoding="utf-8")
-    (run_directory / "queue_job.json").write_text(
-        json.dumps(job, indent=2) + "\n", encoding="utf-8"
-    )
+    overnight_queue.write_jobs(job_path, job)
+    overnight_queue.write_jobs(run_directory / "queue_job.json", job)
 
     git_state = _git_fingerprint(kineo_root)
     checkpoint = kineo_root / NLF_CHECKPOINT

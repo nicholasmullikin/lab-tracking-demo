@@ -50,7 +50,7 @@ import numpy as np
 from PIL import Image
 from pydantic import Field
 
-from . import mask_cache
+from . import mask_cache, overnight_queue
 from .assembly101_fetch_view import RECORDING_ID, proxy_path
 from .assembly101_pose_schemas import Assembly101ClockRule
 from .digest_cache import sha256_file as _sha256
@@ -467,20 +467,18 @@ def driver_argv(
 
 
 def queue_job(*, argv: Sequence[str], timeout_s: int = QUEUE_TIMEOUT_S) -> dict[str, Any]:
-    return {
-        "jobs": [
-            {
-                "name": QUEUE_JOB_NAME,
-                "argv": list(argv),
-                # The predictor resolves its Hydra config module relative to the `sam2`
-                # package, so the job runs from the LM-EEC checkout.
-                "cwd": str(LM_EEC_ROOT),
-                "timeout_s": timeout_s,
-                "env": {"CUDA_VISIBLE_DEVICES": "0", "PYTHONUNBUFFERED": "1"},
-                "interpreter": [str(LM_EEC_INTERPRETER)],
-            }
-        ]
-    }
+    return overnight_queue.job_list(
+        overnight_queue.queue_job(
+            name=QUEUE_JOB_NAME,
+            argv=argv,
+            # The predictor resolves its Hydra config module relative to the `sam2`
+            # package, so the job runs from the LM-EEC checkout.
+            cwd=LM_EEC_ROOT,
+            timeout_s=timeout_s,
+            env={"CUDA_VISIBLE_DEVICES": "0", "PYTHONUNBUFFERED": "1"},
+            interpreter=[str(LM_EEC_INTERPRETER)],
+        )
+    )
 
 
 def _view_spec(
@@ -682,8 +680,7 @@ def prepare(
 
     argv = driver_argv(repository_root=root, run_directory=run_directory, mode=mode)
     queue_job_path = (root / queue_job_path).resolve()
-    queue_job_path.parent.mkdir(parents=True, exist_ok=True)
-    queue_job_path.write_text(json.dumps(queue_job(argv=argv), indent=1) + "\n", encoding="utf-8")
+    overnight_queue.write_jobs(queue_job_path, queue_job(argv=argv), indent=1)
 
     hull_manifest = hull_dir / "manifest.json" if hull_dir is not None else None
     manifest = PairsManifest(

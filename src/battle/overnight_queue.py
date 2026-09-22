@@ -15,11 +15,19 @@ the queue stops at the first GPU error or non-zero exit unless `--continue-on-fa
 given.
 
 Nothing here knows what the jobs do; it is plumbing for the overnight multicam pass.
+
+The modules that prepare a job for the queue (`egoexo_correspondence`, `kineo_multiview`)
+build it with :func:`queue_job` / :func:`job_list` and write it with :func:`write_jobs`, which
+validates the list against :class:`QueueSpec` first.  `battle-code-snapshot` (:func:`code_snapshot`)
+is the `git archive <commit> src/battle` step every queue README documents: queued jobs run
+with `PYTHONPATH` on `<root>/code-snapshot-<sha>/src` so the code that reaches the GPU is the
+committed code and working-tree edits cannot reach it.
 """
 
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import os
 import re
@@ -27,8 +35,10 @@ import shutil
 import signal
 import subprocess
 import sys
+import tarfile
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -36,6 +46,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from . import gpu_guard
+from .fs_common import write_json
 
 DEFAULT_LOG = Path("runs/overnight-multicam-20260918/queue.log")
 INHIBIT_MARKER = "BATTLE_QUEUE_INHIBITED"
@@ -379,6 +390,200 @@ class QueueRunner:
 
 def load_spec(path: Path) -> QueueSpec:
     return QueueSpec.model_validate_json(path.read_text(encoding="utf-8"))
+
+
+# --------------------------------------------------------------------------- job writers
+
+
+def queue_job(
+    *,
+    name: str,
+    argv: Sequence[str],
+    cwd: str | Path,
+    timeout_s: float,
+    env: Mapping[str, str] | None = None,
+    interpreter: Sequence[str] = (),
+    gpu_profile: str | None = None,
+    expected_peak_vram_bytes: int | None = None,
+) -> dict[str, Any]:
+    """One job record in the key order the queue files have always carried.
+
+    `cwd` is written as given (callers resolve it themselves where they did before); the two
+    optional guard fields are only present when set, so a caller that never used them writes
+    the same bytes as before.
+    """
+    job: dict[str, Any] = {
+        "name": name,
+        "argv": list(argv),
+        "cwd": str(cwd),
+        "timeout_s": timeout_s,
+        "env": dict(env or {}),
+        "interpreter": list(interpreter),
+    }
+    if gpu_profile is not None:
+        job["gpu_profile"] = gpu_profile
+    if expected_peak_vram_bytes is not None:
+        job["expected_peak_vram_bytes"] = expected_peak_vram_bytes
+    return job
+
+
+def job_list(*jobs: dict[str, Any], log_path: str | Path | None = None) -> dict[str, Any]:
+    """`{"jobs": [...]}` (plus `log_path` when given), the document `load_spec` reads."""
+    spec: dict[str, Any] = {"jobs": list(jobs)}
+    if log_path is not None:
+        spec["log_path"] = str(log_path)
+    return spec
+
+
+def write_jobs(path: Path, spec: Mapping[str, Any], *, indent: int = 2) -> QueueSpec:
+    """Validate `spec` as a :class:`QueueSpec` and write it as JSON with a trailing newline.
+
+    `indent` keeps each caller's historical formatting (the egoexo file is written with 1, the
+    Kineo files with 2).  Returns the validated spec so the caller can report on it.
+    """
+    validated = QueueSpec.model_validate(dict(spec))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_json(path, dict(spec), indent=indent)
+    return validated
+
+
+# --------------------------------------------------------------------------- code snapshot
+
+SNAPSHOT_PREFIX = "code-snapshot-"
+SNAPSHOT_RECORD = "snapshot.json"
+DEFAULT_SNAPSHOT_PATHS = ("src/battle",)
+
+
+@dataclass(frozen=True)
+class CodeSnapshot:
+    directory: Path
+    commit: str
+    sha: str
+    short_sha: str
+    paths: tuple[str, ...]
+    dirty: bool
+    reused: bool
+
+    @property
+    def pythonpath(self) -> Path:
+        return self.directory / "src"
+
+    def as_record(self) -> dict[str, Any]:
+        return {
+            "commit": self.commit,
+            "sha": self.sha,
+            "short_sha": self.short_sha,
+            "paths": list(self.paths),
+            "dirty": self.dirty,
+            "pythonpath": str(self.pythonpath),
+            "created_at": utc_now(),
+        }
+
+
+def _git(repository_root: Path, *parts: str) -> str:
+    completed = subprocess.run(
+        ["git", "-C", str(repository_root), *parts], check=True, capture_output=True, text=True
+    )
+    return completed.stdout.strip()
+
+
+def code_snapshot(
+    root: Path,
+    commit: str = "HEAD",
+    *,
+    repository_root: Path,
+    paths: Sequence[str] = DEFAULT_SNAPSHOT_PATHS,
+    allow_dirty: bool = False,
+) -> CodeSnapshot:
+    """`git archive <commit> <paths>` into `<root>/code-snapshot-<short sha>/`.
+
+    The archive is of the *commit*, so a working tree with uncommitted edits under `paths`
+    would silently test something other than what the snapshot's name says; that state is
+    refused unless `allow_dirty` (the record then says `dirty: true`).  Files outside `paths`
+    (a README edit, an untracked script) do not count.  An existing snapshot of the same sha
+    is reused, any other content at the target is an error.  `snapshot.json` in the directory
+    records the sha, the paths, the dirty flag and the `PYTHONPATH` the jobs should carry.
+    """
+    repository_root = repository_root.resolve()
+    sha = _git(repository_root, "rev-parse", commit)
+    short_sha = _git(repository_root, "rev-parse", "--short", commit)
+    status = _git(repository_root, "status", "--porcelain", "--", *paths)
+    dirty = bool(status)
+    if dirty and not allow_dirty:
+        raise SystemExit(
+            f"uncommitted changes under {', '.join(paths)}; commit them or pass --allow-dirty "
+            f"(the snapshot would be named after {short_sha} but the working tree differs):\n"
+            + status
+        )
+    directory = (root / f"{SNAPSHOT_PREFIX}{short_sha}").resolve()
+    record_path = directory / SNAPSHOT_RECORD
+    if directory.exists():
+        if record_path.is_file():
+            previous = json.loads(record_path.read_text(encoding="utf-8"))
+            if previous.get("sha") == sha and tuple(previous.get("paths", ())) == tuple(paths):
+                return CodeSnapshot(
+                    directory,
+                    commit,
+                    sha,
+                    short_sha,
+                    tuple(paths),
+                    bool(previous.get("dirty")),
+                    True,
+                )
+        raise SystemExit(f"{directory} exists and is not a snapshot of {sha}; remove it first")
+    archive = subprocess.run(
+        ["git", "-C", str(repository_root), "archive", sha, *paths],
+        check=True,
+        capture_output=True,
+    ).stdout
+    directory.mkdir(parents=True)
+    with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
+        tar.extractall(directory, filter="data")
+    snapshot = CodeSnapshot(directory, commit, sha, short_sha, tuple(paths), dirty, False)
+    write_json(record_path, snapshot.as_record(), indent=2)
+    return snapshot
+
+
+def code_snapshot_main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Freeze the committed src/battle for a queue: git archive <commit> into "
+            "<root>/code-snapshot-<sha>/ and print the PYTHONPATH line the jobs should carry."
+        )
+    )
+    parser.add_argument("root", type=Path, help="queue directory, e.g. runs/<pass>")
+    parser.add_argument("--commit", default="HEAD")
+    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
+    parser.add_argument(
+        "--path",
+        action="append",
+        default=None,
+        metavar="PATH",
+        help=f"tree to archive (repeatable; default {' '.join(DEFAULT_SNAPSHOT_PATHS)})",
+    )
+    parser.add_argument(
+        "--allow-dirty",
+        action="store_true",
+        help="archive the commit even though the working tree under the paths has edits",
+    )
+    args = parser.parse_args(argv)
+    snapshot = code_snapshot(
+        args.root,
+        args.commit,
+        repository_root=args.repository_root,
+        paths=tuple(args.path or DEFAULT_SNAPSHOT_PATHS),
+        allow_dirty=args.allow_dirty,
+    )
+    state = "reused" if snapshot.reused else "written"
+    print(
+        f"{snapshot.directory} ({state}; {snapshot.sha}{', dirty tree' if snapshot.dirty else ''})"
+    )
+    print(f"# every job: env.PYTHONPATH={snapshot.pythonpath}")
+    print(
+        f"# built with: git archive {snapshot.short_sha} {' '.join(snapshot.paths)} | "
+        f"tar -x -C {snapshot.directory}"
+    )
+    return 0
 
 
 def reexec_under_inhibit(argv: list[str]) -> int:
