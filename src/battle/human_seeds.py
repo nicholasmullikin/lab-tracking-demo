@@ -68,6 +68,7 @@ from .multiview_seed_transfer import (
     write_manifest,
 )
 from .schemas import ArtifactFingerprint, PixelPoint, VersionedModel
+from .schemas import fingerprint as _fingerprint
 from .seed_search import (
     E4_VIEW,
     REFERENCE_VIEW,
@@ -111,12 +112,6 @@ CLAIM_BOUNDARIES = (
     "Cross-view consistency measures agreement between estimates, not accuracy.",
     "Assembly101 is CC BY-NC 4.0; attribution applies to every derived artifact.",
 )
-
-
-def _fingerprint(path: Path, repository_root: Path) -> ArtifactFingerprint:
-    return ArtifactFingerprint(
-        uri=relative_uri(path, repository_root), sha256=sha256_file(path), source="measured"
-    )
 
 
 def b3_manifest_path(repository_root: Path, view: str) -> Path:

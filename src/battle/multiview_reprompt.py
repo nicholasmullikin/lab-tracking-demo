@@ -105,6 +105,7 @@ from .schemas import (
     RepromptCandidateScore,
     RepromptDecision,
     RunManifest,
+    fingerprint,
 )
 
 OUTPUT_ROOT = Path("runs/multiview-reprompt-20260920")
@@ -163,12 +164,6 @@ CLAIM_BOUNDARIES: tuple[str, ...] = (
     "estimates; nothing here is ground truth for any method.",
     "Assembly101 is CC BY-NC 4.0; attribution applies to every derived artifact.",
 )
-
-
-def fingerprint(path: Path, repository_root: Path) -> ArtifactFingerprint:
-    return ArtifactFingerprint(
-        uri=relative_uri(path, repository_root), sha256=sha256_file(path), source="measured"
-    )
 
 
 def _resolve(repository_root: Path, uri: str) -> Path:

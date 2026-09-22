@@ -45,6 +45,7 @@ from .schemas import (
     PixelPoint,
     VersionedModel,
     VideoDimensions,
+    fingerprint,
 )
 
 MANIFEST_NAME = "calibration_manifest.json"
@@ -102,16 +103,6 @@ class CalibrationRescaleProvenance(VersionedModel):
     pending_boxes_dropped: int = Field(ge=0)
     runtime_seconds: float = Field(ge=0)
     claim_boundaries: tuple[str, ...] = CLAIM_BOUNDARIES
-
-
-def _fingerprint(
-    path: Path, repository_root: Path, *, source: Literal["approved_config", "measured"]
-) -> ArtifactFingerprint:
-    return ArtifactFingerprint(
-        uri=path.resolve().relative_to(repository_root).as_posix(),
-        sha256=sha256_file(path),
-        source=source,
-    )
 
 
 def _scaled_box(box: PixelBox, scale_x: float, scale_y: float, dims: VideoDimensions) -> PixelBox:
@@ -350,13 +341,13 @@ def rescale_calibration(
                 if schedule_model is not None
                 else None
             ),
-            "derived_from_calibration": _fingerprint(
+            "derived_from_calibration": fingerprint(
                 source_manifest_path, repository_root, source="measured"
             ).model_dump(mode="json"),
         }
     )
     derived_manifest_path.write_text(derived.model_dump_json(indent=2) + "\n", encoding="utf-8")
-    derived_manifest_fingerprint = _fingerprint(
+    derived_manifest_fingerprint = fingerprint(
         derived_manifest_path, repository_root, source="measured"
     )
 
@@ -385,10 +376,10 @@ def rescale_calibration(
                 "calibration_manifest_fingerprint": derived_manifest_fingerprint.model_dump(
                     mode="json"
                 ),
-                "correction_policy_fingerprint": _fingerprint(
+                "correction_policy_fingerprint": fingerprint(
                     policy_path, repository_root, source="measured"
                 ).model_dump(mode="json"),
-                "manual_seed_target_config_fingerprint": _fingerprint(
+                "manual_seed_target_config_fingerprint": fingerprint(
                     seed_config_path, repository_root, source="measured"
                 ).model_dump(mode="json"),
                 "corrections": [c.model_dump(mode="json") for c in corrections],
@@ -397,23 +388,23 @@ def rescale_calibration(
         derived_schedule_path.write_text(
             derived_schedule.model_dump_json(indent=2) + "\n", encoding="utf-8"
         )
-        derived_schedule_fingerprint = _fingerprint(
+        derived_schedule_fingerprint = fingerprint(
             derived_schedule_path, repository_root, source="measured"
         )
 
     provenance = CalibrationRescaleProvenance(
         manifest_kind="muggledsam_calibration_rescale",
-        source_calibration_manifest=_fingerprint(
+        source_calibration_manifest=fingerprint(
             source_manifest_path, repository_root, source="measured"
         ),
         source_schedule=(
-            _fingerprint(schedule.resolve(), repository_root, source="measured")
+            fingerprint(schedule.resolve(), repository_root, source="measured")
             if schedule is not None
             else None
         ),
         source_proxy=source.proxy,
         source_dimensions=source_dims,
-        target_g2_config=_fingerprint(target_config_path, repository_root, source="measured"),
+        target_g2_config=fingerprint(target_config_path, repository_root, source="measured"),
         target_proxy=ArtifactFingerprint(
             uri=target_proxy.proxy_uri,
             sha256=target_proxy.checksum_sha256,

@@ -28,7 +28,7 @@ from pathlib import Path
 import numpy as np
 
 from . import mask_cache
-from .muggled_smoke import relative_uri, sha256_file
+from .muggled_smoke import relative_uri
 from .review_anchors import (
     MASK_SET_NAME,
     AnchorRunScore,
@@ -38,7 +38,6 @@ from .review_anchors import (
     score_run,
 )
 from .schemas import (
-    ArtifactFingerprint,
     DetectorConfidenceRow,
     DetectorOperatingPoint,
     DetectorScore,
@@ -48,6 +47,7 @@ from .schemas import (
     LeaveOneFrameOutResult,
     ProposedAnchorFrame,
     ProposedAnchorFrames,
+    fingerprint,
 )
 
 CLAIM_BOUNDARY = (
@@ -630,14 +630,6 @@ class Scorecard:
     combined_series: np.ndarray
 
 
-def _fingerprint(path: Path, repository_root: Path) -> ArtifactFingerprint:
-    return ArtifactFingerprint(
-        uri=relative_uri(path.resolve(), repository_root),
-        sha256=sha256_file(path),
-        source="measured",
-    )
-
-
 def _class_counts(cells: Sequence[DetectorTruthCell]) -> dict[str, dict[str, int]]:
     counts: dict[str, dict[str, int]] = {}
     for cell in cells:
@@ -761,8 +753,8 @@ def build_scorecard(
         manifest_kind="detector_scorecard",
         run_name=run_name,
         run_directory=relative_uri(run_directory.resolve(), repository_root),
-        run_observations=_fingerprint(run_directory / "observations.jsonl", repository_root),
-        anchor_set=_fingerprint(anchors_root / MASK_SET_NAME, repository_root),
+        run_observations=fingerprint(run_directory / "observations.jsonl", repository_root),
+        anchor_set=fingerprint(anchors_root / MASK_SET_NAME, repository_root),
         comparators={
             name: relative_uri(path.resolve(), repository_root)
             for name, path in comparators.items()
@@ -1330,7 +1322,7 @@ def write_confidence_only(
         "manifest_kind": "detector_confidence_only",
         "run_name": run_name,
         "run_directory": relative_uri(run_directory.resolve(), repository_root),
-        "run_observations": _fingerprint(
+        "run_observations": fingerprint(
             run_directory / "observations.jsonl", repository_root
         ).model_dump(mode="json"),
         "comparators": {
@@ -1342,7 +1334,7 @@ def write_confidence_only(
         "targets": list(series.targets),
         "top_detectors": list(top_detectors),
         "abstain_confidence_threshold": abstain_confidence,
-        "thresholds_carried_from": _fingerprint(thresholds_from, repository_root).model_dump(
+        "thresholds_carried_from": fingerprint(thresholds_from, repository_root).model_dump(
             mode="json"
         ),
         "rows": len(rows),

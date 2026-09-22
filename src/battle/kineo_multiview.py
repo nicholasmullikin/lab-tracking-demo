@@ -67,7 +67,7 @@ from .kineo_nlf import (
     _git_fingerprint,
 )
 from .multiview_geometry import CameraRig
-from .schemas import ArtifactFingerprint, VersionedModel
+from .schemas import ArtifactFingerprint, VersionedModel, fingerprint
 
 Arm = Literal["selfcal", "known"]
 ARMS: tuple[Arm, ...] = ("selfcal", "known")
@@ -581,20 +581,6 @@ class KineoMultiviewManifest(VersionedModel):
 # -- YAML generation ---------------------------------------------------------------------------
 
 
-def _fingerprint(path: Path, repository_root: Path) -> ArtifactFingerprint:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(chunk)
-    resolved = path.resolve()
-    root = repository_root.resolve()
-    try:
-        uri = resolved.relative_to(root).as_posix()
-    except ValueError:
-        uri = resolved.as_posix()
-    return ArtifactFingerprint(uri=uri, sha256=digest.hexdigest(), source="measured")
-
-
 def _rtmlib_stage(frame_step: int) -> dict[str, Any]:
     return {
         "_target_": "kineo.pipeline.stages.rtmlib.rtmlib_bbox_detection.RtmlibBboxDetectionStage",
@@ -978,19 +964,19 @@ def prepare(
         trims=tuple(
             ViewTrim(
                 view=view,
-                source_proxy=_fingerprint(sources[view], repository_root),
-                trimmed=_fingerprint(trim_paths[view], repository_root),
+                source_proxy=fingerprint(sources[view], repository_root),
+                trimmed=fingerprint(trim_paths[view], repository_root),
                 start=starts[view],
                 frame_count=frame_count,
                 verified_frame_count=verified[view],
             )
             for view in views
         ),
-        kineo_config=_fingerprint(config_path, repository_root),
+        kineo_config=fingerprint(config_path, repository_root),
         kineo_stages=stage_names(config),
         removed_stock_stages=removed,
-        gt_camera_intrinsics=_fingerprint(intrinsics_path, repository_root),
-        gt_camera_extrinsics=_fingerprint(extrinsics_path, repository_root),
+        gt_camera_intrinsics=fingerprint(intrinsics_path, repository_root),
+        gt_camera_extrinsics=fingerprint(extrinsics_path, repository_root),
         gt_annotations_role=gt_role,
         intrinsics_image_scale=image_scale,
         extrinsics_convention=(
@@ -999,16 +985,16 @@ def prepare(
         ),
         extrinsics_translation_unit="metres",
         camera_estimates=tuple(
-            _fingerprint(
+            fingerprint(
                 repository_root / f"configs/assembly101/{view.lower()}_camera_estimate.json",
                 repository_root,
             )
             for view in views
         ),
-        clock_rules=_fingerprint(
+        clock_rules=fingerprint(
             repository_root / "configs/assembly101/clock_rules.json", repository_root
         ),
-        runner_script=_fingerprint(repository_root / RUNNER_SCRIPT, repository_root),
+        runner_script=fingerprint(repository_root / RUNNER_SCRIPT, repository_root),
         kineo_repository=str(kineo_root),
         kineo_pinned_revision=DEFAULT_KINEO_REVISION,
         kineo_git=KineoGitState(**git_state),
@@ -1311,7 +1297,7 @@ def evaluate(
         notes=tuple(notes),
     )
     native = [
-        _fingerprint(annotations_dir / name, repository_root)
+        fingerprint(annotations_dir / name, repository_root)
         for name in sorted(os.listdir(annotations_dir))
         if name.endswith(".pkl")
     ]
@@ -1321,13 +1307,13 @@ def evaluate(
         Path(manifest.kineo_output_root) / f"{manifest.sequence_name}_ba_history.rrd",
     ):
         if extra.is_file():
-            native.append(_fingerprint(extra, repository_root))
+            native.append(fingerprint(extra, repository_root))
 
     evaluation = KineoMultiviewManifest(
         arm=manifest.arm,
         run_id=manifest.run_id,
         evaluated_at_utc=datetime.now(UTC).isoformat(),
-        prepare=_fingerprint(run_directory / "prepare.json", repository_root),
+        prepare=fingerprint(run_directory / "prepare.json", repository_root),
         views=views,
         frame_count=frame_count,
         kineo_native_artifacts=tuple(native),

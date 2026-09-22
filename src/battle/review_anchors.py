@@ -29,12 +29,13 @@ from pydantic import Field, model_validator
 
 from . import mask_cache
 from .muggled_calibration import TOOL_VERSION, _write_manifest, build_manifest
-from .muggled_smoke import load_manual_seed_target_config, relative_uri, sha256_file
+from .muggled_smoke import load_manual_seed_target_config, relative_uri
 from .schemas import (
     ArtifactFingerprint,
     MuggledSAMBoxCalibrationManifest,
     VersionedModel,
     VideoDimensions,
+    fingerprint,
 )
 
 ANCHOR_KIND = "human_review_anchor"
@@ -359,14 +360,6 @@ class ReviewAnchorHumanRecord(VersionedModel):
     notes: str | None = None
 
 
-def _fingerprint(path: Path, repository_root: Path) -> ArtifactFingerprint:
-    return ArtifactFingerprint(
-        uri=relative_uri(path.resolve(), repository_root),
-        sha256=sha256_file(path),
-        source="measured",
-    )
-
-
 def prepare_workspace(
     *,
     config_path: Path,
@@ -411,9 +404,9 @@ def prepare_workspace(
     _write_manifest(manifest_path, manifest)
     session = ReviewAnchorSession(
         manifest_kind="human_review_anchor_session",
-        config=_fingerprint(config_path, repository_root),
+        config=fingerprint(config_path, repository_root),
         calibration_manifest_uri=relative_uri(manifest_path, repository_root),
-        manual_seed_target_config=_fingerprint(target_config_path, repository_root),
+        manual_seed_target_config=fingerprint(target_config_path, repository_root),
         prepared_at=datetime.now(UTC),
         claim_boundary=config.claim_boundary,
     )
@@ -549,8 +542,8 @@ def export_anchor_masks(
         counts[anchor.state] += 1
     mask_set = ReviewAnchorMaskSet(
         manifest_kind="human_review_anchor_masks",
-        config=_fingerprint(config_path, repository_root),
-        calibration_manifest=_fingerprint(manifest_path, repository_root),
+        config=fingerprint(config_path, repository_root),
+        calibration_manifest=fingerprint(manifest_path, repository_root),
         view_id=config.view_id,
         targets=config.targets,
         mask_dimensions=VideoDimensions(width=width, height=height),
@@ -571,7 +564,7 @@ def export_anchor_masks(
             author=config.provenance.author,
             reviewed_at=config.provenance.reviewed_at,
             config=mask_set.config,
-            mask_set=_fingerprint(mask_set_path, repository_root),
+            mask_set=fingerprint(mask_set_path, repository_root),
             calibration_manifest=mask_set.calibration_manifest,
             counts=counts,
             anchors=tuple(
@@ -856,7 +849,7 @@ def score_runs(
         )
     return AnchorIoUReport(
         manifest_kind="human_review_anchor_iou",
-        anchor_set=_fingerprint(mask_set_path, repository_root),
+        anchor_set=fingerprint(mask_set_path, repository_root),
         targets=mask_set.targets,
         windows=mask_set.windows,
         anchor_counts=mask_set.counts,

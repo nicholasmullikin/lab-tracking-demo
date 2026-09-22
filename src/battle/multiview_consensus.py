@@ -32,7 +32,6 @@ from .assembly101_camera_fit import PoseMembers
 from .assembly101_clock_offset import WINDOW_START_POSE_FRAME, is_ego, npz_key
 from .assembly101_pose_schemas import ASSEMBLY101_WRIST_INDEX
 from .assembly101_recordings import RECORDING_1, Assembly101Recording, get_recording
-from .digest_cache import sha256_file
 from .four_part_contract import TARGETS
 from .fs_common import relative_uri
 from .multiview_geometry import CameraRig
@@ -47,7 +46,7 @@ from .multiview_schemas import (
     WristTriangulationCheck,
 )
 from .multiview_seed_transfer import REFERENCE_RUN, REFERENCE_VIEW, proxy_to_raw_scale, view_id_for
-from .schemas import ArtifactFingerprint, FrameObservations, RunManifest
+from .schemas import FrameObservations, RunManifest, fingerprint
 
 OUTPUT_ROOT = Path("runs/multiview-part-consensus-first-minute")
 PER_FRAME_NAME = "per_frame.jsonl"
@@ -93,12 +92,6 @@ class ViewRun:
         if item is None or item.mask is None:
             return None
         return self.cache.mask(item.mask.uri)
-
-
-def _fingerprint(path: Path, repository_root: Path) -> ArtifactFingerprint:
-    return ArtifactFingerprint(
-        uri=relative_uri(path, repository_root), sha256=sha256_file(path), source="measured"
-    )
 
 
 def load_view_run(
@@ -591,8 +584,8 @@ def build_consensus(
             view=view,
             view_id=view_id_for(view),
             run_directory_uri=relative_uri(run.run_directory, repository_root),
-            manifest=_fingerprint(run.run_directory / "manifest.json", repository_root),
-            observations=_fingerprint(run.run_directory / "observations.jsonl", repository_root),
+            manifest=fingerprint(run.run_directory / "manifest.json", repository_root),
+            observations=fingerprint(run.run_directory / "observations.jsonl", repository_root),
             is_ego=is_ego(view),
             seed_provenance=run.seed_provenance,  # type: ignore[arg-type]
             targets=run.targets,
@@ -610,7 +603,7 @@ def build_consensus(
         sources=sources,
         rules=rules,
         per_frame_uri=relative_uri(per_frame_path, repository_root),
-        per_frame_fingerprint=_fingerprint(per_frame_path, repository_root),
+        per_frame_fingerprint=fingerprint(per_frame_path, repository_root),
         summaries=tuple(summaries),
         episodes=tuple(all_episodes),
         reference_contradiction_intervals=tuple(contradiction_intervals),

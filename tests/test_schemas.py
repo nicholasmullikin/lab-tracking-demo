@@ -305,3 +305,28 @@ def test_smoke_analysis_clock_must_be_supported_numeric_value(analysis_fps: obje
         SmokeRunMetadata.model_validate(
             _smoke_metadata_payload(analysis_fps=analysis_fps, frame_count=300)
         )
+
+
+def test_fingerprint_factory_measures_relative_uri_and_digest(tmp_path: Path) -> None:
+    import hashlib
+
+    from battle.schemas import fingerprint
+
+    root = tmp_path / "repo"
+    (root / "configs").mkdir(parents=True)
+    path = root / "configs" / "clip.json"
+    path.write_bytes(b'{"a": 1}\n')
+    expected = hashlib.sha256(path.read_bytes()).hexdigest()
+
+    measured = fingerprint(path, root)
+    assert measured.uri == "configs/clip.json"
+    assert measured.sha256 == expected
+    assert measured.source == "measured"
+
+    approved = fingerprint(path, root, source="approved_config", verify=True)
+    assert approved.source == "approved_config"
+    assert approved.sha256 == expected
+
+    outside = tmp_path / "outside.json"
+    outside.write_bytes(b"{}")
+    assert fingerprint(outside, root).uri == outside.resolve().as_posix()

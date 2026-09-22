@@ -21,7 +21,7 @@ from pydantic import Field
 
 from .multiview_schemas import MultiviewConsensusManifest, VisualHullManifest
 from .policy_ablation import WINDOWS
-from .schemas import ArtifactFingerprint, VersionedModel
+from .schemas import ArtifactFingerprint, VersionedModel, fingerprint
 
 PARTS: tuple[str, ...] = ("chassis", "rear_body", "cabin")
 
@@ -76,16 +76,6 @@ class MultiviewBuildComparison(VersionedModel):
     )
 
 
-def _fingerprint(path: Path, repository_root: Path) -> ArtifactFingerprint:
-    from .digest_cache import sha256_file
-
-    return ArtifactFingerprint(
-        uri=path.resolve().relative_to(repository_root.resolve()).as_posix(),
-        sha256=sha256_file(path),
-        source="measured",
-    )
-
-
 def _merge(intervals: Iterable[tuple[int, int]]) -> tuple[tuple[int, int], ...]:
     merged: list[tuple[int, int]] = []
     for start, end in sorted(intervals):
@@ -113,7 +103,7 @@ def summarize_consensus(root: Path, repository_root: Path) -> ConsensusSide:
     agreement = {summary.target: summary.per_view_agreement for summary in manifest.summaries}
     return ConsensusSide(
         root=root.as_posix(),
-        manifest=_fingerprint(manifest_path, repository_root),
+        manifest=fingerprint(manifest_path, repository_root),
         reference_view=reference,
         views=tuple(source.view for source in manifest.sources),
         reference_contradicted=contradicted,
@@ -161,7 +151,7 @@ def summarize_hull(root: Path, repository_root: Path, reference: str) -> HullSid
     }
     return HullSide(
         root=root.as_posix(),
-        manifest=_fingerprint(manifest_path, repository_root),
+        manifest=fingerprint(manifest_path, repository_root),
         views_used=manifest.views_used,
         frames_with_hull={s.target: s.frames_with_hull for s in manifest.part_summaries},
         median_voxel_count={s.target: s.median_voxel_count for s in manifest.part_summaries},

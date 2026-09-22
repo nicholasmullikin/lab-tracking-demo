@@ -49,7 +49,6 @@ from . import mask_cache
 from .assembly101_camera_fit import PoseMembers
 from .assembly101_clock_offset import is_ego
 from .four_part_contract import TARGETS
-from .muggled_smoke import sha256_file
 from .multiview_consensus import load_consensus, load_view_run, relative_uri
 from .multiview_geometry import CameraRig
 from .multiview_reprompt import build_prompts, onset_geometry
@@ -63,7 +62,7 @@ from .multiview_seed_transfer import (
     proxy_focal_px,
     ray_point_distance,
 )
-from .schemas import ArtifactFingerprint, MultiviewRepromptPrompt, VersionedModel
+from .schemas import ArtifactFingerprint, MultiviewRepromptPrompt, VersionedModel, fingerprint
 from .seed_search import (
     OUTPUT_ROOT as SEED_SEARCH_ROOT,
 )
@@ -188,12 +187,6 @@ class AcceptanceSearchPlan(VersionedModel):
     @property
     def prompts(self) -> list[tuple[int, MultiviewRepromptPrompt]]:
         return [(f.frame, p) for f in self.frames for c in f.cells for p in c.prompts]
-
-
-def _fingerprint(path: Path, repository_root: Path) -> ArtifactFingerprint:
-    return ArtifactFingerprint(
-        uri=relative_uri(path, repository_root), sha256=sha256_file(path), source="measured"
-    )
 
 
 def truth_cells(truth: SeedTruthSet) -> dict[tuple[int, str], Any]:
@@ -483,10 +476,10 @@ def plan_search(
         proxy=proxy,
         proxy_dimensions=(width, height),
         consensus_root_uri=relative_uri(consensus_dir, repository_root),
-        consensus_manifest=_fingerprint(consensus_dir / "manifest.json", repository_root),
-        consensus_points=_fingerprint(consensus_dir / "consensus_points.npz", repository_root),
-        truth_set=_fingerprint(repository_root / truth_path, repository_root),
-        wilor_observations=_fingerprint(wilor_path, repository_root),
+        consensus_manifest=fingerprint(consensus_dir / "manifest.json", repository_root),
+        consensus_points=fingerprint(consensus_dir / "consensus_points.npz", repository_root),
+        truth_set=fingerprint(repository_root / truth_path, repository_root),
+        wilor_observations=fingerprint(wilor_path, repository_root),
         seed_run_uri=relative_uri(seed_run_dir, repository_root),
         box_margins=tuple(float(m) for m in BOX_MARGINS),
         hand_hull_dilation_px=hand_hull_dilation_px,
@@ -1173,8 +1166,8 @@ def score_search(
         )
     report = SearchReport(
         manifest_kind="correction_acceptance_search_report",
-        plan=_fingerprint(plan_path, repository_root),
-        decode_result=_fingerprint(decode_dir / "decode_result.json", repository_root),
+        plan=fingerprint(plan_path, repository_root),
+        decode_result=fingerprint(decode_dir / "decode_result.json", repository_root),
         truth_set=plan.truth_set,
         cells_scored=len(cells),
         unprompted_cells=plan.unprompted_cells,
@@ -1201,7 +1194,7 @@ def score_search(
     (output_dir / "search_table.md").write_text(search_table(report), encoding="utf-8")
     v2 = {
         "manifest_kind": "correction_acceptance_rule_v2",
-        "report": _fingerprint(output_dir / "search_report.json", repository_root).model_dump(
+        "report": fingerprint(output_dir / "search_report.json", repository_root).model_dump(
             mode="json"
         ),
         "rules": {

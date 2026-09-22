@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from . import digest_cache
+from .fs_common import relative_uri
 
 SCHEMA_VERSION = "1.0"
 
@@ -688,6 +691,26 @@ class ArtifactFingerprint(VersionedModel):
     source: Literal["approved_config", "measured"]
 
 
+def fingerprint(
+    path: Path,
+    repository_root: Path,
+    *,
+    source: Literal["approved_config", "measured"] = "measured",
+    verify: bool = False,
+) -> ArtifactFingerprint:
+    """Measure a local file for a manifest: repository-relative URI plus its SHA-256.
+
+    The URI is `fs_common.relative_uri` (both paths resolved, absolute when outside the
+    root) and the digest comes from `digest_cache` unless `verify` forces a re-read.  This is
+    the factory the builders used to each define for themselves.
+    """
+    return ArtifactFingerprint(
+        uri=relative_uri(path, repository_root),
+        sha256=digest_cache.sha256_file(path, verify=verify),
+        source=source,
+    )
+
+
 class AdapterMetadata(VersionedModel):
     """Version and provenance of an adapter without embedding third-party code."""
 
@@ -874,7 +897,10 @@ class MuggledSAMImageCandidate(VersionedModel):
 class MuggledSAMImageDecoderResult(VersionedModel):
     """Image-only SAM3 response for one manually drawn rectangle."""
 
-    api: Literal["muggledsam_sam3_interactive"]
+    # `muggledsam_sam3_exemplar_detector`: candidates are SAM3 visual-exemplar detections gated
+    # to the prompt box (`sam3_appearance.py serve-jsonl`); `iou_score` is then the detection
+    # score, not an IoU estimate, and the result's `limitations` say so.
+    api: Literal["muggledsam_sam3_interactive", "muggledsam_sam3_exemplar_detector"]
     candidate_count: int = Field(ge=1)
     deterministic_best_candidate_index: int = Field(ge=0)
     candidates: tuple[MuggledSAMImageCandidate, ...] = Field(min_length=1)

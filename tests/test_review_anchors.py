@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from battle import review_anchors
+from battle import digest_cache, review_anchors
 from battle.muggled_calibration import _write_manifest, build_manifest, frame_reference
 from battle.review_anchors import (
     ReviewAnchorMask,
@@ -521,7 +521,7 @@ def test_export_writes_labeled_hidden_and_unlabeled_anchors_with_fingerprints(
     record = review_anchors.ReviewAnchorHumanRecord.model_validate_json(record_path.read_text())
     assert record.author is None and record.reviewed_at is None
     assert record.counts == mask_set.counts
-    assert record.mask_set.sha256 == review_anchors.sha256_file(mask_set_path)
+    assert record.mask_set.sha256 == digest_cache.sha256_file(mask_set_path)
     assert {entry.state for entry in record.anchors} == {"labeled", "hidden", "unlabeled"}
     assert "not a dataset" in record.claim_boundary
 

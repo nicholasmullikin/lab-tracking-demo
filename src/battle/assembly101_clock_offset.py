@@ -31,11 +31,10 @@ import cv2
 import numpy as np
 from pydantic import Field
 
-from . import digest_cache
 from .assembly101_fetch_view import raw60_path, video_name
 from .assembly101_pose_schemas import Assembly101ClockRule
 from .assembly101_recordings import RECORDING_1, Assembly101Recording, get_recording
-from .schemas import ArtifactFingerprint, VersionedModel
+from .schemas import ArtifactFingerprint, VersionedModel, fingerprint
 
 # Recording-1 constants, kept for every caller written before the recording registry existed.
 RAW_ROOT = RECORDING_1.raw_root
@@ -439,11 +438,7 @@ def decide_offset(curves: list[OffsetCurve]) -> OffsetDecision:
 def _fingerprint(path: Path, repository_root: Path) -> ArtifactFingerprint:
     if not path.is_file():
         raise FileNotFoundError(f"clock offset input is unavailable: {path}")
-    return ArtifactFingerprint(
-        uri=path.resolve().relative_to(repository_root.resolve()).as_posix(),
-        sha256=digest_cache.sha256_file(path),
-        source="measured",
-    )
+    return fingerprint(path, repository_root)
 
 
 def load_window_confidences(

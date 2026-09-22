@@ -42,8 +42,8 @@ from .assembly101_recordings import (
     Assembly101Recording,
     get_recording,
 )
-from .fs_common import relative_uri
 from .schemas import ArtifactFingerprint
+from .schemas import fingerprint as measured_fingerprint
 
 # Recording-1 constants, kept for every caller written before the recording registry existed.
 RECORDING_ID = RECORDING_1.recording_id
@@ -99,11 +99,7 @@ CLAIM_BOUNDARIES = (
 def _fingerprint(path: Path, repository_root: Path, *, verify: bool = False) -> ArtifactFingerprint:
     if not path.is_file():
         raise FileNotFoundError(f"Assembly101 reference input is unavailable: {path}")
-    return ArtifactFingerprint(
-        uri=relative_uri(path, repository_root),
-        sha256=digest_cache.sha256_file(path, verify=verify),
-        source="measured",
-    )
+    return measured_fingerprint(path, repository_root, verify=verify)
 
 
 def _poses_member(

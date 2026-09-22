@@ -44,7 +44,7 @@ from .multiview_schemas import (
     SeedPrompt,
     SeedTransferPart,
 )
-from .schemas import ArtifactFingerprint, G2PreprocessingManifest, PixelBox, PixelPoint
+from .schemas import ArtifactFingerprint, G2PreprocessingManifest, PixelBox, PixelPoint, fingerprint
 
 OUTPUT_ROOT = Path("runs/multiview-seed-transfer-20260918")
 REFERENCE_VIEW = "C10379"
@@ -100,16 +100,6 @@ def proxy_to_raw_scale(view: str) -> float:
 
 def proxy_focal_px(rig: CameraRig, view: str) -> float:
     return float(rig.camera(view).intrinsic_matrix[0][0]) / proxy_to_raw_scale(view)
-
-
-def _fingerprint(
-    path: Path, repository_root: Path, source: str = "measured"
-) -> ArtifactFingerprint:
-    return ArtifactFingerprint(
-        uri=path.resolve().relative_to(repository_root.resolve()).as_posix(),
-        sha256=sha256_file(path),
-        source=source,  # type: ignore[arg-type]
-    )
 
 
 def load_mask(path: Path) -> np.ndarray:
@@ -302,10 +292,10 @@ def human_seed_masks(
         if sha256_file(path) != seed["mask_sha256"]:
             raise ValueError(f"reference seed mask changed: {path}")
         masks[seed["target"]] = path
-        fingerprints.append(_fingerprint(path, repository_root))
+        fingerprints.append(fingerprint(path, repository_root))
     if tuple(masks) != TARGETS:
         raise ValueError(f"reference seeds must be the ordered targets {TARGETS}")
-    return masks, fingerprints, _fingerprint(run_dir / "manifest.json", repository_root)
+    return masks, fingerprints, fingerprint(run_dir / "manifest.json", repository_root)
 
 
 def fit_first_minute_plane(rig: CameraRig, members: PoseMembers) -> TablePlane:
@@ -568,7 +558,7 @@ class SeedTransferPlanner:
             secondary_reference_run_manifest=self.secondary_manifest,
             secondary_reference_seed_masks=tuple(self.secondary_fingerprints),
             transfer_method=TRANSFER_METHOD,
-            clip_config=_fingerprint(
+            clip_config=fingerprint(
                 self.repository_root / (config_path or self.config_path), self.repository_root
             ),
             proxy=ArtifactFingerprint(
@@ -895,7 +885,7 @@ def accept_view(
                         SeedCandidate(
                             prompt_id=prompt.prompt_id,
                             candidate_index=int(candidate["candidate_index"]),
-                            mask=_fingerprint(mask_path, repository_root),
+                            mask=fingerprint(mask_path, repository_root),
                             decoder_iou_estimate=float(candidate["iou_score"]),
                             mask_area_px=int(mask.sum()),
                             sanity_pass=False,

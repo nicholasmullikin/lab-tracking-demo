@@ -27,6 +27,7 @@ from .schemas import (
     FrameObservations,
     RunManifest,
     TimeInterval,
+    fingerprint,
 )
 
 DEFAULT_OUTPUT_ROOT = Path("runs/four-part-segmentation-comparison")
@@ -40,12 +41,6 @@ COLORS = {
     "samurai": (70, 210, 160),
     "dam4sam": (185, 100, 255),
 }
-
-
-def _fingerprint(path: Path, root: Path) -> ArtifactFingerprint:
-    return ArtifactFingerprint(
-        uri=relative_uri(path, root), sha256=sha256_file(path), source="measured"
-    )
 
 
 def _tree_fingerprint(path: Path, root: Path) -> ArtifactFingerprint:
@@ -197,8 +192,8 @@ def build(
             FourPartSegmentationComparisonMethod(
                 method_id=method_id,
                 display_name=method_id.replace("_", " "),
-                run_manifest=_fingerprint(directory / "manifest.json", repository_root),
-                observations=_fingerprint(directory / "observations.jsonl", repository_root),
+                run_manifest=fingerprint(directory / "manifest.json", repository_root),
+                observations=fingerprint(directory / "observations.jsonl", repository_root),
                 native_masks=_tree_fingerprint(masks, repository_root),
                 initialization_summary=_initialization_summary(manifest),
                 target_coverage=_coverage(observations),
@@ -211,13 +206,13 @@ def build(
     index = FourPartSegmentationComparisonIndex(
         manifest_kind="four_part_segmentation_comparison",
         comparison_id="four_part_segmentation_comparison",
-        contract_fingerprint=_fingerprint(contract.path, repository_root),
+        contract_fingerprint=fingerprint(contract.path, repository_root),
         source_video=ArtifactFingerprint(
             uri="data/raw/assembly101/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532/recordings/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532/C10379_rgb.mp4",
             sha256="450731ebbb50f46cf8279383e4737db6d76e967f23580d3555de1888b78a9db9",
             source="approved_config",
         ),
-        bounded_video=_fingerprint(video, repository_root),
+        bounded_video=fingerprint(video, repository_root),
         frame_count=600,
         analysis_fps=30,
         source_interval=TimeInterval(start_seconds=294.0, end_seconds=314.0),

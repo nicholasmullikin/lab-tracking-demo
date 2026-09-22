@@ -68,6 +68,7 @@ from .schemas import (
     PixelBox,
     RunManifest,
     VersionedModel,
+    fingerprint,
 )
 from .seed_search import DINOV2_SCRIPT, _crop_box
 
@@ -108,14 +109,6 @@ CLAIM_BOUNDARIES: tuple[str, ...] = (
     "cabin) are written as seeds; chassis and interior are ranked proposals for the human.",
     "Assembly101 is CC BY-NC 4.0; attribution applies to every derived artifact.",
 )
-
-
-def _fingerprint(path: Path, repository_root: Path) -> ArtifactFingerprint:
-    return ArtifactFingerprint(
-        uri=relative_uri(path.resolve(), repository_root),
-        sha256=sha256_file(path),
-        source="measured",
-    )
 
 
 def _read_frame(video: Path, index: int) -> np.ndarray:
@@ -545,7 +538,7 @@ def plan_grid(
         manifest_kind="exemplar_seed_plan",
         recording=recording.label,
         recording_id=recording.recording_id,
-        clip_config=_fingerprint(config_path, repository_root),
+        clip_config=fingerprint(config_path, repository_root),
         seed_frame=choice,
         table_plane=plane,
         grid_spacing_mm=GRID_SPACING_MM,
@@ -713,7 +706,7 @@ def build_exemplar_library(
         masks.append(entry.mask)
     embeddings = compute_embeddings(crops, work_dir=work_dir / "exemplar_embeddings", python=python)
     library = ExemplarLibrary(
-        truth_set=_fingerprint(truth_path, repository_root),
+        truth_set=fingerprint(truth_path, repository_root),
         source_view="C10379",
         source_recording="nusar_9033",
         proxy=ArtifactFingerprint(
@@ -1277,7 +1270,7 @@ def accept(
                 SeedCandidate(
                     prompt_id=c.prompt_id,
                     candidate_index=c.candidate_index,
-                    mask=_fingerprint(c.mask_path, repository_root),
+                    mask=fingerprint(c.mask_path, repository_root),
                     decoder_iou_estimate=c.decoder_iou,
                     mask_area_px=c.area_px,
                     sanity_pass=c is chosen,
@@ -1389,7 +1382,7 @@ def accept(
                 f"band. analysis_frame_index 0 is proxy frame {plan.seed_frame.seed_frame} of "
                 "the recording's fetched window (seed-window clip)."
             ),
-            clip_config=_fingerprint(config_for_manifest, repository_root),
+            clip_config=fingerprint(config_for_manifest, repository_root),
             proxy=ArtifactFingerprint(
                 uri=proxy.proxy_uri, sha256=proxy.checksum_sha256, source="approved_config"
             ),
@@ -1417,7 +1410,7 @@ def accept(
                 candidates_considered=len(candidates),
                 seeded_parts=tuple(seeded),
                 proposal_parts=tuple(proposal_parts),
-                seed_manifest=_fingerprint(manifest_path, repository_root),
+                seed_manifest=fingerprint(manifest_path, repository_root),
                 run_decision=run_decision,
             )
         )
@@ -1425,8 +1418,8 @@ def accept(
     report = ExemplarSeedReport(
         manifest_kind="exemplar_seed_report",
         recording=plan.recording,
-        plan=_fingerprint(plan_path, repository_root),
-        decode_result=_fingerprint(decode_path, repository_root),
+        plan=fingerprint(plan_path, repository_root),
+        decode_result=fingerprint(decode_path, repository_root),
         exemplar_library=library_record,
         seed_frame=plan.seed_frame.seed_frame,
         rec1_held_out_iou=REC1_HELD_OUT_IOU,

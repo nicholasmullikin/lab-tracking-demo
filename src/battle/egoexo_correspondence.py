@@ -56,7 +56,7 @@ from .assembly101_pose_schemas import Assembly101ClockRule
 from .digest_cache import sha256_file as _sha256
 from .fs_common import relative_uri
 from .multiview_geometry import CameraRig
-from .schemas import ArtifactFingerprint, FrameObservations, VersionedModel
+from .schemas import ArtifactFingerprint, FrameObservations, VersionedModel, fingerprint
 
 FrameReader = Callable[[Path, int], np.ndarray]
 
@@ -341,16 +341,6 @@ class EvaluationManifest(VersionedModel):
 
 def _utc_now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
-
-
-def fingerprint(path: Path, repository_root: Path) -> ArtifactFingerprint:
-    resolved = path.resolve()
-    root = repository_root.resolve()
-    try:
-        uri = resolved.relative_to(root).as_posix()
-    except ValueError:
-        uri = resolved.as_posix()
-    return ArtifactFingerprint(uri=uri, sha256=_sha256(resolved), source="measured")
 
 
 def write_mask_png(path: Path, mask: np.ndarray) -> None:

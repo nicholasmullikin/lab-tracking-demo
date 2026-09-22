@@ -31,7 +31,7 @@ from typing import Any
 
 from .assembly101_clock_offset import CLOCK_RULES_CONFIG, is_ego, load_clock_rules
 from .assembly101_pose_schemas import Assembly101ClockRule
-from .muggled_smoke import relative_uri, sha256_file
+from .muggled_smoke import relative_uri
 from .multiview_seed_transfer import ALL_STATIC_CONFIG, view_id_for
 from .review_anchors import (
     SOURCE_MANUAL_SEED_TARGET_CONFIG,
@@ -45,7 +45,7 @@ from .review_anchors import (
     load_config,
     view_paths,
 )
-from .schemas import ArtifactFingerprint, MuggledSAMManualSeedTargetConfig
+from .schemas import ArtifactFingerprint, MuggledSAMManualSeedTargetConfig, fingerprint
 
 SOURCE_VIEW = "C10379"
 E4_VIEW = "HMC_21179183"
@@ -267,14 +267,6 @@ def target_config_path_for(view: str) -> Path:
     return template.with_name(f"{template.stem}_{view_id.replace('-', '_')}.json")
 
 
-def _fingerprint(path: Path, repository_root: Path) -> ArtifactFingerprint:
-    return ArtifactFingerprint(
-        uri=relative_uri(path.resolve(), repository_root),
-        sha256=sha256_file(path),
-        source="measured",
-    )
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repository-root", type=Path, default=Path.cwd())
@@ -310,8 +302,8 @@ def main() -> None:
                 f"no file matched {args.extra_frames}; rerun battle-anchor-frames-for-view once "
                 "Track A has written its proposed_anchor_frames.json to append those frames"
             )
-    clock_fp = _fingerprint(root / args.clock_rules, root)
-    source_fp = _fingerprint(source_config_path, root)
+    clock_fp = fingerprint(root / args.clock_rules, root)
+    source_fp = fingerprint(source_config_path, root)
     for view in args.view or DEFAULT_VIEWS:
         entry = rules.views.get(view)
         if entry is None or entry.clock_rule is None:

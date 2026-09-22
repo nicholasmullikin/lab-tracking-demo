@@ -46,7 +46,6 @@ fitted estimates.  CC BY-NC 4.0 attribution applies to the dataset; ATHENA is MI
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import subprocess
 import tempfile
@@ -69,7 +68,7 @@ from .assembly101_pose_schemas import (
 )
 from .athena_triangulation import ATHENA_REVISION, ATHENA_ROOT
 from .multiview_geometry import CameraRig
-from .schemas import ArtifactFingerprint, VersionedModel
+from .schemas import ArtifactFingerprint, VersionedModel, fingerprint
 
 HandSource = Literal["mediapipe", "wilor"]
 Triangulator = Literal["athena", "rig"]
@@ -462,18 +461,6 @@ class AthenaHandsManifest(VersionedModel):
 
 
 # -- core ---------------------------------------------------------------------------------------
-
-
-def _fingerprint(path: Path, repository_root: Path) -> ArtifactFingerprint:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(chunk)
-    return ArtifactFingerprint(
-        uri=path.resolve().relative_to(repository_root.resolve()).as_posix(),
-        sha256=digest.hexdigest(),
-        source="measured",
-    )
 
 
 def _stats(values: np.ndarray) -> tuple[int, float | None, float | None, float | None]:
@@ -1065,24 +1052,24 @@ def build_run(
     )
     dataset_manifest = repository_root / DATASET_REFERENCE_RUN / "manifest.json"
     inputs = [
-        _fingerprint(
+        fingerprint(
             repository_root / hands[view].run_directory / "observations.jsonl", repository_root
         )
         for view in views
     ]
     inputs.append(
-        _fingerprint(repository_root / "configs/assembly101/clock_rules.json", repository_root)
+        fingerprint(repository_root / "configs/assembly101/clock_rules.json", repository_root)
     )
     for view in rig.views:
         inputs.append(
-            _fingerprint(
+            fingerprint(
                 repository_root / f"configs/assembly101/{view.lower()}_camera_estimate.json",
                 repository_root,
             )
         )
     if wilor_reference is not None:
         inputs.append(
-            _fingerprint(
+            fingerprint(
                 repository_root / wilor_reference.run_directory / "observations.jsonl",
                 repository_root,
             )
@@ -1117,7 +1104,7 @@ def build_run(
         alignments=tuple(alignments[view] for view in views),
         hands=summaries,
         hands_path="hands.jsonl",
-        dataset_reference=_fingerprint(dataset_manifest, repository_root),
+        dataset_reference=fingerprint(dataset_manifest, repository_root),
         input_artifacts=tuple(inputs),
         runtime_seconds=time.monotonic() - started,
         time_to_first_output_seconds=first_output,

@@ -44,6 +44,7 @@ from .schemas import (
     RunManifest,
     RuntimeMeasurements,
     TimeInterval,
+    fingerprint,
 )
 
 DEFAULT_CONFIG = Path("configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_g2.json")
@@ -58,12 +59,6 @@ DEFAULT_GROUNDED_SAM2_NATIVE = Path(
 DEFAULT_SMOKE_VIDEO = Path("data/derived/assembly101/smoke_frames/focused_static_20s.mp4")
 DEFAULT_SMOKE_IMAGE = Path("data/derived/assembly101/smoke_frames/focused_static_frame0.jpg")
 NLF_BODY_JOINT_COUNT = 55
-
-
-def _fingerprint(path: Path, repository_root: Path) -> ArtifactFingerprint:
-    return ArtifactFingerprint(
-        uri=relative_uri(path, repository_root), sha256=sha256_file(path), source="measured"
-    )
 
 
 def _write_observations(path: Path, observations: tuple[FrameObservations, ...]) -> None:
@@ -118,7 +113,7 @@ def _write_native_index(
         for path in native_paths
     ]
     output_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-    return _fingerprint(output_path, repository_root)
+    return fingerprint(output_path, repository_root)
 
 
 def _bounded_clip(config: G2PreprocessingManifest, frame_count: int) -> tuple[object, float]:
@@ -235,8 +230,8 @@ def import_grounded_sam2(args: argparse.Namespace) -> Path:
     video_path = _single_frame_video(image_path, run_directory / "input_frame.mp4")
     metadata = ExternalPartialRunMetadata(
         classification="single_frame_smoke",
-        requested_input_fingerprint=_fingerprint(image_path, root),
-        native_artifact_fingerprints=(_fingerprint(native_path, root),),
+        requested_input_fingerprint=fingerprint(image_path, root),
+        native_artifact_fingerprints=(fingerprint(native_path, root),),
         adapter=AdapterMetadata(
             name="grounded-sam2-hf-image-import",
             version="0.1.0",
@@ -324,7 +319,7 @@ def import_dam4sam(args: argparse.Namespace) -> Path:
     native_index = _write_native_index(masks, run_directory / "native_masks_index.json", root)
     metadata = ExternalPartialRunMetadata(
         classification="external_partial",
-        requested_input_fingerprint=_fingerprint(source_video, root),
+        requested_input_fingerprint=fingerprint(source_video, root),
         native_artifact_fingerprints=(native_index,),
         adapter=AdapterMetadata(
             name="dam4sam-mask-import",
@@ -446,7 +441,7 @@ def import_kineo(args: argparse.Namespace) -> Path:
     stage_seconds = sum(float(item["duration_seconds"]) for item in timings)
     metadata = ExternalPartialRunMetadata(
         classification="kineo_nlf_only_partial",
-        requested_input_fingerprint=_fingerprint(source_video, root),
+        requested_input_fingerprint=fingerprint(source_video, root),
         native_artifact_fingerprints=(native_index,),
         adapter=AdapterMetadata(
             name="kineo-nlf-pkl-import",

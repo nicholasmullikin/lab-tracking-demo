@@ -33,6 +33,9 @@ from .schemas import (
     RunManifest,
     TimeInterval,
 )
+from .schemas import (
+    fingerprint as _fingerprint,
+)
 
 COMPARISON_ID = "exploratory-first-20s-comparison"
 FRAME_COUNT = 600
@@ -159,11 +162,7 @@ class LoadedMethod:
 def _file_fingerprint(path: Path, repository_root: Path) -> ArtifactFingerprint:
     if not path.is_file():
         raise FileNotFoundError(f"comparison input is unavailable: {path}")
-    return ArtifactFingerprint(
-        uri=relative_uri(path, repository_root),
-        sha256=sha256_file(path),
-        source="measured",
-    )
+    return _fingerprint(path, repository_root)
 
 
 def _mask_tree_fingerprint(

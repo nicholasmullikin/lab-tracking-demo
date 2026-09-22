@@ -65,7 +65,7 @@ from .multiview_seed_transfer import (
     square_box,
     view_id_for,
 )
-from .schemas import ArtifactFingerprint, PixelBox, PixelPoint, VersionedModel
+from .schemas import ArtifactFingerprint, PixelBox, PixelPoint, VersionedModel, fingerprint
 
 OUTPUT_ROOT = Path("runs/seed-search-20260920")
 ANCHORS_WORKSPACE = Path("runs/human-review-anchors-first-minute")
@@ -171,14 +171,6 @@ class SeedTruthSet(VersionedModel):
         return None
 
 
-def _fingerprint(path: Path, repository_root: Path) -> ArtifactFingerprint:
-    return ArtifactFingerprint(
-        uri=relative_uri(path.resolve(), repository_root.resolve()),
-        sha256=sha256_file(path),
-        source="measured",
-    )
-
-
 def _mask_area(path: Path) -> int:
     return int(mask_cache.decode_mask_png(path).sum())
 
@@ -255,7 +247,7 @@ def _collect_calibration(
                     role=role,
                     source=source,
                     selected_by="human",
-                    mask=_fingerprint(mask_path, repository_root),
+                    mask=fingerprint(mask_path, repository_root),
                     area_px=_mask_area(mask_path),
                     source_candidate_id=candidate["candidate_id"],
                     candidate_index=index,
@@ -368,16 +360,14 @@ def build_truth_set(repository_root: Path) -> SeedTruthSet:
     return SeedTruthSet(
         manifest_kind="seed_search_truth_set",
         sources={
-            "anchors_calibration": _fingerprint(
-                repository_root / anchors_manifest, repository_root
-            ),
-            "anchors_export": _fingerprint(
+            "anchors_calibration": fingerprint(repository_root / anchors_manifest, repository_root),
+            "anchors_export": fingerprint(
                 repository_root / ANCHORS_WORKSPACE / "anchors/anchor_masks.json", repository_root
             ),
-            "corrections_calibration": _fingerprint(
+            "corrections_calibration": fingerprint(
                 repository_root / CORRECTIONS_CALIBRATION, repository_root
             ),
-            "e3_calibration": _fingerprint(repository_root / E3_CALIBRATION, repository_root),
+            "e3_calibration": fingerprint(repository_root / E3_CALIBRATION, repository_root),
         },
         entries=tuple(entries),
         excluded=tuple(excluded),
@@ -850,7 +840,7 @@ def plan_search(
         view_id=view_id_for(REFERENCE_VIEW),
         proxy=proxy,
         proxy_dimensions=(width, height),
-        truth_set=_fingerprint(truth_path, repository_root),
+        truth_set=fingerprint(truth_path, repository_root),
         frames=tuple(frames),
         prompt_count=total,
         grid={
@@ -1344,9 +1334,9 @@ def score_search(
     }
     return SearchReport(
         manifest_kind="seed_search_report",
-        plan=_fingerprint(plan_path, repository_root),
-        decode_result=_fingerprint(decode_path, repository_root),
-        truth_set=_fingerprint(truth_path, repository_root),
+        plan=fingerprint(plan_path, repository_root),
+        decode_result=fingerprint(decode_path, repository_root),
+        truth_set=fingerprint(truth_path, repository_root),
         exemplar_arm="run" if embeddings else "not_run",
         exemplar_note=exemplar_note,
         strategies=names,
@@ -1740,7 +1730,7 @@ def plan_transfer(
             )
     return TransferPlan(
         manifest_kind="seed_transfer_plan",
-        search_report=_fingerprint(report_path, repository_root),
+        search_report=fingerprint(report_path, repository_root),
         winners=winners,
         gate_passed=gate,
         interior_rest=rest,
@@ -2069,7 +2059,7 @@ def accept_transfer(
                     accepted=SeedCandidate(
                         prompt_id=accepted_candidate.prompt.prompt_id,
                         candidate_index=accepted_candidate.index,
-                        mask=_fingerprint(mask_path, repository_root),
+                        mask=fingerprint(mask_path, repository_root),
                         decoder_iou_estimate=accepted_candidate.score,
                         mask_area_px=accepted_candidate.area,
                         area_ratio_vs_expected=area_ratio,
@@ -2257,8 +2247,8 @@ def accept_transfer(
         seeds_per_view[view] = per_view
     return TransferReport(
         manifest_kind="seed_transfer_report",
-        plan=_fingerprint(plan_path, repository_root),
-        decode_result=_fingerprint(decode_path, repository_root),
+        plan=fingerprint(plan_path, repository_root),
+        decode_result=fingerprint(decode_path, repository_root),
         interior_rest=plan.interior_rest,
         outcomes=tuple(outcomes),
         seeds_written=seeds_written,

@@ -29,7 +29,6 @@ import numpy as np
 
 from .assembly101_camera_fit import PoseMembers
 from .assembly101_clock_offset import is_ego
-from .digest_cache import sha256_file
 from .four_part_contract import TARGETS
 from .multiview_consensus import (
     MANIFEST_NAME as CONSENSUS_MANIFEST_NAME,
@@ -58,7 +57,7 @@ from .multiview_seed_transfer import (
     fit_first_minute_plane,
     proxy_to_raw_scale,
 )
-from .schemas import ArtifactFingerprint
+from .schemas import fingerprint
 
 OUTPUT_ROOT = Path("runs/multiview-visual-hull-first-minute")
 VOXEL_MM = 5.0
@@ -93,12 +92,6 @@ NOT_RUN = {
         "recording has one person and four rigid parts, so there is no identity to hand off."
     ),
 }
-
-
-def _fingerprint(path: Path, repository_root: Path) -> ArtifactFingerprint:
-    return ArtifactFingerprint(
-        uri=relative_uri(path, repository_root), sha256=sha256_file(path), source="measured"
-    )
 
 
 class VoxelGrid:
@@ -518,7 +511,7 @@ def build_visual_hull(
         table_plane=plane,
         volume_bounds_source=grid.volume_bounds_source,
         views_used=tuple(runs),
-        consensus_manifest=_fingerprint(consensus_path, repository_root),
+        consensus_manifest=fingerprint(consensus_path, repository_root),
         sources=tuple(s for s in consensus.sources if s.view in runs),
         per_frame_uri=relative_uri(per_frame_path, repository_root),
         voxels_npz_uri=relative_uri(voxels_path, repository_root),
