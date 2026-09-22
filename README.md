@@ -2067,6 +2067,47 @@ instead of every file beside them, so a rebuild is not charged for caches and sh
 no frame draws. That changes the recorded mask-tree digest for packages built before this
 revision.
 
+### Shared helper modules
+
+The three deduplication passes of Sep 22 (ledger: "dedup pass 1-3") moved the helpers the
+94 modules used to copy into a dozen small shared modules. New code calls these rather than
+re-writing the loop:
+
+- `src/battle/fs_common.py`: `sha256_file`, `write_json` (each caller's indent, optional
+  atomic replace), `run_timestamp` (`%Y%m%dt%H%M%Sz`), `relative_uri`, `git_revision`.
+- `src/battle/digest_cache.py`: `sha256_file` remembered against size and mtime under
+  `.cache/battle/` (battle-venv code hashes through it; `fs_common` is the uncached read).
+- `src/battle/media_probe.py`: `video_info` / `video_frame_count`, the exact `ffprobe
+  -count_frames` answer cached beside each video.
+- `src/battle/mask_cache.py`: decoded masks and RGBA cut-out PNGs per run directory, the
+  `.npz` sidecar, `encode_rgba_mask_png`.
+- `src/battle/mask_ops.py`: `decode_mask_png`, `mask_area`, `mask_centroid`, `mask_iou`
+  (the edge cases as parameters), `overlap_fraction`.
+- `src/battle/observations.py`: `load_observations` (schema-validated), the tolerant
+  `rebuild_tracker_observations` for worker output, `object_for_label`.
+- `src/battle/schemas.py`: `fingerprint(path, repository_root)` beside `ArtifactFingerprint`.
+- `src/battle/video_driver.py`: the bounded external-worker driver steps (`verify_inputs`,
+  `run_external_worker`, `bounded_video`, `contact_sheet`, `assemble_run_manifest`).
+- `src/battle/rerun_logging.py`: `init_and_save`, `log_rgba_mask(s)`,
+  `log_boxes_from_observation`, `time_series_view` / `time_series_stack`; blueprints stay per
+  product.
+- `src/battle/cli_common.py`: `add_repository_root`, `add_output_root`, `add_output_flags`
+  (`--overwrite` / `--quiet`), `open_output_directory` (mkdir, refuse a non-empty one).
+- `src/battle/contact_sheet.py`: `render_grid(cells, columns=..., labels=, title=, gap=)`, the
+  row/column padding every review sheet used; each sheet keeps its own cell content.
+- `src/battle/gpu_guard.py`: the GPU neighbour / headroom guard shared by the queue and the
+  workers.
+- `src/battle/worker_common.py`: `extract_frames` and `cuda_peak_bytes` for the workers.
+
+**Foreign-interpreter rule.** `*_worker.py`, `four_part_video_worker.py`, `muggled_worker.py`,
+`muggled_calibration_worker.py`, `sam3_appearance.py`, `dam4sam_streaming.py` and
+`ego_diagnostic.py` run under the DAM4SAM / SAMURAI / WiLoR / MuggledSAM pyenvs (Python 3.10
+or 3.14) where `battle` is not installed. They may import only the standard library and the
+stdlib-only siblings `fs_common`, `gpu_guard` and `worker_common` through the
+`try: from . import x / except ImportError: sys.path.append(here); import x` form; a helper
+those workers need goes into one of these three (Python 3.10 compatible, no `datetime.UTC`),
+never into a module that imports `battle.*`, pydantic or Rerun.
+
 ### Test tiers
 
 The suite is tiered so the default run needs nothing but this repository. Tests that
@@ -2087,6 +2128,22 @@ a few seconds. Before a commit, run the default tier; before claiming a run's pr
 in the ledger, run the `real_data` tier and the relevant builder with
 `--verify-fingerprints`. The `gpu` tier is for the device-bound equivalence checks and
 needs the local SAM3 checkpoint.
+
+A refactor that must not change any persisted provenance (the Sep 22 deduplication passes)
+is checked with `scripts/dedup_equivalence.py`: `snapshot --label before` rebuilds three CPU
+artifacts (the r1280 pm-append consensus, the anchor scoreboard, the `reference_masks`-only
+review v4 with `--verify-fingerprints` and `rerun rrd verify`) into
+`runs/dedup-equivalence/<label>/` and records the test tiers and ruff; `compare --before
+before --after after` deep-compares the two trees ignoring timestamps, elapsed times and run
+ids (the RRD by a chunk-independent content digest); `compare-runs A B` does the same for two
+run directories of one GPU driver with their masks compared byte for byte.
+
+```bash
+uv run python scripts/dedup_equivalence.py snapshot --label before
+uv run python scripts/dedup_equivalence.py snapshot --label after
+uv run python scripts/dedup_equivalence.py compare --before before --after after
+uv run python scripts/dedup_equivalence.py compare-runs runs/x/before/<run> runs/x/after/<run>
+```
 
 ### Pruning runs
 
@@ -2141,6 +2198,18 @@ Since Sep 19 `battle-muggled-smoke` exits **3** when its run manifest records a 
 method (a dead SAM3 worker used to leave `failed` behind exit 0, and the queue counted seven
 such jobs as succeeded), so a dead worker stops the queue; queued jobs run with `PYTHONPATH`
 on a `code-snapshot-<commit>/` archive of `src/battle` so working-tree edits cannot reach them.
+`battle-code-snapshot` writes that archive (`git archive <commit> src/battle` into
+`<root>/code-snapshot-<sha>/`, a `snapshot.json` with the full sha beside it) and prints the
+`PYTHONPATH` line the jobs carry; it refuses a working tree with uncommitted changes under
+`src/battle` unless `--allow-dirty` (edits elsewhere do not count) and reuses an existing
+snapshot of the same sha. Modules that prepare a job build it with
+`overnight_queue.queue_job(...)` / `job_list(...)` and write it with `write_jobs(path, spec)`,
+which validates the list before writing.
+
+```bash
+uv run battle-code-snapshot runs/my-pass                 # HEAD; prints "# every job: env.PYTHONPATH=..."
+uv run battle-code-snapshot runs/my-pass --commit 7ddfe88 --allow-dirty
+```
 
 ### ATHENA multi-view hands (Sep 18)
 

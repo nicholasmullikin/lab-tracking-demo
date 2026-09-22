@@ -5847,3 +5847,186 @@ any knob is turned, and turning one first would make those labels confirmatory.
   `exploratory_comparison`, the queue writers and a `battle-code-snapshot` helper (the
   `git archive` + `PYTHONPATH` step this pass hand-ran again), `cli_common`, the remaining
   contact-sheet grids, `metrics.py`, the README pointers to the new modules.
+
+### Sep 22: dedup pass 3 (Rerun helpers, media probe, queue writers, CLI fragments, contact-sheet grid, dead code; commits `7ddfe88`, `84bbdc7`, `b0aa69a`, `3749a0d`, `b6bbb5f`, `6d7e5bc`)
+
+- **What.** The third and last deduplication pass: the `rr.*` idioms the review, comparison
+  and export builders repeated, `exploratory_comparison`'s private ffprobe, the two queue-job
+  writers, the argparse fragments every CLI wrote the same way, the contact-sheet grid loops
+  and the production-dead `metrics.py`, folded onto three new modules (`rerun_logging.py`,
+  `cli_common.py`, `contact_sheet.py`) and onto `media_probe` / `overnight_queue`. CPU only
+  (`CUDA_VISIBLE_DEVICES=""` on every command; the human's calibration worker, PID 2356892,
+  stayed on the card and was never touched). One commit per group, the harness after each,
+  the v6 combined package rebuilt before and after group 1. No digest, URI or manifest field
+  moved; the blueprints stay with their products.
+- **Group 1, Rerun helpers** (`7ddfe88`; 16 existing files +305/-416, `rerun_logging.py` 127,
+  `tests/test_rerun_logging.py` 170). `init_and_save(application_id, path, *,
+  recording_id=None, default_blueprint=None)` replaces the 15 `rr.init` + `rr.save` openings
+  (`athena_triangulation`, `exploratory_comparison`, `interaction_review`,
+  `interaction_review_v4`, `egoexo_correspondence`, `drop_dtw_align`, `fine_substep_align`,
+  `exporter` x2, `review_metrics`, `multiview_review`, `athena_hands_review`,
+  `policy_ablation`, `four_part_comparison`, `kineo_multiview_review`; recording ids and
+  default blueprints pass through, `spawn` stays False; `policy_ablation` now creates the
+  output directory before the init rather than between init and save, no output effect).
+  `log_rgba_mask` / `log_rgba_masks` are the RGBA cut-out `EncodedImage` (`media_type`
+  `image/png`, the caller's opacity and draw order) that `exporter._log_masks`,
+  `exploratory_comparison._log_masks` and the same block in `interaction_review`,
+  `interaction_review_v4` x2, `multiview_review`, `policy_ablation`, `four_part_comparison`
+  and `egoexo_correspondence` x5 wrote; `exploratory_comparison` keeps its
+  decode-validate-log order through a lazy generator, its two error texts unchanged.
+  `log_boxes_from_observation(entity, items, dimensions, *, labels, colors, **boxes)` is the
+  `Boxes2D` scaled from normalised boxes (`exporter` objects x2 and hands,
+  `exploratory_comparison` objects and hands, `four_part_comparison`, `interaction_review`
+  person boxes, `interaction_review_v4` provenance overlay); the label formats and colours
+  stay with each caller because every builder formats them differently.
+  `time_series_view(origin, name, contents="$origin/**")` and `time_series_stack(root,
+  entries)` replace every `rrb.TimeSeriesView(origin=..., name=..., contents=...)` in
+  `review_presets`, `interaction_review`, `exporter`, `multiview_review`, `review_metrics`,
+  `athena_hands_review`, `kineo_multiview_review`, `egoexo_correspondence`, `policy_ablation`
+  and `fine_substep_align`. **Evidence.** Harness `pass3-before` (`ae0df0b`) vs `pass3-g1`
+  equivalent (13 files; the review-v4 RRD by content digest, `rerun rrd verify` ok). The v6
+  combined package (`runs/interaction-review-first-minute-v6`'s README command: ensemble-v2
+  reference, r1280 pm-append consensus, the five `--candidate-arm`s, `--confidence
+  runs/detector-scorecard-20260920/pm-append`, `--application-id battle-interaction-review-v6
+  --recording-id interaction_review_first_minute_v6`) rebuilt before the change into
+  `runs/dedup-equivalence/pass3-v6-before/` and after it into `pass3-v6/`: **1221
+  content-digest columns, 0 differing**; the index, review guide and contact sheet
+  equivalent through `compare`; `rerun rrd verify` "1 file verified without error" on both
+  (49.6 s and 51.4 s builds). `tests/test_rerun_logging.py` (8) asserts the component
+  batches each helper logs equal the hand-written archetype, the lazy decode order, and the
+  ids `init_and_save` records.
+- **Group 2, media probe** (`84bbdc7`; +3/-23). `exploratory_comparison._video_info` calls
+  `media_probe.video_info`; its ffprobe argv was byte for byte the probe's (`-count_frames`,
+  `nb_read_frames`, fps = `round(avg_frame_rate)`, width x height), so the frame count has
+  the same semantics (decoded frames, not the container's `nb_frames`) and is now cached in
+  the `input.mp4.probe.json` sidecar as `interaction_review`'s already was. Checked once on
+  the actual 20 s proxy
+  (`runs/mediapipe-hands-static-20s-fused-dedup-th035-20260916t0428z/input.mp4`):
+  `(600, 30, (1280, 720))` both ways. Harness `pass3-g2` equivalent.
+- **Group 3, queue writers and `battle-code-snapshot`** (`b0aa69a`; `overnight_queue.py`
+  +206/-1, `egoexo_correspondence` and `kineo_multiview` +26/-34, `pyproject.toml` +1, tests
+  +193). `overnight_queue.queue_job(*, name, argv, cwd, timeout_s, env=None, interpreter=(),
+  gpu_profile=None, expected_peak_vram_bytes=None)` builds one job record in the key order
+  the files have always carried (the two guard fields only when set), `job_list(*jobs,
+  log_path=None)` the `{"jobs": [...]}` document and `write_jobs(path, spec, *, indent=2)`
+  validates it as a `QueueSpec` before writing through `fs_common.write_json`.
+  `egoexo_correspondence.queue_job` (LM-EEC cwd, `CUDA_VISIBLE_DEVICES` +
+  `PYTHONUNBUFFERED`, the LM-EEC interpreter; written with indent 1) and
+  `kineo_multiview.queue_job` (resolved Kineo root, `CUDA_VISIBLE_DEVICES`, no interpreter;
+  indent 2, `jobs_t4_kineo_<arm>.json` and the run's `queue_job.json`) keep their signatures
+  as thin wrappers. **Evidence.** Both callers' documents were captured from the pre-change
+  functions with fixed argv and are byte-equal after; the test pins those bytes.
+  `battle-code-snapshot ROOT [--commit HEAD] [--path src/battle ...] [--allow-dirty]`
+  (`overnight_queue.code_snapshot` / `code_snapshot_main`) is the `git archive <commit>
+  src/battle` step every queue README documents and pass 2 hand-ran twice: the archive
+  extracted into `<root>/code-snapshot-<short sha>/`, `snapshot.json` beside it with the full
+  sha, the paths, the dirty flag and the `PYTHONPATH`, the `# every job:
+  env.PYTHONPATH=<root>/code-snapshot-<sha>/src` and `# built with: git archive ...` lines
+  printed. Uncommitted changes under the archived paths are refused unless `--allow-dirty`
+  (the archive is of the commit, so the snapshot would be named after a commit the tree no
+  longer matches; edits elsewhere, the README or an untracked script, do not count); an
+  existing snapshot of the same sha is reused, any other content at the target is an error.
+  Smoke against this repository: refused on the dirty `src/battle` mid-pass, then archived
+  `7ddfe88` under `--allow-dirty` with `rerun_logging.py` identical to `git show`. Harness
+  `pass3-g3` equivalent.
+- **Group 4, CLI fragments** (`3749a0d`; `cli_common.py` 67, 49 existing modules
+  +154/-104, tests +53). `add_repository_root(parser)` (the `--repository-root` option
+  defaulting to the current directory, now with one help text) replaces the 54 identical
+  `add_argument` lines; `add_output_root(parser, default, *, help=None)` the 35
+  `--output-root` lines (the three that derive their default keep their help);
+  `add_output_flags(parser, *, overwrite_help, quiet=True, quiet_help)` the
+  `--overwrite`/`--quiet` pair of `interaction_review_v4` and the `--overwrite` of
+  `review_metrics` and `ensemble_reference` with their own help texts;
+  `open_output_directory(path, *, overwrite, message=None)` the mkdir-or-refuse-when-non-empty
+  rule in `review_metrics` (which used to raise the bare path) and `ensemble_reference`
+  (whose text is the default). Every touched CLI answers `--help`; the harness runs three of
+  them, `pass3-g4` equivalent. **Accounting.** This group is line-neutral per site and adds
+  one import per module (+49); what it buys is one definition of each option.
+- **Group 5, contact-sheet grid** (`b6bbb5f`; `contact_sheet.py` 109, 5 existing files
+  +39/-79, tests +79). `render_grid(cells, *, columns, labels=None, title=None, gap=0,
+  fill=0)`: cells in rows of `columns`, each cell padded at the bottom to its row's tallest,
+  each row padded on the right to the widest, a short last row filled the way
+  `np.zeros_like` filled it, an optional 30 px label bar per cell and 44 px title bar
+  (`label_bar` / `title_bar` / `text_bar`, the dataset sheet's strips). Callers:
+  `seed_search.render_search_sheet` and `correction_acceptance_search.render_sheet` (three
+  captioned tiles per frame, `np.pad` to the widest row), `exemplar_seed.render_run_sheet`
+  (two columns, `zeros_like` fill), `assembly101_contact_sheet.render_contact_sheet` (five
+  labelled panels per view, the title, `copyMakeBorder` padding; its `_label` and the two
+  height constants moved) and `seed_proposal_sheets.write_view_sheet` (one PIL row per cell
+  with 6 px gaps; the TrueType title stays PIL-drawn above the grid). Each drawer keeps its
+  own cell content. `human_seeds` has no grid of its own (`render_interior_sheets` shells
+  out to `battle-seed-proposal-sheets`). **Evidence.** One sheet per caller rendered from its
+  existing inputs before and after into `runs/dedup-equivalence/pass3-sheets/{before,after}/`
+  (the seed-search sheet, the acceptance-search sheet, the rec2 consensus-only exemplar
+  sheet at frames 0-1716, the recording-1 dataset sheet, the C10095 proposal sheet): the
+  before-renders equal the committed sheets byte for byte where one exists
+  (`runs/seed-search-20260920/search_contact_sheet.png`,
+  `runs/correction-acceptance-search-20260920/acceptance_contact_sheet.png`,
+  `runs/rec2-automatic-20260920/c10379_consensus_only_contact_sheet.png`,
+  `runs/labeling-sessions-20260920/proposal_sheets/C10095.png`; 4 of 4), and **all five
+  after-renders equal their before-render byte for byte** (pixel identity was not required,
+  the layout arithmetic is the same). `side_by_side/<caller>.png` beside them for a reader.
+  The fill test caught that a scalar `cv2.copyMakeBorder` value fills one channel only, so
+  the pad passes a triple (no committed sheet was affected: every caller fills with 0).
+  Harness `pass3-g5` equivalent.
+- **Group 6, dead code** (`6d7e5bc`; -33, test -7/+6). `src/battle/metrics.py` removed.
+  **Decision.** Its `calculate_success_measure` (coverage ratio and completed-method ratio
+  averaged into a `combined_ratio`) was imported by `tests/test_schemas.py` only; it is not
+  one of the five documented pre-accuracy success measures (coverage, time to first usable
+  output, peak VRAM, runtime, ID resets; those live in `RuntimeMeasurements` and the
+  manifests), and neither `docs/` nor the README names the module, the function or
+  `combined_ratio` (the Sep 8 line "Success measure: full fixture coverage and completed
+  exporter contract" above is prose), so the plan's default applies rather than a move into
+  `schemas.py`. The fixture test keeps the contract it asserted (coverage 1.0, method states
+  `succeeded` / `not_run`) without the helper.
+- **Left in place, with reasons.** `interaction_review_v4._prepare_output_root` (deletes the
+  package's own files, its test pins two messages); `interaction_review` and
+  `exploratory_comparison` (`--no-overwrite` and a file-level check); `athena_hands`
+  (refuses any existing directory, empty or not); `assembly101_reference` (a different
+  message and no mkdir at that point); the plain `--overwrite` flags whose meaning is not
+  "replace a package" (fetch-view trim, camera fit, human QA, kineo prepare, reprompt plan);
+  `ego_diagnostic` (`--repository-root` required, foreign interpreter) and
+  `g3_contact_sheet` (no `battle` imports); `fine_substep_align`'s pixel-box `Boxes2D` and the
+  JPEG / by-path `EncodedImage`s (`egoexo_correspondence` frames, `multiview_review` hull
+  projections); the mask decode-and-validate pair in `exploratory_comparison` and
+  `four_part_comparison` (four different error texts for two checks); `finebio_*` scripts'
+  `rr.init`/`rr.save` (deliberate dual-interpreter copies). The ~55 `--repository-root`
+  sites were adopted although the line count does not fall (above).
+- **Totals.** `git diff --shortstat ae0df0b..6d7e5bc -- src scripts`: 56 files,
+  +1035/-689 (net +346). The three new modules are +303 (`rerun_logging` 127,
+  `cli_common` 67, `contact_sheet` 109) and `overnight_queue` +206/-1 (the job writers and the
+  new `battle-code-snapshot` command, roughly 150 lines of new function); inside the other
+  52 existing modules -688/+526 (net -162), of which the CLI sweep's imports are +49 and
+  group 1 alone -416/+305. Tests: `pytest -q` 740 -> 762 passed (new: `rerun_logging` 8,
+  `overnight_queue` 5, `cli_common` 3, `contact_sheet` 6), 9 skipped; `-m real_data` 62
+  passed before and after; `ruff check` / `ruff format --check` clean on every file of this
+  pass (60 files). Final harness `pass3-after` at `6d7e5bc`: equivalent to `pass3-before`
+  and to pass 2's `pass2-after` (13 files, RRD by content digest, `rerun rrd verify` ok).
+  One default-tier flake was seen once in the middle of the pass
+  (`test_exemplar_seed::test_consistency_needs_three_views_and_rejects_off_size_and_neighbours`
+  failed in a full run and passed alone and in every later full run; not touched here).
+  **Note on the working tree.** A `ruff format` run without file arguments during group 4
+  reformatted the Python block inside `README.md`; that hunk was reverted with `git apply -R`
+  before anything was staged, and the user's own uncommitted README hunk (the Tailscale
+  section) was never staged.
+
+### Sep 22: dedup passes 1-3, summary
+
+Three passes over `src/battle` and `scripts` (plan: "Deduplicate src/battle and scripts"),
+each proven equivalent by `scripts/dedup_equivalence.py` on three CPU artifacts (the r1280
+pm-append consensus, the 19-arm anchor scoreboard, the `reference_masks` review v4 with
+`rerun rrd verify`) plus, per pass, the evidence its helpers needed: byte-identical GPU smoke
+masks for the six drivers (pass 2), the v6 combined package's 1221-column content digest and
+five byte-identical contact sheets (pass 3). Totals in src+scripts: pass 1 -954/+718 (net
+-236; -548 inside the existing modules), pass 2 -1810/+1666 (net -144; -965 inside the
+existing modules, the harness excluded), pass 3 -689/+1035 (net +346; -162 inside the existing
+modules once the three new modules and the new `battle-code-snapshot` command in
+`overnight_queue` are set aside, +43 with it). Over the three passes: 3453 lines deleted, 3419
+inserted, net -34, with **-1675 inside the pre-existing modules** (-1470 counting the queue's
+new command against them) and the difference in twelve shared modules
+(`fs_common`, `mask_ops`, `observations`, `video_driver`, `worker_common`, `rerun_logging`,
+`cli_common`, `contact_sheet`, plus the extended `digest_cache`, `media_probe`, `mask_cache`,
+`schemas.fingerprint`, `overnight_queue`) and the harness. Tests 646 -> 762 in the default
+tier, 52 -> 62 in `real_data`. Deliberately not merged, as the plan said: the seed and score
+module families, the per-product blueprints, the worker model code, the FineBio track loop
+and the 83 `main()` entry points beyond their shared fragments.
