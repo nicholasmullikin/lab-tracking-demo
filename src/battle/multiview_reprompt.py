@@ -1301,8 +1301,13 @@ def decode_plan(
     rig: CameraRig | None = None,
     candidate_ranking: MultiviewRepromptCandidateRanking = "ray",
     decoder_factory: Callable[[Path, Path, Path], Any] | None = None,
+    only_targets: Sequence[str] | None = None,
 ) -> Path:
     """Decode every planned prompt with one warm worker, accept, derive the schedules.
+
+    `only_targets` keeps the planned onsets of those parts and drops the others from this decode
+    (the exemplar plan runs arms only for parts whose pool cleared the acceptance bar); the
+    dropped onsets are listed in `decode_result.json` under `onsets_dropped_by_target`.
 
     `decoder_factory(proxy_path, results_directory, stderr_path)` replaces the calibration
     worker as the candidate source (`battle.exemplar_pool.decoder_for_source`, the
@@ -1334,6 +1339,19 @@ def decode_plan(
     plan_path = plan_path.resolve()
     plan = load_plan(plan_path)
     iteration_dir = plan_path.parent
+    dropped_by_target: list[dict[str, Any]] = []
+    if only_targets is not None:
+        keep = set(only_targets)
+        dropped_by_target = [
+            {"target": o.target, "onset_frame": o.onset_frame}
+            for o in plan.planned_onsets
+            if o.target not in keep
+        ]
+        plan = plan.model_copy(
+            update={
+                "onsets": tuple(o for o in plan.onsets if o.status != "planned" or o.target in keep)
+            }
+        )
     if rig is None:
         record = resolve_recording(repository_root, plan.recording_label)
         rig = (
@@ -1445,7 +1463,12 @@ def decode_plan(
             decoder.close()
     (iteration_dir / DECODE_RESULT_NAME).write_text(
         json.dumps(
-            {"target_view": plan.target_view, "prompt_count": len(requests), "decoded": decoded},
+            {
+                "target_view": plan.target_view,
+                "prompt_count": len(requests),
+                "decoded": decoded,
+                "onsets_dropped_by_target": dropped_by_target,
+            },
             indent=2,
             sort_keys=True,
         )
@@ -2307,6 +2330,12 @@ def main() -> None:
     decode.add_argument("--exemplar-set", default="same_view")
     decode.add_argument("--exemplar-variant", default="posneg")
     decode.add_argument("--allow-gpu-neighbour", type=int, action="append", default=None)
+    decode.add_argument(
+        "--target",
+        action="append",
+        default=None,
+        help="decode only the planned onsets of these parts (repeatable); others are dropped",
+    )
 
     run = commands.add_parser("run", help="emit the battle-muggled-smoke command per arm (CPU)")
     run.add_argument("--iteration-dir", type=Path, required=True)
@@ -2380,6 +2409,7 @@ def main() -> None:
             correction_policy=args.correction_policy,
             candidate_ranking=args.candidate_ranking,
             decoder_factory=decoder_factory,
+            only_targets=args.target,
         )
         decisions = load_decisions(path)
         for decision in decisions.decisions:

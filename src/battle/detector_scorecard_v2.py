@@ -623,6 +623,51 @@ def named_tests(
     return out
 
 
+def visibility_scores(records: Sequence[RecordScore]) -> list[dict[str, Any]]:
+    """Presence as a *visibility* detector: hidden cells (truth = the human said the part is not
+    there) against labelled cells, per record, for the same-view and cross-view presence.
+
+    This is a different truth from the scorecard's (which asks whether the tracker failed): a
+    hidden cell with no tracked mask is a correct tracker outcome but still a "not here" cell.
+    """
+    out = []
+    for record in records:
+        hidden = np.array([c["anchor_state"] == "hidden" for c in record.cells])
+        if not hidden.any() or hidden.all():
+            continue
+        for name in ("det_presence", "det_presence_pos", "det_presence_xv", "det_top_score"):
+            values = np.array(
+                [
+                    c["detectors"].get(name) if c["detectors"].get(name) is not None else np.nan
+                    for c in record.cells
+                ],
+                dtype=float,
+            )
+            score = v1.score_detector(name, "hidden_vs_visible", values, hidden)
+            finite = np.isfinite(values)
+            out.append(
+                {
+                    "record": record.spec.name,
+                    "detector": name,
+                    "hidden_cells": int((hidden & finite).sum()),
+                    "visible_cells": int((~hidden & finite).sum()),
+                    "auroc": score.auroc,
+                    "mean_presence_hidden": (
+                        float(1.0 - np.nanmean(values[hidden])) if (hidden & finite).any() else None
+                    ),
+                    "mean_presence_visible": (
+                        float(1.0 - np.nanmean(values[~hidden]))
+                        if (~hidden & finite).any()
+                        else None
+                    ),
+                    "recall_floor": (
+                        score.recall_floor.model_dump(mode="json") if score.recall_floor else None
+                    ),
+                }
+            )
+    return out
+
+
 # ---------------------------------------------------------------------------------- report
 
 
@@ -655,6 +700,7 @@ def markdown_report(
     pooled: tuple[list[DetectorScore], dict[str, list[DetectorScore]]],
     loro: Sequence[Mapping[str, Any]],
     tests: Sequence[Mapping[str, Any]],
+    visibility: Sequence[Mapping[str, Any]] = (),
 ) -> str:
     lines = [
         "# Detector scorecard v2: SAM3 appearance detectors on three cameras",
@@ -833,6 +879,24 @@ def markdown_report(
             )
             + " |"
         )
+    lines += [
+        "",
+        "## Presence as a visibility detector (hidden vs labelled cells; a different truth)",
+        "",
+        "| record | detector | hidden / visible cells | AUROC | mean presence hidden | "
+        "mean presence visible | R>=0.8 P / R (TP/FP/FN/TN) |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for item in visibility:
+        point = item.get("recall_floor") or {}
+        lines.append(
+            f"| {item['record']} | `{item['detector']}` | {item['hidden_cells']} / "
+            f"{item['visible_cells']} | {v1._fmt(item['auroc'])} | "
+            f"{v1._fmt(item['mean_presence_hidden'])} | {v1._fmt(item['mean_presence_visible'])} | "
+            f"{v1._fmt(point.get('precision'))} / {v1._fmt(point.get('recall'))} "
+            f"({point.get('tp', '-')}/{point.get('fp', '-')}/{point.get('fn', '-')}/"
+            f"{point.get('tn', '-')}) |"
+        )
     lines.append("")
     return "\n".join(lines)
 
@@ -886,7 +950,8 @@ def write_outputs(
     output_dir.mkdir(parents=True, exist_ok=True)
     pooled = pooled_scores(records)
     loro = leave_one_record_out(records)
-    report = markdown_report(records, pooled, loro, tests)
+    visibility = visibility_scores(records)
+    report = markdown_report(records, pooled, loro, tests, visibility)
     (output_dir / "scorecard_v2.md").write_text(report, encoding="utf-8")
     payload = {
         "manifest_kind": "detector_scorecard_v2",
@@ -921,6 +986,7 @@ def write_outputs(
         },
         "leave_one_record_out": loro,
         "named_tests": list(tests),
+        "presence_as_visibility": visibility,
         "generated_at": datetime.now(UTC).isoformat(),
         "claim_boundary": CLAIM_BOUNDARY,
     }

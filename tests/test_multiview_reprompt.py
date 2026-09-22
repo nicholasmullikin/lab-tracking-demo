@@ -689,6 +689,30 @@ def test_decode_uses_the_candidate_source_factory_and_closes_it(
     assert decisions.accepted_count == 1
 
 
+def test_decode_only_targets_drops_the_other_onsets(rig: mvg.CameraRig, tmp_path: Path) -> None:
+    chassis, chassis_centroid, chassis_half = _onset(
+        rig, "chassis", 500, np.array([40.0, -30.0, -20.0]), 40.0
+    )
+    rear, rear_centroid, rear_half = _onset(
+        rig, "rear_body", 700, np.array([-60.0, -20.0, 30.0]), 30.0
+    )
+    plan_path, _ = _plan(rig, tmp_path, onsets=(chassis, rear))
+    decoder = _StubDecoder(
+        plan_path.parent / mr.CALIBRATION_DIR_NAME / "results",
+        _masks_for_factory(
+            {500: (chassis_centroid, chassis_half), 700: (rear_centroid, rear_half)}
+        ),
+    )
+    decisions_path = mr.decode_plan(
+        plan_path, repository_root=ROOT, decoder=decoder, rig=rig, only_targets=["rear_body"]
+    )
+    decisions = mr.load_decisions(decisions_path)
+    assert [d.target for d in decisions.decisions] == ["rear_body"]
+    result = json.loads((plan_path.parent / mr.DECODE_RESULT_NAME).read_text())
+    assert result["onsets_dropped_by_target"] == [{"target": "chassis", "onset_frame": 500}]
+    assert [c for c, _ in decoder.requests] == ["frame_preview", "batch_decode"]
+
+
 def _masks_for_factory(good_by_frame: dict[int, tuple[np.ndarray, float]]) -> Any:
     def masks_for(prompt: dict[str, Any]) -> list[tuple[np.ndarray, float]]:
         frame = int(prompt["frame_index"])
