@@ -130,6 +130,121 @@ def test_merge_with_gaps_is_strict_on_the_gap() -> None:
     assert mr.merge_with_gaps([(20, 30), (0, 10), (5, 12)], 0) == ((0, 12), (20, 30))
 
 
+# -- distractor guard ----------------------------------------------------------------------------
+
+
+def _human_record(
+    tmp_path: Path, *, view_id: str, hidden: list[tuple[int, str]], mapped: dict[int, int] | None
+) -> Path:
+    """A minimal anchor config + human record: `hidden` = (frame, target) marks."""
+    frames = sorted({f for f, _ in hidden} | set(mapped or {}))
+    config = {
+        "schema_version": "1.0",
+        "manifest_kind": "human_review_anchor_config",
+        "config_id": f"guard_{view_id.replace('-', '_')}",
+        "anchor_kind": "human_review_anchor",
+        "clip_config": "configs/x.json",
+        "view_id": view_id,
+        "manual_seed_target_config": "configs/y.json",
+        "analysis_fps": 30,
+        "source_offset_seconds": 0.0,
+        "targets": list(TARGETS),
+        "frames": [
+            {
+                "analysis_frame_index": f,
+                "proxy_seconds": f / 30,
+                "source_seconds": f / 30,
+                "expected_visible": dict.fromkeys(TARGETS, "visible"),
+                **(
+                    {"origin": "mapped_anchor", "source_analysis_frame_index": mapped[f]}
+                    if mapped and f in mapped
+                    else {}
+                ),
+            }
+            for f in frames
+        ],
+        "windows": {},
+        "claim_boundary": "review evidence",
+        "license": "CC BY-NC 4.0",
+    }
+    config_path = tmp_path / f"anchors_{view_id}.json"
+    config_path.write_text(json.dumps(config))
+    record = {
+        "config": {"uri": str(config_path), "sha256": "0" * 64, "source": "measured"},
+        "anchors": [
+            {
+                "analysis_frame_index": f,
+                "target": t,
+                "state": "hidden",
+                "failure_case": "distractor_confusion" if t == "rear_body" else None,
+            }
+            for f, t in hidden
+        ]
+        + [{"analysis_frame_index": frames[0], "target": "cabin", "state": "labeled"}],
+    }
+    record_path = tmp_path / f"record_{view_id}.json"
+    record_path.write_text(json.dumps(record))
+    return record_path
+
+
+def test_distractor_guard_maps_hidden_marks_across_clocks_and_blocks_nearby_onsets(
+    rig: mvg.CameraRig, tmp_path: Path
+) -> None:
+    # The synthetic rig has one clock rule for every view, so the mapping is the identity;
+    # a mapped config still carries the C10379 frame each anchor came from.
+    own = _human_record(
+        tmp_path, view_id="static-c10379", hidden=[(1700, "rear_body")], mapped=None
+    )
+    other = _human_record(
+        tmp_path,
+        view_id="static-c10001",
+        hidden=[(1504, "rear_body"), (404, "interior")],
+        mapped={1504: 1500, 404: 400},
+    )
+    marks = mr.collect_hidden_marks(tmp_path, [own, other], rig=rig, target_view=TARGET_VIEW)
+    assert [
+        (m.view, m.target, m.view_frame, m.source_frame, m.target_view_frame) for m in marks
+    ] == [
+        ("C10001", "interior", 404, 400, 400),
+        ("C10001", "rear_body", 1504, 1500, 1500),
+        ("C10379", "rear_body", 1700, 1700, 1700),
+    ]
+    assert marks[1].failure_case == "distractor_confusion" and marks[0].failure_case is None
+    # rear_body at 1533 is 33 frames from the C10001 mark: guarded; chassis never is.
+    near = mr.distractor_marks_near(marks, "rear_body", 1533, 60)
+    assert [m.view_frame for m in near] == [1504]
+    assert mr.distractor_marks_near(marks, "rear_body", 1533, 30) == ()
+    assert mr.distractor_marks_near(marks, "chassis", 1533, 60) == ()
+    assert mr.distractor_marks_near(marks, "rear_body", 1650, 60) == (marks[2],)
+    reason = mr.distractor_guard_reason(near, 1533)
+    assert reason.startswith("distractor_guard:") and "C10001 frame 1504" in reason
+    assert "not ground truth" in reason
+
+
+def test_distractor_guard_schema_round_trips_on_a_plan() -> None:
+    from battle.schemas import MultiviewDistractorGuard, MultiviewDistractorMark
+
+    guard = MultiviewDistractorGuard(
+        window_frames=60,
+        hidden_marks=(
+            MultiviewDistractorMark(
+                view="HMC_21179183",
+                view_id="ego-hmc21179183",
+                target="rear_body",
+                view_frame=1504,
+                source_frame=1500,
+                target_view_frame=1501,
+            ),
+        ),
+        suppressed_onsets=(("rear_body", 1533),),
+        description="test",
+    )
+    again = MultiviewDistractorGuard.model_validate_json(guard.model_dump_json())
+    assert again == guard and again.enabled is True
+    # Plans written before the guard existed load with `distractor_guard` absent.
+    assert MultiviewRepromptPlan.model_fields["distractor_guard"].default is None
+
+
 # -- prompt geometry -----------------------------------------------------------------------------
 
 
@@ -965,3 +1080,45 @@ def test_plan_on_the_pm_append_consensus_matches_the_ensemble_v2_intervals(tmp_p
     for onset in plan.planned_onsets:
         assert len(onset.prompts) == 2 and onset.static_views_used >= 3
         assert onset.radius_mm is not None and 30 < onset.radius_mm < 80
+    # The Sep 21 distractor guard (default on) leaves the three chassis onsets alone: no human
+    # record marks the chassis hidden anywhere in the minute.
+    assert plan.distractor_guard is not None and plan.distractor_guard.enabled
+    assert plan.distractor_guard.suppressed_onsets == ()
+
+
+@pytest.mark.real_data
+def test_distractor_guard_suppresses_the_c10119_rear_body_onset(tmp_path: Path) -> None:
+    from conftest import require_artifact
+
+    consensus = ROOT / "runs/multiview-part-consensus-first-minute-r1280-excl-c10119"
+    source = (
+        ROOT / "runs/sam3-views-r1280-20260919/views/C10119/"
+        "muggledsam-sam3-four-part-multiview-first-minute-static-c10119-20260920t021449z-r1280"
+    )
+    require_artifact(consensus / "consensus_points.npz")
+    require_artifact(source / "manifest.json")
+    require_artifact(ROOT / "docs/qa/first-minute-review-anchors-ego-hmc21179183.human-record.json")
+    guarded = mr.load_plan(
+        mr.plan_reprompt(
+            ROOT,
+            target_view="C10119",
+            consensus_root=consensus,
+            source_run=source,
+            output_root=tmp_path / "on",
+        )
+    )
+    assert guarded.distractor_guard is not None
+    assert guarded.distractor_guard.suppressed_onsets == (("rear_body", 1533),)
+    onset = next(o for o in guarded.onsets if o.onset_frame == 1533)
+    assert onset.status == "blocked" and "HMC_21179183 frame 1504" in (onset.blocked_reason or "")
+    unguarded = mr.load_plan(
+        mr.plan_reprompt(
+            ROOT,
+            target_view="C10119",
+            consensus_root=consensus,
+            source_run=source,
+            output_root=tmp_path / "off",
+            distractor_guard=False,
+        )
+    )
+    assert [(o.target, o.onset_frame) for o in unguarded.planned_onsets] == [("rear_body", 1533)]

@@ -294,9 +294,7 @@ class G2PreprocessingManifest(VersionedModel):
     raw_frame_range: FrameRange
     analysis_frame_range: FrameRange
     proxy_frame_range: FrameRange
-    scaling_policy: Literal[
-        "preserve_aspect_ratio_height_720", "preserve_aspect_ratio_height_1080"
-    ]
+    scaling_policy: Literal["preserve_aspect_ratio_height_720", "preserve_aspect_ratio_height_1080"]
     proxies: tuple[VideoProxy, ...] = Field(min_length=1)
     annotations_or_poses_downloaded_by_g2: Literal[False] = False
     annotations_or_poses_used_by_g2: Literal[False] = False
@@ -3401,6 +3399,37 @@ class MultiviewContradictionOnset(VersionedModel):
         return self
 
 
+class MultiviewDistractorMark(VersionedModel):
+    """One human `hidden` mark used as distractor evidence by the re-prompt plan's guard."""
+
+    view: str = Field(min_length=1)
+    view_id: str = Field(min_length=1)
+    target: str = Field(min_length=1)
+    # The mark on its own view's clock, on the C10379 clock, and on the target view's clock.
+    view_frame: int = Field(ge=0)
+    source_frame: int = Field(ge=0)
+    target_view_frame: int = Field(ge=0)
+    failure_case: str | None = None
+    note: str | None = None
+
+
+class MultiviewDistractorGuard(VersionedModel):
+    """Sep 21 conservative rule: skip an onset near a human `hidden` mark on any view.
+
+    The human anchor records are review evidence, not truth: a part marked hidden on some
+    camera within the window says a tracker there would have nothing but a distractor to latch
+    onto (the C10119 rear_body correction at 1533 landed on the screwdriver), so the plan does
+    not author a correction there.  The marks used are recorded with their records.
+    """
+
+    enabled: bool = True
+    window_frames: int = Field(ge=0)
+    records: tuple[ArtifactFingerprint, ...] = ()
+    hidden_marks: tuple[MultiviewDistractorMark, ...] = ()
+    suppressed_onsets: tuple[tuple[str, int], ...] = ()
+    description: str = Field(min_length=1)
+
+
 class MultiviewRepromptPlan(VersionedModel):
     """Geometric re-prompts for one target view, derived from a consensus run (CPU)."""
 
@@ -3437,6 +3466,8 @@ class MultiviewRepromptPlan(VersionedModel):
     # Registry label when the target run is on another recording than recording 1 (its rig,
     # clock rules and poses were used; the tracker command must repeat `--recording`).
     recording_label: str | None = None
+    # None on plans written before Sep 21 (no guard was applied).
+    distractor_guard: MultiviewDistractorGuard | None = None
     onsets: tuple[MultiviewContradictionOnset, ...] = ()
     selected_by: Literal["agent"] = "agent"
     provenance: Literal["multiview_consensus"] = MULTIVIEW_CONSENSUS_PROVENANCE

@@ -90,6 +90,8 @@ from .schemas import (
     MultiviewConsensusCorrectionProvenance,
     MultiviewConsensusProvenanceFile,
     MultiviewContradictionOnset,
+    MultiviewDistractorGuard,
+    MultiviewDistractorMark,
     MultiviewRepromptCandidateRanking,
     MultiviewRepromptDecisions,
     MultiviewRepromptDetectorConfig,
@@ -313,6 +315,100 @@ def detect_onsets(
             )
     seeds.sort(key=lambda seed: (seed.onset_frame, TARGETS.index(seed.target)))
     return tuple(seeds)
+
+
+# -- distractor guard (human hidden marks as evidence) -----------------------------------------
+
+
+DISTRACTOR_GUARD_WINDOW_FRAMES = 60
+HUMAN_RECORD_GLOB = "docs/qa/first-minute-review-anchors*.human-record.json"
+
+
+def default_human_records(repository_root: Path) -> tuple[Path, ...]:
+    return tuple(sorted(repository_root.glob(HUMAN_RECORD_GLOB)))
+
+
+def collect_hidden_marks(
+    repository_root: Path,
+    records: Sequence[Path],
+    *,
+    rig: CameraRig,
+    target_view: str,
+) -> tuple[MultiviewDistractorMark, ...]:
+    """Every human `hidden` mark in the records, mapped onto `target_view`'s frame clock.
+
+    A record's view comes from its anchor config; a mapped config carries the C10379 frame each
+    anchor came from (`source_analysis_frame_index`), the C10379 config is its own source. The
+    C10379 frame is then mapped onto the target view through the clock rules (constant shift).
+    """
+    from .anchor_frames_for_view import mapped_frame
+    from .review_anchors import load_config
+
+    source_rule = rig.clock_rule(DEFAULT_TARGET_VIEW)
+    target_rule = rig.clock_rule(target_view)
+    marks: list[MultiviewDistractorMark] = []
+    for record_path in records:
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+        config = load_config(_resolve(repository_root, record["config"]["uri"]))
+        view_id = config.view_id
+        view = view_from_view_id(view_id)
+        by_frame = {frame.analysis_frame_index: frame for frame in config.frames}
+        for entry in record["anchors"]:
+            if entry.get("state") != "hidden":
+                continue
+            frame = by_frame.get(int(entry["analysis_frame_index"]))
+            if frame is None:
+                continue
+            source_frame = (
+                frame.source_analysis_frame_index
+                if frame.source_analysis_frame_index is not None
+                else (
+                    frame.analysis_frame_index
+                    if view == DEFAULT_TARGET_VIEW
+                    else mapped_frame(
+                        rig.clock_rule(view), source_rule, frame.analysis_frame_index
+                    )[0]
+                )
+            )
+            try:
+                target_frame = mapped_frame(source_rule, target_rule, source_frame)[0]
+            except ValueError:
+                continue
+            marks.append(
+                MultiviewDistractorMark(
+                    view=view,
+                    view_id=view_id,
+                    target=str(entry["target"]),
+                    view_frame=int(entry["analysis_frame_index"]),
+                    source_frame=int(source_frame),
+                    target_view_frame=int(target_frame),
+                    failure_case=entry.get("failure_case"),
+                    note=entry.get("note"),
+                )
+            )
+    marks.sort(key=lambda m: (m.target, m.target_view_frame, m.view))
+    return tuple(marks)
+
+
+def distractor_marks_near(
+    marks: Sequence[MultiviewDistractorMark], target: str, frame: int, window_frames: int
+) -> tuple[MultiviewDistractorMark, ...]:
+    return tuple(
+        m for m in marks if m.target == target and abs(m.target_view_frame - frame) <= window_frames
+    )
+
+
+def distractor_guard_reason(marks: Sequence[MultiviewDistractorMark], frame: int) -> str:
+    where = "; ".join(
+        f"{m.view} frame {m.view_frame} (C10379 clock {m.source_frame}, this view "
+        f"{m.target_view_frame}{', ' + m.failure_case if m.failure_case else ''})"
+        for m in marks
+    )
+    return (
+        f"distractor_guard: human anchors mark {marks[0].target} hidden within "
+        f"{max(abs(m.target_view_frame - frame) for m in marks)} frames of the onset ({where}); "
+        "review evidence that a tracker here would latch onto a distractor, not ground truth"
+    )
 
 
 # -- prompt geometry (pure, rig injected) ------------------------------------------------------
@@ -645,11 +741,16 @@ def plan_reprompt(
     box_margins: Sequence[float] = BOX_MARGINS,
     overwrite: bool = False,
     recording: str | None = None,
+    distractor_guard: bool = True,
+    distractor_guard_window: int = DISTRACTOR_GUARD_WINDOW_FRAMES,
+    distractor_guard_records: Sequence[Path] | None = None,
 ) -> Path:
     """Write `reprompt_plan.json` for `target_view` from a consensus run; returns its path.
 
     `recording` (registry label) selects another recording's rig, clock rules and poses;
-    the default is recording 1, whose first minute bounds the plan at 1800 frames.
+    the default is recording 1, whose first minute bounds the plan at 1800 frames.  The
+    distractor guard (default on, recording 1 only) blocks an onset when a human anchor record
+    on any view marks the part hidden within `distractor_guard_window` frames of it.
     """
     repository_root = repository_root.resolve()
     if is_ego(target_view):
@@ -748,6 +849,33 @@ def plan_reprompt(
         min_majority=consensus.rules.min_views,
     )
 
+    guard: MultiviewDistractorGuard | None = None
+    hidden_marks: tuple[MultiviewDistractorMark, ...] = ()
+    if recording_record is None:
+        record_paths = (
+            tuple(_resolve(repository_root, str(p)) for p in distractor_guard_records)
+            if distractor_guard_records is not None
+            else default_human_records(repository_root)
+        )
+        if distractor_guard:
+            hidden_marks = collect_hidden_marks(
+                repository_root, record_paths, rig=rig, target_view=target_view
+            )
+        guard = MultiviewDistractorGuard(
+            enabled=distractor_guard,
+            window_frames=distractor_guard_window,
+            records=tuple(fingerprint(p, repository_root) for p in record_paths),
+            hidden_marks=hidden_marks,
+            description=(
+                f"an onset of a part is blocked when a human anchor record on any view marks "
+                f"that part hidden within +-{distractor_guard_window} frames of it (frames "
+                "mapped through the clock rules); the marks are review evidence, not truth"
+                if distractor_guard
+                else "disabled (--no-distractor-guard)"
+            ),
+        )
+    suppressed: list[tuple[str, int]] = []
+
     onsets: list[MultiviewContradictionOnset] = []
     for seed in seeds:
         frame = seed.onset_frame
@@ -775,6 +903,15 @@ def plan_reprompt(
             onsets.append(
                 MultiviewContradictionOnset(
                     status="blocked", blocked_reason=seed.gate_reason, **common
+                )
+            )
+            continue
+        near = distractor_marks_near(hidden_marks, seed.target, frame, distractor_guard_window)
+        if guard is not None and guard.enabled and near:
+            suppressed.append((seed.target, frame))
+            onsets.append(
+                MultiviewContradictionOnset(
+                    status="blocked", blocked_reason=distractor_guard_reason(near, frame), **common
                 )
             )
             continue
@@ -900,6 +1037,11 @@ def plan_reprompt(
         box_margins=tuple(float(m) for m in box_margins),
         hand_negatives=hand_negatives,
         recording_label=recording_label,
+        distractor_guard=(
+            guard.model_copy(update={"suppressed_onsets": tuple(suppressed)})
+            if guard is not None
+            else None
+        ),
         onsets=tuple(onsets),
         claim_boundaries=CLAIM_BOUNDARIES,
     )
@@ -2065,6 +2207,13 @@ def _print_plan(plan: MultiviewRepromptPlan, path: Path) -> None:
         else:
             line += f": blocked ({onset.blocked_reason})"
         print(line)
+    if plan.distractor_guard is not None:
+        guard = plan.distractor_guard
+        print(
+            f"  distractor guard {'on' if guard.enabled else 'off'}: {len(guard.hidden_marks)} "
+            f"hidden marks from {len(guard.records)} records, +-{guard.window_frames} frames, "
+            f"{len(guard.suppressed_onsets)} onset(s) suppressed {list(guard.suppressed_onsets)}"
+        )
     print(f"-> {path}")
 
 
@@ -2094,6 +2243,27 @@ def main() -> None:
     plan.add_argument("--hand-negatives", action="store_true")
     plan.add_argument("--box-margin", type=float, action="append", default=None)
     plan.add_argument("--overwrite", action="store_true")
+    plan.add_argument(
+        "--distractor-guard",
+        dest="distractor_guard",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Block an onset when a human anchor record on any view marks the part hidden "
+            "within --distractor-guard-window frames of it (default on; recording 1 only)."
+        ),
+    )
+    plan.add_argument("--distractor-guard-window", type=int, default=DISTRACTOR_GUARD_WINDOW_FRAMES)
+    plan.add_argument(
+        "--distractor-guard-record",
+        type=Path,
+        action="append",
+        default=None,
+        help=(
+            "Human anchor record to use as evidence (repeatable); default: every "
+            f"{HUMAN_RECORD_GLOB}"
+        ),
+    )
     plan.add_argument(
         "--recording",
         default=None,
@@ -2147,6 +2317,9 @@ def main() -> None:
             box_margins=tuple(args.box_margin) if args.box_margin else BOX_MARGINS,
             overwrite=args.overwrite,
             recording=args.recording,
+            distractor_guard=args.distractor_guard,
+            distractor_guard_window=args.distractor_guard_window,
+            distractor_guard_records=args.distractor_guard_record,
         )
         _print_plan(load_plan(path), path)
     elif args.command == "decode":
