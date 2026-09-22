@@ -43,6 +43,7 @@ from .assembly101_camera_fit import PoseMembers
 from .assembly101_pose_schemas import ASSEMBLY101_HAND_SIDES
 from .assembly101_recordings import Assembly101Recording, get_recording
 from .cli_common import add_output_root, add_repository_root
+from .contact_sheet import render_grid
 from .digest_cache import sha256_file
 from .four_part_contract import TARGETS
 from .multiview_consensus import mask_centroid_raw, relative_uri
@@ -1687,15 +1688,8 @@ def render_run_sheet(
         )
         scale = tile_width / image.shape[1]
         tiles.append(cv2.resize(image, (tile_width, int(image.shape[0] * scale))))
-    columns = 2
-    rows = []
-    for start in range(0, len(tiles), columns):
-        row = tiles[start : start + columns]
-        while len(row) < columns:
-            row.append(np.zeros_like(tiles[0]))
-        rows.append(np.hstack(row))
     output.parent.mkdir(parents=True, exist_ok=True)
-    cv2.imwrite(str(output), np.vstack(rows))
+    cv2.imwrite(str(output), render_grid(tiles, columns=2))
     return output
 
 

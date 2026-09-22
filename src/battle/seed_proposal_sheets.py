@@ -23,6 +23,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from . import mask_cache
 from .cli_common import add_output_root, add_repository_root
+from .contact_sheet import render_grid
 from .multiview_consensus import MANIFEST_NAME, load_consensus
 from .multiview_consensus import OUTPUT_ROOT as CONSENSUS_ROOT
 from .multiview_review import PROPOSAL_COLORS, PROPOSALS_ROOT, ProposalCell, load_proposals
@@ -153,9 +154,10 @@ def write_view_sheet(view: str, cells: list[ProposalCell], video: Path, output: 
     for cell in cells:
         record = json.loads((cell.directory / "proposal.json").read_text(encoding="utf-8"))
         rows.append(_cell_row(cell, _read_frame(video, cell.frame), record))
-    width = max(row.width for row in rows)
+    grid = render_grid([np.asarray(row) for row in rows], columns=1, gap=6)
     title_height = 40
-    sheet = Image.new("RGB", (width, title_height + sum(row.height + 6 for row in rows)), (0, 0, 0))
+    # The title keeps its TrueType font, so it is drawn here rather than by `render_grid`.
+    sheet = Image.new("RGB", (grid.shape[1], title_height + grid.shape[0] + 6), (0, 0, 0))
     draw = ImageDraw.Draw(sheet)
     draw.text(
         (4, 6),
@@ -164,10 +166,7 @@ def write_view_sheet(view: str, cells: list[ProposalCell], video: Path, output: 
         fill=(255, 255, 255),
         font=_font(16),
     )
-    y = title_height
-    for row in rows:
-        sheet.paste(row, (0, y))
-        y += row.height + 6
+    sheet.paste(Image.fromarray(grid), (0, title_height))
     output.parent.mkdir(parents=True, exist_ok=True)
     sheet.save(output)
     return output

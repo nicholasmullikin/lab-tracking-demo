@@ -50,6 +50,7 @@ from .assembly101_camera_fit import PoseMembers
 from .assembly101_clock_offset import is_ego
 from .assembly101_pose_schemas import ASSEMBLY101_HAND_SIDES
 from .cli_common import add_output_root, add_repository_root
+from .contact_sheet import render_grid
 from .four_part_contract import TARGETS
 from .muggled_smoke import relative_uri, sha256_file
 from .multiview_consensus import ViewRun, load_view_run, mask_centroid_raw
@@ -2327,7 +2328,7 @@ def render_search_sheet(
     """Rows = C10379 frames; columns = human truth | geometric prompt | winner's candidate."""
     decoded = json.loads((search_dir / "decode_result.json").read_text(encoding="utf-8"))["decoded"]
     candidates = load_candidates(plan, decoded, search_dir)
-    rows = []
+    cells: list[np.ndarray] = []
     for frame in frames:
         frame_plan = next((f for f in plan.frames if f.reference_frame == frame), None)
         image_path = search_dir / "results" / "frames" / f"frame-{frame:06d}.jpg"
@@ -2410,21 +2411,15 @@ def render_search_sheet(
             )
             return out
 
-        rows.append(
-            np.hstack(
-                [
-                    tile(truth_tile, f"f{frame} human truth"),
-                    tile(prompt_tile, f"f{frame} geometric prompt (winner box, x = negatives)"),
-                    tile(winner_tile, f"f{frame} winner pick  " + " ".join(captions)),
-                ]
-            )
-        )
-    if not rows:
+        cells += [
+            tile(truth_tile, f"f{frame} human truth"),
+            tile(prompt_tile, f"f{frame} geometric prompt (winner box, x = negatives)"),
+            tile(winner_tile, f"f{frame} winner pick  " + " ".join(captions)),
+        ]
+    if not cells:
         raise ValueError("no frames to render")
-    width = max(r.shape[1] for r in rows)
-    rows = [np.pad(r, ((0, 0), (0, width - r.shape[1]), (0, 0))) for r in rows]
     output.parent.mkdir(parents=True, exist_ok=True)
-    cv2.imwrite(str(output), np.vstack(rows))
+    cv2.imwrite(str(output), render_grid(cells, columns=3))
     return output
 
 

@@ -23,10 +23,9 @@ from .assembly101_recordings import (
     get_recording,
 )
 from .cli_common import add_repository_root
+from .contact_sheet import render_grid
 
 PANEL_WIDTH = 480
-LABEL_HEIGHT = 30
-TITLE_HEIGHT = 44
 COLUMNS = 5
 
 
@@ -71,12 +70,6 @@ def _read_frame(capture: cv2.VideoCapture, index: int) -> np.ndarray:
     return frame
 
 
-def _label(panel: np.ndarray, text: str) -> np.ndarray:
-    bar = np.full((LABEL_HEIGHT, panel.shape[1], 3), 20, dtype=np.uint8)
-    cv2.putText(bar, text, (6, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (245, 245, 245), 1, cv2.LINE_AA)
-    return np.vstack((bar, panel))
-
-
 def render_contact_sheet(
     recording: Assembly101Recording,
     *,
@@ -89,7 +82,8 @@ def render_contact_sheet(
     labels_path = repository_root / recording.coarse_labels_path
     labels = load_coarse_labels(labels_path) if labels_path.is_file() else ()
     core_start, core_end = recording.core_proxy_frame_range
-    rows: list[np.ndarray] = []
+    panels: list[np.ndarray] = []
+    texts: list[str] = []
     frames: tuple[int, ...] | None = None
     for view in views:
         path = repository_root / proxy_path(view, recording=recording)
@@ -100,43 +94,26 @@ def render_contact_sheet(
             count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
             if frames is None:
                 frames = contact_sheet_frames(count)
-            panels: list[np.ndarray] = []
             for index in frames:
                 frame = _read_frame(capture, index)
                 height, width = frame.shape[:2]
-                panel = cv2.resize(frame, (PANEL_WIDTH, round(height * PANEL_WIDTH / width)))
+                panels.append(cv2.resize(frame, (PANEL_WIDTH, round(height * PANEL_WIDTH / width))))
                 source_seconds = recording.window_start_seconds + index / 30
                 action = coarse_action_at(labels, round(source_seconds * ANNOTATION_FPS))
                 core = "core" if core_start <= index < core_end else "margin"
-                text = f"{view} f{index} {source_seconds:.2f}s [{core}] {action or '-'}"
-                panels.append(_label(panel, text))
+                texts.append(f"{view} f{index} {source_seconds:.2f}s [{core}] {action or '-'}")
         finally:
             capture.release()
-        tallest = max(p.shape[0] for p in panels)
-        padded = [
-            cv2.copyMakeBorder(p, 0, tallest - p.shape[0], 0, 0, cv2.BORDER_CONSTANT, value=0)
-            for p in panels
-        ]
-        rows.append(np.hstack(padded))
-    widest = max(r.shape[1] for r in rows)
-    rows = [
-        cv2.copyMakeBorder(r, 0, 0, 0, widest - r.shape[1], cv2.BORDER_CONSTANT, value=0)
-        for r in rows
-    ]
-    title = np.full((TITLE_HEIGHT, widest, 3), 35, dtype=np.uint8)
-    cv2.putText(
-        title,
-        f"{recording.recording_id}  window {recording.window_start_seconds:.3f}-"
-        f"{recording.window_end_seconds:.3f} s  core proxy frames [{core_start}, {core_end})  "
-        "review only; coarse labels are the dataset's (CC BY-NC 4.0)",
-        (10, 29),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.6,
-        (255, 255, 255),
-        1,
-        cv2.LINE_AA,
+    image = render_grid(
+        panels,
+        columns=COLUMNS,
+        labels=texts,
+        title=(
+            f"{recording.recording_id}  window {recording.window_start_seconds:.3f}-"
+            f"{recording.window_end_seconds:.3f} s  core proxy frames [{core_start}, {core_end})  "
+            "review only; coarse labels are the dataset's (CC BY-NC 4.0)"
+        ),
     )
-    image = np.vstack((title, *rows))
     target = repository_root / (output if output is not None else contact_sheet_path(recording))
     target.parent.mkdir(parents=True, exist_ok=True)
     if not cv2.imwrite(str(target), image):

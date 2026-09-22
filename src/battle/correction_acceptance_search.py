@@ -49,6 +49,7 @@ from . import mask_cache
 from .assembly101_camera_fit import PoseMembers
 from .assembly101_clock_offset import is_ego
 from .cli_common import add_output_root, add_repository_root
+from .contact_sheet import render_grid
 from .four_part_contract import TARGETS
 from .mask_ops import overlap_fraction
 from .multiview_consensus import load_consensus, load_view_run, relative_uri
@@ -1292,7 +1293,7 @@ def render_sheet(
     rig = CameraRig.load(repository_root)
     cells = load_cells(repository_root, plan, decode_dir, rig=rig)
     truth_entries = truth_cells(load_truth_set(repository_root / plan.truth_set.uri))
-    rows = []
+    cells_out: list[np.ndarray] = []
     for frame in frames:
         frame_plan = next((f for f in plan.frames if f.frame == frame), None)
         image_path = decode_dir / "results" / "frames" / f"frame-{frame:06d}.jpg"
@@ -1357,21 +1358,15 @@ def render_sheet(
                 )
             return out
 
-        rows.append(
-            np.hstack(
-                [
-                    tile(human, f"f{frame} human"),
-                    tile(current, f"f{frame} current rule  " + " ".join(captions_current)),
-                    tile(chosen, f"f{frame} chosen rule  " + " ".join(captions_chosen)),
-                ]
-            )
-        )
-    if not rows:
+        cells_out += [
+            tile(human, f"f{frame} human"),
+            tile(current, f"f{frame} current rule  " + " ".join(captions_current)),
+            tile(chosen, f"f{frame} chosen rule  " + " ".join(captions_chosen)),
+        ]
+    if not cells_out:
         raise ValueError("no frames to render")
-    width = max(r.shape[1] for r in rows)
-    rows = [np.pad(r, ((0, 0), (0, width - r.shape[1]), (0, 0))) for r in rows]
     output.parent.mkdir(parents=True, exist_ok=True)
-    cv2.imwrite(str(output), np.vstack(rows))
+    cv2.imwrite(str(output), render_grid(cells_out, columns=3))
     return output
 
 
