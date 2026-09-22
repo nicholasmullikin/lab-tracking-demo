@@ -33,6 +33,7 @@ from .fine_substep_contract import load_contract as load_fine_substep_contract
 from .fine_substep_contract import substep_for_frame
 from .four_part_contract import ANALYSIS_FPS, FRAME_COUNT, TARGETS, load_contract
 from .mask_ops import mask_iou
+from .observations import object_for_label
 from .schemas import (
     ArtifactFingerprint,
     ClockName,
@@ -244,7 +245,7 @@ def _video_info(video_path: Path) -> tuple[int, int, tuple[int, int]]:
 def _mask_for_part(
     observation: FrameObservations, part: str, run_directory: Path, dimensions: tuple[int, int]
 ) -> np.ndarray | None:
-    item = next((item for item in observation.objects if item.label == part and item.mask), None)
+    item = object_for_label(observation, part)
     if item is None or item.mask is None:
         return None
     cache = mask_cache.cache_for(run_directory)

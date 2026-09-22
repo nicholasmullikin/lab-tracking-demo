@@ -16,6 +16,9 @@ from .fine_substep_contract import (
     FineSubstepDefinition,
     substep_for_frame,
 )
+
+# Re-exported: fine_substep_align and the tests import the loader from this module.
+from .observations import observations_by_frame as load_observations  # noqa: F401
 from .schemas import FrameObservations, NormalizedBox
 
 HandCueSource = Literal["wilor", "mediapipe", "missing"]
@@ -199,16 +202,6 @@ def build_crop_sample(
 def sample_frame_indices(*, sample_fps: float, frame_count: int = FRAME_COUNT) -> list[int]:
     stride = max(int(round(ANALYSIS_FPS / sample_fps)), 1)
     return list(range(0, frame_count, stride))
-
-
-def load_observations(path: Path) -> dict[int, FrameObservations]:
-    observations: dict[int, FrameObservations] = {}
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        obs = FrameObservations.model_validate_json(line)
-        observations[obs.analysis_frame_index] = obs
-    return observations
 
 
 def build_crop_manifest(

@@ -57,6 +57,7 @@ from .digest_cache import sha256_file as _sha256
 from .fs_common import relative_uri
 from .mask_ops import mask_iou
 from .multiview_geometry import CameraRig
+from .observations import observations_by_frame
 from .schemas import ArtifactFingerprint, FrameObservations, VersionedModel, fingerprint
 
 FrameReader = Callable[[Path, int], np.ndarray]
@@ -404,13 +405,7 @@ def mapped_analysis_frame(
 
 
 def load_observations(run_directory: Path) -> dict[int, FrameObservations]:
-    rows: dict[int, FrameObservations] = {}
-    with (run_directory / "observations.jsonl").open(encoding="utf-8") as handle:
-        for line in handle:
-            if line.strip():
-                observation = FrameObservations.model_validate_json(line)
-                rows[observation.analysis_frame_index] = observation
-    return rows
+    return observations_by_frame(run_directory / "observations.jsonl")
 
 
 def mask_uri_for(observation: FrameObservations | None, label: str) -> str | None:

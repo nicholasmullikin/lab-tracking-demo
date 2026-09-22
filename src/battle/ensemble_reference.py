@@ -36,6 +36,7 @@ from .ensemble_reference_schemas import (
 from .exploratory_comparison import _file_fingerprint
 from .four_part_contract import ANALYSIS_FPS, TARGETS
 from .mask_ops import mask_area, mask_centroid, mask_iou
+from .observations import object_for_label
 from .schemas import (
     ArtifactFingerprint,
     EnsembleReferenceRunMetadata,
@@ -561,7 +562,7 @@ def _write_mask(path: Path, mask: np.ndarray) -> None:
 
 
 def _source_object(observation: FrameObservations, part: str) -> PerFrameObject | None:
-    return next((item for item in observation.objects if item.label == part), None)
+    return object_for_label(observation, part, require_mask=False)
 
 
 def _run_reference(source: review.LoadedSource, label: str, repository_root: Path):

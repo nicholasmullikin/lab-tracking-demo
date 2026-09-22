@@ -7,13 +7,16 @@ import hashlib
 import json
 import os
 import subprocess
+from collections.abc import Mapping
 from pathlib import Path
+from typing import Any
 
 import cv2
 
 from .digest_cache import sha256_file
 from .exporter import export_run
 from .fs_common import relative_uri, run_timestamp
+from .observations import rebuild_tracker_observations
 from .schemas import (
     AdapterMetadata,
     ArtifactFingerprint,
@@ -110,40 +113,24 @@ def _verify_inputs(
     return config, proxy, proxy_path, requested_frames
 
 
+def _hand_from_record(hand: Mapping[str, Any]) -> PerFrameHand:
+    return PerFrameHand(
+        hand_id=hand["hand_id"],
+        side=_side(hand["side"]),
+        confidence=float(hand["confidence"]),
+        landmarks=tuple(NormalizedPoint(x=point["x"], y=point["y"]) for point in hand["landmarks"]),
+        box=NormalizedBox(**hand["box"]),
+        model_side=_side(hand["model_side"]),
+        model_handedness_confidence=float(hand["model_handedness_confidence"]),
+        joints_3d_camera_relative=tuple(
+            CameraRelativePoint3D(**point) for point in hand.get("joints_3d_camera_relative", ())
+        )
+        or None,
+    )
+
+
 def _load_observations(path: Path) -> tuple[FrameObservations, ...]:
-    observations: list[FrameObservations] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        payload = json.loads(line)
-        hands = tuple(
-            PerFrameHand(
-                hand_id=hand["hand_id"],
-                side=_side(hand["side"]),
-                confidence=float(hand["confidence"]),
-                landmarks=tuple(
-                    NormalizedPoint(x=point["x"], y=point["y"]) for point in hand["landmarks"]
-                ),
-                box=NormalizedBox(**hand["box"]),
-                model_side=_side(hand["model_side"]),
-                model_handedness_confidence=float(hand["model_handedness_confidence"]),
-                joints_3d_camera_relative=tuple(
-                    CameraRelativePoint3D(**point)
-                    for point in hand.get("joints_3d_camera_relative", ())
-                )
-                or None,
-            )
-            for hand in payload.get("hands", ())
-        )
-        observations.append(
-            FrameObservations(
-                view_id=payload["view_id"],
-                analysis_frame_index=int(payload["analysis_frame_index"]),
-                source_seconds=float(payload["source_seconds"]),
-                hands=hands,
-            )
-        )
-    return tuple(observations)
+    return rebuild_tracker_observations(path, hand_builder=_hand_from_record)
 
 
 def _run_worker(

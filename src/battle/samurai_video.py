@@ -14,6 +14,7 @@ from . import mask_cache
 from .digest_cache import sha256_file
 from .exporter import export_run
 from .fs_common import relative_uri, run_timestamp
+from .observations import rebuild_tracker_observations as _load_observations
 from .schemas import (
     AdapterMetadata,
     ArtifactFingerprint,
@@ -24,11 +25,9 @@ from .schemas import (
     FrameRange,
     FullDurationCoverage,
     G2PreprocessingManifest,
-    MaskReference,
     MethodState,
     MethodStatus,
     NormalizedBox,
-    PerFrameObject,
     RunManifest,
     RuntimeMeasurements,
     SamuraiVideoRunMetadata,
@@ -88,33 +87,6 @@ def _verify_inputs(
     if requested_frames < 30:
         raise ValueError("requested frame count must be at least 30")
     return config, proxy, proxy_path, requested_frames
-
-
-def _load_observations(path: Path) -> tuple[FrameObservations, ...]:
-    observations: list[FrameObservations] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        payload = json.loads(line)
-        objects = tuple(
-            PerFrameObject(
-                object_id=obj["object_id"],
-                label=obj["label"],
-                confidence=float(obj["confidence"]),
-                box=NormalizedBox(**obj["box"]),
-                mask=MaskReference(**obj["mask"]) if obj.get("mask") else None,
-            )
-            for obj in payload.get("objects", ())
-        )
-        observations.append(
-            FrameObservations(
-                view_id=payload["view_id"],
-                analysis_frame_index=int(payload["analysis_frame_index"]),
-                source_seconds=float(payload["source_seconds"]),
-                objects=objects,
-            )
-        )
-    return tuple(observations)
 
 
 def _run_worker(

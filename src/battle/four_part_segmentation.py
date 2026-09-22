@@ -30,6 +30,7 @@ from .four_part_contract import (
     seed_manifest,
 )
 from .fs_common import run_timestamp
+from .observations import rebuild_tracker_observations as _load_observations
 from .schemas import (
     AdapterMetadata,
     ArtifactFingerprint,
@@ -40,11 +41,8 @@ from .schemas import (
     FrameRange,
     FullDurationCoverage,
     G2PreprocessingManifest,
-    MaskReference,
     MethodState,
     MethodStatus,
-    NormalizedBox,
-    PerFrameObject,
     RunManifest,
     RuntimeMeasurements,
     Sam2ArmSettings,
@@ -360,30 +358,6 @@ def _sam2_settings(
         smoke_correction_source_frame=smoke_source,
         schedule_frame_zero_seeds_match_contract=seeds_match,
     )
-
-
-def _load_observations(path: Path) -> tuple[FrameObservations, ...]:
-    output: list[FrameObservations] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        payload = json.loads(line)
-        output.append(
-            FrameObservations(
-                view_id=payload["view_id"],
-                analysis_frame_index=payload["analysis_frame_index"],
-                source_seconds=payload["source_seconds"],
-                objects=tuple(
-                    PerFrameObject(
-                        object_id=item["object_id"],
-                        label=item["label"],
-                        confidence=item["confidence"],
-                        box=NormalizedBox(**item["box"]),
-                        mask=MaskReference(**item["mask"]) if item.get("mask") else None,
-                    )
-                    for item in payload["objects"]
-                ),
-            )
-        )
-    return tuple(output)
 
 
 def _bounded_video(proxy: Path, destination: Path, frame_count: int = FRAME_COUNT) -> None:

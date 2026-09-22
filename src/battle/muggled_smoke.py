@@ -17,6 +17,7 @@ from . import fs_common, gpu_guard, mask_cache
 from .digest_cache import sha256_file
 from .exporter import export_run
 from .fs_common import run_timestamp
+from .observations import load_observations
 from .schemas import (
     AdapterMetadata,
     ArtifactFingerprint,
@@ -600,21 +601,6 @@ def prepare_resume(
         sha256=sha256_file(checkpoint),
         source="measured",
     )
-
-
-def load_observations(path: Path) -> tuple[FrameObservations, ...]:
-    """Validate streaming worker records one line at a time."""
-    observations: list[FrameObservations] = []
-    with path.open() as file:
-        for line_number, line in enumerate(file, start=1):
-            if line.strip():
-                try:
-                    observations.append(FrameObservations.model_validate_json(line))
-                except ValueError as error:
-                    raise ValueError(
-                        f"invalid observation at {path}:{line_number}: {error}"
-                    ) from error
-    return tuple(observations)
 
 
 def _external_revision() -> str | None:

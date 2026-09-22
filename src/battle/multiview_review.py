@@ -38,6 +38,7 @@ from .multiview_consensus import (
 from .multiview_geometry import CameraRig
 from .multiview_schemas import DisagreementEpisode, MultiviewConsensusManifest
 from .multiview_seed_transfer import REFERENCE_VIEW, proxy_to_raw_scale
+from .observations import object_for_label
 
 OUTPUT_ROOT = Path("runs/multiview-static-comparison-first-minute")
 RECORDING_NAME = "multiview_static_comparison.rrd"
@@ -581,9 +582,7 @@ def build_static_comparison(
                 observation = run.observations.get(frame)
                 for target in TARGETS:
                     item = (
-                        next((o for o in observation.objects if o.label == target and o.mask), None)
-                        if observation is not None
-                        else None
+                        object_for_label(observation, target) if observation is not None else None
                     )
                     path = f"{view_root}/masks/{target}"
                     if item is None or item.mask is None:

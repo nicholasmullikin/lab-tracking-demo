@@ -45,6 +45,7 @@ from .multiview_schemas import (
     WristTriangulationCheck,
 )
 from .multiview_seed_transfer import REFERENCE_RUN, REFERENCE_VIEW, proxy_to_raw_scale, view_id_for
+from .observations import object_for_label
 from .schemas import FrameObservations, RunManifest, fingerprint
 
 OUTPUT_ROOT = Path("runs/multiview-part-consensus-first-minute")
@@ -87,7 +88,7 @@ class ViewRun:
         observation = self.observations.get(frame)
         if observation is None:
             return None
-        item = next((o for o in observation.objects if o.label == target and o.mask), None)
+        item = object_for_label(observation, target)
         if item is None or item.mask is None:
             return None
         return self.cache.mask(item.mask.uri)

@@ -41,6 +41,7 @@ from .exploratory_comparison import (
 from .fine_substep_contract import load_contract as load_fine_substep_contract
 from .fine_substep_contract import substep_for_frame
 from .four_part_contract import ANALYSIS_FPS, TARGETS
+from .observations import object_for_label
 from .schemas import (
     ArtifactFingerprint,
     FrameObservations,
@@ -217,11 +218,7 @@ def _log_candidate_arm_frame(
     cache = mask_cache.cache_for(source.run_directory)
     areas: dict[str, int] = {}
     for part in TARGETS:
-        item = (
-            next((o for o in observation.objects if o.label == part and o.mask), None)
-            if observation is not None
-            else None
-        )
+        item = object_for_label(observation, part) if observation is not None else None
         mask_path = f"{entity}/{CANDIDATE_SEGMENTATION_ROOT}/{name}/{part}"
         area_path = f"{entity}/{CANDIDATE_AREA_SERIES}/{name}/{part}"
         if item is None or item.mask is None:
@@ -499,7 +496,7 @@ def _log_reference_provenance_frame(
             rr.Scalars([float(review.contact_eligible_frame(frame, eligibility.get(part, ())))]),
         )
         overlay = f"{entity}/{review.REFERENCE_PROVENANCE_OVERLAY}/{part}"
-        item = next((o for o in observation.objects if o.label == part), None)
+        item = object_for_label(observation, part, require_mask=False)
         if state == "dam4sam_fallback" and item is not None:
             rr.log(
                 overlay,
