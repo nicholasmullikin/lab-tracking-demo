@@ -185,6 +185,7 @@ def _pass_args(fixture: dict, output: Path, **overrides) -> argparse.Namespace:
         frames=None,
         keep_frame=[2, 4],
         target=None,
+        detect_batch=3,
     )
     values.update(overrides)
     return argparse.Namespace(**values)
@@ -243,7 +244,7 @@ def test_pass_writes_embeddings_detections_and_leave_reference_out(fixture: dict
     assert all((output / m["uri"]).is_file() for k in kept for m in k["masks"])
     manifest = json.loads((output / "manifest.json").read_text())
     assert manifest["schema"] == app.MANIFEST_SCHEMA and manifest["detection_rows"] == len(rows)
-    assert backend.detect_calls == 6
+    assert backend.detect_calls == 6 * 6  # 16 sets per frame in batches of 3
 
 
 def test_pass_explicit_frames_and_single_reference_leave_out(fixture: dict) -> None:

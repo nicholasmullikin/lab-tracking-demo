@@ -308,14 +308,41 @@ class Sam3Backend:
 
     def feature_map_4x(self, encoding: dict[str, Any]) -> np.ndarray:
         """[1024, 4h, 4w] float32 numpy map, bilinear from the token grid."""
+        return self._map_4x(encoding).cpu().numpy()
+
+    def _map_4x(self, encoding: dict[str, Any]) -> Any:
+        if "map_4x" not in encoding:
+            torch = self.torch
+            tokens = encoding["tokens"]
+            h, w = tokens.shape[-2:]
+            with torch.inference_mode():
+                encoding["map_4x"] = torch.nn.functional.interpolate(
+                    tokens.float(), size=(4 * h, 4 * w), mode="bilinear", align_corners=False
+                )[0]
+        return encoding["map_4x"]
+
+    def pooled_embeddings(
+        self, encoding: dict[str, Any], masks: Sequence[np.ndarray | None]
+    ) -> list[np.ndarray | None]:
+        """Mask-pooled, L2-normalised token vectors on the device (one per mask; None if empty)."""
         torch = self.torch
-        tokens = encoding["tokens"]
-        h, w = tokens.shape[-2:]
+        feature_map = self._map_4x(encoding)
+        grid_hw = tuple(int(v) for v in feature_map.shape[1:])
+        out: list[np.ndarray | None] = []
         with torch.inference_mode():
-            up = torch.nn.functional.interpolate(
-                tokens.float(), size=(4 * h, 4 * w), mode="bilinear", align_corners=False
-            )
-        return up[0].cpu().numpy()
+            for mask in masks:
+                if mask is None or not mask.any():
+                    out.append(None)
+                    continue
+                weights = torch.from_numpy(pool_weights(mask, grid_hw)).to(feature_map.device)
+                total = float(weights.sum())
+                if total <= 1e-6:
+                    out.append(None)
+                    continue
+                vector = torch.einsum("chw,hw->c", feature_map, weights) / total
+                norm = float(vector.norm())
+                out.append((vector / norm).cpu().numpy().astype(np.float32) if norm > 0 else None)
+        return out
 
     def exemplar_tokens(
         self,
@@ -568,6 +595,39 @@ def read_frame(capture: Any, frame_index: int) -> np.ndarray:
     return frame
 
 
+class SequentialFrames:
+    """Reads consecutive frames without seeking (a seek per frame re-decodes from the keyframe)."""
+
+    def __init__(self, capture: Any) -> None:
+        self.capture = capture
+        self.next_index: int | None = None
+
+    def read(self, frame_index: int) -> np.ndarray:
+        if self.next_index == frame_index:
+            ok, frame = self.capture.read()
+            if not ok:
+                raise RuntimeError(f"could not decode proxy frame {frame_index}")
+        else:
+            frame = read_frame(self.capture, frame_index)
+        self.next_index = frame_index + 1
+        return frame
+
+
+def pooled_embeddings(
+    backend: Any, encoding: Any, masks: Sequence[np.ndarray | None]
+) -> list[np.ndarray | None]:
+    """Per-mask pooled embeddings: on the device when the backend offers it, else via numpy."""
+    if hasattr(backend, "pooled_embeddings"):
+        return list(backend.pooled_embeddings(encoding, masks))
+    feature_map = backend.feature_map_4x(encoding)
+    return [
+        pooled_embedding(feature_map, pool_weights(mask, feature_map.shape[1:]))
+        if mask is not None and mask.any()
+        else None
+        for mask in masks
+    ]
+
+
 # --------------------------------------------------------------------------------- the pass
 
 
@@ -736,23 +796,22 @@ def run_pass(args: argparse.Namespace, *, backend: Any | None = None) -> Path:
             detections_path.open("w", encoding="utf-8") as det_handle,
             kept_path.open("w", encoding="utf-8") as kept_handle,
         ):
+            reader = SequentialFrames(capture)
             for position, frame_index in enumerate(frames):
-                frame = read_frame(capture, frame_index)
+                frame = reader.read(frame_index)
                 height, width = frame.shape[:2]
                 encoding = backend.encode(frame)
                 tracked: dict[str, np.ndarray | None] = {}
                 for target in targets:
                     path = run_masks.get(frame_index, {}).get(target)
                     tracked[target] = read_mask(path) if path is not None else None
-                feature_map = backend.feature_map_4x(encoding)
+                vectors = pooled_embeddings(backend, encoding, [tracked[t] for t in targets])
                 for column, target in enumerate(targets):
                     mask = tracked[target]
                     if mask is None or not mask.any():
                         continue
                     areas[position, column] = int(mask.sum())
-                    vector = pooled_embedding(
-                        feature_map, pool_weights(mask, feature_map.shape[1:])
-                    )
+                    vector = vectors[column]
                     if vector is not None:
                         embeddings[position, column] = vector.astype(np.float16)
                         has_mask[position, column] = True
@@ -793,17 +852,20 @@ def run_pass(args: argparse.Namespace, *, backend: Any | None = None) -> Path:
                     token_sets.append(tokens)
                     meta.append((set_name, target, variant, used))
                 keep = frame_index in keep_frames
-                results = (
-                    backend.detect(
-                        encoding,
-                        token_sets,
-                        top_k,
-                        tracked=[tracked[target] for (_, target, _, _) in meta],
-                        keep_masks=keep,
+                results = []
+                chunk = max(1, int(args.detect_batch))
+                for start in range(0, len(token_sets), chunk):
+                    results.extend(
+                        backend.detect(
+                            encoding,
+                            token_sets[start : start + chunk],
+                            top_k,
+                            tracked=[
+                                tracked[target] for (_, target, _, _) in meta[start : start + chunk]
+                            ],
+                            keep_masks=keep,
+                        )
                     )
-                    if token_sets
-                    else []
-                )
                 for (set_name, target, variant, used), detections in zip(
                     meta, results, strict=True
                 ):
@@ -1311,6 +1373,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="frames whose top-K masks are written",
     )
     run.add_argument("--target", action="append", default=None)
+    run.add_argument(
+        "--detect-batch",
+        type=int,
+        default=8,
+        help="exemplar sets per batched detection call (VRAM: 8 sets peaked at 5.5 GiB at 1280)",
+    )
 
     serve = commands.add_parser("serve-jsonl", help="batch_decode server with exemplar candidates")
     common(serve)
