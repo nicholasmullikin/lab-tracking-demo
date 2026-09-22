@@ -12,6 +12,13 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any
 
+try:
+    from . import worker_common
+except ImportError:
+    # Run as a script under the samurai pyenv: the sibling module by path.
+    sys.path.append(str(Path(__file__).resolve().parent))
+    import worker_common  # type: ignore[no-redef]
+
 INIT_BBOX_XYWH = (881, 446, 152, 129)
 TRACKER_NAME = "sam21pp-T"
 SAM2_CONFIG = "sam21pp_hiera_t.yaml"
@@ -31,29 +38,6 @@ def _normalize_box(
 
 def _write_result(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2) + "\n")
-
-
-def _extract_frames(video_path: Path, frames_dir: Path, max_frames: int) -> list[Path]:
-    import cv2
-
-    frames_dir.mkdir(parents=True, exist_ok=True)
-    capture = cv2.VideoCapture(str(video_path))
-    if not capture.isOpened():
-        raise RuntimeError(f"could not open video: {video_path}")
-    frame_paths: list[Path] = []
-    while len(frame_paths) < max_frames:
-        ok, frame = capture.read()
-        if not ok:
-            break
-        frame_path = frames_dir / f"{len(frame_paths):05d}.jpg"
-        cv2.imwrite(str(frame_path), frame)
-        frame_paths.append(frame_path)
-    capture.release()
-    if len(frame_paths) != max_frames:
-        raise RuntimeError(
-            f"video produced {len(frame_paths)} frames; expected exactly {max_frames}"
-        )
-    return frame_paths
 
 
 def main() -> None:
@@ -104,7 +88,7 @@ def main() -> None:
             torch.backends.cuda.matmul.allow_tf32 = True
             torch.backends.cudnn.allow_tf32 = True
 
-        frame_paths = _extract_frames(args.video, frames_dir, args.max_frames)
+        frame_paths = worker_common.extract_frames(args.video, frames_dir, args.max_frames)
         init_box = list(INIT_BBOX_XYWH)
         init_seed = {
             "bbox_xywh": init_box,
@@ -175,7 +159,7 @@ def main() -> None:
                     frames_processed += 1
                     frames_with_masks += 1
 
-        peak_vram_bytes = int(torch.cuda.max_memory_allocated())
+        peak_vram_bytes = worker_common.cuda_peak_bytes()
         if len(unique_mask_hashes) < 2:
             raise RuntimeError("mask outputs did not vary across frames")
 

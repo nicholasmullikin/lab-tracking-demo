@@ -55,25 +55,6 @@ def _load_schedule(
     return _streaming_module().corrections_by_frame(list(payload.get("corrections", []))), payload
 
 
-def _extract_frames(video: Path, directory: Path, frame_count: int) -> list[Path]:
-    import cv2
-
-    directory.mkdir(parents=True, exist_ok=True)
-    capture = cv2.VideoCapture(str(video))
-    frames: list[Path] = []
-    while len(frames) < frame_count:
-        ok, frame = capture.read()
-        if not ok:
-            break
-        path = directory / f"{len(frames):05d}.jpg"
-        cv2.imwrite(str(path), frame)
-        frames.append(path)
-    capture.release()
-    if len(frames) != frame_count:
-        raise RuntimeError(f"decoded {len(frames)} frames, expected {frame_count}")
-    return frames
-
-
 def _box(mask: Any, width: int, height: int) -> dict[str, float]:
     import numpy as np
 
@@ -491,8 +472,9 @@ def main() -> None:
             )
         probe_frames = _streaming_module().parse_probe_frames(args.vram_probe_frames)
         corrections, schedule_payload = _load_schedule(args.multi_keyframe_correction_schedule)
-        frames = _extract_frames(
-            args.video, args.run_directory / "native" / "frames", args.frame_count
+        # No isOpened check here, as before: an unreadable proxy surfaces as a short decode.
+        frames = _sibling("worker_common").extract_frames(
+            args.video, args.run_directory / "native" / "frames", args.frame_count, check_open=False
         )
         frame_shape = _frame_shape(frames[0])
         seeds, seeds_resized = _read_seed_masks(contract, frame_shape)
@@ -593,7 +575,7 @@ def main() -> None:
                 "frames_processed": len(frames),
                 "per_target_mask_coverage": coverage,
                 "per_target_unique_mask_hashes": variation,
-                "gpu_peak_vram_bytes": int(torch.cuda.max_memory_allocated()),
+                "gpu_peak_vram_bytes": _sibling("worker_common").cuda_peak_bytes(),
                 **extra,
             }
         )

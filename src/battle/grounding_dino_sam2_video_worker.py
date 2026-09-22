@@ -5,10 +5,18 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 import traceback
 from pathlib import Path
 from time import perf_counter
 from typing import Any
+
+try:
+    from . import worker_common
+except ImportError:
+    # Run as a script under the grounded_sam2 pyenv: the sibling module by path.
+    sys.path.append(str(Path(__file__).resolve().parent))
+    import worker_common  # type: ignore[no-redef]
 
 GROUNDING_MODEL_ID = "IDEA-Research/grounding-dino-tiny"
 GROUNDING_MODEL_REVISION = "a2bb814dd30d776dcf7e30523b00659f4f141c71"
@@ -32,26 +40,6 @@ def _normalize_box(
 
 def _write_result(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2) + "\n")
-
-
-def _extract_frames(video_path: Path, frames_dir: Path, max_frames: int) -> int:
-    import cv2
-
-    frames_dir.mkdir(parents=True, exist_ok=True)
-    capture = cv2.VideoCapture(str(video_path))
-    if not capture.isOpened():
-        raise RuntimeError(f"could not open video: {video_path}")
-    written = 0
-    while written < max_frames:
-        ok, frame = capture.read()
-        if not ok:
-            break
-        cv2.imwrite(str(frames_dir / f"{written:05d}.jpg"), frame)
-        written += 1
-    capture.release()
-    if written == 0:
-        raise RuntimeError(f"video produced zero frames: {video_path}")
-    return written
 
 
 def main() -> None:
@@ -102,7 +90,9 @@ def main() -> None:
             torch.backends.cuda.matmul.allow_tf32 = True
             torch.backends.cudnn.allow_tf32 = True
 
-        frame_count = _extract_frames(args.video, frames_dir, args.max_frames)
+        frame_count = len(
+            worker_common.extract_frames(args.video, frames_dir, args.max_frames, exact=False)
+        )
         frame_names = sorted(frames_dir.glob("*.jpg"))
         if len(frame_names) != frame_count:
             raise RuntimeError("decoded frame count mismatch after extraction")
@@ -168,7 +158,7 @@ def main() -> None:
                     for i, out_obj_id in enumerate(out_obj_ids)
                 }
 
-        peak_vram_bytes = int(torch.cuda.max_memory_allocated())
+        peak_vram_bytes = worker_common.cuda_peak_bytes()
 
         with observations_path.open("w", encoding="utf-8") as observations_file:
             for frame_idx in range(frame_count):
