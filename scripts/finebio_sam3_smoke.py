@@ -33,12 +33,13 @@ from time import perf_counter
 from typing import Any
 
 try:
-    from battle import fs_common
+    from battle import fs_common, gpu_guard
 except ImportError:
     # Under the MuggledSAM interpreter the battle package is not installed: import the
-    # stdlib-only helper module by path, as the workers do.
+    # stdlib-only helper modules by path, as the workers do.
     sys.path.append(str(Path(__file__).resolve().parents[1] / "src" / "battle"))
     import fs_common  # type: ignore[no-redef]
+    import gpu_guard  # type: ignore[no-redef]
 
 # Worker constants, restated so the run is comparable with the Assembly101 text-prompt runs.
 DETECTION_THRESHOLD = 0.40
@@ -71,36 +72,9 @@ def slugify(text: str) -> str:
 
 
 # --------------------------------------------------------------------------------------------
-# GPU guard (same rule as the worker: refuse beside any model-like GPU process not allowed by
-# PID, and additionally refuse while a Battle tracker process exists at all).
-
-
-def gpu_processes() -> list[dict[str, str]]:
-    command = [
-        "nvidia-smi",
-        "--query-compute-apps=pid,process_name,used_gpu_memory",
-        "--format=csv,noheader",
-    ]
-    try:
-        completed = subprocess.run(command, check=False, capture_output=True, text=True)
-    except FileNotFoundError:
-        return []
-    if completed.returncode != 0:
-        return []
-    processes = []
-    for line in completed.stdout.splitlines():
-        fields = [field.strip() for field in line.split(",", maxsplit=2)]
-        if len(fields) == 3 and fields[0] != "No running processes found":
-            processes.append({"pid": fields[0], "process_name": fields[1], "memory": fields[2]})
-    return processes
-
-
-def looks_like_model_process(process: dict[str, str]) -> bool:
-    name = process["process_name"].lower()
-    executable = name.rsplit("/", 1)[-1]
-    if executable == "rerun" or "/rerun_sdk/rerun_cli/" in name:
-        return False
-    return any(token in name for token in ("python", "torch", "ollama", "llama", "vllm"))
+# GPU guard (the worker's strict rule through `battle.gpu_guard`: refuse beside any model-like
+# GPU process not allowed by PID, and additionally refuse while a Battle tracker process
+# exists at all).
 
 
 def tracker_processes() -> list[str]:
@@ -115,21 +89,20 @@ def tracker_processes() -> list[str]:
     ]
 
 
-def gpu_guard(
+def guard_gpu(
     allowed_pids: list[int],
 ) -> tuple[list[dict[str, str]], list[dict[str, str]], list[str]]:
     """Return (blocking GPU processes, tolerated GPU processes, foreign tracker processes)."""
-    allowed = {str(pid) for pid in allowed_pids}
-    blocking, tolerated = [], []
-    for process in gpu_processes():
-        if not looks_like_model_process(process):
-            continue
-        (tolerated if process["pid"] in allowed else blocking).append(process)
+    blocking, tolerated = gpu_guard.partition_neighbours_strict(
+        gpu_guard.legacy_gpu_processes(), allowed_pids
+    )
     return blocking, tolerated, tracker_processes()
 
 
 # --------------------------------------------------------------------------------------------
-# track phase (MuggledSAM interpreter)
+# track phase (MuggledSAM interpreter).  The SAM3 calls below are a deliberate copy of
+# `src/battle/muggled_worker.py`'s detector / multiplex-tracker sequence, kept separate on
+# purpose: this is a dual-interpreter smoke of the upstream API, not a Battle adapter.
 
 
 def binary_mask(mask_logits: Any, frame_shape: tuple[int, int]) -> Any:
@@ -186,8 +159,8 @@ def run_track(args: argparse.Namespace) -> int:
     if len(set(prompts)) != len(prompts) or not prompts:
         raise SystemExit("prompts must be non-empty and distinct")
     start = perf_counter()
-    seen_gpu = gpu_processes()
-    blocking, tolerated, foreign_trackers = gpu_guard(args.allow_gpu_neighbour)
+    seen_gpu = gpu_guard.legacy_gpu_processes()
+    blocking, tolerated, foreign_trackers = guard_gpu(args.allow_gpu_neighbour)
     settings = {
         "device": "cuda:0",
         "dtype": "bfloat16",
@@ -444,13 +417,7 @@ def run_track(args: argparse.Namespace) -> int:
 # export phase (Battle interpreter: rerun, cv2, numpy, PIL)
 
 
-def git_revision(path: Path) -> dict[str, Any]:
-    def git(*parts: str) -> str:
-        return subprocess.run(
-            ["git", "-C", str(path), *parts], check=False, capture_output=True, text=True
-        ).stdout.strip()
-
-    return {"revision": git("rev-parse", "HEAD"), "dirty": bool(git("status", "--porcelain"))}
+git_revision = fs_common.git_revision
 
 
 def load_observations(path: Path) -> list[dict[str, Any]]:

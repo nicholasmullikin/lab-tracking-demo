@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 from collections.abc import Sequence
+from pathlib import Path
 
 import pytest
 
@@ -538,3 +539,35 @@ def test_worker_and_smoke_parsers_take_the_guard_flags(tmp_path) -> None:
     assert muggled_smoke._gpu_guard_settings(smoke_args) == ("sam3_1080p", 4_000_000_000)
     smoke_args.gpu_guard = "strict"
     assert muggled_smoke._gpu_guard_settings(smoke_args) == (None, None)
+
+
+def test_legacy_gpu_processes_are_the_sep_21_records_the_scripts_read() -> None:
+    probe = _probe(apps=[KWIN, CALIBRATION, (4242, "/usr/bin/python3", None)], used_mib=3000)
+
+    records = gpu_guard.legacy_gpu_processes(probe)
+
+    assert records == [
+        {"pid": "8429", "process_name": "/usr/bin/kwin_wayland", "memory": "144 MiB"},
+        {"pid": "2071175", "process_name": CALIBRATION_PYTHON, "memory": "1198 MiB"},
+        {"pid": "4242", "process_name": "/usr/bin/python3", "memory": "[N/A]"},
+    ]
+    blocking, tolerated = gpu_guard.partition_neighbours_strict(records, [2071175])
+    assert [record["pid"] for record in blocking] == ["4242"]
+    assert [record["pid"] for record in tolerated] == ["2071175"]
+    assert gpu_guard.legacy_gpu_processes(_probe(apps=[], used_mib=0, gpu_available=False)) == []
+
+
+def test_module_is_python_310_compatible_for_the_foreign_interpreters() -> None:
+    import ast
+
+    tree = ast.parse(Path(gpu_guard.__file__).read_text(encoding="utf-8"))
+    imported_from_datetime = {
+        alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module == "datetime"
+        for alias in node.names
+    }
+    assert "UTC" not in imported_from_datetime
+    assert not any(
+        isinstance(node, ast.Attribute) and node.attr == "UTC" for node in ast.walk(tree)
+    )

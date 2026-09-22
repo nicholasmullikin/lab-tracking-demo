@@ -39,8 +39,10 @@ are returned as one provenance dictionary (:meth:`GuardDecision.as_provenance`) 
 worker stores under ``runtime_settings.gpu_guard`` and the queue in its ``gpu_check`` event,
 so a later reader can see what shared the card.
 
-This module imports only the standard library: the SAM3 worker runs it under the separately
-managed MuggledSAM interpreter, where the Battle package is not installed.
+This module imports only the standard library and stays Python 3.10 compatible (no
+`datetime.UTC`): the SAM3 worker runs it under the separately managed MuggledSAM interpreter
+and the FineBio detector script under its 3.10 venv, where the Battle package is not
+installed.
 """
 
 from __future__ import annotations
@@ -52,7 +54,7 @@ import shutil
 import subprocess
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Any
 
 PROVENANCE_SCHEMA = "battle-gpu-guard/1"
@@ -486,6 +488,17 @@ def legacy_process_records(apps: Sequence[ComputeApp]) -> list[dict[str, str]]:
     ]
 
 
+def legacy_gpu_processes(probe: GpuProbe | None = None) -> list[dict[str, str]]:
+    """The card's compute processes now, as Sep 21 `{pid, process_name, memory}` records.
+
+    Empty when nvidia-smi is missing or fails, as the per-script `gpu_processes()` copies
+    (the FineBio smokes, the SAM3 worker) returned.
+    """
+    if probe is None:
+        probe = DEFAULT_PROBE
+    return legacy_process_records(parse_compute_apps(probe.nvidia_smi(list(COMPUTE_APPS_QUERY))))
+
+
 # ------------------------------------------------------------------------------------------
 # profiles
 
@@ -638,7 +651,8 @@ class GuardDecision:
 
 
 def _utc_now() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds")
+    # `datetime.UTC` is 3.11+; the FineBio detector interpreter is 3.10.
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")  # noqa: UP017
 
 
 def describe(neighbour: Neighbour) -> str:

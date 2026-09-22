@@ -39,12 +39,13 @@ from time import perf_counter
 from typing import Any
 
 try:
-    from battle import fs_common
+    from battle import fs_common, gpu_guard
 except ImportError:
     # Under the MMDetection interpreter the battle package is not installed: import the
-    # stdlib-only helper module by path, as the workers do.
+    # stdlib-only helper modules by path, as the workers do.
     sys.path.append(str(Path(__file__).resolve().parents[1] / "src" / "battle"))
     import fs_common  # type: ignore[no-redef]
+    import gpu_guard  # type: ignore[no-redef]
 
 DETECTOR_DIR = Path("/home/nick/src/finebio-detector")
 MODELS: dict[str, dict[str, str]] = {
@@ -170,37 +171,9 @@ def output_names(model_name: str) -> tuple[str, str]:
 
 
 # --------------------------------------------------------------------------------------------
-# GPU coordination (same rule as the SAM3 smoke: refuse the GPU beside any model-like GPU
-# process not allowed by PID, and refuse while a Battle tracker process exists at all; plus the
-# other session's queue log must have ended).
-
-
-def gpu_processes() -> list[dict[str, str]]:
-    command = [
-        "nvidia-smi",
-        "--query-compute-apps=pid,process_name,used_gpu_memory",
-        "--format=csv,noheader",
-    ]
-    try:
-        completed = subprocess.run(command, check=False, capture_output=True, text=True)
-    except FileNotFoundError:
-        return []
-    if completed.returncode != 0:
-        return []
-    processes = []
-    for line in completed.stdout.splitlines():
-        fields = [field.strip() for field in line.split(",", maxsplit=2)]
-        if len(fields) == 3 and fields[0] != "No running processes found":
-            processes.append({"pid": fields[0], "process_name": fields[1], "memory": fields[2]})
-    return processes
-
-
-def looks_like_model_process(process: dict[str, str]) -> bool:
-    name = process["process_name"].lower()
-    executable = name.rsplit("/", 1)[-1]
-    if executable == "rerun" or "/rerun_sdk/rerun_cli/" in name:
-        return False
-    return any(token in name for token in ("python", "torch", "ollama", "llama", "vllm"))
+# GPU coordination (the SAM3 smoke's rule through `battle.gpu_guard`: refuse the GPU beside any
+# model-like GPU process not allowed by PID, and refuse while a Battle tracker process exists
+# at all; plus the other session's queue log must have ended).
 
 
 def tracker_processes() -> list[str]:
@@ -239,13 +212,8 @@ def queue_state(path: Path | None) -> dict[str, Any]:
 
 
 def gpu_coordination(allowed_pids: list[int], queue_log: Path | None) -> dict[str, Any]:
-    allowed = {str(pid) for pid in allowed_pids}
-    seen = gpu_processes()
-    blocking, tolerated = [], []
-    for process in seen:
-        if not looks_like_model_process(process):
-            continue
-        (tolerated if process["pid"] in allowed else blocking).append(process)
+    seen = gpu_guard.legacy_gpu_processes()
+    blocking, tolerated = gpu_guard.partition_neighbours_strict(seen, allowed_pids)
     queue = queue_state(queue_log)
     trackers = tracker_processes()
     return {
@@ -462,13 +430,7 @@ def run_detect(args: argparse.Namespace) -> int:
 # export phase (Battle interpreter: rerun, cv2, numpy, PIL)
 
 
-def git_revision(path: Path) -> dict[str, Any]:
-    def git(*parts: str) -> str:
-        return subprocess.run(
-            ["git", "-C", str(path), *parts], check=False, capture_output=True, text=True
-        ).stdout.strip()
-
-    return {"revision": git("rev-parse", "HEAD"), "dirty": bool(git("status", "--porcelain"))}
+git_revision = fs_common.git_revision
 
 
 def rgba_png(mask: Any, color: tuple[int, int, int]) -> bytes:

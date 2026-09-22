@@ -156,3 +156,28 @@ def test_relative_uri_unresolved_form_compares_paths_as_given(tmp_path: Path) ->
     assert fs_common.relative_uri(tmp_path / "other.json", root, resolve=False) == (
         (tmp_path / "other.json").as_posix()
     )
+
+
+def test_git_revision_reports_head_and_dirtiness(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    env = {
+        "GIT_AUTHOR_NAME": "t",
+        "GIT_AUTHOR_EMAIL": "t@x",
+        "GIT_COMMITTER_NAME": "t",
+        "GIT_COMMITTER_EMAIL": "t@x",
+        "HOME": str(tmp_path),
+    }
+    subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True, env=env)
+    (repo / "a.txt").write_text("a\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "add", "a.txt"], check=True, env=env)
+    subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m", "one"], check=True, env=env)
+    head = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"], check=True, capture_output=True, text=True
+    ).stdout.strip()
+
+    assert fs_common.git_revision(repo) == {"revision": head, "dirty": False}
+    (repo / "b.txt").write_text("b\n", encoding="utf-8")
+    assert fs_common.git_revision(repo) == {"revision": head, "dirty": True}
+    # Not a repository: empty revision, not an exception (git's error goes to stderr).
+    assert fs_common.git_revision(tmp_path / "nowhere") == {"revision": "", "dirty": False}

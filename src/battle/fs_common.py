@@ -1,9 +1,10 @@
 """Standard-library file helpers shared by the Battle package and its external workers.
 
-Four small functions that were copied into some thirty modules: a chunked SHA-256, the JSON
-writer, the run-id timestamp and the repository-relative URI written into every manifest.
-Consolidating them changes no bytes: the digest is the digest, the JSON formatting keeps each
-caller's `indent` / `sort_keys`, and `relative_uri` keeps the two forms the copies had.
+Five small functions that were copied into some thirty modules: a chunked SHA-256, the JSON
+writer, the run-id timestamp, the repository-relative URI written into every manifest and the
+`{revision, dirty}` record of a git checkout.  Consolidating them changes no bytes: the digest
+is the digest, the JSON formatting keeps each caller's `indent` / `sort_keys`, and
+`relative_uri` keeps the two forms the copies had.
 
 This module imports only the standard library and stays Python 3.10 compatible (no
 `datetime.UTC`, no `match`): the DAM4SAM / SAMURAI / WiLoR / LM-EEC / FineBio interpreters are
@@ -26,6 +27,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -87,3 +89,19 @@ def relative_uri(path: Path, repository_root: Path, *, resolve: bool = True) -> 
         return path.relative_to(repository_root).as_posix()
     except ValueError:
         return path.as_posix()
+
+
+def git_revision(path: Path) -> dict[str, Any]:
+    """`{"revision": <HEAD sha or "">, "dirty": <any porcelain status line>}` of a checkout.
+
+    The form the FineBio scripts record for the Battle, MuggledSAM and MMDetection trees; a
+    directory that is not a repository yields an empty revision and `dirty=False` rather than
+    an error (`check=False`, stdout only).
+    """
+
+    def git(*parts: str) -> str:
+        return subprocess.run(
+            ["git", "-C", str(path), *parts], check=False, capture_output=True, text=True
+        ).stdout.strip()
+
+    return {"revision": git("rev-parse", "HEAD"), "dirty": bool(git("status", "--porcelain"))}
