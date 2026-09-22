@@ -1,0 +1,971 @@
+{
+  "schema_version": "1.0",
+  "manifest_kind": "human_review_anchor_record",
+  "anchor_kind": "human_review_anchor",
+  "author": null,
+  "reviewed_at": null,
+  "config": {
+    "schema_version": "1.0",
+    "uri": "configs/qa/first_minute_review_anchors_static_c10119.json",
+    "sha256": "cdec5fdd7393e8143c89ec249d1428c2889e998c23bb0f34b5673c58a9c4449b",
+    "source": "measured"
+  },
+  "mask_set": {
+    "schema_version": "1.0",
+    "uri": "runs/human-review-anchors-first-minute-static-c10119/anchors/anchor_masks.json",
+    "sha256": "6156cf74e016fa8436693ab12a89349c8bde35757305ffe846fad06d4e7d9399",
+    "source": "measured"
+  },
+  "calibration_manifest": {
+    "schema_version": "1.0",
+    "uri": "runs/human-review-anchors-first-minute-static-c10119/calibration_manifest.json",
+    "sha256": "78782774d171376da9ea43058eb1d9fc5b3fef60c17d73b31b6670ddb78f5645",
+    "source": "measured"
+  },
+  "counts": {
+    "labeled": 63,
+    "hidden": 1,
+    "unlabeled": 40
+  },
+  "anchors": [
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 41,
+      "target": "chassis",
+      "state": "labeled",
+      "mask_sha256": "86432773181491a9f8ed703d7c0458ec93d3ca257c10eb877e59323aeb51e6fb",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 41,
+      "target": "interior",
+      "state": "labeled",
+      "mask_sha256": "73091467a9f97104013e521599282b41a8589415eb6e0b8515249629e5823af9",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 41,
+      "target": "rear_body",
+      "state": "labeled",
+      "mask_sha256": "cca9c46dc7e53028ff89d70237ab3f27306b8d225867f0a8d29b24ef0db6f092",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 41,
+      "target": "cabin",
+      "state": "labeled",
+      "mask_sha256": "4fcb84b057f4a2705fe26f40d771eb58f4f4851cefb4629795e6472a74857a6e",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 81,
+      "target": "chassis",
+      "state": "labeled",
+      "mask_sha256": "4cbf0300f7d018fe33eb91b99e6fc9491809fd8b8ec87c09138cf6ee69a7e2f3",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 81,
+      "target": "interior",
+      "state": "labeled",
+      "mask_sha256": "dc1672755e46253b231365f9ddc01089a951c27bd5377adaa74b7381b71b58c0",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 81,
+      "target": "rear_body",
+      "state": "unlabeled",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 81,
+      "target": "cabin",
+      "state": "unlabeled",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 221,
+      "target": "chassis",
+      "state": "labeled",
+      "mask_sha256": "84315cadc8fa93d73c1d23ab8ebe809006c2204e4b1dcffc5c4f4806b8abc1a0",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 221,
+      "target": "interior",
+      "state": "labeled",
+      "mask_sha256": "36b3f37f948fdccdcd2d4b2c5ef9f4c33e5107bf2727553b7e950cad87ebdd91",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 221,
+      "target": "rear_body",
+      "state": "unlabeled",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 221,
+      "target": "cabin",
+      "state": "unlabeled",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 301,
+      "target": "chassis",
+      "state": "labeled",
+      "mask_sha256": "65ee31ff683b30b8d98341c79d57c7a73a93d7767d8b509923be7a7544c1fd15",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 301,
+      "target": "interior",
+      "state": "labeled",
+      "mask_sha256": "02800cbcf725c85ed6d1c370220bbc145d370b7201d994ada10aa722d0928fa8",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 301,
+      "target": "rear_body",
+      "state": "unlabeled",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 301,
+      "target": "cabin",
+      "state": "unlabeled",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 371,
+      "target": "chassis",
+      "state": "labeled",
+      "mask_sha256": "255f7b60cf483458178ac0361eedd212e14453588e486c47d886ce07495a17b7",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 371,
+      "target": "interior",
+      "state": "labeled",
+      "mask_sha256": "9d9411bc089c7fb5c2de02d594f7a5efb7e0e68639659ecd778fa95ccebcdc94",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 371,
+      "target": "rear_body",
+      "state": "unlabeled",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 371,
+      "target": "cabin",
+      "state": "unlabeled",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 401,
+      "target": "chassis",
+      "state": "labeled",
+      "mask_sha256": "e5914a04a7c4369eb1162296610c8447389488ab8db0b302d828d5e4d44b436b",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 401,
+      "target": "interior",
+      "state": "hidden",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 401,
+      "target": "rear_body",
+      "state": "unlabeled",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 401,
+      "target": "cabin",
+      "state": "unlabeled",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 481,
+      "target": "chassis",
+      "state": "labeled",
+      "mask_sha256": "6d5ca2ef75a1c9cb9143f1c56eb82eca54fc830304759bdc85246c3ab4cc2068",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 481,
+      "target": "interior",
+      "state": "labeled",
+      "mask_sha256": "064890eca00ed58af554f94a88cce388a6530e19350036d2841603a120f82296",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 481,
+      "target": "rear_body",
+      "state": "unlabeled",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 481,
+      "target": "cabin",
+      "state": "unlabeled",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 501,
+      "target": "chassis",
+      "state": "labeled",
+      "mask_sha256": "6ab96a489812f23ec4d3450b07f0295c526dce953b296d9576283d0c6b61649d",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 501,
+      "target": "interior",
+      "state": "labeled",
+      "mask_sha256": "c4af629a1f32b1e11f9840728131719c9df3e087d14165a726c76499ae66036e",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 501,
+      "target": "rear_body",
+      "state": "unlabeled",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 501,
+      "target": "cabin",
+      "state": "unlabeled",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 551,
+      "target": "chassis",
+      "state": "labeled",
+      "mask_sha256": "8ece68301697c17c514121a71d61acd2dce7a16d38d7092d7c4976ea0048ca37",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 551,
+      "target": "interior",
+      "state": "labeled",
+      "mask_sha256": "a91bec5077d552683c3c09e58a6a475e386835a9a7870083db94610dae720b31",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 551,
+      "target": "rear_body",
+      "state": "unlabeled",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 551,
+      "target": "cabin",
+      "state": "unlabeled",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 601,
+      "target": "chassis",
+      "state": "labeled",
+      "mask_sha256": "5724b53f1b8edbd828a89f7ca9d2299ec39cecad9b1587431d491ee2badffb93",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 601,
+      "target": "interior",
+      "state": "labeled",
+      "mask_sha256": "74bd518b0d73931913a63cf6557599aa1573186ef7899d1c3a0830d7dfc933c7",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 601,
+      "target": "rear_body",
+      "state": "unlabeled",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 601,
+      "target": "cabin",
+      "state": "unlabeled",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 651,
+      "target": "chassis",
+      "state": "labeled",
+      "mask_sha256": "8e089f606388a2a3923d2725bd8296f6972529c5ccfc35f4feed7663a5812cda",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 651,
+      "target": "interior",
+      "state": "labeled",
+      "mask_sha256": "fddd7c626f22248b11e6bb648f33d140e5bb3534d90d2520fb5c284483d4de49",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 651,
+      "target": "rear_body",
+      "state": "unlabeled",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 651,
+      "target": "cabin",
+      "state": "unlabeled",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 701,
+      "target": "chassis",
+      "state": "labeled",
+      "mask_sha256": "00ebefb13aa3fde4755c935f3d79844379a9b3a7b5f72c6e2891358601f46318",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 701,
+      "target": "interior",
+      "state": "labeled",
+      "mask_sha256": "441874e76890b9c7781e0f7d2b5daf36fceb94b6d841b07f7d15bdd3f72d5973",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 701,
+      "target": "rear_body",
+      "state": "unlabeled",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 701,
+      "target": "cabin",
+      "state": "unlabeled",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 861,
+      "target": "chassis",
+      "state": "labeled",
+      "mask_sha256": "3657bb4f19497efe563c9bbce856e35cf9b8014425b165b83524191b5542f1bd",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 861,
+      "target": "interior",
+      "state": "labeled",
+      "mask_sha256": "db664f0b68c17bdf765b639ac87cc7e6bab4b8f54bceb082da6ffc2d1dc695ad",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 861,
+      "target": "rear_body",
+      "state": "unlabeled",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 861,
+      "target": "cabin",
+      "state": "unlabeled",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 901,
+      "target": "chassis",
+      "state": "labeled",
+      "mask_sha256": "217e43a3fd91245acbd35c53e36bea01cb68307648483d60f8846f5cbad079f3",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 901,
+      "target": "interior",
+      "state": "labeled",
+      "mask_sha256": "225290bf3ea01a1544ea04892b1b3ee5be12213731e68db5b4c52b9c603844ab",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 901,
+      "target": "rear_body",
+      "state": "unlabeled",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 901,
+      "target": "cabin",
+      "state": "unlabeled",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1051,
+      "target": "chassis",
+      "state": "labeled",
+      "mask_sha256": "21d2e8b7752581da2d377d1893dc3f6f9dd31a2b21fac45bfd7a97b3ddeff1ed",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1051,
+      "target": "interior",
+      "state": "labeled",
+      "mask_sha256": "7b6f682ec58b986b03968db85836e846933a7ba47cf752ba72b1cfdcb382f1bc",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1051,
+      "target": "rear_body",
+      "state": "unlabeled",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1051,
+      "target": "cabin",
+      "state": "unlabeled",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1101,
+      "target": "chassis",
+      "state": "labeled",
+      "mask_sha256": "f3fa50de53a897747f95087ffc2b2876e0cbbf581ee563bc9051c41874c603a0",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1101,
+      "target": "interior",
+      "state": "labeled",
+      "mask_sha256": "0a2a3e8c42e4f28126d4778ed2aaf0571b6620fd760dce671a0815790f4273f1",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1101,
+      "target": "rear_body",
+      "state": "unlabeled",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1101,
+      "target": "cabin",
+      "state": "unlabeled",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1151,
+      "target": "chassis",
+      "state": "labeled",
+      "mask_sha256": "7a6daf2743967ad03032ccbaadd3400206f6ba3b014cdb58f77f885d5ee6779d",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1151,
+      "target": "interior",
+      "state": "labeled",
+      "mask_sha256": "e19edff36104a06904b9e59c5b4ea5f68f09ffc44675482ea20c195a1344564e",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1151,
+      "target": "rear_body",
+      "state": "unlabeled",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1151,
+      "target": "cabin",
+      "state": "unlabeled",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1201,
+      "target": "chassis",
+      "state": "labeled",
+      "mask_sha256": "62622e2bcae59d53592fed75febcdd0eb300f78b78e268f49c6b86563dbd605d",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1201,
+      "target": "interior",
+      "state": "labeled",
+      "mask_sha256": "b50345e22733e91b2f69f64590dbc340350745d1e26ab1c517e875cfadfffe29",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1201,
+      "target": "rear_body",
+      "state": "unlabeled",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1201,
+      "target": "cabin",
+      "state": "unlabeled",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1411,
+      "target": "chassis",
+      "state": "labeled",
+      "mask_sha256": "e04baace75a8c86ef1fb3896b63c2442331effe7b7dca5418b81b83ec3c4545b",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1411,
+      "target": "interior",
+      "state": "labeled",
+      "mask_sha256": "1d99b28d1df2ab718c0c66c3d89818d5f5afe366b593cfa01f40c9a0d6821f67",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1411,
+      "target": "rear_body",
+      "state": "labeled",
+      "mask_sha256": "e9267f3444a544ecf0c5e1f59495295f6faba5ff49ec3c13b3ab7d3d4a64d3c1",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1411,
+      "target": "cabin",
+      "state": "labeled",
+      "mask_sha256": "2d4c13d8e44692d8a69500f1559546de00b5dac9c7a5b3bdf0b377c2a6f2ca2c",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1501,
+      "target": "chassis",
+      "state": "labeled",
+      "mask_sha256": "e35cd13ddf9a5d15862023f21a0bff5f7a3349a5c25c47b89ac29347f4abb431",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1501,
+      "target": "interior",
+      "state": "labeled",
+      "mask_sha256": "6879cc5755fe43fad8445b6c43a2e094b3e0d500038e7dcc1135b5e3fbc5fb6b",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1501,
+      "target": "rear_body",
+      "state": "labeled",
+      "mask_sha256": "882c6e99b70f4224901e6feaeaa6540629e53918ac0ab234b6f4c7afa133985c",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1501,
+      "target": "cabin",
+      "state": "unlabeled",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1541,
+      "target": "chassis",
+      "state": "labeled",
+      "mask_sha256": "3b50df43dd9a2715889c7d83eaba69cea5eec266ce5e99aca44e4cdfff6caa08",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1541,
+      "target": "interior",
+      "state": "labeled",
+      "mask_sha256": "e56372c89698d623b185f989904bd684d1607077858ae947d42dc611d664dd8d",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1541,
+      "target": "rear_body",
+      "state": "labeled",
+      "mask_sha256": "88e1f287333a43de8e170bc3755cd196df1548174109c00397f28177f378d485",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1541,
+      "target": "cabin",
+      "state": "unlabeled",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1651,
+      "target": "chassis",
+      "state": "labeled",
+      "mask_sha256": "94e314b0607ff2fd9cd00b258bc35a2fce545cc2b3de4152d565dc7c5732f92e",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1651,
+      "target": "interior",
+      "state": "labeled",
+      "mask_sha256": "711cde1e38460891ad1d1865607b328e1364a3d8dd76e6bdcade4f48d8358755",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1651,
+      "target": "rear_body",
+      "state": "labeled",
+      "mask_sha256": "3ba12c519db57be9a17a7cba80eb6df0517545fb150b75ad92547e321a4870a8",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1651,
+      "target": "cabin",
+      "state": "unlabeled",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1701,
+      "target": "chassis",
+      "state": "labeled",
+      "mask_sha256": "13c4e96e09ae0905f3f831277e4c526ddc7502371608de94ce8ea06d75ada476",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1701,
+      "target": "interior",
+      "state": "labeled",
+      "mask_sha256": "2d187c1e488fb0e21fa73d9c89d277c369333af3a4b5675672f365ac3153675c",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1701,
+      "target": "rear_body",
+      "state": "labeled",
+      "mask_sha256": "317d4d18904623262d3cf745dce4f28ec588acd5e95f53b3aff48bfdb1f1d635",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1701,
+      "target": "cabin",
+      "state": "unlabeled",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1731,
+      "target": "chassis",
+      "state": "labeled",
+      "mask_sha256": "63bc79c43ed32dd2b9e92a9e0ecb466f5d0f4940167c7559b6e5c876f439378c",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1731,
+      "target": "interior",
+      "state": "labeled",
+      "mask_sha256": "095d2f8f8ca57c4f7f9f0c9e81d5d06952c177732225db46115a3e0fe0cf66f0",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1731,
+      "target": "rear_body",
+      "state": "labeled",
+      "mask_sha256": "3ed32f878c1d9a46136cfc4d88e1758722175589ff90470de97bbe20985104a2",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1731,
+      "target": "cabin",
+      "state": "unlabeled",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1751,
+      "target": "chassis",
+      "state": "labeled",
+      "mask_sha256": "7f79f6dfbecc09b0a7233febfb9054738ef52376408df48d5c583e1b946998f3",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1751,
+      "target": "interior",
+      "state": "labeled",
+      "mask_sha256": "75a062839a4d293b8decfdeb8941ba234fe64d360df07821f57940585c02cc69",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1751,
+      "target": "rear_body",
+      "state": "labeled",
+      "mask_sha256": "9386c59f7ae7dea14d4755f741fd6bc2b5a8483536c93165adc1208ac4ae74d9",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1751,
+      "target": "cabin",
+      "state": "unlabeled",
+      "mask_sha256": null,
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1771,
+      "target": "chassis",
+      "state": "labeled",
+      "mask_sha256": "f61ff279881dd1e5b065f4a634be8234c0b35768bfdad86abe27a34ad1a205dd",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1771,
+      "target": "interior",
+      "state": "labeled",
+      "mask_sha256": "bc40b1fe58300cc45a7cd9eaad1ee3b2f0a0883a02d9efb5b3b2e8bec09e6b09",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1771,
+      "target": "rear_body",
+      "state": "labeled",
+      "mask_sha256": "2d889a5b94e5ed1c171356d003ccaeb2e00dd5998e5f61772e4ea7a607e156d0",
+      "failure_case": null,
+      "note": null
+    },
+    {
+      "schema_version": "1.0",
+      "analysis_frame_index": 1771,
+      "target": "cabin",
+      "state": "labeled",
+      "mask_sha256": "f0578389fee80b751d3b50a615f4080e265c0ff47c10b1f414a6f76b69df05bb",
+      "failure_case": null,
+      "note": null
+    }
+  ],
+  "claim_boundary": "human_review_anchor masks are review evidence for scoring tracker arms against each other on a handful of frames; they are not a dataset, not ground truth, and support no accuracy claim. A human chose one SAM3 image-decoder mask per visible part, or marked the part hidden; the mask boundary is the decoder's, the choice is the human's.",
+  "license": "CC BY-NC 4.0 (Assembly101 source frames); anchor masks and marks are derived from those frames and inherit the same non-commercial terms",
+  "notes": "Skeleton written by battle-anchor-export; author and reviewed_at stay null until the human who labelled fills them in."
+}
