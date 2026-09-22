@@ -197,10 +197,34 @@ def test_gpu_guard_tolerates_only_operator_named_neighbour_pids(monkeypatch, tmp
         max_frame_memory=6,
         analysis_fps=30.0,
         allow_gpu_neighbours=(2071175,),
+        gpu_guard_profile="sam3_1280",
+        expected_peak_vram_bytes=2_800_000_000,
     )
     command = captured["command"]
     assert command[command.index("--allow-gpu-neighbour") + 1] == "2071175"
     assert command.count("--allow-gpu-neighbour") == 1
+    # The guard mode and expected-peak provenance reach the worker as well (vram by default).
+    assert command[command.index("--gpu-guard") + 1] == "vram"
+    assert command[command.index("--gpu-guard-profile") + 1] == "sam3_1280"
+    assert command[command.index("--expected-peak-vram-bytes") + 1] == "2800000000"
+    smoke_module._run_worker(
+        external_python=Path("/usr/bin/python3"),
+        worker_path=Path("worker.py"),
+        run_directory=tmp_path,
+        proxy_path=Path("proxy.mp4"),
+        view_id="static-c10119",
+        source_offset_seconds=0.0,
+        model_path=Path("model.pt"),
+        max_frames=10,
+        max_side_length=1280,
+        max_frame_memory=6,
+        analysis_fps=30.0,
+        gpu_guard_mode="strict",
+    )
+    strict_command = captured["command"]
+    assert strict_command[strict_command.index("--gpu-guard") + 1] == "strict"
+    assert "--gpu-guard-profile" not in strict_command
+    assert "--expected-peak-vram-bytes" not in strict_command
 
 
 def test_worker_accepts_four_ordered_manual_multiplex_slots() -> None:

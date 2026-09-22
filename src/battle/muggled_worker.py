@@ -9,13 +9,25 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import subprocess
+import sys
 import traceback
 from collections import deque
 from collections.abc import Iterable
 from pathlib import Path
 from time import perf_counter
 from typing import Any
+
+try:
+    from . import gpu_guard
+except ImportError:
+    # Run as a script by the MuggledSAM interpreter (or loaded by file path): the guard module
+    # sits beside this file and is imported as a top-level module, like the DAM4SAM workers do.
+    _HERE = str(Path(__file__).resolve().parent)
+    if _HERE not in sys.path:
+        sys.path.append(_HERE)
+    import gpu_guard  # type: ignore[no-redef]
 
 CONCEPTS = ("hand", "yellow toy body", "toy wheel")
 # Every frame by default: the exporter logs masks as compressed PNGs, so full-rate masks are
@@ -133,6 +145,7 @@ def _runtime_settings(args: argparse.Namespace, concepts: tuple[str, ...]) -> di
             "Both are diagnostic traces and neither is measured against ground truth."
         ),
         "lost_object_score_threshold": 0.0,
+        "gpu_guard_mode": getattr(args, "gpu_guard", gpu_guard.DEFAULT_GUARD_MODE),
         "tracker_memory_policy": memory_policy_from_args(args),
         "tracker_memory_policy_semantics": (
             "slot_exclusivity argmax gives every pixel predicted positive by more than one "
@@ -268,43 +281,76 @@ def _gpu_processes() -> list[dict[str, str]]:
 
 
 def _looks_like_model_process(process: dict[str, str]) -> bool:
-    """Flag GPU processes that could be running a model, tolerating the Rerun viewer.
+    """The `--gpu-guard strict` rule (Sep 21 logic, kept verbatim in `gpu_guard`).
 
-    The viewer is a renderer, not a model, but it lives under a Python venv path
-    (``.../site-packages/rerun_sdk/rerun_cli/rerun``) and is launched by a ``python``
-    wrapper, so the name tokens alone would refuse to start beside an open recording.
-    It still appears in ``gpu_processes_before_initialization`` for the record; per-process
-    peak VRAM is unaffected, though wall-clock timing may see GPU contention.
+    Flags GPU processes whose nvidia-smi name could be running a model, tolerating the Rerun
+    viewer.  Every process still appears in ``gpu_processes_before_initialization`` for the
+    record; per-process peak VRAM is unaffected, though wall-clock timing may see contention.
     """
-    name = process["process_name"].lower()
-    if _is_rerun_viewer(name):
-        return False
-    return any(token in name for token in ("python", "torch", "ollama", "llama", "vllm"))
+    return gpu_guard.looks_like_model_process(process)
 
 
 def _is_rerun_viewer(name: str) -> bool:
-    executable = name.rsplit("/", 1)[-1]
-    return executable == "rerun" or "/rerun_sdk/rerun_cli/" in name
+    return gpu_guard.is_rerun_viewer(name)
 
 
 def partition_gpu_neighbours(
     gpu_processes: list[dict[str, str]], allowed_pids: Iterable[int]
 ) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
-    """Split the model-like GPU processes into (blocking, allowed-by-operator).
+    """Strict-mode split of the model-like GPU processes into (blocking, allowed-by-operator).
 
     The guard refuses to start beside another model process so that VRAM peaks and timings
     stay per-process.  An operator may name specific PIDs (never process names) that are
     allowed to share the GPU, e.g. a human's calibration workspace worker that must not be
     stopped; every allowed neighbour is recorded in the run's settings as provenance.
     """
-    allowed = {str(int(pid)) for pid in allowed_pids}
-    blocking: list[dict[str, str]] = []
-    tolerated: list[dict[str, str]] = []
-    for process in gpu_processes:
-        if not _looks_like_model_process(process):
-            continue
-        (tolerated if process["pid"] in allowed else blocking).append(process)
-    return blocking, tolerated
+    return gpu_guard.partition_neighbours_strict(gpu_processes, allowed_pids)
+
+
+def _default_gpu_guard_profile(args: argparse.Namespace) -> str:
+    return gpu_guard.sam3_profile_for_side_length(int(args.max_side_length))
+
+
+def gpu_guard_decision(
+    args: argparse.Namespace, gpu_processes: list[dict[str, str]]
+) -> tuple[str | None, dict[str, Any] | None]:
+    """(refusal reason or None, `runtime_settings.gpu_guard` record or None) for this worker.
+
+    ``strict`` reproduces the Sep 21 behaviour exactly on the `gpu_processes` already read
+    for ``gpu_processes_before_initialization``: nvidia-smi names, model-like tokens, a record
+    only when the operator named neighbours.  ``vram`` queries the card itself, classifies
+    every neighbour by its /proc cmdline and checks the headroom against this profile's
+    expected peak; its record is always written so a later reader can see what shared the
+    card.
+    """
+    mode = getattr(args, "gpu_guard", gpu_guard.DEFAULT_GUARD_MODE)
+    if mode == "strict":
+        concurrent_models, tolerated_neighbours = partition_gpu_neighbours(
+            gpu_processes, args.allow_gpu_neighbour
+        )
+        record: dict[str, Any] | None = None
+        if args.allow_gpu_neighbour:
+            record = {
+                "allowed_neighbour_pids": [int(pid) for pid in args.allow_gpu_neighbour],
+                "tolerated_neighbours": tolerated_neighbours,
+                "semantics": (
+                    "the operator allowed these GPU processes (by PID) to run beside this "
+                    "worker; gpu_peak_vram_bytes stays this process's own allocation but "
+                    "wall-clock timing may see contention; the guard still refuses any other "
+                    "model process"
+                ),
+            }
+        if concurrent_models:
+            return f"concurrent GPU model process(es) detected: {concurrent_models}", record
+        return None, record
+    decision = gpu_guard.evaluate(
+        mode=mode,
+        allowed_pids=args.allow_gpu_neighbour,
+        profile=getattr(args, "gpu_guard_profile", None) or _default_gpu_guard_profile(args),
+        expected_peak_vram_bytes=getattr(args, "expected_peak_vram_bytes", None),
+        own_pid=os.getpid(),
+    )
+    return decision.reason, decision.as_provenance()
 
 
 def _result(
@@ -942,19 +988,9 @@ def run(args: argparse.Namespace) -> int:
     runtime_settings = _runtime_settings(args, concepts)
     start = perf_counter()
     gpu_processes = _gpu_processes()
-    concurrent_models, tolerated_neighbours = partition_gpu_neighbours(
-        gpu_processes, args.allow_gpu_neighbour
-    )
-    if args.allow_gpu_neighbour:
-        runtime_settings["gpu_guard"] = {
-            "allowed_neighbour_pids": [int(pid) for pid in args.allow_gpu_neighbour],
-            "tolerated_neighbours": tolerated_neighbours,
-            "semantics": (
-                "the operator allowed these GPU processes (by PID) to run beside this worker; "
-                "gpu_peak_vram_bytes stays this process's own allocation but wall-clock timing "
-                "may see contention; the guard still refuses any other model process"
-            ),
-        }
+    guard_refusal, guard_record = gpu_guard_decision(args, gpu_processes)
+    if guard_record is not None:
+        runtime_settings["gpu_guard"] = guard_record
 
     if not video_path.is_file():
         _write_json(
@@ -990,12 +1026,12 @@ def run(args: argparse.Namespace) -> int:
             ),
         )
         return 2
-    if concurrent_models:
+    if guard_refusal is not None:
         _write_json(
             result_path,
             _result(
                 state="blocked",
-                reason=f"concurrent GPU model process(es) detected: {concurrent_models}",
+                reason=guard_refusal,
                 frames_processed=0,
                 elapsed_seconds=perf_counter() - start,
                 ttfu_seconds=None,
@@ -1710,6 +1746,31 @@ def build_parser() -> argparse.ArgumentParser:
             "PID of a GPU model process the guard may tolerate (repeatable); recorded under "
             "runtime_settings.gpu_guard. Any other model process still blocks the run."
         ),
+    )
+    parser.add_argument(
+        "--gpu-guard",
+        choices=gpu_guard.GUARD_MODES,
+        default=gpu_guard.DEFAULT_GUARD_MODE,
+        help=(
+            "strict: refuse beside any model-like process by nvidia-smi name (Sep 21 logic); "
+            "vram: classify neighbours by /proc cmdline, refuse another Battle worker, an "
+            "unknown neighbour above 2 GiB, or headroom below 1.5 x the expected peak."
+        ),
+    )
+    parser.add_argument(
+        "--gpu-guard-profile",
+        choices=tuple(gpu_guard.EXPECTED_PEAK_BYTES),
+        default=None,
+        help=(
+            "Expected-peak profile for the vram guard; default from --max-side-length "
+            "(sam3_1280 up to 1280, sam3_1080p up to 1920, unknown above)."
+        ),
+    )
+    parser.add_argument(
+        "--expected-peak-vram-bytes",
+        type=int,
+        default=None,
+        help="Override the profile's expected peak VRAM (bytes) for the vram guard.",
     )
     parser.add_argument("--gate-min-object-score", type=float, default=GATE_MIN_OBJECT_SCORE)
     parser.add_argument("--gate-min-iou", type=float, default=GATE_MIN_IOU)

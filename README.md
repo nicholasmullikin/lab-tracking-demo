@@ -1036,6 +1036,19 @@ frame. The worker refuses to begin while another GPU model process is active (an
 Rerun viewer is tolerated and recorded); close the local calibration workspace before
 executing it. A completed run remains review-only and makes no segmentation,
 association, or accuracy claim.
+Since Sep 22 that guard is VRAM-aware by default (`--gpu-guard vram`; `--gpu-guard strict` is
+the Sep 21 name-based rule unchanged): `battle.gpu_guard` classifies every compute process on
+the card by its `/proc/<pid>/cmdline` as `own_repo_model` (a Battle worker, the calibration
+workspace included), `known_benign` (compositor, browser, media player, game, the Rerun viewer,
+or anything under 512 MiB) or `unknown`, and refuses beside another Battle worker not named by
+`--allow-gpu-neighbour PID`, beside an `unknown` neighbour above 2 GiB, or when
+`total - used - sum(neighbour reservations)` (half a model neighbour's current usage, nothing
+for a benign one) is below 1.5 x the job's expected peak (`--gpu-guard-profile` /
+`--expected-peak-vram-bytes`; `sam3_1280` 2.6 GiB from `--max-side-length` <= 1280,
+`sam3_1080p` 3.4 GiB, `four_part` 3.4 GiB, `dam4sam_large` 7 GiB, `unknown` 4 GiB). Every
+neighbour (pid, class, MiB, cmdline basename), the headroom arithmetic and the decision are
+recorded under `runtime_settings.gpu_guard` (schema `battle-gpu-guard/1`), so a video player
+or a game no longer blocks a run that fits, and a later reader can see what shared the card.
 
 ## Analysis frame-rate comparison (30 vs 60 fps)
 
@@ -1285,22 +1298,6 @@ uv run rerun runs/interaction-review-first-minute-v6/interaction_review_combined
   `configs/qa/seed_proposal_decisions.template.json`. Guide:
   [`docs/review-guide-2026-09-20-multiview-presets.md`](docs/review-guide-2026-09-20-multiview-presets.md);
   sessions: [`docs/labeling-sessions-2026-09-20.md`](docs/labeling-sessions-2026-09-20.md).
-
-
-#### Reviewing a package from another computer (Tailscale, native viewer)
-
-`scripts/serve_review_over_tailscale.sh [recording.rrd]` runs `uv run rerun --serve-web` bound
-to this machine's Tailscale IPv4 (from `tailscale ip -4`, MagicDNS name from `tailscale status`;
-a clear error if tailscaled is down): web viewer on :9090, gRPC proxy on :9876, a 4GiB server
-buffer, CORS origins for both http URLs, and no authentication inside the tailnet. The web viewer
-loads but cannot decode the embedded H.264 over plain http (WebCodecs needs a secure context), so
-the client uses the **native** viewer: `scripts/rerun_client/install.sh` (macOS/Linux) or
-`install.ps1` (Windows) installs `uv`, `rerun-sdk==0.37.1` as a `uv tool` (the version must equal
-the server's `pyproject.toml` pin) and `ffmpeg` (Rerun decodes H.264 through a system `ffmpeg`
->= 5.1 on PATH), then `connect.sh <server-ip>` opens
-`rerun --connect rerun+http://<server-ip>:9876/proxy`. `--https-port N` on the server script
-binds loopback for the `tailscale serve --bg --https=N` pattern used above by the calibration
-workspace. Details in [`scripts/rerun_client/README.md`](scripts/rerun_client/README.md).
 
 ##### Sep 17–18 follow-up: leak onset, 20 s hand layer, DAM4SAM first minute
 
@@ -2109,12 +2106,18 @@ uv run scripts/overnight_queue.py jobs.json --continue-on-failure   # keep going
 Each job has `name`, `argv`, `cwd`, `timeout_s`, and optional `env` (merged over the current
 environment) and `interpreter` (prepended to `argv`, e.g. `["uv", "run"]` or a venv python).
 The queue re-executes itself under `systemd-inhibit --what=sleep:idle --why="battle overnight"`
-(`--no-inhibit` to skip). Before every job it checks that `nvidia-smi` answers and that
-`journalctl -k --since <queue start>` has no `NVRM`/`Xid` line (`--no-gpu-check` for CPU-only
-lists); a failed check blocks the job and stops the queue. A job past its timeout is killed
+(`--no-inhibit` to skip). Before every job it checks that `nvidia-smi` answers, that
+`journalctl -k --since <queue start>` has no `NVRM`/`Xid` line, and (since Sep 22, through the
+same `battle.gpu_guard` as the worker: `--gpu-guard vram|strict`, `--allow-gpu-neighbour PID`
+on the queue or inside a job's own argv, per-job `gpu_profile` / `expected_peak_vram_bytes`
+with the profile otherwise inferred from the command) that the card has room for the job
+(`--no-gpu-check` for CPU-only lists); a failed check blocks the job and stops the queue.
+Thirty seconds into each job the guard looks again and logs a `gpu_recheck` event naming any
+neighbour that appeared (nothing is killed). A job past its timeout is killed
 with its whole process group (SIGTERM, then SIGKILL after 10 s). Events go to
-`runs/overnight-multicam-20260918/queue.log` as JSON lines (`queue_start`, `gpu_check`,
-`job_start`, `job_end`, `job_blocked`, `job_skipped`, `queue_end`) and each job's combined
+`runs/overnight-multicam-20260918/queue.log` as JSON lines (`queue_start`, `gpu_check` with the
+guard's neighbours and headroom arithmetic, `job_start`, `gpu_recheck`, `job_end`,
+`job_blocked`, `job_skipped`, `queue_end`) and each job's combined
 stdout/stderr to `logs/<index>_<name>.log` beside it. The queue stops at the first non-zero
 exit, timeout, spawn failure or GPU error unless `--continue-on-failure` is given; jobs after
 the stop are logged as `skipped` with the reason. Exit code 0 only when every job succeeded.

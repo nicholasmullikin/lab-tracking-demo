@@ -4913,3 +4913,44 @@ any knob is turned, and turning one first would make those labels confirmatory.
   `contact_sheet.png`, `observations.jsonl`, `masks/`, `manifest.json`, phase logs),
   `scripts/finebio_sam3_smoke.py`, `docs/SOURCES.md` and `docs/LICENSES.md` entries, this
   entry. View: `uv run rerun runs/finebio-sam3-smoke-20260921/recording.rrd`.
+
+### Sep 22: VRAM-aware GPU guard (`battle.gpu_guard`; worker, `battle-muggled-smoke`, overnight queue)
+
+- **Defect.** The guard was process-name based: any non-whitelisted python-ish process on the
+  card refused the start, so the `showtime` video player (389 MiB, `python3` to nvidia-smi)
+  blocked queue jobs 6-8 on the night of Sep 21 (`runs/sam3-views-r1280-4part-20260921/
+  README_guard_note.md`); a 1.4 GiB game or a browser would do the same, while the risk the
+  guard exists for (this machine hard-crashed once under GPU load: two model processes, or too
+  little headroom) was not what it measured.
+- **Change.** Stdlib-only `src/battle/gpu_guard.py`, imported by the SAM3 worker as a sibling
+  module under the MuggledSAM interpreter and by the driver and queue as `battle.gpu_guard`.
+  `--gpu-guard vram` (default) reads `nvidia-smi --query-gpu=memory.total,memory.used` and
+  `--query-compute-apps`, classifies each neighbour by `/proc/<pid>/cmdline`: `own_repo_model`
+  (a Battle worker by script basename, the calibration workspace included since it holds a
+  SAM3 model), `known_benign` (compositor, browser, player, game or Wine program, the Rerun
+  viewer, or anything under 512 MiB that is not a Battle worker), else `unknown`. It refuses
+  beside another `own_repo_model` whose PID was not named by `--allow-gpu-neighbour`, beside an
+  `unknown` neighbour above 2048 MiB, or when `total - used - sum(reservations)` (half a model
+  neighbour's current usage, zero for a benign one) is below 1.5 x the expected peak
+  (`--expected-peak-vram-bytes`, else a profile from recorded manifests: `sam3_1280` 2.6 GiB,
+  `sam3_1080p` 3.4 GiB, `four_part` 3.4 GiB, `dam4sam_large` 7 GiB, `unknown` 4 GiB; the driver
+  picks the SAM3 profile from `--max-side-length`, the queue infers it from the job command or
+  takes `gpu_profile`). Every neighbour (pid, class, MiB, cmdline basename, reservation), the
+  headroom arithmetic and the decision are recorded under `runtime_settings.gpu_guard` and in
+  the queue's `gpu_check` event (schema `battle-gpu-guard/1`). `--gpu-guard strict` is the
+  Sep 21 rule byte for byte. The queue re-evaluates the guard 30 s into each job (the job's own
+  process tree excluded) and logs a `gpu_recheck` event naming any neighbour that appeared; it
+  kills nothing.
+- **What changed for the known cases.** The calibration worker (PID 2071175) still needs
+  `--allow-gpu-neighbour 2071175` and now also charges a 599 MiB reservation against headroom;
+  the Rerun viewer is benign by basename `rerun` or the `/rerun_sdk/rerun_cli/` path whatever
+  its size, as before; a video player, game or browser no longer blocks. New: the queue gates
+  on the guard before every job, so a job with no worker-level guard (e.g.
+  `battle-multiview-reprompt decode`) is now refused beside a foreign Battle worker unless its
+  PID is allowed on the queue command line or in the job's argv. Tonight's card (16303 MiB,
+  3064 used, compositor + calibration worker): a `sam3_1280` job sees headroom 12640 MiB
+  against 3995 required.
+- **Tests.** `tests/test_gpu_guard.py` and queue tests (classification, headroom arithmetic,
+  the four decisions, own-process exclusion, strict parity against a verbatim copy of the
+  88ba96e function, provenance round trip, `gpu_check`/`gpu_recheck` events); default tier 646
+  passed, ruff clean. No GPU job was run.

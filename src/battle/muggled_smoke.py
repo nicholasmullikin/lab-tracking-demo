@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from . import digest_cache, mask_cache
+from . import digest_cache, gpu_guard, mask_cache
 from .exporter import export_run
 from .schemas import (
     AdapterMetadata,
@@ -655,6 +655,9 @@ def _run_worker(
     memory_policy: TrackerMemoryPolicy | None = None,
     memory_settings: CorrectionMemorySettings | None = None,
     allow_gpu_neighbours: Sequence[int] = (),
+    gpu_guard_mode: str = gpu_guard.DEFAULT_GUARD_MODE,
+    gpu_guard_profile: str | None = None,
+    expected_peak_vram_bytes: int | None = None,
 ) -> dict[str, Any]:
     environment = os.environ.copy()
     environment["CUDA_VISIBLE_DEVICES"] = "0"
@@ -690,6 +693,11 @@ def _run_worker(
         command.extend(["--resume-from-checkpoint", str(resume_from_checkpoint)])
     for pid in allow_gpu_neighbours:
         command.extend(["--allow-gpu-neighbour", str(int(pid))])
+    command.extend(["--gpu-guard", gpu_guard_mode])
+    if gpu_guard_profile is not None:
+        command.extend(["--gpu-guard-profile", gpu_guard_profile])
+    if expected_peak_vram_bytes is not None:
+        command.extend(["--expected-peak-vram-bytes", str(int(expected_peak_vram_bytes))])
     if memory_policy is not None and not memory_policy.is_default:
         command.extend(memory_policy.worker_arguments())
     if memory_settings is not None:
@@ -1616,6 +1624,24 @@ def _create_bounded_rerun_video(
     return output_path
 
 
+def _gpu_guard_settings(args: argparse.Namespace) -> tuple[str | None, int | None]:
+    """(profile, expected peak bytes) the worker's vram guard is told to plan for.
+
+    The profile follows `--max-side-length` (recorded SAM3 peaks: 2.39-2.65 GiB at 1280,
+    3.36 GiB at 1920) unless `--gpu-guard-profile` names one; `--expected-peak-vram-bytes`
+    overrides the profile's number and is recorded as such.  Strict mode plans nothing.
+    """
+    if getattr(args, "gpu_guard", gpu_guard.DEFAULT_GUARD_MODE) == "strict":
+        return None, None
+    profile = getattr(args, "gpu_guard_profile", None) or gpu_guard.sam3_profile_for_side_length(
+        int(args.max_side_length)
+    )
+    peak, _source, profile = gpu_guard.expected_peak_bytes(
+        profile, getattr(args, "expected_peak_vram_bytes", None)
+    )
+    return profile, peak
+
+
 def _flat_runtime_settings(settings: dict[str, Any]) -> dict[str, str | int | float | bool | None]:
     """Keep nested worker provenance in schema-compatible JSON strings."""
     return {
@@ -2396,6 +2422,18 @@ def run_smoke(args: argparse.Namespace) -> Path:
             "calibration workspace); wall-clock timing may see contention, peak VRAM is "
             "this process's own"
         )
+    gpu_guard_mode = getattr(args, "gpu_guard", gpu_guard.DEFAULT_GUARD_MODE)
+    gpu_guard_profile, gpu_guard_peak = _gpu_guard_settings(args)
+    runtime_invocation["gpu_guard"] = {
+        "mode": gpu_guard_mode,
+        "profile": gpu_guard_profile,
+        "expected_peak_vram_bytes": gpu_guard_peak,
+        "note": (
+            "the worker evaluates the guard before touching CUDA and records every GPU "
+            "neighbour, the headroom arithmetic and its decision under "
+            "worker_result.runtime_settings.gpu_guard"
+        ),
+    }
     if is_four_part_full:
         runtime_invocation["known_pilot_failure"] = (
             "chassis/cabin identity merge after frame-65 correction"
@@ -2554,6 +2592,9 @@ def run_smoke(args: argparse.Namespace) -> Path:
             memory_policy=memory_policy,
             memory_settings=memory_settings,
             allow_gpu_neighbours=tuple(args.allow_gpu_neighbour or ()),
+            gpu_guard_mode=gpu_guard_mode,
+            gpu_guard_profile=gpu_guard_profile,
+            expected_peak_vram_bytes=gpu_guard_peak,
         )
 
     observations_path = run_directory / "observations.jsonl"
@@ -3330,6 +3371,33 @@ def main() -> None:
             "human's calibration workspace; recorded in runtime_settings.json and the worker "
             "result. Any other model process still blocks the run."
         ),
+    )
+    parser.add_argument(
+        "--gpu-guard",
+        choices=gpu_guard.GUARD_MODES,
+        default=gpu_guard.DEFAULT_GUARD_MODE,
+        help=(
+            "Worker GPU guard. strict: refuse beside any model-like process by nvidia-smi "
+            "name (the Sep 21 logic). vram (default): classify every neighbour by its /proc "
+            "cmdline; refuse another Battle worker not named by --allow-gpu-neighbour, an "
+            "unknown neighbour above 2 GiB, or VRAM headroom below 1.5 x the expected peak; "
+            "compositors, browsers, players, games and anything under 512 MiB are benign."
+        ),
+    )
+    parser.add_argument(
+        "--gpu-guard-profile",
+        choices=tuple(gpu_guard.EXPECTED_PEAK_BYTES),
+        default=None,
+        help=(
+            "Expected-peak profile for the vram guard (default from --max-side-length: "
+            "sam3_1280 = 2.6 GiB up to 1280, sam3_1080p = 3.4 GiB up to 1920, unknown = 4 GiB)."
+        ),
+    )
+    parser.add_argument(
+        "--expected-peak-vram-bytes",
+        type=int,
+        default=None,
+        help="Override the profile's expected peak VRAM in bytes; recorded as provenance.",
     )
     parser.add_argument(
         "--resume-run",

@@ -3,10 +3,16 @@
 A job list (JSON) names each job's argv, working directory, timeout and optional environment
 or interpreter prefix.  The queue re-executes itself under `systemd-inhibit` so the machine
 does not sleep, then runs the jobs strictly serially.  Before every job it checks that
-`nvidia-smi` answers and that the kernel log since the queue started carries no `NVRM` or
-`Xid` line; a job that exceeds its timeout is killed (whole process group).  Every event is
-appended as one JSON line to the queue log, and the queue stops at the first GPU error or
-non-zero exit unless `--continue-on-failure` is given.
+`nvidia-smi` answers, that the kernel log since the queue started carries no `NVRM` or
+`Xid` line, and (through `battle.gpu_guard`) that the card has room for the job: every
+compute process on the GPU is classified by its /proc cmdline and recorded in the
+`gpu_check` event with the headroom arithmetic; another Battle worker not named by
+`--allow-gpu-neighbour`, an unknown neighbour above 2 GiB or too little headroom for the
+job's profile blocks the job.  Thirty seconds into each job the queue looks at the card once
+more and logs (never kills) any neighbour that appeared.  A job that exceeds its timeout is
+killed (whole process group).  Every event is appended as one JSON line to the queue log, and
+the queue stops at the first GPU error or non-zero exit unless `--continue-on-failure` is
+given.
 
 Nothing here knows what the jobs do; it is plumbing for the overnight multicam pass.
 """
@@ -22,18 +28,21 @@ import signal
 import subprocess
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from . import gpu_guard
 
 DEFAULT_LOG = Path("runs/overnight-multicam-20260918/queue.log")
 INHIBIT_MARKER = "BATTLE_QUEUE_INHIBITED"
 INHIBIT_WHY = "battle overnight"
 KERNEL_ERROR_PATTERN = re.compile(r"NVRM|Xid")
 KILL_GRACE_SECONDS = 10.0
+GUARD_RECHECK_SECONDS = 30.0
 
 JobState = Literal["succeeded", "failed", "timed_out", "blocked_gpu", "skipped", "spawn_failed"]
 JOB_STATES: tuple[JobState, ...] = (
@@ -47,7 +56,12 @@ JOB_STATES: tuple[JobState, ...] = (
 
 
 class QueueJob(BaseModel):
-    """One serial job; `interpreter` is prepended to `argv` (e.g. `["uv", "run"]`)."""
+    """One serial job; `interpreter` is prepended to `argv` (e.g. `["uv", "run"]`).
+
+    `gpu_profile` names the expected-peak profile the GPU guard plans headroom for (default:
+    inferred from the command line, `unknown` = 4 GiB when nothing matches);
+    `expected_peak_vram_bytes` overrides the profile's number.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -57,10 +71,25 @@ class QueueJob(BaseModel):
     timeout_s: float = Field(gt=0)
     env: dict[str, str] = Field(default_factory=dict)
     interpreter: list[str] = Field(default_factory=list)
+    gpu_profile: str | None = None
+    expected_peak_vram_bytes: int | None = Field(default=None, gt=0)
+
+    @field_validator("gpu_profile")
+    @classmethod
+    def _known_profile(cls, value: str | None) -> str | None:
+        if value is not None and value not in gpu_guard.EXPECTED_PEAK_BYTES:
+            raise ValueError(
+                f"unknown gpu_profile {value!r}; known: {sorted(gpu_guard.EXPECTED_PEAK_BYTES)}"
+            )
+        return value
 
     @property
     def command(self) -> list[str]:
         return [*self.interpreter, *self.argv]
+
+    @property
+    def guard_profile(self) -> str:
+        return self.gpu_profile or gpu_guard.infer_profile(self.command)
 
 
 class QueueSpec(BaseModel):
@@ -77,6 +106,9 @@ class GpuHealth(BaseModel):
     nvidia_smi_ok: bool
     kernel_errors: list[str] = Field(default_factory=list)
     detail: str = ""
+    # `battle.gpu_guard` provenance (schema battle-gpu-guard/1): every neighbour on the card,
+    # the headroom arithmetic and the decision; None when the guard did not run.
+    gpu_guard: dict[str, Any] | None = None
 
 
 class JobResult(BaseModel):
@@ -164,12 +196,21 @@ class QueueRunner:
         continue_on_failure: bool = False,
         gpu_check: Callable[[str], GpuHealth] = default_gpu_check,
         journal_since: str | None = None,
+        gpu_guard_mode: str | None = gpu_guard.DEFAULT_GUARD_MODE,
+        allow_gpu_neighbours: Sequence[int] = (),
+        guard_probe: gpu_guard.GpuProbe | None = None,
+        recheck_after_s: float = GUARD_RECHECK_SECONDS,
     ) -> None:
         self.spec = spec
         self.log_path = log_path
         self.continue_on_failure = continue_on_failure
         self.gpu_check = gpu_check
         self.journal_since = journal_since or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # None switches the neighbour/headroom guard off (`--no-gpu-check`).
+        self.gpu_guard_mode = gpu_guard_mode
+        self.allow_gpu_neighbours = [int(pid) for pid in allow_gpu_neighbours]
+        self.guard_probe = guard_probe
+        self.recheck_after_s = recheck_after_s
         self.results: list[JobResult] = []
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
         self.job_log_dir = self.log_path.parent / "logs"
@@ -180,7 +221,59 @@ class QueueRunner:
         with self.log_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(record, default=str) + "\n")
 
-    def _run_job(self, index: int, job: QueueJob) -> JobResult:
+    def guard_decision(
+        self, job: QueueJob, own_pid: int | None = None
+    ) -> gpu_guard.GuardDecision | None:
+        """Evaluate the GPU guard for `job`; PIDs named on the queue or in the job's own argv
+        (`--allow-gpu-neighbour`) are tolerated.  None when the guard is switched off."""
+        if self.gpu_guard_mode is None:
+            return None
+        return gpu_guard.evaluate(
+            mode=self.gpu_guard_mode,
+            allowed_pids=[*self.allow_gpu_neighbours, *gpu_guard.allowed_pids_in_argv(job.command)],
+            profile=job.guard_profile,
+            expected_peak_vram_bytes=job.expected_peak_vram_bytes,
+            own_pid=own_pid,
+            probe=self.guard_probe,
+        )
+
+    def _wait_with_recheck(
+        self,
+        process: subprocess.Popen[bytes],
+        job: QueueJob,
+        baseline: gpu_guard.GuardDecision | None,
+        started: float,
+    ) -> int:
+        """Wait for the job; `recheck_after_s` in, look at the card again and log what changed.
+
+        The job's own processes are excluded from the re-check and nothing is ever killed
+        here: the event records which neighbours appeared since the pre-job check and
+        whether the guard would still accept the job, for a later reader.
+        """
+        if baseline is None or self.recheck_after_s >= job.timeout_s:
+            return process.wait(timeout=job.timeout_s)
+        try:
+            return process.wait(timeout=self.recheck_after_s)
+        except subprocess.TimeoutExpired:
+            pass
+        recheck = self.guard_decision(job, own_pid=process.pid)
+        if recheck is not None:
+            appeared = gpu_guard.new_neighbours(baseline, recheck)
+            self._log(
+                "gpu_recheck",
+                job=job.name,
+                seconds_after_start=round(time.monotonic() - started, 1),
+                new_neighbours=[neighbour.as_dict() for neighbour in appeared],
+                would_accept=recheck.accepted,
+                reasons=recheck.reasons,
+                gpu_guard=recheck.as_provenance(),
+            )
+        remaining = job.timeout_s - (time.monotonic() - started)
+        return process.wait(timeout=max(remaining, 0.0))
+
+    def _run_job(
+        self, index: int, job: QueueJob, baseline: gpu_guard.GuardDecision | None = None
+    ) -> JobResult:
         stdout_log = self.job_log_dir / f"{index:02d}_{job.name}.log"
         env = {**os.environ, **job.env}
         started = time.monotonic()
@@ -205,7 +298,7 @@ class QueueRunner:
                     detail=str(error),
                 )
             try:
-                exit_code = process.wait(timeout=job.timeout_s)
+                exit_code = self._wait_with_recheck(process, job, baseline, started)
             except subprocess.TimeoutExpired:
                 _terminate_group(process)
                 return JobResult(
@@ -240,6 +333,20 @@ class QueueRunner:
                 self._log("job_skipped", job=job.name, reason=stopped_reason)
                 continue
             health = self.gpu_check(self.journal_since)
+            guard = self.guard_decision(job)
+            if guard is not None:
+                detail = health.detail
+                if not guard.accepted:
+                    detail = f"gpu guard refused: {guard.reason}"
+                    if not health.ok:
+                        detail = f"{health.detail}; {detail}" if health.detail else detail
+                health = health.model_copy(
+                    update={
+                        "ok": health.ok and guard.accepted,
+                        "detail": detail,
+                        "gpu_guard": guard.as_provenance(),
+                    }
+                )
             self._log("gpu_check", job=job.name, **health.model_dump())
             if not health.ok:
                 detail = health.detail or "; ".join(health.kernel_errors[:3])
@@ -249,9 +356,14 @@ class QueueRunner:
                 stopped_reason = f"gpu check failed before {job.name}: {detail}"
                 continue
             self._log(
-                "job_start", job=job.name, command=job.command, cwd=job.cwd, timeout_s=job.timeout_s
+                "job_start",
+                job=job.name,
+                command=job.command,
+                cwd=job.cwd,
+                timeout_s=job.timeout_s,
+                gpu_profile=job.guard_profile if guard is not None else None,
             )
-            result = self._run_job(index, job)
+            result = self._run_job(index, job, guard)
             self.results.append(result)
             self._log("job_end", **result.model_dump())
             if result.state != "succeeded" and not self.continue_on_failure:
@@ -298,7 +410,33 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--continue-on-failure", action="store_true")
     parser.add_argument("--no-inhibit", action="store_true", help="do not wrap in systemd-inhibit")
     parser.add_argument(
-        "--no-gpu-check", action="store_true", help="skip nvidia-smi/journal checks"
+        "--no-gpu-check",
+        action="store_true",
+        help="skip the nvidia-smi/journal checks and the GPU guard (CPU-only lists)",
+    )
+    parser.add_argument(
+        "--gpu-guard",
+        choices=gpu_guard.GUARD_MODES,
+        default=gpu_guard.DEFAULT_GUARD_MODE,
+        help=(
+            "GPU guard evaluated before every job and logged in the gpu_check event. strict: "
+            "any model-like process by nvidia-smi name blocks (the Sep 21 worker logic); vram "
+            "(default): neighbours classified by /proc cmdline, another Battle worker, an "
+            "unknown neighbour above 2 GiB or headroom below 1.5 x the job's expected peak "
+            "blocks."
+        ),
+    )
+    parser.add_argument(
+        "--allow-gpu-neighbour",
+        type=int,
+        action="append",
+        default=[],
+        metavar="PID",
+        help=(
+            "PID of a GPU process the queue's guard may tolerate for every job (repeatable); "
+            "PIDs named by --allow-gpu-neighbour inside a job's own argv are tolerated for "
+            "that job as well."
+        ),
     )
     parser.add_argument("--dry-run", action="store_true", help="list the jobs and exit")
     args = parser.parse_args(argv)
@@ -308,7 +446,7 @@ def main(argv: list[str] | None = None) -> int:
         for index, job in enumerate(spec.jobs):
             print(
                 f"{index:02d} {job.name}: {' '.join(job.command)} "
-                f"(cwd {job.cwd}, {job.timeout_s:.0f} s)"
+                f"(cwd {job.cwd}, {job.timeout_s:.0f} s, gpu profile {job.guard_profile})"
             )
         return 0
     if not args.no_inhibit and os.environ.get(INHIBIT_MARKER) != "1":
@@ -326,6 +464,8 @@ def main(argv: list[str] | None = None) -> int:
         log_path=log_path,
         continue_on_failure=args.continue_on_failure,
         gpu_check=gpu_check,
+        gpu_guard_mode=None if args.no_gpu_check else args.gpu_guard,
+        allow_gpu_neighbours=args.allow_gpu_neighbour,
     )
     results = runner.run()
     for result in results:
