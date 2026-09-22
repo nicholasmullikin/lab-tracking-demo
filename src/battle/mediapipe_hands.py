@@ -3,21 +3,21 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import importlib
 import subprocess
 import time
 from collections import Counter, deque
 from contextlib import ExitStack
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import cv2
 import numpy as np
 
+from .digest_cache import sha256_file
 from .exporter import export_run
+from .fs_common import run_timestamp
 from .schemas import (
     AdapterMetadata,
     ArtifactFingerprint,
@@ -79,14 +79,6 @@ HAND_CONNECTIONS = (
 )
 NormalizedRoi = tuple[float, float, float, float]
 HandCandidate = tuple[tuple[NormalizedPoint, ...], HandSide, float]
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as file:
-        for chunk in iter(lambda: file.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def relative_uri(path: Path, repository_root: Path) -> str:
@@ -627,10 +619,7 @@ def run(args: argparse.Namespace) -> Path:
         view_id=args.view,
         seconds=args.seconds,
     )
-    run_id = (
-        args.run_id
-        or f"mediapipe-hands-static-{args.seconds:g}s-{datetime.now(UTC):%Y%m%dt%H%M%Sz}"
-    )
+    run_id = args.run_id or f"mediapipe-hands-static-{args.seconds:g}s-{run_timestamp()}"
     roi: NormalizedRoi | None = args.roi
     roi_source = "fixed_workspace_crop" if roi is not None else None
     if args.roi_from_dataset_2d:

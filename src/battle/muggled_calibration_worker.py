@@ -8,18 +8,21 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import hashlib
 import json
 import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-
-def _write_json(path: Path, payload: dict[str, Any]) -> None:
-    temporary_path = path.with_suffix(".tmp")
-    temporary_path.write_text(json.dumps(payload, indent=2) + "\n")
-    temporary_path.replace(path)
+try:
+    from . import fs_common
+except ImportError:
+    # Run as a script by the MuggledSAM interpreter: the stdlib-only helper module sits
+    # beside this file and is imported as a top-level module, like `gpu_guard` in the worker.
+    _HERE = str(Path(__file__).resolve().parent)
+    if _HERE not in sys.path:
+        sys.path.append(_HERE)
+    import fs_common  # type: ignore[no-redef]
 
 
 def _read_frame(capture: Any, frame_index: int) -> Any:
@@ -525,15 +528,6 @@ def _make_overlay(
     return sheet
 
 
-def _sha256_file(path: Path) -> str:
-    """Return a content hash without loading a potentially large artifact at once."""
-    digest = hashlib.sha256()
-    with path.open("rb") as artifact:
-        for chunk in iter(lambda: artifact.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
 def _finalized_seed_review_records(
     manifest: dict[str, Any], proposal: dict[str, Any]
 ) -> tuple[list[tuple[dict[str, Any], dict[str, Any]]], list[dict[str, Any]]]:
@@ -587,7 +581,7 @@ def render_final_selected_seed_review(
 
     manifest = json.loads(manifest_path.read_text())
     proposal = json.loads(proposal_path.read_text())
-    if proposal.get("calibration_manifest_sha256") != _sha256_file(manifest_path):
+    if proposal.get("calibration_manifest_sha256") != fs_common.sha256_file(manifest_path):
         raise ValueError("proposal does not match the current calibration manifest fingerprint")
     selected, excluded = _finalized_seed_review_records(manifest, proposal)
     panel_width, panel_height = 940, 424
@@ -997,7 +991,7 @@ def _prompt_box_after_review(
                 "selected_for_finalization": selected_for_finalization,
             }
         )
-        _write_json(manifest_path, manifest)
+        fs_common.write_json(manifest_path, manifest, atomic=True)
         print(f"Accepted {candidate_id} and updated {manifest_path}.")
         return
 
@@ -1086,11 +1080,11 @@ def _review_saved(manifest: dict[str, Any], manifest_path: Path) -> None:
                 _display_review(f"Saved review: {candidate_id}", overlay, overlay_path)
         elif action == "clear":
             manifest["candidates"].remove(candidate)
-            _write_json(manifest_path, manifest)
+            fs_common.write_json(manifest_path, manifest, atomic=True)
             print(f"Cleared {candidate_id}; result files remain for audit.")
         elif action == "toggle":
             candidate["selected_for_finalization"] = not candidate["selected_for_finalization"]
-            _write_json(manifest_path, manifest)
+            fs_common.write_json(manifest_path, manifest, atomic=True)
             print(f"Finalize eligibility is now {candidate['selected_for_finalization']}.")
         else:
             print("Allowed actions: review, clear, toggle.")

@@ -9,12 +9,14 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from . import digest_cache, gpu_guard, mask_cache
+from . import gpu_guard, mask_cache
+from .digest_cache import sha256_file
 from .exporter import export_run
+from .fs_common import run_timestamp
 from .schemas import (
     AdapterMetadata,
     ArtifactFingerprint,
@@ -106,11 +108,6 @@ MUGGLED_SAM_PYTHON = Path("/home/nick/.pyenv/versions/muggled_sam/bin/python")
 DEFAULT_MODEL = MUGGLED_SAM_SOURCE / "model_weights" / "sam3.1_multiplex.pt"
 
 
-def sha256_file(path: Path) -> str:
-    """Hash a file, reusing a cached digest while its size and mtime are unchanged."""
-    return digest_cache.sha256_file(path)
-
-
 def relative_uri(path: Path, repository_root: Path) -> str:
     """Prefer portable repository-relative paths in persisted metadata."""
     try:
@@ -164,7 +161,7 @@ def load_text_target_config(
 def make_run_id(
     view_id: str, now: datetime | None = None, *, profile: str = "smoke", suffix: str = ""
 ) -> str:
-    timestamp = (now or datetime.now(UTC)).strftime("%Y%m%dT%H%M%SZ").lower()
+    timestamp = run_timestamp(now)
     run_id = f"muggledsam-sam3-{profile}-{view_id.lower()}-{timestamp}"
     return f"{run_id}-{suffix}" if suffix else run_id
 

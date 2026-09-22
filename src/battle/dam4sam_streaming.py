@@ -26,7 +26,6 @@ as a top-level module (`import dam4sam_streaming`) inside the external worker pr
 
 from __future__ import annotations
 
-import hashlib
 import re
 import sys
 from dataclasses import dataclass
@@ -34,6 +33,16 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+
+try:
+    from .fs_common import sha256_file
+except ImportError:
+    # Imported as a top-level module inside the external worker process: the stdlib-only
+    # helper module sits beside this file.
+    _HERE = str(Path(__file__).resolve().parent)
+    if _HERE not in sys.path:
+        sys.path.append(_HERE)
+    from fs_common import sha256_file  # type: ignore[no-redef]
 
 DEFAULT_INPUT_IMAGE_SIZE = 1024
 SUPPORTED_INPUT_IMAGE_SIZES = (1024, 1536)
@@ -60,14 +69,6 @@ CORRECTION_API = "add_new_mask"
 # ImageNet normalisation constants DAM4SAMTracker.__init__ would have set.
 IMG_MEAN = (0.485, 0.456, 0.406)
 IMG_STD = (0.229, 0.224, 0.225)
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with Path(path).open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 @dataclass(frozen=True)

@@ -6,7 +6,6 @@ import argparse
 import json
 import os
 import subprocess
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +29,7 @@ from .four_part_contract import (
     relative_uri,
     seed_manifest,
 )
+from .fs_common import run_timestamp
 from .schemas import (
     AdapterMetadata,
     ArtifactFingerprint,
@@ -623,7 +623,7 @@ def run(args: argparse.Namespace) -> Path:
             "or 300 (10 s) for the SAM2 VRAM smoke"
         )
     requested_seconds = frame_count / ANALYSIS_FPS
-    run_id = args.run_id or f"{args.method}-{datetime.now(UTC):%Y%m%dt%H%M%Sz}"
+    run_id = args.run_id or f"{args.method}-{run_timestamp()}"
     run_directory = repository_root / args.output_root / run_id
     run_directory.mkdir(parents=True, exist_ok=False)
     input_video = run_directory / "input.mp4"

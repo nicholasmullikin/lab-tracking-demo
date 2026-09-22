@@ -8,9 +8,10 @@ import os
 import re
 import subprocess
 import tempfile
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 
+from .fs_common import run_timestamp
 from .muggled_smoke import (
     DEFAULT_MODEL,
     MUGGLED_SAM_PYTHON,
@@ -77,7 +78,7 @@ def frame_reference(
 
 
 def make_calibration_id(now: datetime | None = None) -> str:
-    timestamp = (now or datetime.now(UTC)).strftime("%Y%m%dT%H%M%SZ").lower()
+    timestamp = run_timestamp(now)
     return f"muggledsam-sam3-e4-box-calibration-{timestamp}"
 
 

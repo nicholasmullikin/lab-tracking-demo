@@ -28,7 +28,6 @@ machine, so nothing is scored; no accuracy claim is made for either method.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import platform
 import subprocess
@@ -38,6 +37,14 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from time import perf_counter
 from typing import Any
+
+try:
+    from battle import fs_common
+except ImportError:
+    # Under the MMDetection interpreter the battle package is not installed: import the
+    # stdlib-only helper module by path, as the workers do.
+    sys.path.append(str(Path(__file__).resolve().parents[1] / "src" / "battle"))
+    import fs_common  # type: ignore[no-redef]
 
 DETECTOR_DIR = Path("/home/nick/src/finebio-detector")
 MODELS: dict[str, dict[str, str]] = {
@@ -151,18 +158,6 @@ def class_family(name: str) -> str:
 
 def class_color(name: str) -> tuple[int, int, int]:
     return FAMILY_COLORS[class_family(name)]
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1 << 22), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def write_json(path: Path, payload: Any) -> None:
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def load_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -308,7 +303,7 @@ def run_detect(args: argparse.Namespace) -> int:
     }
 
     def fail(state: str, reason: str) -> int:
-        write_json(
+        fs_common.write_json(
             result_path,
             {
                 "state": state,
@@ -316,6 +311,7 @@ def run_detect(args: argparse.Namespace) -> int:
                 "elapsed_seconds": perf_counter() - start,
                 "runtime_settings": settings,
             },
+            sort_keys=True,
         )
         print(f"{state}: {reason}", file=sys.stderr)
         return 2
@@ -424,7 +420,7 @@ def run_detect(args: argparse.Namespace) -> int:
         capture.release()
         if wanted:
             raise RuntimeError(f"proxy ended before frames {sorted(wanted)[:5]}...")
-        write_json(
+        fs_common.write_json(
             result_path,
             {
                 "state": "succeeded",
@@ -454,6 +450,7 @@ def run_detect(args: argparse.Namespace) -> int:
                 "detections_file": detections_name,
                 "runtime_settings": settings,
             },
+            sort_keys=True,
         )
         return 0
     except Exception as error:  # noqa: BLE001 - recorded, not swallowed
@@ -970,7 +967,7 @@ def run_export(args: argparse.Namespace) -> int:
     asset_reference = {
         "proxy": {
             "uri": str(video_path),
-            "sha256": sha256_file(video_path),
+            "sha256": fs_common.sha256_file(video_path),
             "dimensions": dimensions,
             "fps": proxy_fps,
             "frame_count": proxy_frames,
@@ -978,7 +975,7 @@ def run_export(args: argparse.Namespace) -> int:
         "source": (
             {
                 "uri": str(source_path),
-                "sha256": sha256_file(source_path),
+                "sha256": fs_common.sha256_file(source_path),
                 "interval_seconds": [
                     source_offset_seconds,
                     source_offset_seconds + proxy_frames / analysis_fps,
@@ -1039,9 +1036,9 @@ def run_export(args: argparse.Namespace) -> int:
         models_manifest[model_name] = {
             "description": settings["model_description"],
             "config": str(config_path),
-            "config_sha256": sha256_file(config_path),
+            "config_sha256": fs_common.sha256_file(config_path),
             "weights": str(weights_path),
-            "weights_sha256": sha256_file(weights_path),
+            "weights_sha256": fs_common.sha256_file(weights_path),
             "weights_size_bytes": weights_path.stat().st_size,
             "versions": result["versions"],
             "device": settings["device"],
@@ -1073,8 +1070,8 @@ def run_export(args: argparse.Namespace) -> int:
         },
         "sam3_smoke": {
             "run_directory": str(sam3_run_directory),
-            "manifest_sha256": sha256_file(sam3_run_directory / "manifest.json"),
-            "observations_sha256": sha256_file(sam3_run_directory / "observations.jsonl"),
+            "manifest_sha256": fs_common.sha256_file(sam3_run_directory / "manifest.json"),
+            "observations_sha256": fs_common.sha256_file(sam3_run_directory / "observations.jsonl"),
             "frame_zero_detections": sam3_detections,
         },
         "battle": git_revision(Path(__file__).resolve().parents[1]),
@@ -1086,7 +1083,7 @@ def run_export(args: argparse.Namespace) -> int:
             "class_counts": "class_counts.md",
         },
     }
-    write_json(run_directory / "manifest.json", manifest)
+    fs_common.write_json(run_directory / "manifest.json", manifest, sort_keys=True)
     print(
         json.dumps(
             {

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib
 import json
 import sys
 import traceback
@@ -24,19 +25,17 @@ DEFAULT_VRAM_PROBE_FRAMES = "30,300"
 SUPPORTED_FRAME_COUNTS = (300, 600, 1800)
 
 
-def _write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-
-
-def _streaming_module() -> Any:
+def _sibling(name: str) -> Any:
     # The script's own directory is already sys.path[0] when run as a worker; this only
     # matters when the module is imported some other way.
     here = str(Path(__file__).resolve().parent)
     if here not in sys.path:
         sys.path.append(here)
-    import dam4sam_streaming
+    return importlib.import_module(name)
 
-    return dam4sam_streaming
+
+def _streaming_module() -> Any:
+    return _sibling("dam4sam_streaming")
 
 
 def _frame_shape(frame_path: Path) -> tuple[int, int]:
@@ -602,7 +601,7 @@ def main() -> None:
         result["reason"] = f"{type(exc).__name__}: {exc}"
         (args.run_directory / "worker_traceback.log").write_text(traceback.format_exc())
     result["elapsed_seconds"] = perf_counter() - started
-    _write_json(args.run_directory / "worker_result.json", result)
+    _sibling("fs_common").write_json(args.run_directory / "worker_result.json", result)
 
 
 if __name__ == "__main__":

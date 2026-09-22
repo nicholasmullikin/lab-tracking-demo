@@ -7,12 +7,13 @@ import hashlib
 import json
 import os
 import subprocess
-from datetime import UTC, datetime
 from pathlib import Path
 
 import cv2
 
+from .digest_cache import sha256_file
 from .exporter import export_run
+from .fs_common import run_timestamp
 from .schemas import (
     AdapterMetadata,
     ArtifactFingerprint,
@@ -70,14 +71,6 @@ HAND_CONNECTIONS = (
     (19, 20),
     (0, 17),
 )
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as file:
-        for chunk in iter(lambda: file.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def relative_uri(path: Path, repository_root: Path) -> str:
@@ -357,9 +350,7 @@ def run(args: argparse.Namespace) -> Path:
         view_id=args.view,
         seconds=args.seconds,
     )
-    run_id = (
-        args.run_id or f"wilor-hands-static-{args.seconds:g}s-{datetime.now(UTC):%Y%m%dt%H%M%Sz}"
-    )
+    run_id = args.run_id or f"wilor-hands-static-{args.seconds:g}s-{run_timestamp()}"
     run_directory = (repository_root / args.output_root / run_id).resolve()
     run_directory.mkdir(parents=True, exist_ok=False)
     worker_path = Path(__file__).with_name("wilor_worker.py")

@@ -24,7 +24,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import subprocess
@@ -36,13 +35,10 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-
-def sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+# The battle package is not installed in the LM-EEC venv; the stdlib-only helper module is
+# imported by path, as the workers under src/battle do.
+sys.path.append(str(Path(__file__).resolve().parents[1] / "src" / "battle"))
+from fs_common import sha256_file as sha256  # noqa: E402
 
 
 def read_mask(path: Path) -> np.ndarray:

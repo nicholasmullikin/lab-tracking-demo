@@ -20,13 +20,15 @@ from time import perf_counter
 from typing import Any
 
 try:
-    from . import gpu_guard
+    from . import fs_common, gpu_guard
 except ImportError:
-    # Run as a script by the MuggledSAM interpreter (or loaded by file path): the guard module
-    # sits beside this file and is imported as a top-level module, like the DAM4SAM workers do.
+    # Run as a script by the MuggledSAM interpreter (or loaded by file path): the guard and
+    # helper modules sit beside this file and are imported as top-level modules, like the
+    # DAM4SAM workers do.
     _HERE = str(Path(__file__).resolve().parent)
     if _HERE not in sys.path:
         sys.path.append(_HERE)
+    import fs_common  # type: ignore[no-redef]
     import gpu_guard  # type: ignore[no-redef]
 
 CONCEPTS = ("hand", "yellow toy body", "toy wheel")
@@ -246,10 +248,6 @@ def _runtime_settings(args: argparse.Namespace, concepts: tuple[str, ...]) -> di
     if args.text_targets_json:
         settings["text_prompt_mapping"] = json.loads(args.text_targets_json)
     return settings
-
-
-def _write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
 
 def _is_numpy_mask(mask: Any) -> bool:
@@ -993,7 +991,7 @@ def run(args: argparse.Namespace) -> int:
         runtime_settings["gpu_guard"] = guard_record
 
     if not video_path.is_file():
-        _write_json(
+        fs_common.write_json(
             result_path,
             _result(
                 state="blocked",
@@ -1007,10 +1005,11 @@ def run(args: argparse.Namespace) -> int:
                 unavailable=["time_to_first_usable_output_seconds", "gpu_peak_vram_bytes"],
                 runtime_settings=runtime_settings,
             ),
+            sort_keys=True,
         )
         return 2
     if not model_path.is_file():
-        _write_json(
+        fs_common.write_json(
             result_path,
             _result(
                 state="blocked",
@@ -1024,10 +1023,11 @@ def run(args: argparse.Namespace) -> int:
                 unavailable=["time_to_first_usable_output_seconds", "gpu_peak_vram_bytes"],
                 runtime_settings=runtime_settings,
             ),
+            sort_keys=True,
         )
         return 2
     if guard_refusal is not None:
-        _write_json(
+        fs_common.write_json(
             result_path,
             _result(
                 state="blocked",
@@ -1041,6 +1041,7 @@ def run(args: argparse.Namespace) -> int:
                 unavailable=["time_to_first_usable_output_seconds", "gpu_peak_vram_bytes"],
                 runtime_settings=runtime_settings,
             ),
+            sort_keys=True,
         )
         return 2
 
@@ -1469,7 +1470,7 @@ def run(args: argparse.Namespace) -> int:
         capture.release()
         torch.cuda.synchronize(0)
         elapsed = perf_counter() - start
-        _write_json(
+        fs_common.write_json(
             result_path,
             _result(
                 state="succeeded",
@@ -1485,12 +1486,13 @@ def run(args: argparse.Namespace) -> int:
                 else ["time_to_first_usable_output_seconds"],
                 runtime_settings=runtime_settings,
             ),
+            sort_keys=True,
         )
         return 0
     except Exception as error:
         if "condition_writer" in locals() and condition_writer is not None:
             condition_writer.release()
-        _write_json(
+        fs_common.write_json(
             result_path,
             _result(
                 state="failed",
@@ -1504,6 +1506,7 @@ def run(args: argparse.Namespace) -> int:
                 unavailable=["time_to_first_usable_output_seconds", "gpu_peak_vram_bytes"],
                 runtime_settings=runtime_settings,
             ),
+            sort_keys=True,
         )
         traceback.print_exc()
         return 1

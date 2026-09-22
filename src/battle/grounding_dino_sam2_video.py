@@ -7,13 +7,14 @@ import hashlib
 import json
 import os
 import subprocess
-from datetime import UTC, datetime
 from pathlib import Path
 
 import cv2
 
 from . import mask_cache
+from .digest_cache import sha256_file
 from .exporter import export_run
+from .fs_common import run_timestamp
 from .schemas import (
     AdapterMetadata,
     ArtifactFingerprint,
@@ -50,14 +51,6 @@ GROUNDING_MODEL_ID = "IDEA-Research/grounding-dino-tiny"
 GROUNDING_MODEL_REVISION = "a2bb814dd30d776dcf7e30523b00659f4f141c71"
 TEXT_PROMPT = "hand."
 METHOD_NAME = "transformers_grounding_dino_plus_sam2_video_smoke"
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as file:
-        for chunk in iter(lambda: file.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def relative_uri(path: Path, repository_root: Path) -> str:
@@ -277,7 +270,7 @@ def run(args: argparse.Namespace) -> Path:
         view_id=args.view,
         seconds=args.seconds,
     )
-    run_id = args.run_id or f"{METHOD_NAME}-{args.seconds:g}s-{datetime.now(UTC):%Y%m%dt%H%M%Sz}"
+    run_id = args.run_id or f"{METHOD_NAME}-{args.seconds:g}s-{run_timestamp()}"
     run_directory = (repository_root / args.output_root / run_id).resolve()
     run_directory.mkdir(parents=True, exist_ok=False)
     worker_path = Path(__file__).with_name("grounding_dino_sam2_video_worker.py")

@@ -20,6 +20,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from .external_smoke_import import import_kineo, sha256_file
+from .fs_common import run_timestamp
 
 DEFAULT_CONFIG = Path("configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_g2.json")
 DEFAULT_KINEO_CONFIG = Path("configs/kineo_nlf_headless_only.yaml")
@@ -157,9 +158,7 @@ def run_kineo_nlf(args: argparse.Namespace) -> Path:
     repository_root = args.repository_root.resolve()
     kineo_root = args.kineo_root.resolve()
     frame_count = round(args.seconds * 30)
-    run_id = args.run_id or (
-        f"kineo-nlf-headless-{int(args.seconds)}s-{datetime.now(UTC).strftime('%Y%m%dt%H%M%Sz')}"
-    )
+    run_id = args.run_id or (f"kineo-nlf-headless-{int(args.seconds)}s-{run_timestamp()}")
     proxy_path = (repository_root / args.proxy).resolve()
     source_kineo_config = (repository_root / args.kineo_config).resolve()
     bounded_proxy_dir = repository_root / "data/logs/kineo_cache/bounded_inputs"

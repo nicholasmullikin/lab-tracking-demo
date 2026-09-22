@@ -9,15 +9,11 @@ from typing import Any
 
 from PIL import Image
 
-from . import digest_cache
+from .digest_cache import sha256_file
 
 TARGETS = ("chassis", "interior", "rear_body", "cabin")
 FRAME_COUNT = 600
 ANALYSIS_FPS = 30
-
-
-def sha256_file(path: Path) -> str:
-    return digest_cache.sha256_file(path)
 
 
 def relative_uri(path: Path, repository_root: Path) -> str:

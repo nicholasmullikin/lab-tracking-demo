@@ -6,7 +6,6 @@ import argparse
 import json
 import os
 import subprocess
-from datetime import UTC, datetime
 from pathlib import Path
 
 import cv2
@@ -48,6 +47,7 @@ from .fine_substep_pipeline import (
     temporal_delta_features,
     write_crop_manifest,
 )
+from .fs_common import run_timestamp
 from .schemas import (
     AdapterMetadata,
     ArtifactFingerprint,
@@ -544,9 +544,7 @@ def run(args: argparse.Namespace) -> Path:
     )
 
     requested_frames = min(round(args.seconds * proxy.fps), FRAME_COUNT)
-    run_id = args.run_id or (
-        f"fine-substep-static-{args.seconds:g}s-{datetime.now(UTC):%Y%m%dt%H%M%Sz}"
-    )
+    run_id = args.run_id or (f"fine-substep-static-{args.seconds:g}s-{run_timestamp()}")
     run_directory = (repository_root / args.output_root / run_id).resolve()
     run_directory.mkdir(parents=True, exist_ok=args.reuse_run_directory)
     video_path = run_directory / "input.mp4"

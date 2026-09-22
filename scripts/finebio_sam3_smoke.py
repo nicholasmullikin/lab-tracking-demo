@@ -21,7 +21,6 @@ against ground truth and no accuracy is claimed.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import platform
 import re
@@ -32,6 +31,14 @@ from collections import deque
 from pathlib import Path
 from time import perf_counter
 from typing import Any
+
+try:
+    from battle import fs_common
+except ImportError:
+    # Under the MuggledSAM interpreter the battle package is not installed: import the
+    # stdlib-only helper module by path, as the workers do.
+    sys.path.append(str(Path(__file__).resolve().parents[1] / "src" / "battle"))
+    import fs_common  # type: ignore[no-redef]
 
 # Worker constants, restated so the run is comparable with the Assembly101 text-prompt runs.
 DETECTION_THRESHOLD = 0.40
@@ -59,20 +66,8 @@ CLAIM_BOUNDARY = (
 )
 
 
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1 << 22), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
 def slugify(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")
-
-
-def write_json(path: Path, payload: Any) -> None:
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 # --------------------------------------------------------------------------------------------
@@ -221,7 +216,7 @@ def run_track(args: argparse.Namespace) -> int:
     }
 
     def fail(state: str, reason: str) -> int:
-        write_json(
+        fs_common.write_json(
             result_path,
             {
                 "state": state,
@@ -229,6 +224,7 @@ def run_track(args: argparse.Namespace) -> int:
                 "elapsed_seconds": perf_counter() - start,
                 "runtime_settings": settings,
             },
+            sort_keys=True,
         )
         print(f"{state}: {reason}", file=sys.stderr)
         return 2
@@ -418,7 +414,7 @@ def run_track(args: argparse.Namespace) -> int:
                     print(f"frame {frame_index} {perf_counter() - start:.1f}s", flush=True)
         capture.release()
         torch.cuda.synchronize(0)
-        write_json(
+        fs_common.write_json(
             result_path,
             {
                 "state": "succeeded",
@@ -436,6 +432,7 @@ def run_track(args: argparse.Namespace) -> int:
                 "interpreter": sys.executable,
                 "runtime_settings": settings,
             },
+            sort_keys=True,
         )
         return 0
     except Exception as error:  # noqa: BLE001 - recorded, not swallowed
@@ -837,7 +834,7 @@ def run_export(args: argparse.Namespace) -> int:
     asset_reference = {
         "proxy": {
             "uri": str(video_path),
-            "sha256": sha256_file(video_path),
+            "sha256": fs_common.sha256_file(video_path),
             "dimensions": dimensions,
             "fps": proxy_fps,
             "frame_count": proxy_frames,
@@ -845,7 +842,7 @@ def run_export(args: argparse.Namespace) -> int:
         "source": (
             {
                 "uri": str(source_path),
-                "sha256": sha256_file(source_path),
+                "sha256": fs_common.sha256_file(source_path),
                 "interval_seconds": [
                     args.source_offset_seconds,
                     args.source_offset_seconds + proxy_frames / analysis_fps,
@@ -909,7 +906,7 @@ def run_export(args: argparse.Namespace) -> int:
         "per_object_summary": per_object,
         "model": {
             "weights": str(model_path),
-            "weights_sha256": sha256_file(model_path),
+            "weights_sha256": fs_common.sha256_file(model_path),
             "weights_size_bytes": model_path.stat().st_size,
             "muggled_sam": {"path": str(MUGGLED_SAM_SOURCE), **git_revision(MUGGLED_SAM_SOURCE)},
             "torch_version": track_result.get("torch_version"),
@@ -936,7 +933,7 @@ def run_export(args: argparse.Namespace) -> int:
             "masks_directory": "masks/",
         },
     }
-    write_json(run_directory / "manifest.json", manifest)
+    fs_common.write_json(run_directory / "manifest.json", manifest, sort_keys=True)
     print(
         json.dumps(
             {"rrd": str(rrd_path), "contact_sheet": str(sheet_path), "per_object": per_object},

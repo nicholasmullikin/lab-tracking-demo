@@ -15,7 +15,6 @@ view's window is produced by one recipe.  Nothing here reads poses, annotations 
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import subprocess
 import threading
@@ -40,6 +39,7 @@ from .assembly101_recordings import (
     Assembly101Recording,
     get_recording,
 )
+from .digest_cache import sha256_file as _sha256
 from .schemas import VersionedModel
 
 # Recording-1 constants, kept for every caller written before the recording registry existed.
@@ -342,14 +342,6 @@ def ffmpeg_window_command(
         filter_graph,
         *outputs,
     ]
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1 << 22), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _stream_facts(path: Path) -> dict[str, str]:

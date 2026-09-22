@@ -19,8 +19,8 @@ import rerun as rr
 import rerun.blueprint as rrb
 from PIL import Image
 
-from . import digest_cache
 from .build_phases import PhaseTimer
+from .digest_cache import sha256_file
 from .exporter import HAND_CONNECTIONS, HAND_LANDMARK_NAMES, _rgba_mask_png
 from .schemas import (
     ArtifactFingerprint,
@@ -153,11 +153,6 @@ class LoadedMethod:
     manifest: RunManifest
     observations: dict[int, FrameObservations]
     index_method: ExploratoryComparisonMethod
-
-
-def sha256_file(path: Path, *, verify: bool = False) -> str:
-    """Return the content digest of one local artifact."""
-    return digest_cache.sha256_file(path, verify=verify)
 
 
 def _relative_uri(path: Path, repository_root: Path) -> str:

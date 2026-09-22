@@ -88,10 +88,6 @@ def _load_manifest(run_directory: Path) -> RunManifest:
     return RunManifest.model_validate_json(manifest_path.read_text())
 
 
-def _sha256_file(path: Path) -> str:
-    return digest_cache.sha256_file(path)
-
-
 def _relative_uri(path: Path, repository_root: Path) -> str:
     try:
         return path.resolve().relative_to(repository_root).as_posix()
@@ -350,7 +346,7 @@ def build_focused_first_minute_comparison(
         ego_asset_reference=EncodedAssetInput(
             uri=_relative_uri(ego_video, repository_root),
             media_type="video/mp4",
-            checksum_sha256=_sha256_file(ego_video),
+            checksum_sha256=digest_cache.sha256_file(ego_video),
         ),
         ego_mask_artifact_root=ego_run_directory,
         static_video_path=static_video,
@@ -358,7 +354,7 @@ def build_focused_first_minute_comparison(
         static_asset_reference=EncodedAssetInput(
             uri=_relative_uri(static_video, repository_root),
             media_type="video/mp4",
-            checksum_sha256=_sha256_file(static_video),
+            checksum_sha256=digest_cache.sha256_file(static_video),
         ),
         static_mask_artifact_root=static_run_directory,
         static_label=(

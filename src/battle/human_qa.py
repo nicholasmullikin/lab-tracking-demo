@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import subprocess
@@ -12,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .digest_cache import sha256_file
 from .schemas import (
     ArtifactFingerprint,
     ClockName,
@@ -27,14 +27,6 @@ from .schemas import (
 
 QA_PROTOCOL = "assembly101_easy_hard_source_timestamps_v1"
 QA_SELECTION_RULE = "one_easy_manipulation_and_one_hard_or_occluded_manipulation"
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as file:
-        while chunk := file.read(1024 * 1024):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def repository_relative_uri(path: Path, repository_root: Path) -> str:

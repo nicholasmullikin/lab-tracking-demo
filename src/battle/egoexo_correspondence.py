@@ -36,7 +36,6 @@ SAM 2 (Apache-2.0 code); Assembly101 is CC BY-NC 4.0.  Both are noted in `docs/L
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import subprocess
@@ -54,6 +53,7 @@ from pydantic import Field
 from . import mask_cache
 from .assembly101_fetch_view import RECORDING_ID, proxy_path
 from .assembly101_pose_schemas import Assembly101ClockRule
+from .digest_cache import sha256_file as _sha256
 from .multiview_geometry import CameraRig
 from .schemas import ArtifactFingerprint, FrameObservations, VersionedModel
 
@@ -340,14 +340,6 @@ class EvaluationManifest(VersionedModel):
 
 def _utc_now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def fingerprint(path: Path, repository_root: Path) -> ArtifactFingerprint:

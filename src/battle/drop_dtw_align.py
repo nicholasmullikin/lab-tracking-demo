@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import subprocess
-from datetime import UTC, datetime
 from pathlib import Path
 
 import rerun as rr
 
 from .assembly101_gt_transcript import parse_coarse_transcript
+from .digest_cache import sha256_file
+from .fs_common import run_timestamp
 from .schemas import (
     AdapterMetadata,
     ArtifactFingerprint,
@@ -47,14 +47,6 @@ DEFAULT_OPENCLIP_CHECKPOINT = Path(
     f"snapshots/{OPENCLIP_REVISION}/open_clip_model.safetensors"
 )
 DEFAULT_OPENCLIP_CACHE = Path("/home/nick/.cache/huggingface/hub")
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as file:
-        for chunk in iter(lambda: file.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def relative_uri(path: Path, repository_root: Path) -> str:
@@ -142,7 +134,7 @@ def run(args: argparse.Namespace) -> Path:
             "cannot run Drop-DTW weak supervision"
         )
 
-    run_id = args.run_id or f"drop-dtw-static-{args.seconds:g}s-{datetime.now(UTC):%Y%m%dt%H%M%Sz}"
+    run_id = args.run_id or f"drop-dtw-static-{args.seconds:g}s-{run_timestamp()}"
     run_directory = (repository_root / args.output_root / run_id).resolve()
     run_directory.mkdir(parents=True, exist_ok=False)
     transcript_path = run_directory / "gt_transcript.json"

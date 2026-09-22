@@ -4,8 +4,19 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any
+
+try:
+    from . import fs_common
+except ImportError:
+    # Run as a script by the MuggledSAM interpreter (`battle-muggled-smoke` launches it by
+    # path): the stdlib-only helper module sits beside this file.
+    _HERE = str(Path(__file__).resolve().parent)
+    if _HERE not in sys.path:
+        sys.path.append(_HERE)
+    import fs_common  # type: ignore[no-redef]
 
 FPS = 30
 FRAME_INDICES = (0, 150, 299)
@@ -17,7 +28,7 @@ COLORS_BGR = ((80, 200, 80), (60, 190, 255), (220, 120, 255))
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    fs_common.write_json(path, payload, sort_keys=True)
 
 
 def _histogram_percentile(histogram: Any, percentile: float) -> int:

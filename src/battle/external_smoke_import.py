@@ -12,7 +12,6 @@ commands, not for arbitrary third-party uploads.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import pickle
 import subprocess
@@ -21,6 +20,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+from .digest_cache import sha256_file
 from .exporter import export_run
 from .schemas import (
     AdapterMetadata,
@@ -57,14 +57,6 @@ DEFAULT_GROUNDED_SAM2_NATIVE = Path(
 DEFAULT_SMOKE_VIDEO = Path("data/derived/assembly101/smoke_frames/focused_static_20s.mp4")
 DEFAULT_SMOKE_IMAGE = Path("data/derived/assembly101/smoke_frames/focused_static_frame0.jpg")
 NLF_BODY_JOINT_COUNT = 55
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as file:
-        for chunk in iter(lambda: file.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def relative_uri(path: Path, repository_root: Path) -> str:

@@ -3,17 +3,17 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import subprocess
-from datetime import UTC, datetime
 from pathlib import Path
 
 import cv2
 
 from . import mask_cache
+from .digest_cache import sha256_file
 from .exporter import export_run
+from .fs_common import run_timestamp
 from .schemas import (
     AdapterMetadata,
     ArtifactFingerprint,
@@ -50,14 +50,6 @@ SAM2_CONFIG = "sam21pp_hiera_t.yaml"
 TRACKER_NAME = "sam21pp-T"
 INIT_BBOX_XYWH = (881, 446, 152, 129)
 METHOD_NAME = "dam4sam_video_smoke"
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as file:
-        for chunk in iter(lambda: file.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def relative_uri(path: Path, repository_root: Path) -> str:
@@ -263,7 +255,7 @@ def run(args: argparse.Namespace) -> Path:
         view_id=args.view,
         seconds=args.seconds,
     )
-    run_id = args.run_id or f"{METHOD_NAME}-{args.seconds:g}s-{datetime.now(UTC):%Y%m%dt%H%M%Sz}"
+    run_id = args.run_id or f"{METHOD_NAME}-{args.seconds:g}s-{run_timestamp()}"
     run_directory = (repository_root / args.output_root / run_id).resolve()
     run_directory.mkdir(parents=True, exist_ok=False)
     worker_path = Path(__file__).with_name("dam4sam_video_worker.py")

@@ -11,10 +11,11 @@ the bytes again, and any builder that must prove an artifact is unchanged should
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 from pathlib import Path
+
+from .fs_common import sha256_file as _hash_bytes
 
 CACHE_RELATIVE_PATH = Path(".cache/battle/file-digests.json")
 _MEMORY: dict[str, tuple[int, int, str]] = {}
@@ -27,14 +28,6 @@ def _cache_path() -> Path:
     if override:
         return Path(override)
     return Path.cwd() / CACHE_RELATIVE_PATH
-
-
-def _hash_bytes(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as file:
-        while chunk := file.read(1024 * 1024):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _load_disk() -> None:
