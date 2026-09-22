@@ -413,3 +413,29 @@ def test_run_directory_replacements_cover_absolute_relative_and_name(tmp_path: P
     assert harness.normalise_text(
         f"see {run.resolve()}/manifest.json and runs/x/run-1", (), replacements
     ) == ("see <run>/manifest.json and <run>")
+
+
+def test_compare_runs_skips_the_mask_cache_stamps_but_compares_its_bits(
+    tmp_path: Path, capsys
+) -> None:
+    before = _write_run(tmp_path / "before", run_id="r1", snapshot="s", mask_byte=1, peak=1)
+    after = _write_run(tmp_path / "after", run_id="r2", snapshot="s", mask_byte=1, peak=1)
+    bits = np.array([1, 0, 1], dtype=np.uint8)
+    np.savez(
+        before / "native" / "mask_cache.npz",
+        **{"stamp/m0": np.array([2859, 1], dtype=np.int64), "bits/m0": bits},
+    )
+    np.savez(
+        after / "native" / "mask_cache.npz",
+        **{"stamp/m0": np.array([2859, 2], dtype=np.int64), "bits/m0": bits},
+    )
+    harness.main(["--repository-root", str(tmp_path), "compare-runs", str(before), str(after)])
+    assert "EQUIVALENT" in capsys.readouterr().out
+
+    np.savez(
+        after / "native" / "mask_cache.npz",
+        **{"stamp/m0": np.array([2859, 2], dtype=np.int64), "bits/m0": 1 - bits},
+    )
+    with pytest.raises(SystemExit):
+        harness.main(["--repository-root", str(tmp_path), "compare-runs", str(before), str(after)])
+    assert "native/mask_cache.npz: array bits/m0: values differ" in capsys.readouterr().out

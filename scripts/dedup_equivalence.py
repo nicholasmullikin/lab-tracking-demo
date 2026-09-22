@@ -46,9 +46,10 @@ after a refactor: every PNG under `native/masks/` or `masks/` byte for byte (rep
 separately), then the same tree walk as `compare` with both run directories (absolute,
 repository-relative and the run id itself) folded onto `<run>`, the per-execution
 measurements `time_to_first_usable_output_seconds` and `gpu_peak_vram_bytes` treated as
-volatile in addition, and `--replace OLD=NEW` for anything else that legitimately differs
-(the two code-snapshot directories named in `worker_command.txt`).  Any mask difference or
-non-volatile difference exits 1; `--report` writes the result as JSON.
+volatile in addition, the mask cache's `stamp/<mask>` size-and-mtime arrays skipped (its
+bits, rgba and shape arrays are compared), and `--replace OLD=NEW` for anything else that
+legitimately differs (the two code-snapshot directories named in `worker_command.txt`).  Any
+mask difference or non-volatile difference exits 1; `--report` writes the result as JSON.
 
 Usage:
 
@@ -692,7 +693,11 @@ def compare_text_files(
     return diffs
 
 
-def compare_npz_files(before: Path, after: Path) -> list[str]:
+def compare_npz_files(
+    before: Path, after: Path, volatile_prefixes: Sequence[str] = ()
+) -> list[str]:
+    """Array-wise comparison; arrays whose key starts with a volatile prefix must exist on
+    both sides but may differ (the mask cache's `stamp/<mask>` size-and-mtime records)."""
     import numpy as np
 
     left = np.load(before)
@@ -701,6 +706,8 @@ def compare_npz_files(before: Path, after: Path) -> list[str]:
     for key in sorted(set(left.files) | set(right.files)):
         if key not in left.files or key not in right.files:
             diffs.append(f"array {key}: present on one side only")
+            continue
+        if key.startswith(tuple(volatile_prefixes)):
             continue
         a, b = left[key], right[key]
         if a.shape != b.shape or a.dtype != b.dtype:
@@ -751,6 +758,7 @@ def compare_trees(
     extra_keys: frozenset[str] = frozenset(),
     replacements: Replacements = (),
     fingerprint_self_check: bool = True,
+    npz_volatile_prefixes: Sequence[str] = (),
 ) -> tuple[list[str], dict[str, Any]]:
     before_files = _relative_files(before_root)
     after_files = _relative_files(after_root)
@@ -803,7 +811,7 @@ def compare_trees(
         elif relative.suffix in {".md", ".txt"}:
             result = compare_text_files(before, after, labels, replacements)
         elif relative.suffix == ".npz":
-            result = compare_npz_files(before, after)
+            result = compare_npz_files(before, after, npz_volatile_prefixes)
         else:
             result = compare_bytes(before, after)
         notes["compared"] += 1
@@ -854,6 +862,9 @@ def compare(args: argparse.Namespace) -> None:
 
 # Per-run measurements that legitimately differ between two executions of the same code.
 RUN_VOLATILE_KEYS = frozenset({"time_to_first_usable_output_seconds", "gpu_peak_vram_bytes"})
+# `mask_cache.npz` keeps `[st_size, st_mtime_ns]` per mask under `stamp/<mask>`; the bits,
+# rgba and shape arrays beside them are compared.
+RUN_VOLATILE_NPZ_PREFIXES = ("stamp/",)
 RUN_PLACEHOLDER = "<run>"
 MASK_DIRECTORIES = ("native/masks", "masks")
 
@@ -928,6 +939,7 @@ def compare_runs(args: argparse.Namespace) -> None:
         extra_keys=RUN_VOLATILE_KEYS,
         replacements=replacements,
         fingerprint_self_check=False,
+        npz_volatile_prefixes=RUN_VOLATILE_NPZ_PREFIXES,
     )
     manifest_diffs = [line for line in diffs if line.startswith("manifest.json:")]
     other_diffs = [line for line in diffs if not line.startswith("manifest.json:")]
@@ -945,6 +957,7 @@ def compare_runs(args: argparse.Namespace) -> None:
         "files_compared": notes["compared"],
         "rrd_method": notes["rrd_method"],
         "volatile_keys": sorted(VOLATILE_KEYS | RUN_VOLATILE_KEYS),
+        "volatile_npz_array_prefixes": list(RUN_VOLATILE_NPZ_PREFIXES),
         "equivalent": not diffs and masks["identical"],
     }
     if args.report is not None:
