@@ -98,6 +98,7 @@ OWN_REPO_WORKER_BASENAMES = frozenset(
         "wilor_worker.py",
         "boxmot_worker.py",
         "finebio_sam3_smoke.py",
+        "sam3_appearance.py",
     }
 )
 # Desktop compositors, browsers, media players, games and launchers, the Rerun viewer.
