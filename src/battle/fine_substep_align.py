@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
-import subprocess
 from pathlib import Path
 
 import cv2
@@ -61,6 +59,8 @@ from .schemas import (
     RuntimeMeasurements,
     TimeInterval,
 )
+from .video_driver import bounded_video as _bounded_video
+from .video_driver import prepend_pythonpath, run_external_worker
 
 DEFAULT_LABEL_CONTRACT = Path(
     "configs/fine_substeps/assembly101_focused_static_first_20s_agent_labels.json"
@@ -77,34 +77,6 @@ DEFAULT_WEIGHTS = {"motion": 0.12, "contact": 0.08}
 ITERATION_WEIGHTS = {"motion": 0.18, "contact": 0.14}
 
 
-def _bounded_video(proxy_path: Path, output_path: Path, frame_count: int) -> Path:
-    subprocess.run(
-        [
-            "ffmpeg",
-            "-y",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-i",
-            str(proxy_path),
-            "-frames:v",
-            str(frame_count),
-            "-an",
-            "-c:v",
-            "libx264",
-            "-crf",
-            "18",
-            "-preset",
-            "medium",
-            "-pix_fmt",
-            "yuv420p",
-            str(output_path),
-        ],
-        check=True,
-    )
-    return output_path
-
-
 def _run_worker(
     *,
     run_directory: Path,
@@ -115,15 +87,8 @@ def _run_worker(
     cache_dir: Path,
 ) -> dict[str, object]:
     worker_path = Path(__file__).with_name("fine_substep_worker.py")
-    environment = os.environ.copy()
-    environment["CUDA_VISIBLE_DEVICES"] = "0"
-    environment["HF_HUB_OFFLINE"] = "1"
     src_root = Path(__file__).resolve().parents[1]
-    environment["PYTHONPATH"] = os.pathsep.join(
-        [str(src_root), environment.get("PYTHONPATH", "")]
-    ).strip(os.pathsep)
-    command = [
-        str(WILOR_PYTHON),
+    argv = [
         str(worker_path.resolve()),
         "--run-directory",
         str(run_directory.resolve()),
@@ -138,12 +103,12 @@ def _run_worker(
         "--openclip-cache-dir",
         str(cache_dir.resolve()),
     ]
-    completed = subprocess.run(
-        command, capture_output=True, text=True, env=environment, check=False
+    worker_result = run_external_worker(
+        WILOR_PYTHON,
+        argv,
+        run_directory=run_directory,
+        env={"HF_HUB_OFFLINE": "1", "PYTHONPATH": prepend_pythonpath(src_root)},
     )
-    (run_directory / "worker.stdout.log").write_text(completed.stdout)
-    (run_directory / "worker.stderr.log").write_text(completed.stderr)
-    worker_result = json.loads((run_directory / "worker_result.json").read_text())
     if worker_result.get("state") != "succeeded":
         raise RuntimeError(worker_result.get("reason", "fine substep worker failed"))
     return json.loads((run_directory / "worker_scores.json").read_text(encoding="utf-8"))

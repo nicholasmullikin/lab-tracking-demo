@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import importlib
-import subprocess
 import time
 from collections import Counter, deque
 from contextlib import ExitStack
@@ -16,29 +15,28 @@ import cv2
 import numpy as np
 
 from .digest_cache import sha256_file
-from .exporter import export_run
-from .fs_common import relative_uri, run_timestamp
+from .fs_common import run_timestamp
 from .schemas import (
     AdapterMetadata,
     ArtifactFingerprint,
-    ChunkContinuityPolicy,
     ClockName,
-    EncodedAssetInput,
     FrameObservations,
-    FrameRange,
-    FullDurationCoverage,
     G2PreprocessingManifest,
     HandSide,
     MediaPipeHandsRunMetadata,
     MethodState,
-    MethodStatus,
     NormalizedBox,
     NormalizedPoint,
     PerFrameHand,
-    RunManifest,
     RuntimeMeasurements,
-    TimeInterval,
     VideoProxy,
+)
+from .video_driver import (
+    assemble_run_manifest,
+    bounded_video,
+    common_metadata_fields,
+    export_manifest,
+    hands_contact_sheet,
 )
 
 DEFAULT_CONFIG = Path("configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_g2.json")
@@ -54,29 +52,8 @@ MAX_SECONDS = 60.0
 HANDEDNESS_VOTE_FRAMES = 15
 TRACK_MAX_GAP_FRAMES = 15
 TRACK_MAX_WRIST_DISTANCE = 0.2
-HAND_CONNECTIONS = (
-    (0, 1),
-    (1, 2),
-    (2, 3),
-    (3, 4),
-    (0, 5),
-    (5, 6),
-    (6, 7),
-    (7, 8),
-    (5, 9),
-    (9, 10),
-    (10, 11),
-    (11, 12),
-    (9, 13),
-    (13, 14),
-    (14, 15),
-    (15, 16),
-    (13, 17),
-    (17, 18),
-    (18, 19),
-    (19, 20),
-    (0, 17),
-)
+METHOD_NAME = "mediapipe-hand-landmarker-static-baseline"
+RERUN_NAME = "hands.rrd"
 NormalizedRoi = tuple[float, float, float, float]
 HandCandidate = tuple[tuple[NormalizedPoint, ...], HandSide, float]
 
@@ -519,91 +496,6 @@ def _write_observations(path: Path, observations: tuple[FrameObservations, ...])
     path.write_text("".join(observation.model_dump_json() + "\n" for observation in observations))
 
 
-def _bounded_video(proxy_path: Path, output_path: Path, frame_count: int) -> Path:
-    subprocess.run(
-        [
-            "ffmpeg",
-            "-y",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-i",
-            str(proxy_path),
-            "-frames:v",
-            str(frame_count),
-            "-an",
-            "-c:v",
-            "libx264",
-            "-crf",
-            "18",
-            "-preset",
-            "medium",
-            "-pix_fmt",
-            "yuv420p",
-            str(output_path),
-        ],
-        check=True,
-    )
-    return output_path
-
-
-def _contact_sheet(
-    *,
-    video_path: Path,
-    observations: tuple[FrameObservations, ...],
-    output_path: Path,
-) -> Path:
-    selected = sorted({0, len(observations) // 2, len(observations) - 1})
-    capture = cv2.VideoCapture(str(video_path))
-    panels = []
-    try:
-        for frame_index in selected:
-            capture.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
-            ok, frame = capture.read()
-            if not ok:
-                raise RuntimeError(f"could not decode contact-sheet frame {frame_index}")
-            height, width = frame.shape[:2]
-            observation = observations[frame_index]
-            for hand in observation.hands:
-                points = [
-                    (round(point.x * width), round(point.y * height)) for point in hand.landmarks
-                ]
-                for start, end in HAND_CONNECTIONS:
-                    cv2.line(frame, points[start], points[end], (0, 180, 255), 2)
-                for point in points:
-                    cv2.circle(frame, point, 3, (0, 255, 255), -1)
-                x1 = round(hand.box.x * width)
-                y1 = round(hand.box.y * height)
-                x2 = round((hand.box.x + hand.box.width) * width)
-                y2 = round((hand.box.y + hand.box.height) * height)
-                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 180, 255), 2)
-                cv2.putText(
-                    frame,
-                    f"{hand.hand_id}: {hand.side}",
-                    (x1, max(24, y1 - 8)),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.7,
-                    (0, 180, 255),
-                    2,
-                )
-            cv2.putText(
-                frame,
-                f"analysis frame {frame_index}",
-                (20, 35),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.8,
-                (255, 255, 255),
-                2,
-            )
-            panels.append(frame)
-    finally:
-        capture.release()
-    sheet = cv2.vconcat(panels)
-    if not cv2.imwrite(str(output_path), sheet):
-        raise RuntimeError(f"could not write contact sheet: {output_path}")
-    return output_path
-
-
 def run(args: argparse.Namespace) -> Path:
     repository_root = args.repository_root.resolve()
     config_path = (repository_root / args.config).resolve()
@@ -647,14 +539,14 @@ def run(args: argparse.Namespace) -> Path:
         min_tracking_confidence=args.min_tracking_confidence,
     )
     observations_path = run_directory / "observations.jsonl"
-    video_path = _bounded_video(proxy_path, run_directory / "input.mp4", requested_frames)
-    qa_path = _contact_sheet(
+    video_path = bounded_video(proxy_path, run_directory / "input.mp4", requested_frames)
+    qa_path = hands_contact_sheet(
         video_path=video_path,
         observations=observations,
         output_path=run_directory / "contact_sheet.png",
     )
     _write_observations(observations_path, observations)
-    requested_range = FrameRange(start_frame=0, end_frame_exclusive=requested_frames)
+    rerun_path = run_directory / RERUN_NAME
     runtime_settings: dict[str, str | int | float | bool | None] = {
         "analysis_fps": proxy.fps,
         "num_hands": 2,
@@ -672,20 +564,15 @@ def run(args: argparse.Namespace) -> Path:
         "min_tracking_confidence": args.min_tracking_confidence,
     }
     metadata = MediaPipeHandsRunMetadata(
-        requested_analysis_frame_range=requested_range,
-        requested_seconds=args.seconds,
-        source_fingerprint=ArtifactFingerprint(
-            uri=proxy.raw_source.raw_uri,
-            sha256=proxy.raw_source.checksum_sha256,
-            source="approved_config",
-        ),
-        proxy_fingerprint=ArtifactFingerprint(
-            uri=proxy.proxy_uri, sha256=proxy.checksum_sha256, source="approved_config"
-        ),
-        config_fingerprint=ArtifactFingerprint(
-            uri=relative_uri(config_path, repository_root),
-            sha256=sha256_file(config_path),
-            source="measured",
+        **common_metadata_fields(
+            proxy=proxy,
+            config_path=config_path,
+            repository_root=repository_root,
+            requested_frames=requested_frames,
+            seconds=args.seconds,
+            observations_path=observations_path,
+            rerun_path=rerun_path,
+            qa_path=qa_path,
         ),
         model_fingerprint=ArtifactFingerprint(
             uri=DEFAULT_MODEL_URI, sha256=DEFAULT_MODEL_SHA256, source="measured"
@@ -698,51 +585,27 @@ def run(args: argparse.Namespace) -> Path:
         ),
         runtime_settings=runtime_settings,
         measurements=measurements,
-        observations_uri=relative_uri(observations_path, repository_root),
-        rerun_artifact_uri=relative_uri(run_directory / "hands.rrd", repository_root),
-        qa_artifact_uri=relative_uri(qa_path, repository_root),
     )
-    method_statuses = (
-        MethodStatus(
-            method_name="mediapipe-hand-landmarker-static-baseline",
-            stage="pose",
-            state=MethodState.SUCCEEDED,
-            artifact_uri=relative_uri(observations_path, repository_root),
-            measured_on=f"{args.view}; approved {args.seconds:g}-second proxy prefix",
-        ),
-        MethodStatus(
-            method_name="rerun-mediapipe-hands-export",
-            stage="export",
-            state=MethodState.SUCCEEDED,
-            artifact_uri=relative_uri(run_directory / "hands.rrd", repository_root),
-            measured_on="normalized MediaPipe observations; bounded input video logged once",
-        ),
-    )
-    manifest = RunManifest(
+    # In-process detection: there is no worker result, the method always succeeded here.
+    manifest = assemble_run_manifest(
         run_id=run_id,
-        clip=config.clip.model_copy(update={"source_duration_seconds": args.seconds}),
-        coverage=FullDurationCoverage(
-            source_duration_seconds=args.seconds,
-            covered_intervals=(TimeInterval(start_seconds=0.0, end_seconds=args.seconds),),
-        ),
-        chunk_policy=ChunkContinuityPolicy(overlap_seconds=0.0, max_allowed_gap_seconds=0.0),
-        method_statuses=method_statuses,
+        config=config,
+        seconds=args.seconds,
+        view_id=args.view,
+        repository_root=repository_root,
         observations=observations,
+        observations_path=observations_path,
+        rerun_path=rerun_path,
+        method_name=METHOD_NAME,
+        stage="pose",
+        export_method_name="rerun-mediapipe-hands-export",
+        export_measured_on="normalized MediaPipe observations; bounded input video logged once",
+        state=MethodState.SUCCEEDED,
         mediapipe_hands=metadata,
     )
     manifest_path = run_directory / "manifest.json"
     manifest_path.write_text(manifest.model_dump_json(indent=2) + "\n")
-    export_run(
-        manifest,
-        run_directory / "hands.rrd",
-        video_path=video_path,
-        video_dimensions=(proxy.dimensions.width, proxy.dimensions.height),
-        asset_reference=EncodedAssetInput(
-            uri=proxy.proxy_uri,
-            media_type="video/mp4",
-            checksum_sha256=proxy.checksum_sha256,
-        ),
-    )
+    export_manifest(manifest, rerun_path, video_path=video_path, proxy=proxy)
     return manifest_path
 
 

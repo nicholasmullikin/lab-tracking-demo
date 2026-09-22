@@ -50,6 +50,7 @@ from .schemas import (
     VramExtrapolation,
     VramProbe,
 )
+from .video_driver import bounded_video as _bounded_video
 
 DEFAULT_CONTRACT = Path("configs/four_part_segmentation_comparison.json")
 SMOKE_FRAME_COUNT = FRAME_COUNT // 2
@@ -357,33 +358,6 @@ def _sam2_settings(
         smoke_correction_frame=smoke_frame,
         smoke_correction_source_frame=smoke_source,
         schedule_frame_zero_seeds_match_contract=seeds_match,
-    )
-
-
-def _bounded_video(proxy: Path, destination: Path, frame_count: int = FRAME_COUNT) -> None:
-    subprocess.run(
-        [
-            "ffmpeg",
-            "-y",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-i",
-            str(proxy),
-            "-frames:v",
-            str(frame_count),
-            "-an",
-            "-c:v",
-            "libx264",
-            "-crf",
-            "18",
-            "-preset",
-            "medium",
-            "-pix_fmt",
-            "yuv420p",
-            str(destination),
-        ],
-        check=True,
     )
 
 

@@ -27,6 +27,7 @@ from .schemas import (
     RuntimeMeasurements,
     TimeInterval,
 )
+from .video_driver import bounded_video as _bounded_video
 
 DEFAULT_CONFIG = Path("configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_g2.json")
 DEFAULT_LABELS = Path(
@@ -47,34 +48,6 @@ DEFAULT_OPENCLIP_CHECKPOINT = Path(
     f"snapshots/{OPENCLIP_REVISION}/open_clip_model.safetensors"
 )
 DEFAULT_OPENCLIP_CACHE = Path("/home/nick/.cache/huggingface/hub")
-
-
-def _bounded_video(proxy_path: Path, output_path: Path, frame_count: int) -> Path:
-    subprocess.run(
-        [
-            "ffmpeg",
-            "-y",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-i",
-            str(proxy_path),
-            "-frames:v",
-            str(frame_count),
-            "-an",
-            "-c:v",
-            "libx264",
-            "-crf",
-            "18",
-            "-preset",
-            "medium",
-            "-pix_fmt",
-            "yuv420p",
-            str(output_path),
-        ],
-        check=True,
-    )
-    return output_path
 
 
 def _export_alignment_rrd(

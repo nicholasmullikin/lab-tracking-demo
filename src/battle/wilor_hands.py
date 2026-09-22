@@ -5,39 +5,41 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import subprocess
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-import cv2
-
-from .digest_cache import sha256_file
-from .exporter import export_run
 from .fs_common import relative_uri, run_timestamp
 from .observations import rebuild_tracker_observations
 from .schemas import (
     AdapterMetadata,
     ArtifactFingerprint,
     CameraRelativePoint3D,
-    ChunkContinuityPolicy,
     ClockName,
-    EncodedAssetInput,
     FrameObservations,
-    FrameRange,
-    FullDurationCoverage,
     G2PreprocessingManifest,
     HandSide,
     MethodState,
-    MethodStatus,
     NormalizedBox,
     NormalizedPoint,
     PerFrameHand,
     RunManifest,
-    RuntimeMeasurements,
-    TimeInterval,
+    VideoProxy,
     WiLoRHandsRunMetadata,
+)
+from .video_driver import (
+    assemble_run_manifest,
+    bounded_video,
+    common_metadata_fields,
+    export_manifest,
+    hands_contact_sheet,
+    load_worker_observations,
+    prepend_pythonpath,
+    run_external_worker,
+    verify_inputs,
+    worker_measurements,
+    worker_status,
 )
 
 DEFAULT_CONFIG = Path("configs/clips/assembly101_nusar_9033_four_part_reassembly_focused_g2.json")
@@ -51,29 +53,8 @@ DEFAULT_CHECKPOINT_CONFIG = WILOR_SOURCE / "pretrained_models" / "model_config.y
 DEFAULT_DETECTOR = WILOR_SOURCE / "pretrained_models" / "detector.pt"
 CHECKPOINT_SHA256 = "3e97aafc7dd08d883a4cc5a027df61fdb6fda6136dbd1319405413862ada6bb2"
 DETECTOR_SHA256 = "5ef3df44e42d2db52d4ffe91f83a22ce9925e2acc9abebf453f2c5d22e380033"
-HAND_CONNECTIONS = (
-    (0, 1),
-    (1, 2),
-    (2, 3),
-    (3, 4),
-    (0, 5),
-    (5, 6),
-    (6, 7),
-    (7, 8),
-    (5, 9),
-    (9, 10),
-    (10, 11),
-    (11, 12),
-    (9, 13),
-    (13, 14),
-    (14, 15),
-    (15, 16),
-    (13, 17),
-    (17, 18),
-    (18, 19),
-    (19, 20),
-    (0, 17),
-)
+METHOD_NAME = "wilor-hand-pose-static-smoke"
+RERUN_NAME = "hands.rrd"
 
 
 def _side(value: str) -> HandSide:
@@ -93,24 +74,19 @@ def _verify_inputs(
     detector_path: Path,
     view_id: str,
     seconds: float,
-) -> tuple[G2PreprocessingManifest, object, Path, int]:
-    if seconds <= 0 or seconds > MAX_SECONDS:
-        raise ValueError(f"seconds must be in (0, {MAX_SECONDS}]")
-    config = G2PreprocessingManifest.model_validate_json(config_path.read_text())
-    proxy = next((item for item in config.proxies if item.view_id == view_id), None)
-    if proxy is None:
-        raise ValueError(f"view {view_id} not found in config")
-    proxy_path = (repository_root / proxy.proxy_uri).resolve()
-    if not proxy_path.is_file():
-        raise FileNotFoundError(proxy_path)
-    if sha256_file(proxy_path) != proxy.checksum_sha256:
-        raise ValueError(f"proxy checksum mismatch for {proxy_path}")
-    if sha256_file(checkpoint_path) != CHECKPOINT_SHA256:
-        raise ValueError(f"checkpoint checksum mismatch for {checkpoint_path}")
-    if sha256_file(detector_path) != DETECTOR_SHA256:
-        raise ValueError(f"detector checksum mismatch for {detector_path}")
-    requested_frames = min(round(seconds * proxy.fps), proxy.frame_count)
-    return config, proxy, proxy_path, requested_frames
+) -> tuple[G2PreprocessingManifest, VideoProxy, Path, int]:
+    return verify_inputs(
+        repository_root=repository_root,
+        config_path=config_path,
+        view_id=view_id,
+        seconds=seconds,
+        min_seconds=None,
+        max_seconds=MAX_SECONDS,
+        checkpoints=(
+            (checkpoint_path, CHECKPOINT_SHA256, "checkpoint"),
+            (detector_path, DETECTOR_SHA256, "detector"),
+        ),
+    )
 
 
 def _hand_from_record(hand: Mapping[str, Any]) -> PerFrameHand:
@@ -147,14 +123,7 @@ def _run_worker(
     analysis_fps: float,
     save_native_evidence: bool,
 ) -> dict[str, object]:
-    environment = os.environ.copy()
-    environment["CUDA_VISIBLE_DEVICES"] = "0"
-    source_paths = [str(WILOR_SOURCE)]
-    if existing_pythonpath := environment.get("PYTHONPATH"):
-        source_paths.append(existing_pythonpath)
-    environment["PYTHONPATH"] = os.pathsep.join(source_paths)
-    command = [
-        str(WILOR_PYTHON),
+    argv = [
         str(worker_path.resolve()),
         "--run-directory",
         str(run_directory.resolve()),
@@ -176,116 +145,14 @@ def _run_worker(
         str(analysis_fps),
     ]
     if save_native_evidence:
-        command.append("--save-native-evidence")
-    completed = subprocess.run(
-        command,
-        capture_output=True,
-        text=True,
-        env=environment,
-        check=False,
+        argv.append("--save-native-evidence")
+    return run_external_worker(
+        WILOR_PYTHON,
+        argv,
+        run_directory=run_directory,
+        env={"PYTHONPATH": prepend_pythonpath(WILOR_SOURCE)},
         cwd=WILOR_SOURCE,
     )
-    (run_directory / "worker.stdout.log").write_text(completed.stdout)
-    (run_directory / "worker.stderr.log").write_text(completed.stderr)
-    result_path = run_directory / "worker_result.json"
-    if not result_path.is_file():
-        return {
-            "state": "failed",
-            "reason": (
-                f"worker exited {completed.returncode} without worker_result.json; "
-                "see worker.stdout.log and worker.stderr.log"
-            ),
-            "frames_processed": 0,
-            "elapsed_seconds": 0.0,
-        }
-    result = json.loads(result_path.read_text())
-    result["worker_exit_code"] = completed.returncode
-    return result
-
-
-def _bounded_video(proxy_path: Path, output_path: Path, frame_count: int) -> Path:
-    subprocess.run(
-        [
-            "ffmpeg",
-            "-y",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-i",
-            str(proxy_path),
-            "-frames:v",
-            str(frame_count),
-            "-an",
-            "-c:v",
-            "libx264",
-            "-crf",
-            "18",
-            "-preset",
-            "medium",
-            "-pix_fmt",
-            "yuv420p",
-            str(output_path),
-        ],
-        check=True,
-    )
-    return output_path
-
-
-def _contact_sheet(
-    *,
-    video_path: Path,
-    observations: tuple[FrameObservations, ...],
-    output_path: Path,
-) -> Path:
-    selected = sorted({0, len(observations) // 2, len(observations) - 1})
-    capture = cv2.VideoCapture(str(video_path))
-    panels = []
-    try:
-        for frame_index in selected:
-            capture.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
-            ok, frame = capture.read()
-            if not ok:
-                raise RuntimeError(f"could not decode contact-sheet frame {frame_index}")
-            height, width = frame.shape[:2]
-            observation = observations[frame_index]
-            for hand in observation.hands:
-                points = [
-                    (round(point.x * width), round(point.y * height)) for point in hand.landmarks
-                ]
-                for start, end in HAND_CONNECTIONS:
-                    cv2.line(frame, points[start], points[end], (0, 180, 255), 2)
-                for point in points:
-                    cv2.circle(frame, point, 3, (0, 255, 255), -1)
-                x1 = round(hand.box.x * width)
-                y1 = round(hand.box.y * height)
-                x2 = round((hand.box.x + hand.box.width) * width)
-                y2 = round((hand.box.y + hand.box.height) * height)
-                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 180, 255), 2)
-                cv2.putText(
-                    frame,
-                    f"{hand.hand_id}: {hand.side}",
-                    (x1, max(24, y1 - 8)),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.7,
-                    (0, 180, 255),
-                    2,
-                )
-            cv2.putText(
-                frame,
-                f"analysis frame {frame_index}",
-                (20, 35),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.8,
-                (255, 255, 255),
-                2,
-            )
-            panels.append(frame)
-    finally:
-        capture.release()
-    sheet = cv2.vconcat(panels)
-    if not cv2.imwrite(str(output_path), sheet):
-        raise RuntimeError(f"could not write contact sheet: {output_path}")
-    return output_path
 
 
 def _external_source_state() -> tuple[str | None, bool, str | None, tuple[str, ...]]:
@@ -319,6 +186,100 @@ def _external_source_state() -> tuple[str | None, bool, str | None, tuple[str, .
     )
 
 
+def _build_manifest(
+    *,
+    run_id: str,
+    repository_root: Path,
+    run_directory: Path,
+    config: G2PreprocessingManifest,
+    config_path: Path,
+    proxy: VideoProxy,
+    view_id: str,
+    seconds: float,
+    requested_frames: int,
+    worker_result: Mapping[str, Any],
+    observations: tuple[FrameObservations, ...],
+    observations_path: Path,
+    qa_path: Path,
+    checkpoint_path: Path,
+    detector_path: Path,
+    save_native_evidence: bool,
+    external_source_state: tuple[str | None, bool, str | None, tuple[str, ...]],
+) -> tuple[RunManifest, MethodState]:
+    rerun_path = run_directory / RERUN_NAME
+    # WiLoR's worker writes scalar settings only, so they are taken as they are (no
+    # JSON flattening) before the source-state fields are added.
+    runtime_settings = dict(worker_result.get("runtime_settings", {}))
+    runtime_settings["analysis_fps"] = proxy.fps
+    external_revision, source_dirty, source_diff_sha256, source_status = external_source_state
+    runtime_settings["external_source_dirty"] = source_dirty
+    runtime_settings["external_source_diff_sha256"] = source_diff_sha256
+    runtime_settings["external_source_status"] = json.dumps(source_status)
+    metadata = WiLoRHandsRunMetadata(
+        **common_metadata_fields(
+            proxy=proxy,
+            config_path=config_path,
+            repository_root=repository_root,
+            requested_frames=requested_frames,
+            seconds=seconds,
+            observations_path=observations_path,
+            rerun_path=rerun_path,
+            qa_path=qa_path,
+        ),
+        checkpoint_fingerprint=ArtifactFingerprint(
+            uri=relative_uri(checkpoint_path, WILOR_SOURCE.parent),
+            sha256=CHECKPOINT_SHA256,
+            source="measured",
+        ),
+        detector_fingerprint=ArtifactFingerprint(
+            uri=relative_uri(detector_path, WILOR_SOURCE.parent),
+            sha256=DETECTOR_SHA256,
+            source="measured",
+        ),
+        adapter=AdapterMetadata(
+            name="wilor-hand-pose",
+            version="0.1.0",
+            implementation_basis=(
+                "WiLoR frame-wise demo with batch size one and mesh export disabled"
+            ),
+            external_source_uri=str(WILOR_SOURCE),
+            external_revision=external_revision,
+        ),
+        runtime_settings=runtime_settings,
+        measurements=worker_measurements(
+            worker_result,
+            known_unavailable_measures=(
+                "ground-truth hand-pose accuracy",
+                "metric 3D reconstruction",
+            ),
+        ),
+        native_evidence_uri=(
+            relative_uri(run_directory / "native_evidence", repository_root)
+            if save_native_evidence
+            else None
+        ),
+    )
+    state, blocker = worker_status(worker_result)
+    manifest = assemble_run_manifest(
+        run_id=run_id,
+        config=config,
+        seconds=seconds,
+        view_id=view_id,
+        repository_root=repository_root,
+        observations=observations,
+        observations_path=observations_path,
+        rerun_path=rerun_path,
+        method_name=METHOD_NAME,
+        stage="pose",
+        export_method_name="rerun-wilor-hands-export",
+        export_measured_on="normalized WiLoR observations; bounded input video logged once",
+        state=state,
+        blocker=blocker,
+        wilor_hands=metadata,
+    )
+    return manifest, state
+
+
 def run(args: argparse.Namespace) -> Path:
     repository_root = args.repository_root.resolve()
     config_path = (repository_root / args.config).resolve()
@@ -350,137 +311,38 @@ def run(args: argparse.Namespace) -> Path:
         analysis_fps=float(proxy.fps),
         save_native_evidence=args.save_native_evidence,
     )
-    observations_path = run_directory / "observations.jsonl"
-    if not observations_path.is_file():
-        raise RuntimeError(worker_result.get("reason", "worker produced no observations"))
-    observations = _load_observations(observations_path)
-    if len(observations) < requested_frames:
-        raise RuntimeError(
-            f"worker produced {len(observations)} observations; expected {requested_frames}"
-        )
-    video_path = _bounded_video(proxy_path, run_directory / "input.mp4", requested_frames)
-    qa_path = _contact_sheet(
+    observations_path, observations = load_worker_observations(
+        run_directory, worker_result, requested_frames, loader=_load_observations, exact=False
+    )
+    video_path = bounded_video(proxy_path, run_directory / "input.mp4", requested_frames)
+    qa_path = hands_contact_sheet(
         video_path=video_path,
         observations=observations,
         output_path=run_directory / "contact_sheet.png",
     )
-    measurements = RuntimeMeasurements(
-        elapsed_seconds=float(worker_result.get("elapsed_seconds", 0.0)),
-        time_to_first_usable_output_seconds=worker_result.get(
-            "time_to_first_usable_output_seconds"
-        ),
-        gpu_peak_vram_bytes=worker_result.get("gpu_peak_vram_bytes"),
-        known_unavailable_measures=(
-            "ground-truth hand-pose accuracy",
-            "metric 3D reconstruction",
-        ),
-    )
-    runtime_settings = dict(worker_result.get("runtime_settings", {}))
-    runtime_settings["analysis_fps"] = proxy.fps
-    external_revision, source_dirty, source_diff_sha256, source_status = _external_source_state()
-    runtime_settings["external_source_dirty"] = source_dirty
-    runtime_settings["external_source_diff_sha256"] = source_diff_sha256
-    runtime_settings["external_source_status"] = json.dumps(source_status)
-    metadata = WiLoRHandsRunMetadata(
-        requested_analysis_frame_range=FrameRange(
-            start_frame=0, end_frame_exclusive=requested_frames
-        ),
-        requested_seconds=args.seconds,
-        source_fingerprint=ArtifactFingerprint(
-            uri=proxy.raw_source.raw_uri,
-            sha256=proxy.raw_source.checksum_sha256,
-            source="approved_config",
-        ),
-        proxy_fingerprint=ArtifactFingerprint(
-            uri=proxy.proxy_uri, sha256=proxy.checksum_sha256, source="approved_config"
-        ),
-        config_fingerprint=ArtifactFingerprint(
-            uri=relative_uri(config_path, repository_root),
-            sha256=sha256_file(config_path),
-            source="measured",
-        ),
-        checkpoint_fingerprint=ArtifactFingerprint(
-            uri=relative_uri(checkpoint_path, WILOR_SOURCE.parent),
-            sha256=CHECKPOINT_SHA256,
-            source="measured",
-        ),
-        detector_fingerprint=ArtifactFingerprint(
-            uri=relative_uri(detector_path, WILOR_SOURCE.parent),
-            sha256=DETECTOR_SHA256,
-            source="measured",
-        ),
-        adapter=AdapterMetadata(
-            name="wilor-hand-pose",
-            version="0.1.0",
-            implementation_basis=(
-                "WiLoR frame-wise demo with batch size one and mesh export disabled"
-            ),
-            external_source_uri=str(WILOR_SOURCE),
-            external_revision=external_revision,
-        ),
-        runtime_settings=runtime_settings,
-        measurements=measurements,
-        observations_uri=relative_uri(observations_path, repository_root),
-        native_evidence_uri=(
-            relative_uri(run_directory / "native_evidence", repository_root)
-            if args.save_native_evidence
-            else None
-        ),
-        rerun_artifact_uri=relative_uri(run_directory / "hands.rrd", repository_root),
-        qa_artifact_uri=relative_uri(qa_path, repository_root),
-    )
-    worker_state = (
-        MethodState.SUCCEEDED if worker_result.get("state") == "succeeded" else MethodState.FAILED
-    )
-    method_statuses = (
-        MethodStatus(
-            method_name="wilor-hand-pose-static-smoke",
-            stage="pose",
-            state=worker_state,
-            artifact_uri=relative_uri(observations_path, repository_root),
-            measured_on=f"{args.view}; approved {args.seconds:g}-second proxy prefix",
-            blocker=(
-                str(worker_result.get("reason")) if worker_state is MethodState.FAILED else None
-            ),
-        ),
-        MethodStatus(
-            method_name="rerun-wilor-hands-export",
-            stage="export",
-            state=(
-                MethodState.SUCCEEDED
-                if worker_state is MethodState.SUCCEEDED
-                else MethodState.NOT_RUN
-            ),
-            artifact_uri=relative_uri(run_directory / "hands.rrd", repository_root),
-            measured_on="normalized WiLoR observations; bounded input video logged once",
-        ),
-    )
-    manifest = RunManifest(
+    manifest, state = _build_manifest(
         run_id=run_id,
-        clip=config.clip.model_copy(update={"source_duration_seconds": args.seconds}),
-        coverage=FullDurationCoverage(
-            source_duration_seconds=args.seconds,
-            covered_intervals=(TimeInterval(start_seconds=0.0, end_seconds=args.seconds),),
-        ),
-        chunk_policy=ChunkContinuityPolicy(overlap_seconds=0.0, max_allowed_gap_seconds=0.0),
-        method_statuses=method_statuses,
+        repository_root=repository_root,
+        run_directory=run_directory,
+        config=config,
+        config_path=config_path,
+        proxy=proxy,
+        view_id=args.view,
+        seconds=args.seconds,
+        requested_frames=requested_frames,
+        worker_result=worker_result,
         observations=observations,
-        wilor_hands=metadata,
+        observations_path=observations_path,
+        qa_path=qa_path,
+        checkpoint_path=checkpoint_path,
+        detector_path=detector_path,
+        save_native_evidence=args.save_native_evidence,
+        external_source_state=_external_source_state(),
     )
     manifest_path = run_directory / "manifest.json"
     manifest_path.write_text(manifest.model_dump_json(indent=2) + "\n")
-    if worker_state is MethodState.SUCCEEDED:
-        export_run(
-            manifest,
-            run_directory / "hands.rrd",
-            video_path=video_path,
-            video_dimensions=(proxy.dimensions.width, proxy.dimensions.height),
-            asset_reference=EncodedAssetInput(
-                uri=proxy.proxy_uri,
-                media_type="video/mp4",
-                checksum_sha256=proxy.checksum_sha256,
-            ),
-        )
+    if state is MethodState.SUCCEEDED:
+        export_manifest(manifest, run_directory / RERUN_NAME, video_path=video_path, proxy=proxy)
     return manifest_path
 
 
