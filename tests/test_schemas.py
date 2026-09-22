@@ -6,7 +6,6 @@ import pytest
 from pydantic import ValidationError
 
 from battle.fixtures import synthetic_run_manifest, synthetic_timing
-from battle.metrics import calculate_success_measure
 from battle.schemas import (
     ClockName,
     G2PreprocessingManifest,
@@ -54,14 +53,14 @@ def test_observations_must_be_monotonic_per_view() -> None:
         )
 
 
-def test_fixture_success_measure_is_contract_coverage_not_accuracy() -> None:
+def test_fixture_coverage_and_method_states_are_the_contract_not_accuracy() -> None:
     fixture = synthetic_run_manifest()
-    measure = calculate_success_measure(fixture.coverage, fixture.method_statuses)
 
-    assert measure.coverage_ratio == 1.0
-    assert measure.successful_method_ratio == 0.5
-    assert measure.combined_ratio == 0.75
-    assert fixture.method_statuses[1].state is MethodState.NOT_RUN
+    assert fixture.coverage.ratio == 1.0
+    assert [status.state for status in fixture.method_statuses] == [
+        MethodState.SUCCEEDED,
+        MethodState.NOT_RUN,
+    ]
 
 
 def test_approved_assembly101_g2_manifest_has_consistent_proxy_clocks() -> None:
