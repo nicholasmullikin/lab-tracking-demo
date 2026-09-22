@@ -696,7 +696,7 @@ def markdown_report(
     for name in NEW_DETECTORS:
         lines.append(f"- `{name}`: {NEW_DEFINITIONS[name]}")
     lines += ["", "## Overall AUROC per record", ""]
-    lines += _summary_table(records)[3:]
+    lines += _summary_table(records)[2:]
     overall, per_class = pooled
     n_cells = sum(len(r.cells) for r in records)
     n_failed = sum(r.class_counts["all"]["failed"] for r in records)
@@ -928,11 +928,15 @@ def write_outputs(
         json.dumps(payload, indent=1) + "\n", encoding="utf-8"
     )
     for r in records:
-        with (output_dir / f"confidence_v2_{r.spec.name}.jsonl").open(
-            "w", encoding="utf-8"
-        ) as handle:
-            for row in confidence_rows(r):
-                handle.write(row.model_dump_json() + "\n")
+        rows = confidence_rows(r)
+        # Two copies: a flat file per record, and the `RUN_DIR/confidence.jsonl` layout that
+        # `battle-build-interaction-review-v4 --confidence RUN_DIR` reads.
+        alias = output_dir / "confidence_v2" / r.spec.name
+        alias.mkdir(parents=True, exist_ok=True)
+        for path in (output_dir / f"confidence_v2_{r.spec.name}.jsonl", alias / "confidence.jsonl"):
+            with path.open("w", encoding="utf-8") as handle:
+                for row in rows:
+                    handle.write(row.model_dump_json() + "\n")
     return output_dir / "scorecard_v2.md"
 
 

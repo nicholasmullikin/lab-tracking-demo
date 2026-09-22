@@ -586,7 +586,7 @@ def pool_metrics(
     harm = 0
     accepted = 0
     for cell in cells:
-        pool = [c for c in cell.candidates if c.pool.startswith(pool_prefix)]
+        pool = [c for c in cell.candidates if c.pool == pool_prefix]
         oracle.append(max((c.iou_vs_truth for c in pool), default=0.0))
         choice = accept_from_pool(
             pool,
@@ -659,7 +659,7 @@ def leave_frames_out_pool(
         chosen.append(best_floor)
         held_cells += len(test)
         for cell in test:
-            pool = [c for c in cell.candidates if c.pool.startswith(pool_prefix)]
+            pool = [c for c in cell.candidates if c.pool == pool_prefix]
             choice = accept_from_pool(
                 pool,
                 expected_area_px=cell.expected_area_px,
@@ -1018,6 +1018,21 @@ def load_pool_cells(
                     candidates.extend(more)
                     if set_name == "same_view" and used:
                         used_frames = used
+                    if cell.seed_area_px:
+                        # B4 size prior: the part's own frame-0 seed area, band [0.5, 2].
+                        candidates.extend(
+                            PoolCandidate(
+                                pool=f"{c.pool}+size",
+                                key=c.key,
+                                score=c.score,
+                                area_px=c.area_px,
+                                centroid_px=c.centroid_px,
+                                iou_vs_truth=c.iou_vs_truth,
+                                inside_box=c.inside_box,
+                            )
+                            for c in more
+                            if 0.5 * cell.seed_area_px <= c.area_px <= 2.0 * cell.seed_area_px
+                        )
             cells.append(
                 PoolCell(
                     frame=frame_plan.frame,
@@ -1057,20 +1072,20 @@ def compare_pools(
                     {
                         "frame": c.frame,
                         "oracle": max(
-                            (x.iou_vs_truth for x in c.candidates if x.pool.startswith(pool)),
+                            (x.iou_vs_truth for x in c.candidates if x.pool == pool),
                             default=0.0,
                         ),
                         "accepted_iou": (
                             (lambda ch: ch.iou_vs_truth if ch else None)(
                                 accept_from_pool(
-                                    [x for x in c.candidates if x.pool.startswith(pool)],
+                                    [x for x in c.candidates if x.pool == pool],
                                     expected_area_px=c.expected_area_px,
                                     centroid_proxy_px=c.centroid_proxy_px,
                                     projected_radius_px=c.projected_radius_px,
                                 )
                             )
                         ),
-                        "candidates": sum(1 for x in c.candidates if x.pool.startswith(pool)),
+                        "candidates": sum(1 for x in c.candidates if x.pool == pool),
                     }
                     for c in part_cells
                 ],
@@ -1136,7 +1151,7 @@ def rec2_reference_spec(
 def human_cells_from_calibration(
     manifest_path: Path,
 ) -> tuple[list[dict[str, Any]], list[tuple[int, str]]]:
-    """Accepted human masks (frame, target, mask path) and hidden marks of a calibration workspace."""
+    """Accepted human masks (frame, target, mask path) and hidden marks of a calibration."""
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     workspace = manifest_path.parent
     accepted = []
@@ -1173,7 +1188,7 @@ def score_zero_shot(
     set_name: str = "cross_view",
     repository_root: Path,
 ) -> dict[str, Any]:
-    """IoU of the exemplar detections against recording 2's human masks; presence at hidden cells."""
+    """IoU of exemplar detections against recording 2's human masks; presence at hidden cells."""
     accepted, hidden = human_cells_from_calibration(calibration_manifest)
     rows = _load_kept_rows(pass_dir)
     detections = {}
@@ -1281,7 +1296,8 @@ def score_zero_shot(
 
 def zero_shot_table(report: Mapping[str, Any]) -> str:
     lines = [
-        "| frame | part | human px | variant | presence | top score | top IoU vs human | top px | best IoU in top-K |",
+        "| frame | part | human px | variant | presence | top score | top IoU vs human | top px | "
+        "best IoU in top-K |",
         "|---|---|---|---|---|---|---|---|---|",
     ]
 
@@ -1293,7 +1309,8 @@ def zero_shot_table(report: Mapping[str, Any]) -> str:
             lines.append(
                 f"| {cell['frame']} | {cell['target']} | {cell['human_area_px']} | {variant} | "
                 f"{f(v['presence'])} | {f(v['top_score'])} | {f(v['top_iou_vs_human'])} | "
-                f"{v['top_area_px'] if v['top_area_px'] is not None else '-'} | {f(v['best_iou_vs_human'])} |"
+                f"{v['top_area_px'] if v['top_area_px'] is not None else '-'} | "
+                f"{f(v['best_iou_vs_human'])} |"
             )
     lines += [
         "",
@@ -1302,12 +1319,14 @@ def zero_shot_table(report: Mapping[str, Any]) -> str:
     ]
     for h in report["hidden_cells"]:
         lines.append(
-            f"| {h['frame']} {h['target']} | {h['variant']} | {f(h['presence'])} | {f(h['top_score'])} | "
+            f"| {h['frame']} {h['target']} | {h['variant']} | {f(h['presence'])} | "
+            f"{f(h['top_score'])} | "
             f"{h['top_area_px'] if h['top_area_px'] is not None else '-'} |"
         )
     lines += [
         "",
-        "| variant | cells | mean top IoU | mean best IoU | top >= 0.5 | presence visible | presence hidden (n) |",
+        "| variant | cells | mean top IoU | mean best IoU | top >= 0.5 | presence visible | "
+        "presence hidden (n) |",
         "|---|---|---|---|---|---|---|",
     ]
     for variant, s in report["summary"].items():
@@ -1545,13 +1564,20 @@ def main() -> None:
             cells = load_pool_cells(
                 root, plan_path=args.plan, decode_dir=args.decode_dir, pass_dir=args.pass_dir
             )
-            pools = ["exemplar:same_view:posneg", "exemplar:same_view:pos"]
-            if any(
-                c.pool.startswith("exemplar:cross_view") for cell in cells for c in cell.candidates
-            ):
-                pools += ["exemplar:cross_view:posneg", "exemplar:cross_view:pos"]
-            if args.decode_dir is not None:
-                pools.insert(0, "decoder:base")
+            present = {c.pool for cell in cells for c in cell.candidates}
+            pools = [
+                p
+                for p in (
+                    "decoder:base",
+                    "exemplar:same_view:posneg",
+                    "exemplar:same_view:pos",
+                    "exemplar:same_view:posneg+size",
+                    "exemplar:cross_view:posneg",
+                    "exemplar:cross_view:pos",
+                    "exemplar:cross_view:posneg+size",
+                )
+                if p in present
+            ]
             report = compare_pools(cells, pools=pools, anchor_frames=plan.anchor_frames)
             report["plan"] = fingerprint(args.plan, root).model_dump(mode="json")
             report["pass"] = relative_uri(args.pass_dir, root)

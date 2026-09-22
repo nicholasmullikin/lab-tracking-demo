@@ -157,7 +157,7 @@ def test_pool_metrics_and_leave_frames_out() -> None:
         _cell(4, [_candidate(0.9, 0.7)]),
         _cell(5, [_candidate(0.85, 0.65)]),
     ]
-    metrics = pool.pool_metrics(cells, "exemplar:same_view")
+    metrics = pool.pool_metrics(cells, "exemplar:same_view:posneg")
     assert metrics["cells"] == 6 and metrics["accepted"] == 5 and metrics["harm"] == 1
     assert metrics["oracle_cells_at_least_0.6"] == 4
     assert metrics["oracle_mean_iou"] == pytest.approx((0.9 + 0.2 + 0.95 + 0 + 0.7 + 0.65) / 6)
