@@ -267,6 +267,9 @@ class RecordSpec:
     cross_reference_passes: tuple[Path, ...] = ()
     hidden_class: str | None = None  # e.g. out_of_frame for e4
     frame_count: int = 1800
+    # Drop cells where the run has no mask at all (a 3-part run has no interior slot): those
+    # failures are structural, not appearance failures, and every mask-based detector is NaN there.
+    exclude_missing: bool = False
 
 
 @dataclass
@@ -286,8 +289,12 @@ class RecordScore:
     class_counts: dict[str, dict[str, int]]
 
 
-def load_specs(path: Path, repository_root: Path) -> list[RecordSpec]:
+def load_specs(
+    path: Path, repository_root: Path, *, exclude_missing: bool = False
+) -> list[RecordSpec]:
     raw = json.loads(path.read_text(encoding="utf-8"))
+    if exclude_missing:
+        raw["exclude_missing"] = True
     specs = []
     for item in raw["records"]:
 
@@ -320,6 +327,9 @@ def load_specs(path: Path, repository_root: Path) -> list[RecordSpec]:
                 ),
                 hidden_class=item.get("hidden_class"),
                 frame_count=int(item.get("frame_count", 1800)),
+                exclude_missing=bool(
+                    item.get("exclude_missing", raw.get("exclude_missing", False))
+                ),
             )
         )
     return specs
@@ -380,9 +390,13 @@ def build_record(spec: RecordSpec, *, repository_root: Path) -> RecordScore:
     reference_frames = tuple(sorted({f for (f, _, _) in data.positives("same_view")}))
 
     cells = []
+    missing_excluded = 0
     for cell in anchor_score.cells:
         failed = v1.cell_failed(cell.outcome, cell.iou, cell.run_area)
         if failed is None:
+            continue
+        if spec.exclude_missing and cell.outcome == "run_mask_missing":
+            missing_excluded += 1
             continue
         frame = cell.analysis_frame_index
         cells.append(
@@ -452,6 +466,7 @@ def build_record(spec: RecordSpec, *, repository_root: Path) -> RecordScore:
             bucket = counts.setdefault(key, {"cells": 0, "failed": 0})
             bucket["cells"] += 1
             bucket["failed"] += int(cell["failed"])
+    counts[v1.ALL_SUBSET]["missing_excluded"] = missing_excluded
     return RecordScore(
         spec=spec,
         targets=targets,
@@ -720,7 +735,13 @@ def markdown_report(
         loo = r.loo.recall_floor
         lines.append(
             f"| {r.spec.name} | {r.spec.view} | {len(set(x['frame'] for x in r.cells))} | "
-            f"{r.class_counts['all']['cells']} | {r.class_counts['all']['failed']} | "
+            f"{r.class_counts['all']['cells']} | {r.class_counts['all']['failed']}"
+            + (
+                f" ({r.class_counts['all']['missing_excluded']} no-mask cells excluded)"
+                if r.class_counts["all"].get("missing_excluded")
+                else ""
+            )
+            + " | "
             f"{', '.join(str(f) for f in r.reference_frames)} | {v1._fmt(r.anchor_mean_iou)} | "
             f"{', '.join(r.top)} | "
             + (
@@ -1012,13 +1033,19 @@ def main() -> None:
         "--spec", type=Path, required=True, help="records JSON (see module docstring)"
     )
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--exclude-missing",
+        action="store_true",
+        help="drop cells where the run has no mask (structural failures of a 3-part run)",
+    )
     args = parser.parse_args()
     root = Path.cwd().resolve()
     spec = json.loads(args.spec.read_text(encoding="utf-8"))
+
     records = []
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
-        for record_spec in load_specs(args.spec, root):
+        for record_spec in load_specs(args.spec, root, exclude_missing=args.exclude_missing):
             print(f"scoring {record_spec.name}", flush=True)
             records.append(build_record(record_spec, repository_root=root))
         tests = named_tests(records, spec.get("named_tests", ()))
