@@ -19,6 +19,7 @@ from .four_part_contract import (
     sha256_file,
 )
 from .mask_ops import decode_mask_png
+from .rerun_logging import init_and_save, log_boxes_from_observation, log_rgba_mask
 from .schemas import (
     ArtifactFingerprint,
     FourPartSegmentationComparisonIndex,
@@ -103,11 +104,7 @@ def _render(
     width, height = dimensions
     if not observation.objects:
         return
-    mins, sizes, labels = [], [], []
     for item in observation.objects:
-        mins.append([item.box.x * width, item.box.y * height])
-        sizes.append([item.box.width * width, item.box.height * height])
-        labels.append(f"{item.label} ({item.confidence:.2f})")
         if item.mask is None:
             continue
         mask_path = (run_directory / item.mask.uri).resolve()
@@ -116,18 +113,15 @@ def _render(
         mask = decode_mask_png(mask_path)
         if mask.shape != (height, width):
             raise ValueError(f"mask dimension mismatch: {mask_path}")
-        rr.log(
-            f"{method_root}/masks/{item.label}",
-            rr.EncodedImage(
-                contents=_rgba_mask_png(mask, color),
-                media_type="image/png",
-                opacity=0.38,
-                draw_order=1.0,
-            ),
+        log_rgba_mask(
+            f"{method_root}/masks/{item.label}", _rgba_mask_png(mask, color), opacity=0.38
         )
-    rr.log(
+    log_boxes_from_observation(
         f"{method_root}/boxes",
-        rr.Boxes2D(mins=mins, sizes=sizes, labels=labels, colors=[color] * len(mins)),
+        observation.objects,
+        dimensions,
+        labels=[f"{item.label} ({item.confidence:.2f})" for item in observation.objects],
+        colors=[color] * len(observation.objects),
     )
 
 
@@ -219,10 +213,11 @@ def build(
     )
     index_path.write_text(index.model_dump_json(indent=2) + "\n")
     root = f"world/{baseline_manifest.clip.clip_id}/four_part_segmentation_comparison"
-    rr.init(
-        "battle-four-part-segmentation-comparison", recording_id="four-part-segmentation-comparison"
+    init_and_save(
+        "battle-four-part-segmentation-comparison",
+        rrd,
+        recording_id="four-part-segmentation-comparison",
     )
-    rr.save(rrd)
     rr.log(f"{root}/source/video_asset", rr.AssetVideo(path=video), static=True)
     rr.log(
         f"{root}/metadata/index",

@@ -27,6 +27,7 @@ from .kineo_multiview import (
     load_prepare,
 )
 from .multiview_geometry import CameraRig
+from .rerun_logging import init_and_save, time_series_view
 
 ROOT = "kineo_multiview"
 BODY_ENTITY = f"{THREE_D_ROOT}/kineo_body"
@@ -176,10 +177,9 @@ def blueprint(root: str, body: LoadedKineoBody) -> rrb.Blueprint:
                 contents="$origin/**",
             ),
             rrb.Vertical(
-                rrb.TimeSeriesView(
-                    origin=f"{root}/{DIAGNOSTICS}/wrist_disagreement_mm",
-                    name="Kineo body wrist vs dataset hand wrist (mm)",
-                    contents="$origin/**",
+                time_series_view(
+                    f"{root}/{DIAGNOSTICS}/wrist_disagreement_mm",
+                    "Kineo body wrist vs dataset hand wrist (mm)",
                 ),
                 rrb.TextDocumentView(origin=f"{root}/{BODY_ENTITY}/manifest", name="Manifest"),
             ),
@@ -205,8 +205,7 @@ def build_recording(
         dataset_reference, repository_root, frame_count=prepared.frame_count, verify=False
     )
     rig = CameraRig.load(repository_root, views=body.views)
-    rr.init(prepared.run_id, spawn=False)
-    rr.save(str(output), default_blueprint=blueprint(ROOT, body))
+    init_and_save(prepared.run_id, output, default_blueprint=blueprint(ROOT, body))
     log_static(ROOT, body, rig)
     for frame in range(prepared.frame_count):
         rr.set_time("analysis_frame", sequence=frame)

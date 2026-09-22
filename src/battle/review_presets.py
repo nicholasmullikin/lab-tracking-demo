@@ -26,6 +26,7 @@ import rerun.blueprint as rrb
 from . import interaction_review as review
 from . import multiview_review as multiview
 from .four_part_contract import ANALYSIS_FPS, TARGETS
+from .rerun_logging import time_series_view
 
 PRESET_NAMES = ("segmentation", "hands", "multiview")
 PRESET_CHECK_NAME = "presets_check.json"
@@ -215,41 +216,36 @@ def segmentation_blueprint(facts: RecordingFacts) -> rrb.Blueprint:
     series: list[rrb.View] = []
     if "provenance" in facts.flags:
         series.append(
-            rrb.TimeSeriesView(
-                origin=f"{root}/{review.REFERENCE_PROVENANCE_SERIES}",
-                name="Reference provenance per part (1 sam3 primary, 2 dam4sam fallback)",
-                contents="$origin/**",
+            time_series_view(
+                f"{root}/{review.REFERENCE_PROVENANCE_SERIES}",
+                "Reference provenance per part (1 sam3 primary, 2 dam4sam fallback)",
             )
         )
     if "consensus" in facts.flags:
         series.append(
-            rrb.TimeSeriesView(
-                origin=f"{root}/{review.MULTIVIEW_DIAGNOSTICS}",
-                name="Consensus contradiction: C10379 error vs consensus (raw px), views used",
-                contents="$origin/**",
+            time_series_view(
+                f"{root}/{review.MULTIVIEW_DIAGNOSTICS}",
+                "Consensus contradiction: C10379 error vs consensus (raw px), views used",
             )
         )
     if "confidence" in facts.flags:
         series.append(
-            rrb.TimeSeriesView(
-                origin=f"{root}/{review.CONFIDENCE_SERIES}",
-                name="Detector confidence per part (1 - suspicion); crosses = abstain",
-                contents="$origin/**",
+            time_series_view(
+                f"{root}/{review.CONFIDENCE_SERIES}",
+                "Detector confidence per part (1 - suspicion); crosses = abstain",
             )
         )
     if "anchors" in facts.flags:
         series.append(
-            rrb.TimeSeriesView(
-                origin=f"{root}/{review.ANCHOR_SERIES}",
-                name="Human anchor frames (diamonds) and failed cells (crosses)",
-                contents=("$origin/anchor_frame", "$origin/failed_cells"),
+            time_series_view(
+                f"{root}/{review.ANCHOR_SERIES}",
+                "Human anchor frames (diamonds) and failed cells (crosses)",
+                ("$origin/anchor_frame", "$origin/failed_cells"),
             )
         )
     series.append(
-        rrb.TimeSeriesView(
-            origin=f"{root}/{review.CANDIDATE_AREA_SERIES}",
-            name="Candidate arms: mask area per part (px)",
-            contents="$origin/**",
+        time_series_view(
+            f"{root}/{review.CANDIDATE_AREA_SERIES}", "Candidate arms: mask area per part (px)"
         )
     )
     documents: list[rrb.View] = []
@@ -332,18 +328,17 @@ def hands_blueprint(facts: RecordingFacts) -> rrb.Blueprint:
             )
         )
     series: list[rrb.View] = [
-        rrb.TimeSeriesView(
-            origin=f"{root}/diagnostics/hand_disagreement",
-            name="MediaPipe vs WiLoR disagreement and stabilized-layer states",
-            contents="$origin/**",
+        time_series_view(
+            f"{root}/diagnostics/hand_disagreement",
+            "MediaPipe vs WiLoR disagreement and stabilized-layer states",
         ),
     ]
     if "assembly101_series" in facts.flags:
         series.append(
-            rrb.TimeSeriesView(
-                origin=f"{root}/{review.ASSEMBLY101_DIAGNOSTICS}",
-                name="Dataset hand confidence, wrist distance to WiLoR, ATHENA disagreement (mm)",
-                contents=(
+            time_series_view(
+                f"{root}/{review.ASSEMBLY101_DIAGNOSTICS}",
+                "Dataset hand confidence, wrist distance to WiLoR, ATHENA disagreement (mm)",
+                (
                     "$origin/confidence/**",
                     "$origin/wrist_distance_to_stabilized_wilor_pixels/**",
                     *(f"$origin/{label}/wrist_disagreement_mm/**" for label in facts.athena_labels),
@@ -353,17 +348,14 @@ def hands_blueprint(facts: RecordingFacts) -> rrb.Blueprint:
         )
     if "confidence" in facts.flags:
         series.append(
-            rrb.TimeSeriesView(
-                origin=f"{root}/{review.CONFIDENCE_SERIES}",
-                name="Segmentation detector confidence (context for hand-part contact)",
-                contents="$origin/**",
+            time_series_view(
+                f"{root}/{review.CONFIDENCE_SERIES}",
+                "Segmentation detector confidence (context for hand-part contact)",
             )
         )
     series.append(
-        rrb.TimeSeriesView(
-            origin=f"{root}/diagnostics/contact",
-            name="Hand-to-part distances and debounced contact candidates",
-            contents="$origin/**",
+        time_series_view(
+            f"{root}/diagnostics/contact", "Hand-to-part distances and debounced contact candidates"
         )
     )
     return rrb.Blueprint(
@@ -406,10 +398,9 @@ def multiview_blueprint(facts: RecordingFacts) -> rrb.Blueprint:
         grid_columns=3 if len(facts.multiview_views) > 8 else 4,
     )
     tabs: list[rrb.View] = [
-        rrb.TimeSeriesView(
-            origin=f"{entity}/diagnostics/multiview/{target}",
-            name=f"{target}: per-view error vs consensus (raw px)",
-            contents="$origin/**",
+        time_series_view(
+            f"{entity}/diagnostics/multiview/{target}",
+            f"{target}: per-view error vs consensus (raw px)",
         )
         for target in TARGETS
     ]
@@ -417,26 +408,25 @@ def multiview_blueprint(facts: RecordingFacts) -> rrb.Blueprint:
     if review_root is not None and "consensus" in facts.flags:
         tabs.insert(
             0,
-            rrb.TimeSeriesView(
-                origin=f"{review_root}/{review.MULTIVIEW_DIAGNOSTICS}",
-                name="C10379 contradiction: error vs consensus and views used (all parts)",
-                contents="$origin/**",
+            time_series_view(
+                f"{review_root}/{review.MULTIVIEW_DIAGNOSTICS}",
+                "C10379 contradiction: error vs consensus and views used (all parts)",
             ),
         )
     if review_root is not None and "anchors" in facts.flags:
         tabs.append(
-            rrb.TimeSeriesView(
-                origin=f"{review_root}/{review.ANCHOR_SERIES}",
-                name="Human anchor frames and failed cells (C10379)",
-                contents=("$origin/anchor_frame", "$origin/failed_cells"),
+            time_series_view(
+                f"{review_root}/{review.ANCHOR_SERIES}",
+                "Human anchor frames and failed cells (C10379)",
+                ("$origin/anchor_frame", "$origin/failed_cells"),
             )
         )
     elif "multiview_anchors" in facts.flags:
         tabs.append(
-            rrb.TimeSeriesView(
-                origin=f"{entity}/{multiview.ANCHOR_SERIES}",
-                name="Human anchor frames (C10379)",
-                contents="$origin/anchor_frame",
+            time_series_view(
+                f"{entity}/{multiview.ANCHOR_SERIES}",
+                "Human anchor frames (C10379)",
+                "$origin/anchor_frame",
             )
         )
     documents: list[rrb.View] = [

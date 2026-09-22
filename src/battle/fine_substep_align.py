@@ -46,6 +46,7 @@ from .fine_substep_pipeline import (
     write_crop_manifest,
 )
 from .fs_common import relative_uri, run_timestamp
+from .rerun_logging import init_and_save, time_series_view
 from .schemas import (
     AdapterMetadata,
     ArtifactFingerprint,
@@ -315,8 +316,7 @@ def _export_rrd(
     crop_samples: list,
     run_id: str,
 ) -> None:
-    rr.init(f"battle-{run_id}", spawn=False)
-    rr.save(str(output_path))
+    init_and_save(f"battle-{run_id}", output_path)
     root = "fine_substep"
     rr.log(f"{root}/metadata/provenance", rr.TextLog(PROVENANCE_TAG))
     rr.log(
@@ -377,9 +377,9 @@ def _export_rrd(
         rrb.Blueprint(
             rrb.Horizontal(
                 rrb.Spatial2DView(origin=f"{root}/source", name="Video"),
-                rrb.TimeSeriesView(origin=f"{root}/scores/fused", name="Fused scores"),
+                time_series_view(f"{root}/scores/fused", "Fused scores"),
             ),
-            rrb.TimeSeriesView(origin=f"{root}/scores/clip", name="CLIP scores"),
+            time_series_view(f"{root}/scores/clip", "CLIP scores"),
         )
     )
 

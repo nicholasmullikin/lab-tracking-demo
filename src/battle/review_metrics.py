@@ -1664,9 +1664,10 @@ def _log_rrd(
     import rerun as rr
     import rerun.blueprint as rrb
 
+    from .rerun_logging import init_and_save, time_series_stack, time_series_view
+
     entity = f"world/{clip_id}/review_metrics_v1"
-    rr.init("battle-review-metrics", recording_id="review_metrics_first_minute_v1")
-    rr.save(rrd_path)
+    init_and_save("battle-review-metrics", rrd_path, recording_id="review_metrics_first_minute_v1")
     rr.log(
         f"{entity}/metadata/summary",
         rr.TextDocument(
@@ -1759,15 +1760,18 @@ def _log_rrd(
     rr.send_blueprint(
         rrb.Blueprint(
             rrb.Vertical(
-                rrb.TimeSeriesView(
-                    origin=f"{entity}/segmentation", name="Swap scores / area ratios"
-                ),
-                rrb.TimeSeriesView(origin=f"{entity}/appearance", name="Appearance proxies"),
+                time_series_view(f"{entity}/segmentation", "Swap scores / area ratios"),
+                time_series_view(f"{entity}/appearance", "Appearance proxies"),
                 rrb.Horizontal(
-                    rrb.TimeSeriesView(origin=f"{entity}/growth", name="Growth ratios"),
-                    rrb.TimeSeriesView(origin=f"{entity}/hands", name="Hands"),
-                    rrb.TimeSeriesView(origin=f"{entity}/kineo", name="Kineo"),
-                    rrb.TimeSeriesView(origin=f"{entity}/episodes", name="Active episodes"),
+                    *time_series_stack(
+                        entity,
+                        (
+                            ("growth", "Growth ratios"),
+                            ("hands", "Hands"),
+                            ("kineo", "Kineo"),
+                            ("episodes", "Active episodes"),
+                        ),
+                    )
                 ),
                 rrb.TextDocumentView(origin=f"{entity}/metadata/summary", name="Metrics summary"),
                 row_shares=[3, 2, 2, 2],

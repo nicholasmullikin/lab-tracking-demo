@@ -11,6 +11,7 @@ import numpy as np
 import rerun as rr
 
 from .athena_calibration_probe import DEFAULT_OUTPUT as DEFAULT_PROBE_OUTPUT
+from .rerun_logging import init_and_save
 from .schemas import AdapterMetadata, ArtifactFingerprint, ExternalPartialRunMetadata
 
 ATHENA_ROOT = Path("/home/nick/src/athena")
@@ -118,8 +119,7 @@ def _fixture_payload() -> dict[str, object]:
 
 
 def _export_fixture_rrd(payload: dict[str, object], output_path: Path, run_id: str) -> None:
-    rr.init(run_id, spawn=False)
-    rr.save(output_path)
+    init_and_save(run_id, output_path)
     rr.log("world/athena_fixture/manifest", rr.TextDocument(json.dumps(payload, indent=2)))
     for view_id, points in payload["points_2d_by_view"].items():
         positions = [[point[0] * 1280.0, point[1] * 720.0] for point in points]

@@ -10,6 +10,7 @@ import argparse
 import hashlib
 import json
 import subprocess
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,12 @@ from .digest_cache import sha256_file
 from .exporter import HAND_CONNECTIONS, HAND_LANDMARK_NAMES, _rgba_mask_png
 from .fs_common import relative_uri
 from .mask_ops import decode_mask_png
+from .rerun_logging import (
+    init_and_save,
+    log_boxes_from_observation,
+    log_rgba_masks,
+    time_series_view,
+)
 from .schemas import (
     ArtifactFingerprint,
     ClockName,
@@ -453,17 +460,6 @@ def _load_athena_metadata(
     )
 
 
-def _box_data(
-    observation: FrameObservations, dimensions: tuple[int, int]
-) -> tuple[list[list[float]], list[list[float]], list[str]]:
-    width, height = dimensions
-    return (
-        [[item.box.x * width, item.box.y * height] for item in observation.objects],
-        [[item.box.width * width, item.box.height * height] for item in observation.objects],
-        [f"{item.label} ({item.object_id}) {item.confidence:.2f}" for item in observation.objects],
-    )
-
-
 def _log_hands(
     root: str,
     observation: FrameObservations,
@@ -513,19 +509,14 @@ def _log_hands(
             f"{hands_root}/skeletons",
             rr.LineStrips2D(strips, colors=[color] * len(strips), radii=1.5),
         )
-        mins = [[hand.box.x * width, hand.box.y * height] for hand in observation.hands]
-        sizes = [[hand.box.width * width, hand.box.height * height] for hand in observation.hands]
-        rr.log(
+        log_boxes_from_observation(
             f"{hands_root}/boxes",
-            rr.Boxes2D(
-                mins=mins,
-                sizes=sizes,
-                labels=[
-                    f"{hand.hand_id}: {hand.side} ({hand.confidence:.2f})"
-                    for hand in observation.hands
-                ],
-                colors=[color] * len(mins),
-            ),
+            observation.hands,
+            dimensions,
+            labels=[
+                f"{hand.hand_id}: {hand.side} ({hand.confidence:.2f})" for hand in observation.hands
+            ],
+            colors=[color] * len(observation.hands),
         )
     if include_3d:
         three_d_root = f"{root}/camera_relative_3d"
@@ -555,24 +546,22 @@ def _log_masks(
     mask_root = f"{root}/masks"
     rr.log(mask_root, rr.Clear(recursive=True))
     width, height = dimensions
-    for item in observation.objects:
-        if item.mask is None:
-            continue
-        mask_path = (run_directory / item.mask.uri).resolve()
-        if not mask_path.is_relative_to(run_directory) or not mask_path.is_file():
-            raise FileNotFoundError(f"referenced comparison mask is unavailable: {item.mask.uri}")
-        binary = decode_mask_png(mask_path)
-        if binary.shape != (height, width):
-            raise ValueError(f"mask dimensions do not match the shared video: {mask_path}")
-        rr.log(
-            f"{mask_root}/{item.object_id}",
-            rr.EncodedImage(
-                contents=_rgba_mask_png(binary, color),
-                media_type="image/png",
-                opacity=0.35,
-                draw_order=1.0,
-            ),
-        )
+
+    def cut_outs() -> Iterator[tuple[str, bytes]]:
+        for item in observation.objects:
+            if item.mask is None:
+                continue
+            mask_path = (run_directory / item.mask.uri).resolve()
+            if not mask_path.is_relative_to(run_directory) or not mask_path.is_file():
+                raise FileNotFoundError(
+                    f"referenced comparison mask is unavailable: {item.mask.uri}"
+                )
+            binary = decode_mask_png(mask_path)
+            if binary.shape != (height, width):
+                raise ValueError(f"mask dimensions do not match the shared video: {mask_path}")
+            yield item.object_id, _rgba_mask_png(binary, color)
+
+    log_rgba_masks(mask_root, cut_outs(), opacity=0.35)
 
 
 def _log_nlf_body(
@@ -613,10 +602,15 @@ def _log_method_frame(
         return
     color = METHOD_COLORS.get(loaded.spec.method_id, (220, 220, 220))
     if observation.objects:
-        mins, sizes, labels = _box_data(observation, dimensions)
-        rr.log(
+        log_boxes_from_observation(
             f"{root}/render/boxes",
-            rr.Boxes2D(mins=mins, sizes=sizes, labels=labels, colors=[color] * len(mins)),
+            observation.objects,
+            dimensions,
+            labels=[
+                f"{item.label} ({item.object_id}) {item.confidence:.2f}"
+                for item in observation.objects
+            ],
+            colors=[color] * len(observation.objects),
         )
         _log_masks(
             f"{root}/render",
@@ -668,15 +662,15 @@ def _comparison_blueprint(root: str, dimensions: tuple[int, int]) -> rrb.Bluepri
                     ),
                 ),
                 rrb.Vertical(
-                    rrb.TimeSeriesView(
-                        origin=f"{root}/methods",
-                        name="Method coverage and output presence",
-                        contents="$origin/**/metrics/{processed,output_present}",
+                    time_series_view(
+                        f"{root}/methods",
+                        "Method coverage and output presence",
+                        "$origin/**/metrics/{processed,output_present}",
                     ),
-                    rrb.TimeSeriesView(
-                        origin=f"{root}/methods",
-                        name="Available method confidences and Drop-DTW cost",
-                        contents=(
+                    time_series_view(
+                        f"{root}/methods",
+                        "Available method confidences and Drop-DTW cost",
+                        (
                             "$origin/**/metrics/mean_confidence",
                             "$origin/drop_dtw/temporal/alignment_cost",
                         ),
@@ -813,8 +807,7 @@ def build_exploratory_comparison(
     )
     index_path.write_text(index.model_dump_json(indent=2) + "\n", encoding="utf-8")
     root = f"world/{index.clip_id}"
-    rr.init("battle-exploratory-comparison", recording_id=COMPARISON_ID)
-    rr.save(rrd_path)
+    init_and_save("battle-exploratory-comparison", rrd_path, recording_id=COMPARISON_ID)
     rr.log(f"{root}/source/video_asset", rr.AssetVideo(path=video_path), static=True)
     rr.log(
         f"{root}/metadata/comparison_index",

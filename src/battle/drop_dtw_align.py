@@ -13,6 +13,7 @@ import rerun as rr
 from .assembly101_gt_transcript import parse_coarse_transcript
 from .digest_cache import sha256_file
 from .fs_common import relative_uri, run_timestamp
+from .rerun_logging import init_and_save
 from .schemas import (
     AdapterMetadata,
     ArtifactFingerprint,
@@ -57,8 +58,7 @@ def _export_alignment_rrd(
     run_id: str,
     seconds: float,
 ) -> None:
-    rr.init(f"battle-{run_id}", spawn=False)
-    rr.save(str(output_path))
+    init_and_save(f"battle-{run_id}", output_path)
     rr.log("manifest/weak_supervision_note", rr.TextLog(str(alignment["weak_supervision_note"])))
     rr.log("alignment/cost", rr.Scalars([float(alignment["alignment_cost"])]))
     for interval in alignment["intervals"]:

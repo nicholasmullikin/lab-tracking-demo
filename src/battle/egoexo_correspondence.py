@@ -1104,6 +1104,8 @@ def build_recording(
     import rerun as rr
     import rerun.blueprint as rrb
 
+    from .rerun_logging import init_and_save, log_rgba_mask, time_series_view
+
     root = repository_root.resolve()
     run_directory = (root / run_directory).resolve()
     pairs = load_pairs(run_directory)
@@ -1132,10 +1134,9 @@ def build_recording(
                 ),
             ),
             rrb.Horizontal(
-                rrb.TimeSeriesView(
-                    origin=f"{entity}/diagnostics/iou",
-                    name="IoU per part: prediction vs ego SAM3 / vs hull / SAM3 vs hull",
-                    contents="$origin/**",
+                time_series_view(
+                    f"{entity}/diagnostics/iou",
+                    "IoU per part: prediction vs ego SAM3 / vs hull / SAM3 vs hull",
                 ),
                 rrb.TextDocumentView(origin=f"{entity}/metadata/manifest", name="Manifest"),
             ),
@@ -1143,8 +1144,12 @@ def build_recording(
         ),
         collapse_panels=True,
     )
-    rr.init("battle-egoexo-correspondence", recording_id=pairs.run_id, spawn=False)
-    rr.save(str(output), default_blueprint=blueprint)
+    init_and_save(
+        "battle-egoexo-correspondence",
+        output,
+        recording_id=pairs.run_id,
+        default_blueprint=blueprint,
+    )
     rr.log(
         f"{entity}/metadata/manifest",
         rr.TextDocument(evaluation.model_dump_json(indent=2), media_type="application/json"),
@@ -1174,32 +1179,20 @@ def build_recording(
             if query_uri is None:
                 rr.log(path, rr.Clear(recursive=False))
             else:
-                rr.log(
+                log_rgba_mask(
                     path,
-                    rr.EncodedImage(
-                        contents=_rgba_png(
-                            read_mask_png(run_directory / query_uri), PART_COLORS[part]
-                        ),
-                        media_type="image/png",
-                        opacity=0.5,
-                        draw_order=1.0,
-                    ),
+                    _rgba_png(read_mask_png(run_directory / query_uri), PART_COLORS[part]),
+                    opacity=0.5,
                 )
             reference_uri = pair.ego_reference_masks.get(part)
             path = f"{ego_root}/ego_sam3/{part}"
             if reference_uri is None:
                 rr.log(path, rr.Clear(recursive=False))
             else:
-                rr.log(
+                log_rgba_mask(
                     path,
-                    rr.EncodedImage(
-                        contents=_rgba_png(
-                            read_mask_png(run_directory / reference_uri), PART_COLORS[part]
-                        ),
-                        media_type="image/png",
-                        opacity=0.35,
-                        draw_order=1.0,
-                    ),
+                    _rgba_png(read_mask_png(run_directory / reference_uri), PART_COLORS[part]),
+                    opacity=0.35,
                 )
             comparison = comparisons.get(("exo_to_ego", part, pair.key))
             prediction_path = f"{ego_root}/prediction/{part}"
@@ -1208,31 +1201,24 @@ def build_recording(
                 rr.log(prediction_path, rr.Clear(recursive=False))
                 rr.log(hull_path, rr.Clear(recursive=False))
                 continue
-            rr.log(
+            log_rgba_mask(
                 prediction_path,
-                rr.EncodedImage(
-                    contents=_rgba_png(
-                        read_mask_png(run_directory / comparison.prediction_uri), PREDICTION_COLOR
-                    ),
-                    media_type="image/png",
-                    opacity=0.55,
-                    draw_order=3.0,
+                _rgba_png(
+                    read_mask_png(run_directory / comparison.prediction_uri), PREDICTION_COLOR
                 ),
+                opacity=0.55,
+                draw_order=3.0,
             )
             if comparison.hull_projection_uri is None:
                 rr.log(hull_path, rr.Clear(recursive=False))
             else:
-                rr.log(
+                log_rgba_mask(
                     hull_path,
-                    rr.EncodedImage(
-                        contents=_rgba_png(
-                            read_mask_png(run_directory / comparison.hull_projection_uri),
-                            HULL_COLOR,
-                        ),
-                        media_type="image/png",
-                        opacity=0.3,
-                        draw_order=2.0,
+                    _rgba_png(
+                        read_mask_png(run_directory / comparison.hull_projection_uri), HULL_COLOR
                     ),
+                    opacity=0.3,
+                    draw_order=2.0,
                 )
             for name, value in (
                 ("prediction_vs_ego_sam3", comparison.iou_vs_reference_mask),
@@ -1250,16 +1236,13 @@ def build_recording(
             if comparison is None:
                 rr.log(path, rr.Clear(recursive=False))
                 continue
-            rr.log(
+            log_rgba_mask(
                 path,
-                rr.EncodedImage(
-                    contents=_rgba_png(
-                        read_mask_png(run_directory / comparison.prediction_uri), PREDICTION_COLOR
-                    ),
-                    media_type="image/png",
-                    opacity=0.55,
-                    draw_order=3.0,
+                _rgba_png(
+                    read_mask_png(run_directory / comparison.prediction_uri), PREDICTION_COLOR
                 ),
+                opacity=0.55,
+                draw_order=3.0,
             )
     return output
 

@@ -34,6 +34,7 @@ from .athena_hands import (
     load_manifest,
 )
 from .multiview_geometry import CameraRig
+from .rerun_logging import init_and_save, time_series_view
 
 THREE_D_ROOT = "contexts/assembly101_world_mm_3d"
 # Entity label per arm: the v4 review logs the MediaPipe arm under `athena_hands` and the
@@ -300,18 +301,17 @@ def blueprint(root: str, run: LoadedAthenaHands) -> rrb.Blueprint:
                 contents="$origin/**",
             ),
             rrb.Vertical(
-                rrb.TimeSeriesView(
-                    origin=f"{root}/{DIAGNOSTICS}",
-                    name="Contributing views (wrist) and wrist disagreement vs dataset (mm)",
-                    contents=(
+                time_series_view(
+                    f"{root}/{DIAGNOSTICS}",
+                    "Contributing views (wrist) and wrist disagreement vs dataset (mm)",
+                    (
                         "$origin/contributing_views/**",
                         "$origin/wrist_disagreement_mm/**",
                     ),
                 ),
-                rrb.TimeSeriesView(
-                    origin=f"{root}/{DIAGNOSTICS}/reprojection_rms_px",
-                    name="Per-view reprojection RMS of used points (px)",
-                    contents="$origin/**",
+                time_series_view(
+                    f"{root}/{DIAGNOSTICS}/reprojection_rms_px",
+                    "Per-view reprojection RMS of used points (px)",
                 ),
                 rrb.TextDocumentView(origin=f"{root}/{HANDS_ENTITY}/manifest", name="Manifest"),
             ),
@@ -336,8 +336,7 @@ def build_recording(
     )
     rig = CameraRig.load(repository_root, views=run.views)
     root = "athena_hands"
-    rr.init(run.manifest.run_id, spawn=False)
-    rr.save(str(output), default_blueprint=blueprint(root, run))
+    init_and_save(run.manifest.run_id, output, default_blueprint=blueprint(root, run))
     log_static(root, run, rig)
     for frame in range(run.manifest.frame_count):
         rr.set_time("analysis_frame", sequence=frame)

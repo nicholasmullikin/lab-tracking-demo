@@ -12,6 +12,13 @@ import rerun.blueprint as rrb
 
 from . import mask_cache
 from .fixtures import synthetic_run_manifest
+from .rerun_logging import (
+    init_and_save,
+    log_boxes_from_observation,
+    log_rgba_masks,
+    time_series_stack,
+    time_series_view,
+)
 from .schemas import ClockName, EncodedAssetInput, FrameObservations, RunManifest
 
 # Per-object masks are logged on every analysis frame as RGBA PNG `EncodedImage`s. The store
@@ -168,6 +175,23 @@ def _rgba_mask_png(binary_mask: np.ndarray, color: tuple[int, int, int]) -> byte
     return mask_cache.encode_rgba_mask_png(binary_mask, color)
 
 
+def _log_object_boxes(
+    observation: FrameObservations,
+    *,
+    view_root: str,
+    dimensions: tuple[int, int],
+    annotations: dict[str, ObjectAnnotation],
+) -> None:
+    """Every tracked object's box in its annotation colour, labelled `label (object_id)`."""
+    log_boxes_from_observation(
+        f"{view_root}/objects",
+        observation.objects,
+        dimensions,
+        labels=[f"{object_.label} ({object_.object_id})" for object_ in observation.objects],
+        colors=[annotations[object_.object_id][2] for object_ in observation.objects],
+    )
+
+
 def _log_masks(
     observation: FrameObservations,
     *,
@@ -196,16 +220,14 @@ def _log_masks(
     references = {
         object_.object_id: object_.mask.uri for object_ in observation.objects if object_.mask
     }
-    for object_id, binary_mask in masks:
-        rr.log(
-            f"{view_root}/{MASKS_PATH}/{object_id}",
-            rr.EncodedImage(
-                contents=cache.rgba_png(references[object_id], annotations[object_id][2]),
-                media_type="image/png",
-                opacity=MASK_OPACITY,
-                draw_order=1.0,
-            ),
-        )
+    log_rgba_masks(
+        f"{view_root}/{MASKS_PATH}",
+        (
+            (object_id, cache.rgba_png(references[object_id], annotations[object_id][2]))
+            for object_id, _ in masks
+        ),
+        opacity=MASK_OPACITY,
+    )
     if observation.analysis_frame_index % segmentation_frame_period != 0:
         return
     segmentation = _segmentation_image(masks, annotations=annotations)
@@ -243,18 +265,13 @@ def _log_frame_counter(
 
 def _diagnostics_view_pair(
     view_root: str, *, label_prefix: str = ""
-) -> tuple[rrb.TimeSeriesView, rrb.TimeSeriesView]:
+) -> tuple[rrb.TimeSeriesView, ...]:
     """Build the raw tracker traces that explain why a slot was kept or dropped."""
-    return (
-        rrb.TimeSeriesView(
-            origin=f"{view_root}/{DIAGNOSTICS_PATH}/object_score",
-            contents="$origin/**",
-            name=f"{label_prefix}Object score (lost at or below 0)",
-        ),
-        rrb.TimeSeriesView(
-            origin=f"{view_root}/{DIAGNOSTICS_PATH}/iou_prediction",
-            contents="$origin/**",
-            name=f"{label_prefix}Predicted mask IoU (self-estimate)",
+    return time_series_stack(
+        f"{view_root}/{DIAGNOSTICS_PATH}",
+        (
+            ("object_score", f"{label_prefix}Object score (lost at or below 0)"),
+            ("iou_prediction", f"{label_prefix}Predicted mask IoU (self-estimate)"),
         ),
     )
 
@@ -378,19 +395,15 @@ def _log_hands(
         f"{hands_root}/skeletons",
         rr.LineStrips2D(strips, colors=strip_colors, radii=2.0, draw_order=2.5),
     )
-    rr.log(
+    log_boxes_from_observation(
         f"{hands_root}/boxes",
-        rr.Boxes2D(
-            mins=[[hand.box.x * width, hand.box.y * height] for hand in observation.hands],
-            sizes=[
-                [hand.box.width * width, hand.box.height * height] for hand in observation.hands
-            ],
-            labels=[
-                f"{hand.hand_id}: {hand.side} ({hand.confidence:.2f})" for hand in observation.hands
-            ],
-            colors=[colors[str(hand.side)] for hand in observation.hands],
-            draw_order=2.0,
-        ),
+        observation.hands,
+        (width, height),
+        labels=[
+            f"{hand.hand_id}: {hand.side} ({hand.confidence:.2f})" for hand in observation.hands
+        ],
+        colors=[colors[str(hand.side)] for hand in observation.hands],
+        draw_order=2.0,
     )
     if joints_3d_positions:
         rr.log(
@@ -463,13 +476,7 @@ def pinned_blueprint(
                 rrb.Vertical(
                     *_diagnostics_view_pair(view_root),
                     *(
-                        (
-                            rrb.TimeSeriesView(
-                                origin=f"{view_root}/{HAND_METRICS_PATH}",
-                                contents="$origin/**",
-                                name="Hand detections",
-                            ),
-                        )
+                        (time_series_view(f"{view_root}/{HAND_METRICS_PATH}", "Hand detections"),)
                         if has_hands
                         else ()
                     ),
@@ -477,11 +484,7 @@ def pinned_blueprint(
                 column_shares=[2, 1],
             ),
             rrb.Horizontal(
-                rrb.TimeSeriesView(
-                    origin=f"{root}/quality",
-                    contents="$origin/**",
-                    name="Coverage",
-                ),
+                time_series_view(f"{root}/quality", "Coverage"),
                 _frame_counter_view(root),
                 column_shares=[3, 1],
             ),
@@ -534,10 +537,9 @@ def pinned_comparison_blueprint(
                 *_diagnostics_view_pair(f"{root}/views/{ego_view_id}", label_prefix="ego "),
                 *(
                     (
-                        rrb.TimeSeriesView(
-                            origin=f"{root}/views/{static_view_id}/{HAND_METRICS_PATH}",
-                            contents="$origin/**",
-                            name="static MediaPipe hand detections",
+                        time_series_view(
+                            f"{root}/views/{static_view_id}/{HAND_METRICS_PATH}",
+                            "static MediaPipe hand detections",
                         ),
                     )
                     if has_static_hands
@@ -546,11 +548,7 @@ def pinned_comparison_blueprint(
                 column_shares=[1, 1, 1] if has_static_hands else [1, 1],
             ),
             rrb.Horizontal(
-                rrb.TimeSeriesView(
-                    origin=f"{root}/quality",
-                    contents="$origin/**",
-                    name="Output coverage",
-                ),
+                time_series_view(f"{root}/quality", "Output coverage"),
                 _frame_counter_view(root),
                 column_shares=[3, 1],
             ),
@@ -611,23 +609,8 @@ def _log_observation(
         rr.VideoFrameReference(seconds=analysis_seconds, video_reference=video_asset_path),
     )
     if observation.objects:
-        width, height = video_dimensions
-        rr.log(
-            f"{view_root}/objects",
-            rr.Boxes2D(
-                mins=[
-                    [object_.box.x * width, object_.box.y * height]
-                    for object_ in observation.objects
-                ],
-                sizes=[
-                    [object_.box.width * width, object_.box.height * height]
-                    for object_ in observation.objects
-                ],
-                labels=[
-                    f"{object_.label} ({object_.object_id})" for object_ in observation.objects
-                ],
-                colors=[annotations[object_.object_id][2] for object_ in observation.objects],
-            ),
+        _log_object_boxes(
+            observation, view_root=view_root, dimensions=video_dimensions, annotations=annotations
         )
     _log_masks(
         observation,
@@ -733,11 +716,11 @@ def export_synchronized_comparison(
         static_label=static_label,
         has_static_hands=any(observation.hands for observation in static_manifest.observations),
     )
-    rr.init(
+    init_and_save(
         f"battle-synchronized-ego-static-comparison-{ego_manifest.clip.clip_id}",
+        output_path,
         recording_id=f"{ego_manifest.run_id}--{static_manifest.run_id}",
     )
-    rr.save(output_path)
     rr.log(
         f"{root}/comparison_metadata",
         rr.TextDocument(
@@ -894,8 +877,7 @@ def export_run(
     # per process, so exporting several runs from one process gave them the same id and the
     # viewer merged them into a single recording. The run id is unique by construction and
     # also makes the recording identifiable in the viewer.
-    rr.init(f"battle-{clip.clip_id}", recording_id=manifest.run_id)
-    rr.save(output_path)
+    init_and_save(f"battle-{clip.clip_id}", output_path, recording_id=manifest.run_id)
 
     rr.log(
         f"{root}/source/asset_reference",
@@ -967,23 +949,11 @@ def export_run(
                 ),
             )
         if observation.objects:
-            width, height = video_dimensions or (1, 1)
-            rr.log(
-                f"{view_root}/objects",
-                rr.Boxes2D(
-                    mins=[
-                        [object_.box.x * width, object_.box.y * height]
-                        for object_ in observation.objects
-                    ],
-                    sizes=[
-                        [object_.box.width * width, object_.box.height * height]
-                        for object_ in observation.objects
-                    ],
-                    labels=[
-                        f"{object_.label} ({object_.object_id})" for object_ in observation.objects
-                    ],
-                    colors=[annotations[object_.object_id][2] for object_ in observation.objects],
-                ),
+            _log_object_boxes(
+                observation,
+                view_root=view_root,
+                dimensions=video_dimensions or (1, 1),
+                annotations=annotations,
             )
         _log_masks(
             observation,

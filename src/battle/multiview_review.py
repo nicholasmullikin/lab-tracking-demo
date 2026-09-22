@@ -39,6 +39,7 @@ from .multiview_geometry import CameraRig
 from .multiview_schemas import DisagreementEpisode, MultiviewConsensusManifest
 from .multiview_seed_transfer import REFERENCE_VIEW, proxy_to_raw_scale
 from .observations import object_for_label
+from .rerun_logging import init_and_save, log_rgba_mask, time_series_stack, time_series_view
 
 OUTPUT_ROOT = Path("runs/multiview-static-comparison-first-minute")
 RECORDING_NAME = "multiview_static_comparison.rrd"
@@ -548,8 +549,7 @@ def build_static_comparison(
             )
         videos[view] = bounded
     rrd_path = root_dir / RECORDING_NAME
-    rr.init(application_id, recording_id=recording_id)
-    rr.save(rrd_path)
+    init_and_save(application_id, rrd_path, recording_id=recording_id)
     entity = ENTITY_ROOT
     if anchors and anchor_view in runs:
         log_anchor_marks_static(entity, tuple(sorted(anchors)), anchor_view)
@@ -588,14 +588,8 @@ def build_static_comparison(
                     if item is None or item.mask is None:
                         rr.log(path, rr.Clear(recursive=False))
                         continue
-                    rr.log(
-                        path,
-                        rr.EncodedImage(
-                            contents=run.cache.rgba_png(item.mask.uri, PART_COLORS[target]),
-                            media_type="image/png",
-                            opacity=0.4,
-                            draw_order=1.0,
-                        ),
+                    log_rgba_mask(
+                        path, run.cache.rgba_png(item.mask.uri, PART_COLORS[target]), opacity=0.4
                     )
                     if hull is not None:
                         projection = hull.projection_png(view, frame, target)
@@ -751,20 +745,18 @@ def static_comparison_blueprint(
         ],
         grid_columns=4,
     )
-    series_tabs = [
-        rrb.TimeSeriesView(
-            origin=f"{entity}/diagnostics/multiview/{target}",
-            name=f"{target}: per-view error (raw px)",
-            contents="$origin/**",
+    series_tabs = list(
+        time_series_stack(
+            f"{entity}/diagnostics/multiview",
+            [(target, f"{target}: per-view error (raw px)") for target in TARGETS],
         )
-        for target in TARGETS
-    ]
+    )
     if anchor_view is not None:
         series_tabs.append(
-            rrb.TimeSeriesView(
-                origin=f"{entity}/{ANCHOR_SERIES}",
-                name=f"human anchor frames ({anchor_view})",
-                contents="$origin/anchor_frame",
+            time_series_view(
+                f"{entity}/{ANCHOR_SERIES}",
+                f"human anchor frames ({anchor_view})",
+                "$origin/anchor_frame",
             )
         )
     return rrb.Blueprint(

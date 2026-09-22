@@ -34,6 +34,12 @@ from .fine_substep_contract import substep_for_frame
 from .four_part_contract import ANALYSIS_FPS, FRAME_COUNT, TARGETS, load_contract
 from .mask_ops import mask_iou
 from .observations import object_for_label
+from .rerun_logging import (
+    init_and_save,
+    log_boxes_from_observation,
+    log_rgba_mask,
+    time_series_view,
+)
 from .schemas import (
     ArtifactFingerprint,
     ClockName,
@@ -917,14 +923,8 @@ def _log_reference_masks(
             (item for item in observation.objects if item.label == part and item.mask), None
         )
         if item is not None and item.mask is not None:
-            rr.log(
-                f"{masks_root}/{part}",
-                rr.EncodedImage(
-                    contents=cache.rgba_png(item.mask.uri, colors[part]),
-                    media_type="image/png",
-                    opacity=0.35,
-                    draw_order=1.0,
-                ),
+            log_rgba_mask(
+                f"{masks_root}/{part}", cache.rgba_png(item.mask.uri, colors[part]), opacity=0.35
             )
 
 
@@ -935,17 +935,12 @@ def _log_context_boxes(
     if not observation.objects:
         rr.log(path, rr.Clear(recursive=True))
         return
-    width, height = dimensions
-    rr.log(
+    log_boxes_from_observation(
         f"{path}/person_boxes",
-        rr.Boxes2D(
-            mins=[[item.box.x * width, item.box.y * height] for item in observation.objects],
-            sizes=[
-                [item.box.width * width, item.box.height * height] for item in observation.objects
-            ],
-            labels=[f"{context}: {item.object_id}" for item in observation.objects],
-            colors=[METHOD_COLORS["boxmot"]] * len(observation.objects),
-        ),
+        observation.objects,
+        dimensions,
+        labels=[f"{context}: {item.object_id}" for item in observation.objects],
+        colors=[METHOD_COLORS["boxmot"]] * len(observation.objects),
     )
 
 
@@ -1171,13 +1166,7 @@ def _blueprint(
         visual_bounds=rrb.VisualBounds2D(x_range=[0, dimensions[0]], y_range=[0, dimensions[1]]),
     )
     provenance_views = (
-        (
-            rrb.TimeSeriesView(
-                origin=f"{root}/{REFERENCE_PROVENANCE_SERIES}",
-                name=provenance_panel_name,
-                contents="$origin/**",
-            ),
-        )
+        (time_series_view(f"{root}/{REFERENCE_PROVENANCE_SERIES}", provenance_panel_name),)
         if reference_provenance
         else ()
     )
@@ -1188,10 +1177,8 @@ def _blueprint(
     )
     arm_series = (
         (
-            rrb.TimeSeriesView(
-                origin=f"{root}/{CANDIDATE_AREA_SERIES}",
-                name="Candidate arms: mask area per part (px)",
-                contents="$origin/**",
+            time_series_view(
+                f"{root}/{CANDIDATE_AREA_SERIES}", "Candidate arms: mask area per part (px)"
             ),
         )
         if candidate_arms
@@ -1199,10 +1186,9 @@ def _blueprint(
     )
     confidence_series = (
         (
-            rrb.TimeSeriesView(
-                origin=f"{root}/{CONFIDENCE_SERIES}",
-                name="Detector confidence per part (1 - suspicion) and abstain marks",
-                contents="$origin/**",
+            time_series_view(
+                f"{root}/{CONFIDENCE_SERIES}",
+                "Detector confidence per part (1 - suspicion) and abstain marks",
             ),
         )
         if confidence
@@ -1210,10 +1196,10 @@ def _blueprint(
     )
     anchor_series = (
         (
-            rrb.TimeSeriesView(
-                origin=f"{root}/{ANCHOR_SERIES}",
-                name="Human anchor frames and failed cells (scored run)",
-                contents=("$origin/anchor_frame", "$origin/failed_cells"),
+            time_series_view(
+                f"{root}/{ANCHOR_SERIES}",
+                "Human anchor frames and failed cells (scored run)",
+                ("$origin/anchor_frame", "$origin/failed_cells"),
             ),
         )
         if anchors
@@ -1246,10 +1232,9 @@ def _blueprint(
     )
     assembly101_series = (
         (
-            rrb.TimeSeriesView(
-                origin=f"{root}/{ASSEMBLY101_DIAGNOSTICS}",
-                name="Assembly101 dataset hands: confidence and wrist distance to stabilized WiLoR",
-                contents="$origin/**",
+            time_series_view(
+                f"{root}/{ASSEMBLY101_DIAGNOSTICS}",
+                "Assembly101 dataset hands: confidence and wrist distance to stabilized WiLoR",
             ),
         )
         if assembly101
@@ -1257,10 +1242,9 @@ def _blueprint(
     )
     multiview_series = (
         (
-            rrb.TimeSeriesView(
-                origin=f"{root}/{MULTIVIEW_DIAGNOSTICS}",
-                name="Multiview: views in consensus and C10379 error vs consensus (raw px)",
-                contents="$origin/**",
+            time_series_view(
+                f"{root}/{MULTIVIEW_DIAGNOSTICS}",
+                "Multiview: views in consensus and C10379 error vs consensus (raw px)",
             ),
         )
         if multiview
@@ -1301,24 +1285,21 @@ def _blueprint(
             rrb.Horizontal(
                 primary,
                 rrb.Vertical(
-                    rrb.TimeSeriesView(
-                        origin=f"{root}/diagnostics/contact",
-                        name="Hand-to-part distances and debounced candidates",
-                        contents="$origin/**",
+                    time_series_view(
+                        f"{root}/diagnostics/contact",
+                        "Hand-to-part distances and debounced candidates",
                     ),
-                    rrb.TimeSeriesView(
-                        origin=f"{root}/diagnostics/hand_disagreement",
-                        name="MediaPipe vs WiLoR disagreement",
-                        contents="$origin/**",
+                    time_series_view(
+                        f"{root}/diagnostics/hand_disagreement", "MediaPipe vs WiLoR disagreement"
                     ),
-                    rrb.TimeSeriesView(
-                        origin=f"{root}/metadata/navigation",
-                        name=(
+                    time_series_view(
+                        f"{root}/metadata/navigation",
+                        (
                             "Navigation: fine-grained + coarse Assembly101 GT segment index"
                             if assembly101
                             else "Navigation: agent substep index + coarse GT segment"
                         ),
-                        contents=navigation_series,
+                        navigation_series,
                     ),
                     *provenance_views,
                     *confidence_series,
@@ -1680,8 +1661,7 @@ def build_interaction_review(
         segmentation_review_episodes=episodes,
         pinned_moments=moments,
     )
-    rr.init("battle-interaction-review", recording_id=COMPARISON_ID)
-    rr.save(rrd_path)
+    init_and_save("battle-interaction-review", rrd_path, recording_id=COMPARISON_ID)
     root = f"world/{reference.manifest.clip.clip_id}/interaction_review"
     rr.log(f"{root}/source/video_asset", rr.AssetVideo(path=video_path), static=True)
     rr.log(

@@ -42,6 +42,7 @@ from .fine_substep_contract import load_contract as load_fine_substep_contract
 from .fine_substep_contract import substep_for_frame
 from .four_part_contract import ANALYSIS_FPS, TARGETS
 from .observations import object_for_label
+from .rerun_logging import init_and_save, log_boxes_from_observation, log_rgba_mask
 from .schemas import (
     ArtifactFingerprint,
     FrameObservations,
@@ -225,14 +226,8 @@ def _log_candidate_arm_frame(
             rr.log(mask_path, rr.Clear(recursive=False))
             rr.log(area_path, rr.Clear(recursive=False))
             continue
-        rr.log(
-            mask_path,
-            rr.EncodedImage(
-                contents=cache.rgba_png(item.mask.uri, ensemble.PART_COLORS[part]),
-                media_type="image/png",
-                opacity=0.35,
-                draw_order=1.0,
-            ),
+        log_rgba_mask(
+            mask_path, cache.rgba_png(item.mask.uri, ensemble.PART_COLORS[part]), opacity=0.35
         )
         area = int(np.count_nonzero(cache.mask(item.mask.uri)))
         areas[part] = area
@@ -449,14 +444,10 @@ def _log_anchor_frame(
                     draw_order=3.0,
                 ),
             )
-        rr.log(
+        log_rgba_mask(
             f"{entity}/{CANDIDATE_SEGMENTATION_ROOT}/{HUMAN_ANCHOR_ARM}/{part}",
-            rr.EncodedImage(
-                contents=mask_cache.encode_rgba_mask_png(mask, color),
-                media_type="image/png",
-                opacity=0.35,
-                draw_order=1.0,
-            ),
+            mask_cache.encode_rgba_mask_png(mask, color),
+            opacity=0.35,
         )
         rr.log(
             f"{entity}/{CANDIDATE_AREA_SERIES}/{HUMAN_ANCHOR_ARM}/{part}",
@@ -484,7 +475,6 @@ def _log_reference_provenance_frame(
     fallback boxes around the copied mask; hidden intervals clear the overlay) so a reviewer
     can see at a glance which frames rest on cross-method fallback.
     """
-    width, height = dimensions
     for part in TARGETS:
         state = provenance[(frame, part)]
         rr.log(
@@ -498,15 +488,13 @@ def _log_reference_provenance_frame(
         overlay = f"{entity}/{review.REFERENCE_PROVENANCE_OVERLAY}/{part}"
         item = object_for_label(observation, part, require_mask=False)
         if state == "dam4sam_fallback" and item is not None:
-            rr.log(
+            log_boxes_from_observation(
                 overlay,
-                rr.Boxes2D(
-                    mins=[[item.box.x * width, item.box.y * height]],
-                    sizes=[[item.box.width * width, item.box.height * height]],
-                    labels=[f"{part}: {state}"],
-                    colors=[ensemble.PROVENANCE_COLORS[state]],
-                    draw_order=2.0,
-                ),
+                [item],
+                dimensions,
+                labels=[f"{part}: {state}"],
+                colors=[ensemble.PROVENANCE_COLORS[state]],
+                draw_order=2.0,
             )
         else:
             rr.log(overlay, rr.Clear(recursive=False))
@@ -1402,8 +1390,7 @@ def build_first_minute_review(
     timer.stop("geometry")
     timer.start("export")
     fine_contract = load_fine_substep_contract(repository_root / FINE_LABELS)
-    rr.init(application_id, recording_id=recording_id)
-    rr.save(rrd_path)
+    init_and_save(application_id, rrd_path, recording_id=recording_id)
     entity = f"world/{reference.manifest.clip.clip_id}/interaction_review_v4"
     rr.log(f"{entity}/source/video_asset", rr.AssetVideo(path=video_path), static=True)
     rr.log(

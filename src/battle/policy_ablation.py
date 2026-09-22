@@ -769,13 +769,16 @@ def export_comparison(
     import rerun as rr
     import rerun.blueprint as rrb
 
+    from .rerun_logging import init_and_save, log_rgba_mask, time_series_view
+
     reference = load_run("reference", repository_root / reference_directory)
     arm = load_run(arm_name, arm_directory)
     root = "world/sam3_policy_ablation"
-    rr.init("battle-sam3-policy-ablation", recording_id=f"sam3-policy-{arm_name}")
     output_path = (repository_root / output_path).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    rr.save(str(output_path))
+    init_and_save(
+        "battle-sam3-policy-ablation", output_path, recording_id=f"sam3-policy-{arm_name}"
+    )
     rr.log(f"{root}/source/video_asset", rr.AssetVideo(path=str(video_path)), static=True)
     if summary is not None:
         rr.log(
@@ -821,16 +824,10 @@ def export_comparison(
                 if item is None:
                     rr.log(path, rr.Clear(recursive=False))
                     continue
-                rr.log(
+                log_rgba_mask(
                     path,
-                    rr.EncodedImage(
-                        contents=run.cache.rgba_png(
-                            item["mask"]["uri"], mask_cache.REVIEW_COLORS[target]
-                        ),
-                        media_type="image/png",
-                        opacity=0.45,
-                        draw_order=1.0,
-                    ),
+                    run.cache.rgba_png(item["mask"]["uri"], mask_cache.REVIEW_COLORS[target]),
+                    opacity=0.45,
                 )
             for entry in run.diagnostics(frame):
                 label = entry.get("label")
@@ -865,7 +862,7 @@ def export_comparison(
             rrb.Vertical(
                 rrb.Horizontal(*views),
                 rrb.Horizontal(
-                    rrb.TimeSeriesView(origin=f"{root}/diagnostics", name="object score / gated"),
+                    time_series_view(f"{root}/diagnostics", "object score / gated"),
                     rrb.TextDocumentView(origin=f"{root}/metadata/summary", name="metrics"),
                 ),
                 row_shares=[3, 2],
