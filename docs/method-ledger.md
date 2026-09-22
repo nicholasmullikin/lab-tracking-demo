@@ -5404,3 +5404,288 @@ any knob is turned, and turning one first would make those labels confirmatory.
   contact-sheet grids and `metrics.py` (pass 3), the README pointers. Test counts above
   exclude the other worker's `test_sam3_appearance.py`, `test_exemplar_pool.py` and
   `test_detector_scorecard_v2.py`, which landed in the same window.
+
+### Sep 22: SAM3 appearance detectors on three cameras (Track A of the exemplar plan; commits `0ef1868`, `fb426c2`, `d914bef`, `d5298a8`, `7f608e5`, `329eea1`, `bc794a1`)
+
+- **Claim boundary first.** Truth is the human review anchors on **13 frames of C10379 (52
+  cells), 26 of C10119 (64) and 26 of e4 (75, 23 hidden)**: one person's choice of SAM3
+  decoder masks, review evidence that ranks detectors against each other, not ground truth, not
+  a dataset, no accuracy claim. Six tracked runs are scored, each against its own camera's
+  anchors (`pm-append`; C10119 `r1280`, `4part`, Sep 20 `consensus-only-ds` with the 1533
+  correction; e4 `r1280`, `4part`); a cell is failed when its anchor IoU is below 0.5 or a
+  hidden cell carries more than 300 px. The reference masks are human masks too (C10379 frame-0
+  seeds and corrections at 327 / 900 / 1235, the agent-selected 1172 left out; C10119 and e4
+  human-accepted frame-0 seeds plus every human anchor on their earliest interior frame, 41 and
+  224), so the cells on those frames are scored **leave-reference-out** (the row records
+  `reference_frames_used`). Every rate carries its counts. GPU: six offline passes of 966-1094 s
+  each (4.1-4.6 GiB peak) and one 14 s zero-shot pass, all through the queue on code snapshots,
+  beside the human's calibration worker (PID 2356892, named to the guard, never touched); no
+  `NVRM`/`Xid`. CC BY-NC 4.0.
+- **Tool.** `src/battle/sam3_appearance.py pass` runs under the MuggledSAM interpreter (stdlib,
+  numpy, torch, cv2; `gpu_guard` as a sibling) and, per frame at 1280 (square sizing), (a)
+  mask-pools the 1024-channel ViT token map, bilinearly upsampled to the 4x grid, under each
+  part's tracked mask (`native/embeddings.npz`, L2-normalised, plus the reference and distractor
+  embeddings) and (b) runs SAM3's visual-exemplar detector: exemplar tokens cut from the human
+  masks' boxes on their own frames (`encode_exemplars`, `include_coordinate_encodings=False`,
+  tokens of several reference frames concatenated), positives only and positives plus negative
+  boxes at the other parts' masks on the same frame, from a same-view set and a cross-view set
+  (the 13 C10379 masks applied on C10119 and e4), batched eight sets at a time with a padding
+  mask, the segmentation head run on the top-10 tokens, areas / centroids / IoU with the tracked
+  mask on the device (`detections.jsonl`; top-10 masks written at the anchor frames). A frame
+  costs 0.55-0.61 s for 8-16 exemplar sets. `battle-detector-scorecard-v2 --spec records.json`
+  (`src/battle/detector_scorecard_v2.py`, imports the v1 module) scores several records with the
+  ten v1 detectors plus `emb_self` (1 - max cosine to own-part references), `emb_swap` (max
+  other-part cosine - own), `emb_distractor` (screwdriver reference = pm-append rear_body at
+  1690, a non-anchor frame, minus own), `det_iou` (1 - best IoU of the tracked mask with a top-10
+  detection), `det_top_iou`, `det_presence` (1 - presence), `det_disagree` (top detection's
+  centroid > 40 px from the tracked mask), `det_top_score`, with `_pos` and `_xv` (cross-view)
+  variants; failure classes from the view's mapped windows, `distractor` for anchor frames >=
+  1195 outside them, `out_of_frame` for the e4 hidden cells; in-sample and leave-one-frame-out
+  per record, pooled tables, leave-one-record-out (top-3 and the R>=0.8 threshold chosen on the
+  other cameras; only detectors defined on half the training cells are eligible), named tests,
+  presence-as-visibility, `confidence_v2/<record>/confidence.jsonl`. Reference specs and the
+  decoder client live in `src/battle/exemplar_pool.py`. Tests with a numpy stub model
+  (`tests/test_sam3_appearance.py` 10, `tests/test_detector_scorecard_v2.py` 4,
+  `tests/test_exemplar_pool.py` 6); default tier 733 passed with the concurrent refactor's
+  `tests/test_fine_substep_pipeline.py` ignored (its working tree broke the import at the time);
+  ruff clean on these files.
+- **C10379 pm-append (52 cells, 9 failed), overall AUROC / R>=0.8 P / R (TP/FP/FN/TN).**
+  `sam3_score` **0.960**, 0.62 / 0.89 (8/5/1/38) as on Sep 20; **`emb_self` 0.943**, 0.57 / 0.89
+  (8/6/1/37); **`det_top_iou` 0.925**, 0.67 / 0.89 (8/4/1/39); `emb_self_xv` (C10119 + e4
+  references) 0.912; `area_vs_seed` 0.907; `det_iou` 0.889, 0.47 / 0.89 (8/9/1/34);
+  **`emb_distractor` 0.873**; `det_iou_pos` 0.822; `emb_swap` 0.767; `det_top_score` 0.760;
+  `det_disagree` 0.676; **`det_presence` 0.376** (presence is 0.99-1.00 on every frame of this
+  camera: the concept is always somewhere in view). Per class: `rotation_swap` (24 cells, 7
+  failed) `emb_self` 0.98, `det_top_iou` 0.94, `sam3_score` 0.98; `distractor` (12, 2 failed:
+  1500 rear_body 0.00 and the 1700 hidden screwdriver) `emb_self`, `emb_distractor`,
+  `det_top_iou`, `det_presence` all **1.000** (2/0/0/10) where the Sep 20 detectors had
+  `sam3_score` 0.90 and the DAM4SAM disagreement 0.35-0.45; `occlusion_leak` and `outside` still
+  have no failed cell. Top-3 becomes `sam3_score`, `emb_self`, `det_top_iou`: in-sample R>=0.8
+  **0.667 / 0.889 (8/4/1/39)** against Sep 20's 0.533 / 0.889 (8/7/1/36); leave-one-frame-out
+  pooled AUROC **0.897** (Sep 20 0.835) but the threshold still does not transfer: **0.429 /
+  0.333 (3/4/6/39)** at the R>=0.8 point chosen on 12 frames (Sep 20 0.364 / 0.444). Named
+  cells: **1050 chassis** (IoU 0.00, the 273 px collapsed slot) is in the record's top decile
+  for `det_iou` 0.91, `det_disagree`, `emb_self` 0.43, `emb_self_xv`, `sam3_score`,
+  `area_vs_seed`, both DAM4SAM disagreements; **1700 rear_body** (hidden, 1265 px on the
+  screwdriver) for `emb_distractor` (+0.18: the pooled embedding is nearer the screwdriver
+  reference, cosine 0.91, than any rear_body reference, 0.73), `det_top_iou` (the top detection
+  does not overlap the tracked mask), `det_disagree` (top centroid 414 px away), `emb_self`,
+  `det_presence` (0.988, the second-lowest presence on the camera) while `sam3_score` is 0.001 (the tracker is
+  confident, as the Sep 21 entry found).
+- **C10119 (26 frames).** `4part` (64 cells, **43 failed**: the interior slot takes the chassis
+  from 371, the chassis slot shrinks): **`emb_swap` 0.944**, `emb_swap_xv` 0.874, `area_vs_seed`
+  0.792, `sam3_score` 0.696, `emb_self` 0.663, every `det_*` 0.42-0.50 (the exemplar detector
+  finds chassis pixels under both slots, so overlap says nothing); combined in-sample 0.97 / 0.81
+  (35/1/8/20), leave-one-frame-out **0.971 / 0.791 (34/1/9/20)**. `r1280` (39 cells with a
+  mask, 2 failed; 25 interior cells have no slot and are excluded as structural): too few
+  failures to rank (`emb_swap_xv` 0.90, `area_vs_seed` 0.73). **`consensus-only-ds` with the
+  1533 correction** (39 cells with a mask, 8 failed, six of them rear_body 1541-1771 at IoU 0.00
+  on the screwdriver): `area_vs_seed` 0.952, `emb_self_xv` 0.904, `sam3_score` 0.898,
+  `emb_self` 0.879, `det_iou_xv` 0.863, `det_top_iou_xv` 0.858, `det_disagree_xv` 0.825,
+  `det_iou` 0.815, `det_top_iou` 0.806, `det_disagree` 0.806, `det_presence_xv` 0.800; combined
+  in-sample 0.78 / 0.88 (7/2/1/29), leave-one-frame-out **0.750 / 0.750 (6/2/2/29)**. **The
+  1533 named test:** on the six corrected rear_body cells `det_disagree` = 1 and `det_top_iou`
+  = 1 on all six (the top rear_body detection is elsewhere than the tracked screwdriver),
+  `det_iou` 0.42-1.00, `emb_self` 0.27-0.35 (own-reference cosine 0.65-0.73) against 0.23-0.29
+  on the uncorrected `r1280` at the same frames (a shift of 0.03-0.06, small); in the record's own top decile: `emb_self_xv`
+  at 1541 / 1651 / 1751 / 1771, `emb_self` at 1701-1771, `det_iou` at 1541 / 1771, `det_iou_xv`
+  at 1541 / 1731, `sam3_score` at 1701-1771 (1 - sigmoid 0.000-0.001: on this record the whole
+  camera is confident so a small dip ranks high; at 1541 and 1651 nothing but the embedding and
+  detection rows flag). `det_presence` is 1.000 on every one of these cells: the rear body *is*
+  in view, so presence cannot see a localisation failure.
+- **e4 (26 frames, 65 cells with a mask; 10 interior anchors have no slot on either run).**
+  `r1280` (16 failed, 8 of them rear_body on hidden cells with 1.2-20.4k px): **`emb_self`
+  0.979**, 0.87 / 0.81 (13/2/3/31); `sam3_score` 0.903 on 50 cells; `emb_self_xv` 0.895;
+  **`det_presence_xv` 0.882**, 0.68 / 0.94 (15/7/1/42); `emb_swap_xv` 0.875; `area_vs_seed`
+  0.750; `det_presence` 0.763; `det_iou` 0.662. `4part` (12 failed): `emb_self` 0.928,
+  `emb_self_xv` 0.869, `area_vs_seed` 0.838, `det_presence_xv` 0.826, `sam3_score` 0.800.
+  Leave-one-frame-out 0.857 / 0.750 (12/2/4/32) and 0.562 / 0.750 (9/7/3/46). **The 23 hidden
+  cells** (`out_of_frame` class): the 14 interior cells have no slot on either run (0 px,
+  correct by construction, nothing to flag); of the 9 rear_body cells, `r1280` puts >300 px on
+  8, and something in the record's top decile flags 7 of them (864 with 20.4k px: eight
+  detectors; 1054: `emb_swap`, `emb_self`, `det_presence_xv`; 1504 / 1544: only `det_iou_xv` /
+  `det_iou_pos`; **504 with 3.4k px: nothing**; 304 with 1.8k px: `det_iou_xv` only). **Presence
+  as a visibility detector is a negative result**: mean presence 0.999 on the 23 hidden cells and
+  0.999 on the 41 visible ones (AUROC 0.46 same-view, 0.53 cross-view; `det_top_score` 0.55);
+  with these exemplars SAM3 says "present" on every e4 frame, out of frame or not.
+- **Pooled (324 cells with a mask, 90 failed, six records; raw values pooled).** **`emb_self`
+  0.894** on 285 cells, 0.69 / 0.80 (72/32/18/163); `area_vs_seed` 0.852 (324); `sam3_score`
+  0.806 (291); `emb_swap_xv` 0.802; `emb_self_xv` 0.762; `emb_swap` 0.760; `det_iou` 0.702;
+  `det_iou_xv` 0.677; `det_top_iou` 0.665; `det_presence_xv` 0.590; `det_disagree` 0.576;
+  `det_presence` 0.535. Per class: `rotation_swap` (62 / 18) `emb_self` **0.955**, `emb_swap_xv`
+  0.899, `emb_swap` 0.870, `emb_self_xv` 0.861, `area_vs_seed` 0.856, `sam3_score` 0.853,
+  `det_iou` 0.831; `occlusion_leak` (32 / 8, now with positives from C10119 and e4)
+  `det_iou_xv` **0.988** on 18 cells, `area_vs_seed` 0.958, `emb_swap_xv` 0.938, `emb_self`
+  0.915, `sam3_score` 0.739; `distractor` (110 / 36) `emb_self` **0.911**, `area_vs_seed` 0.827,
+  `emb_self_xv` 0.814, `sam3_score` 0.794, `det_iou` 0.663; `out_of_frame` (46 / 13)
+  `det_presence_xv` **0.927**, `area_vs_seed` 0.848, `det_presence` 0.570 (the embedding rows are
+  defined on 15 of these cells only); `outside` (74 / 15) `emb_self` 0.936, `area_vs_seed`
+  0.894, `emb_swap` 0.834. **Leave-one-record-out** (top-3 and the threshold chosen on the other
+  five cameras' records): the chosen set is **`emb_self` + `area_vs_seed` + `sam3_score` on four
+  of six folds** (`emb_self_xv` replaces `area_vs_seed` for C10119-4part, `emb_swap_xv`
+  replaces `sam3_score` for consensus-only-ds); held-out pooled AUROC 0.97 (pm-append), 0.93 /
+  0.89 (e4), 0.68 / 0.65 / 0.63 (C10119); at the transferred threshold recall 0.88-1.00 on five
+  records with precision 0.08-0.67 (pm-append 9/14/0/29, e4-r1280 14/7/2/42, e4-4part
+  11/10/1/43, C10119-r1280 2/22/0/15, consensus-only-ds 8/23/0/8) and the slot-swap record the
+  exception (C10119-4part 14/6/29/15: recall 0.33, its failures need `emb_swap`). The reading
+  stands as on Sep 20: the ranking transfers across cameras, a fixed threshold does not.
+- **Cross-view transfer, answered on this evidence.** The C10379 human masks used as exemplars
+  on another camera work as *detectors*: `emb_self_xv` 0.90-0.91 on pm-append (with C10119 + e4
+  references) and consensus-only-ds, 0.87-0.90 on e4, `emb_swap_xv` 0.87-0.90 on the C10119
+  swap records, `det_iou_xv` 0.99 on the pooled occlusion-leak cells and 0.86 on the 1533
+  record, `det_presence_xv` 0.88-0.93 where the part leaves the ego frame; on the same-camera
+  swap record (C10119-4part) `emb_self_xv` is at chance (0.47) while `emb_swap_xv` is 0.87. The
+  same set as a *candidate pool* on C10119 is the one pool that clears the correction bar for the
+  chassis (Track B entry below).
+- **Confidence series v2.** `runs/sam3-exemplar-20260922/scorecard/with-mask/confidence_v2/<record>/confidence.jsonl`
+  (7,200 rows per record, every detector, the combined rank-average of the record's top-3,
+  confidence, abstain at the record's in-sample R>=0.8 point). Not logged into a v6 rebuild:
+  `interaction_review_v4.py` is the concurrent refactor's dirty file tonight; the command is the
+  v6 build in the README with `--confidence runs/sam3-exemplar-20260922/scorecard/with-mask/confidence_v2/C10379-pm-append`
+  in place of `--confidence runs/detector-scorecard-20260920/pm-append`.
+- **Deliverables.** `runs/sam3-exemplar-20260922/` (README, `passes/`, `scorecard/{all-cells,with-mask}/`,
+  reference specs, queue logs, code snapshots), the three modules and their tests, the
+  `--candidate-source` / `--target` hooks in `multiview_reprompt.py`, the `api` literal in
+  `schemas.py` (it landed inside the refactor's `39f4b3c` sweep), `sam3_appearance.py` named an
+  own-repo worker in `gpu_guard.py`, CLI entries in `pyproject.toml`. README lines for the two
+  new CLIs are below rather than in `README.md` (the user's uncommitted edit is there tonight):
+
+  ```text
+  - `battle-exemplar-pool references|pass|truth-plan|decode-control|compare|rec2-references|zero-shot`
+    (`src/battle/exemplar_pool.py`): human-mask reference specs per view, the GPU appearance pass
+    (`src/battle/sam3_appearance.py` under the MuggledSAM interpreter: mask-pooled ViT embeddings
+    and visual-exemplar detections), exemplar-vs-decoder candidate pools on a view's anchor
+    cells, and recording-1 exemplars applied zero-shot on recording 2.
+  - `battle-detector-scorecard-v2 --spec records.json --output DIR [--exclude-missing]`: the
+    detector scorecard over several cameras' runs with the appearance detectors, leave-one-frame
+    and leave-one-record-out, named tests, `confidence_v2/<record>/confidence.jsonl`.
+  - `battle-multiview-reprompt decode --candidate-source image_decoder|exemplar_detector|both
+    --exemplar-references SPEC [--exemplar-set same_view|cross_view] [--target PART ...]`.
+  ```
+
+### Sep 22: exemplar detections as correction candidates (Track B of the exemplar plan; the C10119 chassis arm)
+
+- **Claim boundary first.** Every IoU is against one person's choice of SAM3 decoder masks: 63
+  C10379 truth cells (51 anchors + 12 human corrections at 0 / 327 / 900 / 1235; the 1700 hidden
+  cell prompted but not scored) and 64 C10119 anchor cells, both prompted from a 4-part consensus
+  that excludes the scored view (others-only for C10379, excl-C10119 for C10119), two boxes with
+  margins 0.25 / 0.60 and other-part negatives exactly as `battle-multiview-reprompt plan` builds
+  them. The candidate pools compared: the image decoder's base pool (the Sep 20 control, decoded
+  again on these plans: 20-22 s each) and the exemplar detector's top-10 detections whose
+  centroid lies inside the prompt boxes, same-view and cross-view references, positives-only and
+  positives+negatives, and a `+size` variant (B4: area within [0.5, 2] x the part's frame-0
+  seed). The acceptance rule is the tool's (area within [0.3, 3.0] x the consensus expected area,
+  centroid within 1.5 projected radii, highest score wins: the decoder's IoU estimate for the
+  decoder pool, the detection score for the exemplar pools) with the ray test taken in the image
+  plane; harm = accepted with IoU < 0.4; leave-frames-out rotates 3 held-out anchor frames and
+  picks a score floor on the rest (floor 0 was chosen in every fold). **The bar (chassis and
+  interior held-out >= 0.6 with harm <= 0.15) is met by one pool on one camera**, so one arm
+  ran. GPU: the pool masks come from the Track A passes; five exemplar decodes of 8-11 s, one
+  arm of 424 s (`code-snapshot-7f608e5`), through the queue beside the calibration worker.
+  CC BY-NC 4.0.
+- **Tool.** `battle-exemplar-pool truth-plan` (the acceptance-search plan for any view from its
+  anchor mask set; `correction_acceptance_search.py` is the refactor's dirty file, so the C10119
+  extension lives in `exemplar_pool.py` and imports the harness's schema and `run_decode`),
+  `decode-control`, `compare`; `battle-multiview-reprompt decode --candidate-source
+  exemplar_detector|both --exemplar-references SPEC --exemplar-set same_view|cross_view
+  [--target PART]`: a `decoder_factory` hook on `decode_plan` hands in
+  `exemplar_pool.ExemplarDecoderClient`, which starts `sam3_appearance.py serve-jsonl`, a
+  `batch_decode` server in the calibration worker's protocol whose candidates are the gated
+  exemplar detections (`api: muggledsam_sam3_exemplar_detector`, `iou_score` = detection score,
+  one empty mask when nothing lies inside the box so the rule rejects; `both` merges the image
+  decoder's candidates from the same loaded model, one GPU process). `--target` keeps only the
+  named parts' onsets (the dropped ones are listed in `decode_result.json`); `candidate_source.json`
+  is written beside the decisions because the decision and schedule schemas are hashed human
+  contracts.
+- **Pool comparison, C10379 (per part: oracle mean IoU, cells with a >= 0.6 candidate, accepted
+  mean IoU / harm, held-out mean IoU / harm).** Chassis (16): decoder 0.579, 6 / 16, 0.487 / 5
+  of 16, **held-out 0.519 / 0.27**; exemplar same-view posneg **0.701, 12 / 16**, 0.611 / 3 of
+  16, **held-out 0.594 / 0.23** (pos 0.601 / 0.23; +size 0.588 / 0.23): a higher ceiling and
+  fewer harmful picks than the decoder, **0.006 below the bar on IoU and 0.08 above it on harm**;
+  the three harmful cells are 300 / 600 / 650 (0.31 / 0.35 / 0.37), the occlusion windows where
+  no pool has a candidate above 0.38, exactly where the Sep 20 search put the ceiling. Elsewhere
+  the exemplar pick is 0.50-0.92 (1050: 0.85 where the decoder-score arm reached 0.75 and
+  pm-append 0.00; 1500: 0.67; 1700: 0.57). Interior (16): decoder 0.326, 3 / 16, held-out
+  **0.185 / 0.92**; exemplar 0.547, 7 / 16, held-out **0.323 / 0.50** (pos 0.321 / 0.50); the
+  B4 size prior does not help (**0.336 / 0.60**): the candidates are 2.6-4.7k px against 0.7-4.2k
+  human interiors, the wrong pixels rather than the wrong size (IoU 0.00-0.01 at 327 / 400 /
+  1100), the concept-not-instance failure the plan predicted. rear_body (15): decoder 0.792 /
+  0.08, exemplar **0.858 / 0.00** (pos 0.839 / 0.00), both clear the bar; cabin (15): 0.935 /
+  0.00 vs 0.940 / 0.00, both clear.
+- **Pool comparison, C10119.** Chassis (26): decoder 0.722, 23 / 26, held-out **0.573 / 0.27**;
+  exemplar same-view (references: the human-accepted frame-0 seed and the anchor at 41) 0.671,
+  held-out **0.583 / 0.24**; **exemplar cross-view (the 13 C10379 human masks) 0.751, 22 / 26,
+  accepted 0.713 with 1 harmful pick of 25, held-out 0.713 / 0.04: clears the bar**, the only
+  pool that does. Interior (25): decoder 0.571 (11 / 25), held-out 0.412 / 0.56; exemplar
+  same-view 0.177 (one reference frame), cross-view 0.412, held-out 0.371 / 0.58: nobody clears.
+  rear_body (9 cells, 1541-1771 where the other cameras sit on the screwdriver): decoder 0.661,
+  held-out 0.587 / 0.33; exemplar 0.10-0.14 oracle, 2 of 9 accepted: inside the consensus box the
+  exemplar detector returns almost nothing that overlaps the human rear body. cabin (3 cells):
+  decoder 0.949, exemplar cross-view 0.856, too few for a held-out number.
+- **Exemplar decodes on the existing plans** (decisions, decoder-score ranking). C10379, the
+  Sep 21 no-guard 4-part plan (9 planned onsets), same-view exemplars: chassis 477 / 604 / 1049
+  accepted (8.4k / 7.9k / **6.6k px** at 1049 against a 6.6k human chassis at 1050, scores
+  0.80-0.92), interior 665 and 1124 accepted (4.3k / 3.9k px, scores 0.38 / 0.62), interior
+  719 / 804 / 1466 **rejected: no detection inside the box**, **rear_body 1525 rejected**
+  (both prompts empty) where the decoder pool would have accepted the screwdriver. C10119, the
+  Sep 20 plan with the single **rear_body 1533** onset: **rejected by the same-view and by the
+  cross-view exemplars** (no detection centroid inside the consensus box; the decoder pool had
+  accepted `t001533-b01#3` at 0.95 and dropped rear_body from 0.839 to 0.270). The exemplar
+  pool abstains on the two screwdriver onsets by not finding the concept where the cameras
+  agree.
+- **The arm.** Parts clearing the bar: rear_body and cabin on C10379 (rear_body's only onset,
+  1525, was rejected; cabin has none), chassis on C10119 with cross-view exemplars. So
+  **`C10119 4part consensus-only-exemplar (chassis)`**: the Sep 21 guarded plan decoded with
+  `--candidate-source exemplar_detector --exemplar-set cross_view --target chassis`
+  (interior 1163 dropped by `--target`), chassis **367 / 495 / 704 / 1484 / 1557 accepted**
+  (6.1-8.2k px, scores 0.87-0.90 except 1484 at 0.28), agent schedule = the human-accepted
+  seeds + the five exemplar corrections, full run 424 s. `battle-anchor-iou` on the 64 C10119
+  cells (all / ch / int / rb / cab, windows 280-409 / 574-723 / 1021-1173 / outside, hidden FP):
+
+  | run | corrections | all | ch | int | rb | cab | 280-409 | 574-723 | 1021-1173 | outside | hidden FP |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | r1280 (Sep 19, 3 parts) | none | 0.474 | 0.758 | 0.000 (no slot) | 0.839 | 0.859 | 0.436 | 0.364 | 0.335 | 0.510 | 0 |
+  | human-accepted-4part | none | 0.350 | 0.339 | 0.114 | 0.838 | 0.949 | 0.155 | 0.028 | 0.176 | 0.436 | 5,133 |
+  | 4part + guarded consensus-only-ds (decoder pool) | ch 367 495 704 1484 1557, int 1163 | 0.554 | 0.667 | 0.290 | 0.833 | 0.945 | 0.487 | 0.361 | 0.330 | 0.616 | 3,795 |
+  | consensus-only-ds Sep 20 (rear_body 1533) | rb 1533 | 0.392 | 0.758 | 0.000 | 0.270 | 0.862 | 0.436 | 0.364 | 0.335 | 0.399 | 0 |
+  | **4part consensus-only-exemplar (chassis, cross-view)** | ch 367 495 704 1484 1557 | 0.513 | **0.740** | 0.106 | 0.849 | 0.945 | 0.484 | 0.363 | 0.348 | 0.558 | 4,829 |
+
+  The chassis goes from 0.339 (the 4-part seeds alone) to **0.740 with five exemplar
+  corrections at the same onsets where the decoder pool reached 0.667**, within 0.02 of the
+  3-part run that never lost the slot (0.758); rear_body is unchanged (0.849), cabin unchanged.
+  `all` is 0.513 against the decoder arm's 0.554 because that arm also carried an interior
+  correction (0.290 vs 0.106) and the interior pool did not clear the bar here, so none was
+  applied. Iteration 2 was not run (the plan caps at two; the budget went to the passes).
+  No C10379 arm ran: chassis 0.594 / 0.23 and interior 0.323 / 0.50 are under the bar, and the
+  one rear_body onset was rejected.
+- **Recording 2, zero-shot (optional step).** Recording 1's 13 C10379 human masks as the only
+  reference set on recording 2's C10379 proxy at the 13 calibration frames (14 s), scored
+  against the **7 masks the human has accepted so far** (chassis 456 / 483 / 552 / 1191, cabin
+  456 / 1191, rear_body 1191) and the **5 hidden marks** (interior 456 / 552 / 1191, rear_body
+  456 / 552): chassis top detection IoU **0.79 / 0.93 / 0.91 / 0.72** (posneg; pos 0.00 at 456
+  where the top pick is a 12k px blob, else 0.95 / 0.92 / 0.75), cabin **0.00** at both frames
+  (the top pick is 13k px; a 0.86-0.89 candidate sits lower in the top-10), rear_body 1191
+  **0.00** (best in the top-10 0.15); mean top IoU 0.48 (posneg) / 0.37 (pos), best-in-pool
+  0.62 / 0.77, 4 of 7 top picks >= 0.5; presence 0.99-1.00 on every accepted and every hidden
+  cell. The chassis transfers zero-shot to a second subject and recording; the cabin and rear
+  body do not at the top pick.
+- **Reading.** (1) The exemplar pool is a better *candidate set* than the box-prompted image
+  decoder for the chassis (ceiling 0.70 vs 0.58 on C10379, 0.75 vs 0.72 on C10119 with
+  cross-view references) and the first pool to clear the bar on any camera (C10119 chassis,
+  cross-view: 0.713 / 0.04), and the arm confirms it on the anchors (0.740 vs 0.667 with the
+  decoder pool at the same onsets). (2) It does not clear the bar on C10379 (0.594 / 0.23) and
+  its three harmful cells are the occlusion windows where no pool has a candidate: the ceiling
+  moved from 0.58 to 0.70, not to 1. (3) The interior stays out of reach for both pools
+  (0.19-0.37 held-out), and the size prior changes nothing because the candidates are the wrong
+  black plastic, not the wrong size. (4) On the two screwdriver onsets the exemplar decoder
+  abstains where the decoder accepted (C10379 1525, C10119 1533), which is the behaviour the
+  distractor guard had to supply from human marks. (5) Cross-view references beat same-view
+  ones on C10119 because there are 13 of them on 4 frames against 6 on 2; the concept
+  transfers between these two static cameras and, for the chassis, to recording 2. What remains
+  human is unchanged: the reference masks themselves, the interior, and the anchors that score
+  all of this.
+- **Deliverables.** `runs/sam3-exemplar-20260922/poolcmp/{C10379,C10119}/` (plans, control
+  decodes, `compare.{json,md}`), `reprompt/*/iter1/` (five exemplar decodes with
+  `candidate_source.json`, the C10119 chassis arm), `anchor_iou_c10119.{json,md}`,
+  `rec2_zero_shot.{json,md}`, `references_rec2_C10379.json`; the hooks and tests named above;
+  this entry. The plan file's Outcome section records the todo states.
