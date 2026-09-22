@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import types
 from collections import deque
 from datetime import UTC, datetime
@@ -128,6 +129,78 @@ def test_gpu_guard_tolerates_an_open_rerun_viewer_but_not_other_python_processes
     assert _looks_like_model_process(process("/home/nick/.pyenv/versions/muggled_sam/bin/python"))
     assert _looks_like_model_process(process("/usr/bin/ollama"))
     assert _looks_like_model_process(process("/opt/rerun-experiments/.venv/bin/python3"))
+
+
+def test_gpu_guard_tolerates_only_operator_named_neighbour_pids(monkeypatch, tmp_path) -> None:
+    from battle import muggled_smoke as smoke_module
+    from battle.muggled_worker import build_parser, partition_gpu_neighbours
+
+    calibration = {
+        "pid": "2071175",
+        "process_name": "/home/nick/.pyenv/versions/muggled_sam/bin/python",
+        "memory": "1198 MiB",
+    }
+    other = {"pid": "77", "process_name": "/usr/bin/ollama", "memory": "3 GiB"}
+    viewer = {"pid": "8", "process_name": "/usr/local/bin/rerun", "memory": "100 MiB"}
+
+    blocking, tolerated = partition_gpu_neighbours([calibration, other, viewer], [])
+    assert blocking == [calibration, other] and tolerated == []
+    blocking, tolerated = partition_gpu_neighbours([calibration, other, viewer], [2071175])
+    assert blocking == [other] and tolerated == [calibration]
+    blocking, tolerated = partition_gpu_neighbours([calibration, viewer], [2071175])
+    assert blocking == [] and tolerated == [calibration]
+
+    # The worker parser takes the flag repeatably and defaults to no tolerated neighbour.
+    base = [
+        "--run-directory", str(tmp_path), "--video", "v.mp4", "--view-id", "static-c10119",
+        "--source-offset-seconds", "0", "--model", "m.pt",
+    ]  # fmt: skip
+    assert build_parser().parse_args(base).allow_gpu_neighbour == []
+    parsed = build_parser().parse_args(
+        [*base, "--allow-gpu-neighbour", "2071175", "--allow-gpu-neighbour", "2071109"]
+    )
+    assert parsed.allow_gpu_neighbour == [2071175, 2071109]
+
+    # battle-muggled-smoke forwards every PID to the worker command line.
+    captured: dict[str, list[str]] = {}
+
+    def fake_run(command, **_kwargs):
+        captured["command"] = list(command)
+        (tmp_path / "worker_result.json").write_text(
+            json.dumps(
+                {
+                    "state": "blocked",
+                    "reason": "stub",
+                    "frames_processed": 0,
+                    "elapsed_seconds": 0.0,
+                    "time_to_first_usable_output_seconds": None,
+                    "gpu_peak_vram_bytes": None,
+                    "masks_written": 0,
+                    "known_unavailable_measures": [],
+                    "runtime_settings": {},
+                }
+            )
+        )
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(smoke_module.subprocess, "run", fake_run)
+    smoke_module._run_worker(
+        external_python=Path("/usr/bin/python3"),
+        worker_path=Path("worker.py"),
+        run_directory=tmp_path,
+        proxy_path=Path("proxy.mp4"),
+        view_id="static-c10119",
+        source_offset_seconds=0.0,
+        model_path=Path("model.pt"),
+        max_frames=10,
+        max_side_length=1280,
+        max_frame_memory=6,
+        analysis_fps=30.0,
+        allow_gpu_neighbours=(2071175,),
+    )
+    command = captured["command"]
+    assert command[command.index("--allow-gpu-neighbour") + 1] == "2071175"
+    assert command.count("--allow-gpu-neighbour") == 1
 
 
 def test_worker_accepts_four_ordered_manual_multiplex_slots() -> None:

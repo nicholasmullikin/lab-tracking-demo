@@ -12,6 +12,7 @@ import json
 import subprocess
 import traceback
 from collections import deque
+from collections.abc import Iterable
 from pathlib import Path
 from time import perf_counter
 from typing import Any
@@ -284,6 +285,26 @@ def _looks_like_model_process(process: dict[str, str]) -> bool:
 def _is_rerun_viewer(name: str) -> bool:
     executable = name.rsplit("/", 1)[-1]
     return executable == "rerun" or "/rerun_sdk/rerun_cli/" in name
+
+
+def partition_gpu_neighbours(
+    gpu_processes: list[dict[str, str]], allowed_pids: Iterable[int]
+) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    """Split the model-like GPU processes into (blocking, allowed-by-operator).
+
+    The guard refuses to start beside another model process so that VRAM peaks and timings
+    stay per-process.  An operator may name specific PIDs (never process names) that are
+    allowed to share the GPU, e.g. a human's calibration workspace worker that must not be
+    stopped; every allowed neighbour is recorded in the run's settings as provenance.
+    """
+    allowed = {str(int(pid)) for pid in allowed_pids}
+    blocking: list[dict[str, str]] = []
+    tolerated: list[dict[str, str]] = []
+    for process in gpu_processes:
+        if not _looks_like_model_process(process):
+            continue
+        (tolerated if process["pid"] in allowed else blocking).append(process)
+    return blocking, tolerated
 
 
 def _result(
@@ -921,7 +942,19 @@ def run(args: argparse.Namespace) -> int:
     runtime_settings = _runtime_settings(args, concepts)
     start = perf_counter()
     gpu_processes = _gpu_processes()
-    concurrent_models = [process for process in gpu_processes if _looks_like_model_process(process)]
+    concurrent_models, tolerated_neighbours = partition_gpu_neighbours(
+        gpu_processes, args.allow_gpu_neighbour
+    )
+    if args.allow_gpu_neighbour:
+        runtime_settings["gpu_guard"] = {
+            "allowed_neighbour_pids": [int(pid) for pid in args.allow_gpu_neighbour],
+            "tolerated_neighbours": tolerated_neighbours,
+            "semantics": (
+                "the operator allowed these GPU processes (by PID) to run beside this worker; "
+                "gpu_peak_vram_bytes stays this process's own allocation but wall-clock timing "
+                "may see contention; the guard still refuses any other model process"
+            ),
+        }
 
     if not video_path.is_file():
         _write_json(
@@ -1666,6 +1699,17 @@ def build_parser() -> argparse.ArgumentParser:
         choices=MEMORY_GATE_MODES,
         default="off",
         help="on: memorise a slot as absent on frames where its prediction is not trusted.",
+    )
+    parser.add_argument(
+        "--allow-gpu-neighbour",
+        type=int,
+        action="append",
+        default=[],
+        metavar="PID",
+        help=(
+            "PID of a GPU model process the guard may tolerate (repeatable); recorded under "
+            "runtime_settings.gpu_guard. Any other model process still blocks the run."
+        ),
     )
     parser.add_argument("--gate-min-object-score", type=float, default=GATE_MIN_OBJECT_SCORE)
     parser.add_argument("--gate-min-iou", type=float, default=GATE_MIN_IOU)

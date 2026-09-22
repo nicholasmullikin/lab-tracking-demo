@@ -8,6 +8,7 @@ import os
 import shutil
 import subprocess
 import sys
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -653,6 +654,7 @@ def _run_worker(
     checkpoint_every: int = 0,
     memory_policy: TrackerMemoryPolicy | None = None,
     memory_settings: CorrectionMemorySettings | None = None,
+    allow_gpu_neighbours: Sequence[int] = (),
 ) -> dict[str, Any]:
     environment = os.environ.copy()
     environment["CUDA_VISIBLE_DEVICES"] = "0"
@@ -686,6 +688,8 @@ def _run_worker(
     ]
     if resume_from_checkpoint is not None:
         command.extend(["--resume-from-checkpoint", str(resume_from_checkpoint)])
+    for pid in allow_gpu_neighbours:
+        command.extend(["--allow-gpu-neighbour", str(int(pid))])
     if memory_policy is not None and not memory_policy.is_default:
         command.extend(memory_policy.worker_arguments())
     if memory_settings is not None:
@@ -2383,6 +2387,15 @@ def run_smoke(args: argparse.Namespace) -> Path:
         "correction_memory_settings": memory_settings.model_dump(mode="json"),
         "frame_memory_position_encoding": memory_settings.frame_memory_position_encoding,
     }
+    if args.allow_gpu_neighbour:
+        runtime_invocation["allow_gpu_neighbour_pids"] = [
+            int(pid) for pid in args.allow_gpu_neighbour
+        ]
+        runtime_invocation["allow_gpu_neighbour_note"] = (
+            "operator-named GPU processes tolerated by the worker's guard (the human's "
+            "calibration workspace); wall-clock timing may see contention, peak VRAM is "
+            "this process's own"
+        )
     if is_four_part_full:
         runtime_invocation["known_pilot_failure"] = (
             "chassis/cabin identity merge after frame-65 correction"
@@ -2540,6 +2553,7 @@ def run_smoke(args: argparse.Namespace) -> Path:
             checkpoint_every=args.checkpoint_every,
             memory_policy=memory_policy,
             memory_settings=memory_settings,
+            allow_gpu_neighbours=tuple(args.allow_gpu_neighbour or ()),
         )
 
     observations_path = run_directory / "observations.jsonl"
@@ -3304,6 +3318,17 @@ def main() -> None:
         help=(
             "Save tracker state every N frames in addition to the correction keyframes, "
             "so a later rerun can resume instead of re-streaming from frame zero."
+        ),
+    )
+    parser.add_argument(
+        "--allow-gpu-neighbour",
+        type=int,
+        action="append",
+        metavar="PID",
+        help=(
+            "PID of a GPU model process the worker's guard may tolerate (repeatable), e.g. a "
+            "human's calibration workspace; recorded in runtime_settings.json and the worker "
+            "result. Any other model process still blocks the run."
         ),
     )
     parser.add_argument(
