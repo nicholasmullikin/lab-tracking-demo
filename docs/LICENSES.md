@@ -93,6 +93,17 @@ inputs outside Git.
   those terms and stay outside Git. The SAM3 zero-shot smoke on one clip makes no accuracy
   claim; its outputs are not evidence for any FineBio-related result and are not to be shown
   outside the local procedure without a rights determination.
+- **MMDetection and the FineBio shipped detector (Sep 21, later):** MMDetection v3.3.0, mmcv
+  2.1.0 and mmengine 0.10.7 are Apache-2.0 and live in their own venv
+  (`/home/nick/src/finebio-detector`); Battle uses their public inference API and copies no
+  code. The FineBio object_detection configs come from a repository whose code is MIT. The two
+  released checkpoints (`dino.pth`, `deformable-detr.pth`, checksums in `docs/SOURCES.md`)
+  are the authors' research artefacts fine-tuned from OpenMMLab COCO checkpoints on the
+  FineBio annotations; they carry no licence file of their own, so they are treated under the
+  FineBio agreement (non-commercial research, citation of Yagi et al., IJCV 2025) and are not
+  redistributed. Every detection in `runs/finebio-dino-20260921/` is made on FineBio frames
+  and inherits those terms; the run is unscored (no annotations here) and makes no accuracy
+  claim for the detector or for SAM3.
 
 ## Dependency and future-model review
 

@@ -407,6 +407,47 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
 - Repository policy: no FineBio frame, video, mask or checksum-bearing manifest of a frame
   is committed; `configs/` holds no FineBio clip config because the Assembly101 G2 manifest
   schema does not describe this source (see the ledger entry).
+- Second derivative on the same clip (Sep 21, later): `runs/finebio-dino-20260921/`
+  (detections, contact sheets, RRD carrying the video and the SAM3 smoke's masks) from the
+  FineBio shipped detector below; same terms, outside Git.
+
+## External source: MMDetection and the FineBio shipped detector weights (Sep 21, 2026)
+
+- Code: MMDetection, `https://github.com/open-mmlab/mmdetection`, Apache-2.0. Checkout
+  `/home/nick/src/finebio-detector/mmdetection` pinned at tag `v3.3.0`
+  (`44ebd17b145c2372c4b700bfb9cb20dbd28ab64a`, the last release accepting mmcv < 2.2); the
+  only change to the tree is the two FineBio config files copied into `configs/dino/` and
+  `configs/deformable_detr/` as the authors' README instructs. Companion packages in the same
+  venv: mmcv 2.1.0 (OpenMMLab prebuilt CPU wheel for torch 2.1, Apache-2.0), mmengine 0.10.7
+  (Apache-2.0), torch 2.1.2+cpu / torchvision 0.16.2+cpu (BSD-3), all in
+  `/home/nick/src/finebio-detector/.venv` (Python 3.10), created by
+  `scripts/install_finebio_detector.sh`. The battle env is untouched.
+- FineBio detector configs and code: `github.com/aistairc/FineBio/object_detection/` at commit
+  `cb8d16ef13c7c9901418c13bcbaa50a3bdf3a2c3` (the repository's code is MIT):
+  `dino-4scale_r50_8xb2-12e_finebio.py` SHA-256
+  `6ac73d40c540ca856c9ec5f2083f8e6e4d1f6a95f92fcd7605371fe2ab7e4a1e` and
+  `deformable-detr-refine-twostage_r50_16xb2-50e_finebio.py` SHA-256
+  `227ea4291bca14f317828cf7c2e7eed444d95602e6b5ab2ffb70bd6ef8bc91d5`; both set
+  `bbox_head.num_classes=35` over the MMDetection COCO base configs and list the 35 classes.
+  Their two custom metric files (`AP_manipulated`, `AP_affected`) are not installed; they are
+  evaluation-only.
+- Weights (the authors' released checkpoints, retrieved Sep 21, 2026 with `gdown` from the
+  Google Drive links in the FineBio README's 2025-12-15 update; the
+  `finebio.s3.abci.ai/ckpts/` host named in the object_detection README no longer resolves):
+  `checkpoints/dino.pth` SHA-256
+  `e63995318ac28e230105f61f3e1db6c5de40748cb73850576f7c75cfc8029d94` (579,232,009 B; DINO
+  4-scale R50, epoch 12, 47.7 M parameters, full training checkpoint with optimizer state,
+  `dataset_meta` carries the 35 classes; the authors report AP 53.3 / AP50 77.4 on their test
+  split) and `checkpoints/deformable-detr.pth` SHA-256
+  `35982a45a17b4c7abf09f894feee8c43fd20413d105d9b984c1ff45be85bd6c3` (515,194,905 B;
+  two-stage Deformable DETR with refinement, R50, epoch 50, 41.2 M parameters; AP 56.1 /
+  78.5). Both are fine-tuned from the OpenMMLab COCO checkpoints named in the configs. The
+  weights are research artefacts trained on FineBio annotations and are treated under the
+  FineBio licence (non-commercial research); nothing is redistributed.
+- Not on this machine: `finebio_coco_annotations.zip`, so no AP can be computed here; the
+  Sep 21 run is qualitative.
+- Battle-owned glue: `scripts/finebio_dino_detect.py` (detect phase under the detector
+  interpreter, export under Battle), `scripts/install_finebio_detector.sh`.
 
 ## Candidate source: creator-uploaded video
 

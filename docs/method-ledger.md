@@ -433,6 +433,16 @@ destabilises the chassis on C10119 (0.758 -> 0.339) and the guarded re-prompt re
 while tracking the interior on that camera for the first time (0.74-0.87 over 1651-1771).
 Record: [Sep 21, night](#sep-21-night-the-three-labelling-sessions-acted-on-human-accepted-seeds-an-interior-seed-from-two-human-masks-the-four-part-rerun-the-c10119-rear_body-finding-and-a-distractor-guard).
 
+#### Sep 21: FineBio shipped detector, first run
+
+FineBio's own MMDetection detector (DINO and Deformable DETR, 35 classes, the authors'
+checkpoints) run on the CPU over the same 600 frames as the SAM3 smoke and put in one Rerun
+recording beside it. The transparent plate is `cell_culture_plate` on all 600 frames and the
+racks get boxes under six rack classes; 3-4 pipettes per frame are boxed separately, the
+right-hand box swallows the upright pipette, nothing fires on the fiducials. Qualitative, no
+annotations here, no accuracy claim. Record:
+[FineBio shipped detector](#sep-21-finebio-shipped-detector-first-run-mmdetection-dino-and-deformable-detr-on-the-cpu-beside-the-sam3-smoke).
+
 ### Plan versus actual
 
 What the plan said, what happened instead, and why, in one line each.
@@ -5171,3 +5181,90 @@ any knob is turned, and turning one first would make those labels confirmatory.
   (8 runs, queue logs, `README_guard_note.md`), the three consensus roots and the hull root
   named above, `runs/multiview-reprompt-20260921/` (`C10379/iter1/`, `variants/no-guard/C10379/iter1/`,
   `C10119/iter1/`, `anchor_iou_{arms,c10119,e4}.{json,md}`, stage scripts, queue logs).
+
+### Sep 21: FineBio shipped detector, first run (MMDetection DINO and Deformable DETR on the CPU beside the SAM3 smoke)
+
+- **What.** The detector FineBio ships with its paper, the authors' MMDetection checkpoints
+  fine-tuned on their 35 wet-lab classes, run on the same 600-frame `P03_01_01` 60-80 s proxy
+  that the SAM3 zero-shot smoke tracked, and both methods put in one Rerun recording side by
+  side. The question was what a supervised in-domain detector finds that five SAM3 text prompts
+  missed (the transparent cell-culture plate, the tube racks). Qualitative: the FineBio COCO
+  annotations are not on this machine, nothing is scored, no accuracy claim for either method.
+- **Source and licence.** Same FineBio clip and terms as the first look (non-commercial
+  research, nothing redistributed). Code: MMDetection v3.3.0 (`44ebd17b`, Apache-2.0), mmcv
+  2.1.0, mmengine 0.10.7; the two FineBio configs from `aistairc/FineBio/object_detection` at
+  `cb8d16ef` (MIT repository; `_base_` = the MMDetection COCO configs, `num_classes=35`).
+  Weights: the authors' `dino.pth` (SHA-256 `e6399531…29d94`, 579 MB, epoch 12, full training
+  checkpoint with optimizer state and `dataset_meta`) and `deformable-detr.pth`
+  (`35982a45…bd6c3`, 515 MB, epoch 50). The `finebio.s3.abci.ai/ckpts/` URLs in the
+  object_detection README no longer resolve (NXDOMAIN at every resolver tried); the main README's
+  2025-12-15 update points to Google Drive, fetched with `gdown`. Entries added to
+  `docs/SOURCES.md` and `docs/LICENSES.md`.
+- **Environment.** Own venv at `/home/nick/src/finebio-detector` (Python 3.10, torch
+  2.1.2+cpu, torchvision 0.16.2+cpu), built by the idempotent
+  `scripts/install_finebio_detector.sh` in about 8 minutes wall time. mmcv did not have to be
+  compiled: OpenMMLab publishes a CPU wheel for torch 2.1 (`cpu/torch2.1.0/mmcv-2.1.0-cp310`),
+  and its `mmcv.ops` (deformable attention, NMS) import; the script keeps the source build
+  (`MMCV_WITH_OPS=1`, no CUDA) as the fallback path, not exercised. Two fixes on the way:
+  mmdet's editable install needs `--no-build-isolation` and `setuptools<80` (its `setup.py`
+  imports `torch.utils.cpp_extension`, which on torch 2.1 imports `pkg_resources`), and gdown
+  6.4 dropped `--fuzzy`. Verification: `init_detector` + `inference_detector` on a blank
+  1333x800 image, 35 classes from the checkpoint's `dataset_meta` matching the configs, 2.3 s
+  cold. The battle env is untouched; the export phase runs under it (Rerun 0.37.1).
+- **GPU coordination.** At 23:18 local the other session's queue had a tracker job running
+  (`human-plus-consensus`, worker pid 2261783, 3.6 GB on the GPU), so the CPU default held and
+  `CUDA_VISIBLE_DEVICES=""` was set on every detect call. The detect phase snapshots `pgrep`,
+  `nvidia-smi` and the newest `queue.log` into `runtime_settings.gpu_coordination`; by the first
+  sampled pass (23:28) the tracker list was empty and the queue log ended with `queue_end`
+  (03:20:57 UTC), so the plan's rule would have allowed the GPU, but the CPU rate was already
+  under the 2 s/frame bar and the env has no CUDA build, so the GPU was never used. The
+  script's `--device cuda:0` refuses unless trackers are absent, no other model process holds
+  the GPU and the newest queue log ends with `queue_end`.
+- **Run.** `scripts/finebio_dino_detect.py detect` (detector interpreter): mmdet's default
+  test pipeline (`Resize` to fit 1333x800, so 1066x800 for the 1280x960 proxy), every
+  detection >= 0.05 recorded, 0.30 used for display and counts. DINO sampled pass (every 10th
+  frame plus the six contact-sheet frames, 63 frames) at 1.47-1.53 s/frame on 16 CPU threads,
+  then all 600 frames in 978 s (median 1.64 s/frame): 74,411 boxes >= 0.05, 21,803 >= 0.30
+  (22-46 per frame, median 37). Deformable DETR: sampled pass at 1.36 s/frame, then all 600
+  frames in 832 s (median 1.38 s/frame), 58,708 boxes >= 0.05, 20,695 >= 0.30; 98.4% of
+  DINO's boxes >= 0.5 have a same-class DDETR box at IoU >= 0.5, with DDETR's scores higher
+  for nearly every class (plate hand-held median 0.70 vs 0.48). `export` (Battle interpreter,
+  11 s) writes `recording.rrd` (27 MB: video asset, `detector/<model>/boxes` with class ids 1-35 and family colours,
+  per-class count series, the SAM3 smoke's boxes and RGBA masks re-logged under `sam3/`, a
+  pinned blueprint with one 2D view per method over the same video and the count series
+  below), two contact sheets, `class_counts.md` and `manifest.json`.
+- **Observations on this clip** (DINO unless stated; details and numbers in the run README).
+  The transparent 6-well plate is `cell_culture_plate` on all 600 frames: 0.32-0.60 while held
+  in the hands (frames 0-38), 0.74-0.94 (median 0.90) once on the bench, through both pans;
+  SAM3's `6-well plate` prompt found nothing. The racks SAM3's `tube rack` missed get boxes on
+  every frame under `50ml_tube_rack`, `micro_tube_rack` (with about 13 `micro_tube` boxes per
+  frame on the tubes in it), `8_tube_stripes_rack` (the red rack the SAM3 `pipette tip box`
+  prompt picked at frame 0, same box to within 4 px), `15ml_tube_rack` (one box per blue-capped
+  tube), `magnetic_rack` (the blue-and-white rack) and the four tip-rack classes on the
+  transparent tip boxes, often two classes on one box. 3-4 pipette-family boxes per frame: the
+  hand-held pipette (`blue_pipette` on 459 of the 499 frames where a DINO box overlaps SAM3's
+  pipette box at IoU >= 0.3, median IoU 0.70, about equal area) plus the two manual pipettes
+  and the blue-bodied pipette lying on the bench, each its own box; SAM3 tracked one slot.
+  `left_hand` on the left glove on all 600 frames; `right_hand` absent on 100-144, 299-328,
+  331-374, the pans that carry the right hand out of the right edge, the same intervals in
+  which the SAM3 pipette slot dropped; on frames 0-40 the right-hand box (up to 17% of the
+  frame) encloses 89% of the upright pipette's box. No detection at any score >= 0.05 is
+  centred on a fiducial marker on the six contact-sheet frames; the odd boxes are a
+  `micro_tube` on the horizontal pipette's tip cone, `cell_culture_plate_lid` duplicating the
+  plate box on 54 frames (<= 0.45), and `pcr_machine` 0.82-0.90 on every frame for a white block
+  with a grid of wells whose identity the frames do not settle. Bench objects that stay in view
+  hold their scores through the pans (`centrifuge` 0.75-0.89, `vortex_mixer` 0.72-0.90,
+  `8_tube_stripes_rack` 0.84-0.92, never below 0.70); objects that leave the frame drop out and
+  return; the hand-held pipette is the least stable (`blue_pipette` median 0.61, 0.30-0.84).
+  Eight classes never reach 0.30 (tips other than `blue_tip`, the two lids, spin columns,
+  `tube_without_lid`).
+- **Claim boundary.** Scores are the detectors' softmax outputs; box labels were read on about
+  a dozen frames and the per-frame numbers, not reviewed against truth; the class names are
+  the detector's, and where an object's identity could not be told from the frames (the
+  "PCR machine", the tip boxes' colours) the README says so. Nothing here says how well either
+  method does on FineBio.
+- **Deliverables.** `runs/finebio-dino-20260921/` (README, `recording.rrd`, `contact_sheet.png`,
+  `contact_sheet.deformable-detr.png`, `detections*.jsonl`, `detect_result*.json`,
+  `class_counts.md`, `manifest.json`, logs; ignored), `scripts/finebio_dino_detect.py`,
+  `scripts/install_finebio_detector.sh`, `docs/SOURCES.md` and `docs/LICENSES.md` entries, this
+  entry. View: `uv run rerun runs/finebio-dino-20260921/recording.rrd`.
