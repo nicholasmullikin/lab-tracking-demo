@@ -46,6 +46,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from . import gpu_guard
+from .cli_common import add_repository_root
 from .fs_common import write_json
 
 DEFAULT_LOG = Path("runs/overnight-multicam-20260918/queue.log")
@@ -553,7 +554,7 @@ def code_snapshot_main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("root", type=Path, help="queue directory, e.g. runs/<pass>")
     parser.add_argument("--commit", default="HEAD")
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
+    add_repository_root(parser)
     parser.add_argument(
         "--path",
         action="append",

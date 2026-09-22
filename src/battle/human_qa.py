@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .cli_common import add_repository_root
 from .digest_cache import sha256_file
 from .schemas import (
     ArtifactFingerprint,
@@ -538,7 +539,7 @@ def main() -> None:
     parser.add_argument(
         "runs", type=Path, nargs="+", help="Run directories or manifest.json files."
     )
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
+    add_repository_root(parser)
     parser.add_argument("--output-directory", type=Path, required=True)
     parser.add_argument("--easy-source-seconds", type=float, required=True)
     parser.add_argument("--hard-source-seconds", type=float, required=True)
@@ -590,7 +591,7 @@ def candidate_main() -> None:
         metavar=("FIRST_RUN", "SECOND_RUN"),
         help="Exactly two completed run directories or manifest.json files.",
     )
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
+    add_repository_root(parser)
     parser.add_argument(
         "--output",
         type=Path,

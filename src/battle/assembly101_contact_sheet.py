@@ -22,6 +22,7 @@ from .assembly101_recordings import (
     Assembly101Recording,
     get_recording,
 )
+from .cli_common import add_repository_root
 
 PANEL_WIDTH = 480
 LABEL_HEIGHT = 30
@@ -146,7 +147,7 @@ def render_contact_sheet(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--recording", help="registry label or recording id; default recording 1")
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
+    add_repository_root(parser)
     parser.add_argument("--output", type=Path, help="default: data/derived/.../contact_sheet_*.png")
     parser.add_argument("--view", action="append", help="subset of views; default all fetched")
     args = parser.parse_args()

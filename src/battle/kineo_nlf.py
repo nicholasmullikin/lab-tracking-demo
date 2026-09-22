@@ -19,6 +19,7 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
+from .cli_common import add_output_root, add_repository_root
 from .external_smoke_import import import_kineo, sha256_file
 from .fs_common import run_timestamp
 
@@ -259,14 +260,14 @@ def run_kineo_nlf(args: argparse.Namespace) -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
+    add_repository_root(parser)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--kineo-config", type=Path, default=DEFAULT_KINEO_CONFIG)
     parser.add_argument("--kineo-root", type=Path, default=DEFAULT_KINEO_ROOT)
     parser.add_argument("--proxy", type=Path, default=DEFAULT_PROXY)
     parser.add_argument("--sequence-name", default=DEFAULT_SEQUENCE)
     parser.add_argument("--seconds", type=float, default=DEFAULT_SECONDS)
-    parser.add_argument("--output-root", type=Path, default=Path("runs"))
+    add_output_root(parser, Path("runs"))
     parser.add_argument("--run-id")
     parser.add_argument("--rtmlib-bbox-detection-frame-step", type=int, default=5)
     parser.add_argument(

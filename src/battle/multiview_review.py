@@ -26,6 +26,7 @@ import rerun.blueprint as rrb
 from . import assembly101_reference as a101
 from . import mask_cache
 from .assembly101_pose_schemas import ASSEMBLY101_EDGES, Assembly101HandFrame
+from .cli_common import add_output_root, add_repository_root
 from .four_part_contract import TARGETS
 from .multiview_consensus import (
     MANIFEST_NAME,
@@ -785,8 +786,8 @@ def static_comparison_blueprint(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
-    parser.add_argument("--output-root", type=Path, default=OUTPUT_ROOT)
+    add_repository_root(parser)
+    add_output_root(parser, OUTPUT_ROOT)
     parser.add_argument("--consensus-root", type=Path, default=CONSENSUS_ROOT)
     parser.add_argument("--hull-root", type=Path, default=HULL_ROOT)
     parser.add_argument("--no-hull", action="store_true")

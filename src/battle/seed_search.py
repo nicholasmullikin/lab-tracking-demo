@@ -49,6 +49,7 @@ from .anchor_frames_for_view import mapped_frame
 from .assembly101_camera_fit import PoseMembers
 from .assembly101_clock_offset import is_ego
 from .assembly101_pose_schemas import ASSEMBLY101_HAND_SIDES
+from .cli_common import add_output_root, add_repository_root
 from .four_part_contract import TARGETS
 from .muggled_smoke import relative_uri, sha256_file
 from .multiview_consensus import ViewRun, load_view_run, mask_centroid_raw
@@ -2436,7 +2437,7 @@ def _root(args: argparse.Namespace) -> Path:
 
 def truth_set_main() -> None:
     parser = argparse.ArgumentParser(description="Assemble the C10379 (+ e3) human mask truth set.")
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
+    add_repository_root(parser)
     parser.add_argument("--output", type=Path, default=OUTPUT_ROOT / "truth_set.json")
     args = parser.parse_args()
     root = _root(args)
@@ -2452,8 +2453,8 @@ def truth_set_main() -> None:
 
 def search_main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
-    parser.add_argument("--output-root", type=Path, default=OUTPUT_ROOT)
+    add_repository_root(parser)
+    add_output_root(parser, OUTPUT_ROOT)
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("plan", help="build the prompt grid on C10379 (CPU)")
     decode = commands.add_parser("decode", help="decode the planned prompts (GPU)")

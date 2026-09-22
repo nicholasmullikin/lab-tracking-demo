@@ -42,6 +42,7 @@ import numpy as np
 from pydantic import Field
 
 from .assembly101_clock_offset import is_ego
+from .cli_common import add_output_root, add_repository_root
 from .digest_cache import sha256_file
 from .four_part_contract import TARGETS
 from .multiview_consensus import relative_uri
@@ -1416,8 +1417,8 @@ def interior_table(plan: InteriorSeedPlan, report: InteriorReport) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
-    parser.add_argument("--output-root", type=Path, default=OUTPUT_ROOT)
+    add_repository_root(parser)
+    add_output_root(parser, OUTPUT_ROOT)
     commands = parser.add_subparsers(dest="command", required=True)
     apply = commands.add_parser("apply", help="write the human decisions into seed manifests (CPU)")
     apply.add_argument("--decisions", type=Path, default=DEFAULT_DECISIONS)

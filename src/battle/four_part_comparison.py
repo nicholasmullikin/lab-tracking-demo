@@ -9,6 +9,7 @@ from pathlib import Path
 import rerun as rr
 import rerun.blueprint as rrb
 
+from .cli_common import add_output_root, add_repository_root
 from .exporter import _rgba_mask_png
 from .four_part_contract import (
     ANALYSIS_FPS,
@@ -249,7 +250,7 @@ def build(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
+    add_repository_root(parser)
     parser.add_argument("--baseline", type=Path, default=DEFAULT_BASELINE)
     for method in (
         "grounding_dino_sam2_open_vocabulary",
@@ -258,7 +259,7 @@ def main() -> None:
         "dam4sam",
     ):
         parser.add_argument(f"--{method.replace('_', '-')}", type=Path)
-    parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
+    add_output_root(parser, DEFAULT_OUTPUT_ROOT)
     args = parser.parse_args()
     arms = {
         method: getattr(args, method)

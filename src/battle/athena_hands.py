@@ -67,6 +67,7 @@ from .assembly101_pose_schemas import (
     Assembly101ClockRule,
 )
 from .athena_triangulation import ATHENA_REVISION, ATHENA_ROOT
+from .cli_common import add_output_root, add_repository_root
 from .multiview_geometry import CameraRig
 from .schemas import ArtifactFingerprint, VersionedModel, fingerprint
 
@@ -1261,7 +1262,7 @@ def check_view_2d(
 
 def check_main() -> None:
     parser = argparse.ArgumentParser(description="Per-view 2D hands vs dataset 2D landmarks.")
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
+    add_repository_root(parser)
     parser.add_argument("--views", nargs="+", default=list(STATIC_VIEWS))
     parser.add_argument("--hand-source", choices=("mediapipe", "wilor"), default="mediapipe")
     parser.add_argument("--run-dir", type=_parse_override, action="append", default=[])
@@ -1304,12 +1305,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
+    add_repository_root(parser)
     parser.add_argument("--views", nargs="+", default=list(STATIC_VIEWS))
     parser.add_argument("--hand-source", choices=("mediapipe", "wilor"), default="mediapipe")
     parser.add_argument("--run-dir", type=_parse_override, action="append", default=[])
     parser.add_argument("--triangulator", choices=("athena", "rig"), default="athena")
-    parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
+    add_output_root(parser, DEFAULT_OUTPUT_ROOT)
     parser.add_argument(
         "--reprojection-filter-px", type=float, default=DEFAULT_REPROJECTION_FILTER_PX
     )

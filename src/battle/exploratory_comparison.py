@@ -19,6 +19,7 @@ import rerun.blueprint as rrb
 
 from . import media_probe
 from .build_phases import PhaseTimer
+from .cli_common import add_output_root, add_repository_root
 from .digest_cache import sha256_file
 from .exporter import HAND_CONNECTIONS, HAND_LANDMARK_NAMES, _rgba_mask_png
 from .fs_common import relative_uri
@@ -858,8 +859,8 @@ def build_exploratory_comparison(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
-    parser.add_argument("--output-root", type=Path, default=OUTPUT_ROOT)
+    add_repository_root(parser)
+    add_output_root(parser, OUTPUT_ROOT)
     parser.add_argument(
         "--no-overwrite",
         action="store_true",

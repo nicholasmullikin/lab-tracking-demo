@@ -44,6 +44,7 @@ import numpy as np
 
 from .assembly101_camera_fit import PoseMembers
 from .assembly101_clock_offset import is_ego
+from .cli_common import add_output_root, add_repository_root
 from .digest_cache import sha256_file
 from .four_part_contract import TARGETS
 from .multiview_consensus import (
@@ -2249,8 +2250,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
-    parser.add_argument("--output-root", type=Path, default=OUTPUT_ROOT)
+    add_repository_root(parser)
+    add_output_root(parser, OUTPUT_ROOT)
     commands = parser.add_subparsers(dest="command", required=True)
 
     plan = commands.add_parser("plan", help="consensus contradictions -> geometric prompts (CPU)")

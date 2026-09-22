@@ -31,6 +31,7 @@ from typing import Any
 
 from .assembly101_clock_offset import CLOCK_RULES_CONFIG, is_ego, load_clock_rules
 from .assembly101_pose_schemas import Assembly101ClockRule
+from .cli_common import add_repository_root
 from .muggled_smoke import relative_uri
 from .multiview_seed_transfer import ALL_STATIC_CONFIG, view_id_for
 from .review_anchors import (
@@ -269,7 +270,7 @@ def target_config_path_for(view: str) -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
+    add_repository_root(parser)
     parser.add_argument("--source-config", type=Path, default=None)
     parser.add_argument("--clock-rules", type=Path, default=CLOCK_RULES_CONFIG)
     parser.add_argument("--view", action="append", default=None, help="dataset view, e.g. C10119")

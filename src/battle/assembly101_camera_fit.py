@@ -31,6 +31,7 @@ from .assembly101_pose_schemas import (
     Assembly101CameraModel,
 )
 from .assembly101_recordings import RECORDING_1, Assembly101Recording, get_recording
+from .cli_common import add_repository_root
 
 CONFIG_ROOT = Path(RECORDING_1.camera_config_root)
 STATIC_RAW_SIZE = (1920, 1080)
@@ -271,7 +272,7 @@ def main() -> None:
         help="Registry label or recording id (configs/assembly101/recordings.json); "
         "default: recording 1.",
     )
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
+    add_repository_root(parser)
     parser.add_argument(
         "--config-root", type=Path, help="default: the recording's camera_config_root"
     )

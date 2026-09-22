@@ -27,6 +27,7 @@ from .assembly101_pose_schemas import (
     Assembly101ReferenceManifest,
 )
 from .build_phases import PhaseTimer
+from .cli_common import add_output_flags, add_output_root, add_repository_root
 from .ensemble_reference_schemas import (
     PROVENANCE_CODES,
     EnsembleProvenanceSidecar,
@@ -1631,12 +1632,13 @@ def build_first_minute_review(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
-    parser.add_argument("--output-root", type=Path, default=OUTPUT_ROOT)
-    parser.add_argument(
-        "--overwrite",
-        action="store_true",
-        help="Replace an existing package in --output-root (an empty directory never needs it).",
+    add_repository_root(parser)
+    add_output_root(parser, OUTPUT_ROOT)
+    add_output_flags(
+        parser,
+        overwrite_help=(
+            "Replace an existing package in --output-root (an empty directory never needs it)."
+        ),
     )
     parser.add_argument(
         "--reference",
@@ -1723,11 +1725,6 @@ def main() -> None:
         "--recording-id",
         default=RECORDING_ID,
         help="Recording id; share it with the multiview recording to merge both into one file.",
-    )
-    parser.add_argument(
-        "--quiet",
-        action="store_true",
-        help="Suppress the per-phase timing report.",
     )
     args = parser.parse_args()
     candidate_arms: dict[str, Path] = {}

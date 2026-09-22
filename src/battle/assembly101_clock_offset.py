@@ -34,6 +34,7 @@ from pydantic import Field
 from .assembly101_fetch_view import raw60_path, video_name
 from .assembly101_pose_schemas import Assembly101ClockRule
 from .assembly101_recordings import RECORDING_1, Assembly101Recording, get_recording
+from .cli_common import add_output_root, add_repository_root
 from .schemas import ArtifactFingerprint, VersionedModel, fingerprint
 
 # Recording-1 constants, kept for every caller written before the recording registry existed.
@@ -702,8 +703,8 @@ def main() -> None:
     parser.add_argument(
         "--video", type=Path, help="60 fps trim to scan (default: the focused trim)"
     )
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
-    parser.add_argument("--output-root", type=Path, help="default: the recording's clock_scan_root")
+    add_repository_root(parser)
+    add_output_root(parser, None, help="default: the recording's clock_scan_root")
     parser.add_argument(
         "--rescore",
         action="store_true",

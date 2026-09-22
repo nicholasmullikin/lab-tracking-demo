@@ -27,6 +27,7 @@ import cv2
 import numpy as np
 from pydantic import Field
 
+from .cli_common import add_repository_root
 from .digest_cache import sha256_file
 from .schemas import (
     ArtifactFingerprint,
@@ -428,7 +429,7 @@ def rescale_calibration(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
+    add_repository_root(parser)
     parser.add_argument("--calibration-manifest", type=Path, required=True)
     parser.add_argument("--schedule", type=Path, default=None)
     parser.add_argument("--target-g2-config", type=Path, required=True)

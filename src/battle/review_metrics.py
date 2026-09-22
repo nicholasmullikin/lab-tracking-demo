@@ -23,6 +23,12 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from . import interaction_review as review
+from .cli_common import (
+    add_output_flags,
+    add_output_root,
+    add_repository_root,
+    open_output_directory,
+)
 from .exploratory_comparison import _file_fingerprint, validate_artifact_fingerprint
 from .fine_substep_contract import load_contract as load_fine_substep_contract
 from .fine_substep_contract import substep_for_frame
@@ -1859,10 +1865,7 @@ def build_review_metrics(
     hand_provenance = load_hand_provenance(hand_provenance_path)
     kineo_provenance = load_kineo_provenance(kineo_provenance_path)
     fine_contract = load_fine_substep_contract(repository_root / FINE_LABELS)
-    root = (repository_root / output_root).resolve()
-    if root.exists() and any(root.iterdir()) and not overwrite:
-        raise FileExistsError(root)
-    root.mkdir(parents=True, exist_ok=True)
+    root = open_output_directory((repository_root / output_root).resolve(), overwrite=overwrite)
 
     stabilized = sources["stabilized_wilor"].observations
     raw_wilor = sources["wilor"].observations
@@ -2091,12 +2094,12 @@ def build_review_metrics(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
-    parser.add_argument("--output-root", type=Path, default=OUTPUT_ROOT)
+    add_repository_root(parser)
+    add_output_root(parser, OUTPUT_ROOT)
     parser.add_argument("--config", type=Path, default=CONFIG_PATH)
     parser.add_argument("--v4-index", type=Path, default=V4_INDEX_PATH)
     parser.add_argument("--skip-rrd", action="store_true", help="Do not write the metric RRD.")
-    parser.add_argument("--overwrite", action="store_true", help="Replace an existing package.")
+    add_output_flags(parser, overwrite_help="Replace an existing package.", quiet=False)
     parser.add_argument(
         "--reference-run",
         type=Path,

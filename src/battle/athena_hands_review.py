@@ -33,6 +33,7 @@ from .athena_hands import (
     AthenaHandsManifest,
     load_manifest,
 )
+from .cli_common import add_repository_root
 from .multiview_geometry import CameraRig
 from .rerun_logging import init_and_save, time_series_view
 
@@ -350,7 +351,7 @@ def build_recording(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
+    add_repository_root(parser)
     parser.add_argument("--run", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--output", type=Path, default=None)
     args = parser.parse_args()

@@ -39,6 +39,7 @@ from .assembly101_recordings import (
     Assembly101Recording,
     get_recording,
 )
+from .cli_common import add_repository_root
 from .digest_cache import sha256_file as _sha256
 from .schemas import VersionedModel
 
@@ -960,7 +961,7 @@ def main() -> None:
         action="store_true",
         help="Read the recording already under data/raw instead of the Hugging Face CDN.",
     )
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
+    add_repository_root(parser)
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument(
         "--write-report",

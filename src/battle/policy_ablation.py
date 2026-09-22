@@ -30,6 +30,7 @@ import cv2
 import numpy as np
 
 from . import mask_cache
+from .cli_common import add_repository_root
 from .segmentation_disagreement import (
     DEFAULT_TARGETS,
     FrameTargetIoU,
@@ -886,7 +887,7 @@ def _proxy_for(repository_root: Path, run_directory: Path) -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
+    add_repository_root(parser)
     parser.add_argument("--root", type=Path, default=DEFAULT_ROOT)
     parser.add_argument("--reference", type=Path, default=DEFAULT_REFERENCE)
     subparsers = parser.add_subparsers(dest="command", required=True)

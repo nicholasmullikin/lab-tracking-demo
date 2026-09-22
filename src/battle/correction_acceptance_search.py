@@ -48,6 +48,7 @@ from pydantic import Field
 from . import mask_cache
 from .assembly101_camera_fit import PoseMembers
 from .assembly101_clock_offset import is_ego
+from .cli_common import add_output_root, add_repository_root
 from .four_part_contract import TARGETS
 from .mask_ops import overlap_fraction
 from .multiview_consensus import load_consensus, load_view_run, relative_uri
@@ -1388,8 +1389,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
-    parser.add_argument("--output-root", type=Path, default=OUTPUT_ROOT)
+    add_repository_root(parser)
+    add_output_root(parser, OUTPUT_ROOT)
     commands = parser.add_subparsers(dest="command", required=True)
     plan = commands.add_parser("plan", help="truth cells x others-only geometric prompts (CPU)")
     plan.add_argument("--consensus-root", type=Path, default=CONSENSUS_ROOT)

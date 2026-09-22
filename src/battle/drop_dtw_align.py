@@ -11,6 +11,7 @@ from pathlib import Path
 import rerun as rr
 
 from .assembly101_gt_transcript import parse_coarse_transcript
+from .cli_common import add_output_root, add_repository_root
 from .digest_cache import sha256_file
 from .fs_common import relative_uri, run_timestamp
 from .rerun_logging import init_and_save
@@ -256,7 +257,7 @@ def run(args: argparse.Namespace) -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
+    add_repository_root(parser)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--labels", type=Path, default=DEFAULT_LABELS)
     parser.add_argument("--view", default=DEFAULT_VIEW_ID)
@@ -265,7 +266,7 @@ def main() -> None:
     parser.add_argument("--keep-percentile", type=float, default=0.3)
     parser.add_argument("--openclip-checkpoint", type=Path, default=DEFAULT_OPENCLIP_CHECKPOINT)
     parser.add_argument("--openclip-cache-dir", type=Path, default=DEFAULT_OPENCLIP_CACHE)
-    parser.add_argument("--output-root", type=Path, default=Path("runs"))
+    add_output_root(parser, Path("runs"))
     parser.add_argument("--run-id")
     args = parser.parse_args()
     print(run(args))

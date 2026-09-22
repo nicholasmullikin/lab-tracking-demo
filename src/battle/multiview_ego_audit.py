@@ -22,6 +22,7 @@ import numpy as np
 from .assembly101_camera_fit import PoseMembers
 from .assembly101_fetch_view import EGO_VIEWS
 from .assembly101_pose_schemas import ASSEMBLY101_HAND_SIDES
+from .cli_common import add_output_root, add_repository_root
 from .four_part_contract import TARGETS
 from .multiview_consensus import OUTPUT_ROOT as CONSENSUS_ROOT
 from .multiview_geometry import CameraRig
@@ -188,8 +189,8 @@ def audit(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
-    parser.add_argument("--output-root", type=Path, default=OUTPUT_ROOT)
+    add_repository_root(parser)
+    add_output_root(parser, OUTPUT_ROOT)
     parser.add_argument(
         "--view", action="append", default=[], help=f"ego view(s); default all of {EGO_VIEWS}"
     )

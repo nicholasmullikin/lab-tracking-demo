@@ -24,6 +24,12 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from . import interaction_review as review
+from .cli_common import (
+    add_output_flags,
+    add_output_root,
+    add_repository_root,
+    open_output_directory,
+)
 from .ensemble_reference_schemas import (
     PROVENANCE_CODES,
     EnsembleFrameProvenance,
@@ -717,9 +723,7 @@ def build_ensemble_reference(
     )
     review._validate_shared_sources([primary, fallback])
     dimensions = review.DIMENSIONS
-    root = (repository_root / output_root).resolve()
-    if root.exists() and any(root.iterdir()) and not overwrite:
-        raise FileExistsError(f"{root} exists; pass --overwrite to replace it")
+    root = open_output_directory((repository_root / output_root).resolve(), overwrite=overwrite)
     (root / MASK_DIR).mkdir(parents=True, exist_ok=True)
     (root / SHEET_DIR).mkdir(parents=True, exist_ok=True)
 
@@ -952,12 +956,12 @@ def build_ensemble_reference(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
+    add_repository_root(parser)
     parser.add_argument("--policy", type=Path, default=POLICY_PATH)
-    parser.add_argument("--output-root", type=Path, default=OUTPUT_ROOT)
+    add_output_root(parser, OUTPUT_ROOT)
     parser.add_argument("--metrics-config", type=Path, default=METRICS_CONFIG_PATH)
     parser.add_argument("--video", type=Path, default=VIDEO_PATH)
-    parser.add_argument("--overwrite", action="store_true", help="Replace an existing run dir.")
+    add_output_flags(parser, overwrite_help="Replace an existing run dir.", quiet=False)
     parser.add_argument("--sheet-start", type=int, default=DEFAULT_SHEET_RANGE[0])
     parser.add_argument("--sheet-end", type=int, default=DEFAULT_SHEET_RANGE[1])
     args = parser.parse_args()

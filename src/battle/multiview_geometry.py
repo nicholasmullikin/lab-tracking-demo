@@ -42,6 +42,7 @@ from .assembly101_clock_offset import (
 from .assembly101_fetch_view import EGO_VIEWS, STATIC_VIEWS
 from .assembly101_pose_schemas import Assembly101CameraModel, Assembly101ClockRule
 from .assembly101_recordings import RECORDING_1, Assembly101Recording, get_recording
+from .cli_common import add_output_root, add_repository_root
 from .schemas import VersionedModel
 
 ALL_VIEWS: tuple[str, ...] = (*STATIC_VIEWS, *EGO_VIEWS)
@@ -700,9 +701,9 @@ def run_rig_check(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
+    add_repository_root(parser)
     parser.add_argument("--frame-step", type=int, default=25)
-    parser.add_argument("--output-root", type=Path, help="default: the recording's rig_check_root")
+    add_output_root(parser, None, help="default: the recording's rig_check_root")
     parser.add_argument(
         "--recording",
         help="Registry label or recording id (configs/assembly101/recordings.json); "

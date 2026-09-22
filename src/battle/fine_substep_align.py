@@ -12,6 +12,7 @@ import rerun as rr
 import rerun.blueprint as rrb
 from PIL import Image, ImageDraw
 
+from .cli_common import add_output_root, add_repository_root
 from .drop_dtw_align import (
     DEFAULT_CONFIG,
     DEFAULT_OPENCLIP_CACHE,
@@ -704,7 +705,7 @@ def run(args: argparse.Namespace) -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
+    add_repository_root(parser)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--label-contract", type=Path, default=DEFAULT_LABEL_CONTRACT)
     parser.add_argument("--view", default="static-c10379")
@@ -721,7 +722,7 @@ def main() -> None:
     parser.add_argument("--baseline-drop-dtw", type=Path, default=DEFAULT_BASELINE_DROP_DTW)
     parser.add_argument("--openclip-checkpoint", type=Path, default=DEFAULT_OPENCLIP_CHECKPOINT)
     parser.add_argument("--openclip-cache-dir", type=Path, default=DEFAULT_OPENCLIP_CACHE)
-    parser.add_argument("--output-root", type=Path, default=Path("runs"))
+    add_output_root(parser, Path("runs"))
     parser.add_argument("--run-id")
     parser.add_argument("--reuse-run-directory", action="store_true")
     args = parser.parse_args()

@@ -42,6 +42,7 @@ from .assembly101_recordings import (
     Assembly101Recording,
     get_recording,
 )
+from .cli_common import add_output_root, add_repository_root
 from .schemas import ArtifactFingerprint
 from .schemas import fingerprint as measured_fingerprint
 
@@ -522,7 +523,7 @@ def wrist_pixels(hand: Assembly101Hand) -> tuple[float, float]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
+    add_repository_root(parser)
     parser.add_argument(
         "--recording",
         help="Registry label or recording id (configs/assembly101/recordings.json); "
@@ -531,7 +532,7 @@ def main() -> None:
     parser.add_argument(
         "--view", help="Static camera, e.g. C10379 (default: the recording's primary view)."
     )
-    parser.add_argument("--output-root", type=Path, help="default: the recording's reference_root")
+    add_output_root(parser, None, help="default: the recording's reference_root")
     parser.add_argument(
         "--camera-estimate",
         type=Path,

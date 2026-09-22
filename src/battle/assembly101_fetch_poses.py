@@ -38,6 +38,7 @@ from .assembly101_recordings import (
     Assembly101Recording,
     get_recording,
 )
+from .cli_common import add_repository_root
 from .schemas import VersionedModel
 from .zip_range import RangeReader, ZipMember, list_remote_zip_members, read_remote_zip_member
 
@@ -447,7 +448,7 @@ def acquire(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--recording", required=True, help="registry label or recording id")
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
+    add_repository_root(parser)
     parser.add_argument("--skip-fine-grained", action="store_true")
     parser.add_argument("--skip-poses", action="store_true")
     args = parser.parse_args()

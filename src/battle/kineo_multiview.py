@@ -59,6 +59,7 @@ from .assembly101_pose_schemas import (
     Assembly101ClockRule,
     Assembly101HandFrame,
 )
+from .cli_common import add_repository_root
 from .kineo_nlf import (
     DEFAULT_KINEO_REVISION,
     DEFAULT_KINEO_ROOT,
@@ -1384,7 +1385,7 @@ def print_evaluation(manifest: KineoMultiviewManifest) -> None:
 
 def main(argv: Sequence[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
+    add_repository_root(parser)
     parser.add_argument("--kineo-root", type=Path, default=DEFAULT_KINEO_ROOT)
     commands = parser.add_subparsers(dest="command", required=True)
 

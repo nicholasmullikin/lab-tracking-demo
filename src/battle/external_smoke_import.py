@@ -19,6 +19,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .cli_common import add_output_root, add_repository_root
 from .digest_cache import sha256_file
 from .exporter import export_run
 from .fs_common import relative_uri
@@ -484,9 +485,9 @@ def import_kineo(args: argparse.Namespace) -> Path:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("kind", choices=("grounded-sam2", "dam4sam", "kineo"))
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
+    add_repository_root(parser)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
-    parser.add_argument("--output-root", type=Path, default=Path("runs"))
+    add_output_root(parser, Path("runs"))
     parser.add_argument("--run-id")
     parser.add_argument("--native", type=Path)
     parser.add_argument("--video", type=Path, default=DEFAULT_SMOKE_VIDEO)

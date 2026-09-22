@@ -22,6 +22,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from . import mask_cache
+from .cli_common import add_output_root, add_repository_root
 from .multiview_consensus import MANIFEST_NAME, load_consensus
 from .multiview_consensus import OUTPUT_ROOT as CONSENSUS_ROOT
 from .multiview_review import PROPOSAL_COLORS, PROPOSALS_ROOT, ProposalCell, load_proposals
@@ -224,7 +225,7 @@ def decisions_template(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
+    add_repository_root(parser)
     parser.add_argument("--proposals-root", type=Path, default=PROPOSALS_ROOT)
     parser.add_argument(
         "--consensus-root",
@@ -232,7 +233,7 @@ def main() -> None:
         default=CONSENSUS_ROOT,
         help="Consensus root whose sources name each view's run directory (for the proxy video).",
     )
-    parser.add_argument("--output-root", type=Path, default=OUTPUT_ROOT)
+    add_output_root(parser, OUTPUT_ROOT)
     parser.add_argument("--template", type=Path, default=TEMPLATE_PATH)
     args = parser.parse_args()
     root = args.repository_root.resolve()

@@ -12,6 +12,7 @@ from typing import Any
 import cv2
 
 from . import digest_cache
+from .cli_common import add_output_root, add_repository_root
 from .dam4sam_streaming import (
     DEFAULT_INPUT_IMAGE_SIZE,
     SAM2_MODELS,
@@ -768,9 +769,9 @@ def vram_projection_line(extrapolation: VramExtrapolation, *, frame_count: int) 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("method", choices=METHODS)
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
+    add_repository_root(parser)
     parser.add_argument("--contract", type=Path, default=DEFAULT_CONTRACT)
-    parser.add_argument("--output-root", type=Path, default=Path("runs"))
+    add_output_root(parser, Path("runs"))
     parser.add_argument("--run-id")
     parser.add_argument(
         "--frame-count",

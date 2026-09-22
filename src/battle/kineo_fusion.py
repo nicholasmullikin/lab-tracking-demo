@@ -11,6 +11,7 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
+from .cli_common import add_output_root, add_repository_root
 from .external_smoke_import import import_kineo, sha256_file
 from .kineo_nlf import _validate_pkls
 from .schemas import (
@@ -387,7 +388,7 @@ def _ranges(indices: list[int]) -> list[dict[str, int]]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
+    add_repository_root(parser)
     parser.add_argument(
         "--config",
         type=Path,
@@ -395,7 +396,7 @@ def main() -> None:
     )
     parser.add_argument("--native-run", type=Path, default=DEFAULT_NATIVE_RUN)
     parser.add_argument("--boxmot-run", type=Path, default=DEFAULT_BOXMOT_RUN)
-    parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT)
+    add_output_root(parser, DEFAULT_OUTPUT)
     parser.add_argument(
         "--native-sequence", default="assembly101_focused_static_20s_step1_overnight_v2"
     )

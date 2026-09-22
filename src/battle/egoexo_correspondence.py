@@ -53,6 +53,7 @@ from pydantic import Field
 from . import mask_cache, overnight_queue
 from .assembly101_fetch_view import RECORDING_ID, proxy_path
 from .assembly101_pose_schemas import Assembly101ClockRule
+from .cli_common import add_repository_root
 from .digest_cache import sha256_file as _sha256
 from .fs_common import relative_uri
 from .mask_ops import mask_iou
@@ -1249,7 +1250,7 @@ def build_recording(
 
 def main(argv: Sequence[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
+    add_repository_root(parser)
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_prepare = sub.add_parser("prepare", help="write keyframe pairs, masks, pairs.json, queue job")

@@ -11,6 +11,7 @@ import numpy as np
 import rerun as rr
 
 from .athena_calibration_probe import DEFAULT_OUTPUT as DEFAULT_PROBE_OUTPUT
+from .cli_common import add_repository_root
 from .rerun_logging import init_and_save
 from .schemas import AdapterMetadata, ArtifactFingerprint, ExternalPartialRunMetadata
 
@@ -195,7 +196,7 @@ def run_fixture_smoke(repository_root: Path, run_id: str = DEFAULT_RUN_ID) -> Pa
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
+    add_repository_root(parser)
     parser.add_argument("--run-id", default=DEFAULT_RUN_ID)
     args = parser.parse_args()
     manifest_path = run_fixture_smoke(args.repository_root.resolve(), args.run_id)

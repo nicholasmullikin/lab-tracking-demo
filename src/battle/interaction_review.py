@@ -21,6 +21,7 @@ from PIL import Image, ImageDraw
 
 from . import mask_cache, media_probe
 from .build_phases import PhaseTimer
+from .cli_common import add_output_root, add_repository_root
 from .exploratory_comparison import (
     METHOD_COLORS,
     _drop_dtw_text,
@@ -1823,8 +1824,8 @@ def build_interaction_review(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
-    parser.add_argument("--output-root", type=Path, default=OUTPUT_ROOT)
+    add_repository_root(parser)
+    add_output_root(parser, OUTPUT_ROOT)
     parser.add_argument(
         "--reference-segmentation",
         choices=tuple(REFERENCE_SEGMENTATIONS),

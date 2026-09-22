@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from .cli_common import add_output_root, add_repository_root
 from .exporter import export_run
 from .hand_stabilization import enrich_metrics, stabilize, write_result
 from .schemas import EncodedAssetInput, FrameObservations, RunManifest
@@ -117,11 +118,11 @@ def run(args: argparse.Namespace) -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
+    add_repository_root(parser)
     parser.add_argument("--wilor-run", type=Path, default=DEFAULT_WILOR)
     parser.add_argument("--mediapipe-run", type=Path, default=DEFAULT_MEDIAPIPE)
     parser.add_argument("--parts-run", type=Path, default=DEFAULT_PARTS)
-    parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT)
+    add_output_root(parser, DEFAULT_OUTPUT)
     args = parser.parse_args()
     print(run(args))
 

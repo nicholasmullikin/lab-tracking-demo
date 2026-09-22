@@ -10,6 +10,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from .cli_common import add_output_root, add_repository_root
 from .fs_common import relative_uri, run_timestamp
 from .observations import rebuild_tracker_observations
 from .schemas import (
@@ -348,14 +349,14 @@ def run(args: argparse.Namespace) -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
+    add_repository_root(parser)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--view", default=DEFAULT_VIEW_ID)
     parser.add_argument("--checkpoint", type=Path, default=DEFAULT_CHECKPOINT)
     parser.add_argument("--checkpoint-config", type=Path, default=DEFAULT_CHECKPOINT_CONFIG)
     parser.add_argument("--detector", type=Path, default=DEFAULT_DETECTOR)
     parser.add_argument("--seconds", type=float, default=DEFAULT_SECONDS)
-    parser.add_argument("--output-root", type=Path, default=Path("runs"))
+    add_output_root(parser, Path("runs"))
     parser.add_argument("--run-id")
     parser.add_argument("--save-native-evidence", action="store_true")
     args = parser.parse_args()

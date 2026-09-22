@@ -18,6 +18,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+from .cli_common import add_repository_root
 from .muggled_calibration import (
     _write_manifest,
     finalize_correction_schedule,
@@ -470,7 +471,7 @@ def finalize_agent_schedule(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
+    add_repository_root(parser)
     commands = parser.add_subparsers(dest="command", required=True)
 
     derive = commands.add_parser("derive", help="copy a finalized calibration into a draft")

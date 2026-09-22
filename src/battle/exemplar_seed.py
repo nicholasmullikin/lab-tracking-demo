@@ -42,6 +42,7 @@ from pydantic import Field
 from .assembly101_camera_fit import PoseMembers
 from .assembly101_pose_schemas import ASSEMBLY101_HAND_SIDES
 from .assembly101_recordings import Assembly101Recording, get_recording
+from .cli_common import add_output_root, add_repository_root
 from .digest_cache import sha256_file
 from .four_part_contract import TARGETS
 from .multiview_consensus import mask_centroid_raw, relative_uri
@@ -1707,8 +1708,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
-    parser.add_argument("--output-root", type=Path, default=OUTPUT_ROOT)
+    add_repository_root(parser)
+    add_output_root(parser, OUTPUT_ROOT)
     parser.add_argument("--recording", default=DEFAULT_RECORDING)
     commands = parser.add_subparsers(dest="command", required=True)
     plan = commands.add_parser("plan", help="seed frame by hand joints, table grid prompts (CPU)")

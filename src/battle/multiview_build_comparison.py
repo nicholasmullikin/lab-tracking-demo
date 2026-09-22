@@ -19,6 +19,7 @@ from typing import Literal
 
 from pydantic import Field
 
+from .cli_common import add_repository_root
 from .multiview_schemas import MultiviewConsensusManifest, VisualHullManifest
 from .policy_ablation import WINDOWS
 from .schemas import ArtifactFingerprint, VersionedModel, fingerprint
@@ -326,7 +327,7 @@ def render_markdown(comparison: MultiviewBuildComparison) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
+    add_repository_root(parser)
     parser.add_argument("--consensus-before", type=Path, required=True)
     parser.add_argument("--consensus-after", type=Path, required=True)
     parser.add_argument("--hull-before", type=Path, default=None)

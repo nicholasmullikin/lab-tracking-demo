@@ -14,6 +14,7 @@ from typing import Any
 import cv2
 import numpy as np
 
+from .cli_common import add_output_root, add_repository_root
 from .digest_cache import sha256_file
 from .fs_common import run_timestamp
 from .schemas import (
@@ -611,12 +612,12 @@ def run(args: argparse.Namespace) -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
+    add_repository_root(parser)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--view", default=DEFAULT_VIEW_ID)
     parser.add_argument("--model", type=Path, default=DEFAULT_MODEL)
     parser.add_argument("--seconds", type=float, default=DEFAULT_SECONDS)
-    parser.add_argument("--output-root", type=Path, default=Path("runs"))
+    add_output_root(parser, Path("runs"))
     parser.add_argument("--run-id")
     parser.add_argument("--input-mirrored", action="store_true")
     parser.add_argument(

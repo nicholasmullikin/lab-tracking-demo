@@ -31,6 +31,7 @@ from .assembly101_camera_fit import PoseMembers
 from .assembly101_clock_offset import WINDOW_START_POSE_FRAME, is_ego, npz_key
 from .assembly101_pose_schemas import ASSEMBLY101_WRIST_INDEX
 from .assembly101_recordings import RECORDING_1, Assembly101Recording, get_recording
+from .cli_common import add_output_root, add_repository_root
 from .four_part_contract import TARGETS
 from .fs_common import relative_uri
 from .multiview_geometry import CameraRig
@@ -631,8 +632,8 @@ def load_consensus(path: Path) -> MultiviewConsensusManifest:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repository-root", type=Path, default=Path.cwd())
-    parser.add_argument("--output-root", type=Path, default=OUTPUT_ROOT)
+    add_repository_root(parser)
+    add_output_root(parser, OUTPUT_ROOT)
     parser.add_argument("--reference-run", type=Path, default=REFERENCE_RUN)
     parser.add_argument(
         "--view-run",
