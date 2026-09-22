@@ -5689,3 +5689,161 @@ any knob is turned, and turning one first would make those labels confirmatory.
   `candidate_source.json`, the C10119 chassis arm), `anchor_iou_c10119.{json,md}`,
   `rec2_zero_shot.{json,md}`, `references_rec2_C10379.json`; the hooks and tests named above;
   this entry. The plan file's Outcome section records the todo states.
+
+### Sep 22: dedup pass 2 (the video-driver family; commits `d550d1a`, `cc56797`, `512a61e`, `2a90ed2`, `08c24cb`)
+
+- **What.** The second deduplication pass: the six bounded external-worker video drivers
+  (`dam4sam_video`, `samurai_video`, `grounding_dino_sam2_video`, `boxmot_track`,
+  `wilor_hands`, `mediapipe_hands`; 0.73-1.00 similar) and their workers, plus the FineBio
+  scripts' helper copies, folded onto two new modules, `src/battle/video_driver.py` (battle
+  venv) and `src/battle/worker_common.py` (stdlib-only, Python 3.10, sibling-importable like
+  `fs_common` / `gpu_guard`). One commit per helper group, the CPU harness after each, and one
+  10 s GPU smoke per driver before and after with masks compared byte for byte and manifests
+  modulo volatile fields. Method-specific argv, metadata models, notes and constants stay in
+  each driver; no worker model code moved.
+- **GPU sharing.** The other session's SAM3 exemplar queue
+  (`runs/sam3-exemplar-20260922/jobs_5_remaining.json`, 8 jobs, `sam3_appearance.py` at
+  6.0-6.6 GiB) held the card from before this pass started (05:20 UTC) until 06:51:23 UTC;
+  the human's calibration worker (PID 2356892, 1.8 GiB) stayed up throughout. A poll loop
+  (`pgrep` for the queue and its workers every 60 s) waited 82 min (05:29:28 -> 06:51:30) while
+  the CPU refactor was written and committed; nothing was killed or paused. The smokes then
+  ran through `scripts/overnight_queue.py` with the VRAM guard (`--gpu-guard vram`,
+  `--allow-gpu-neighbour 2356892` for the calibration worker only), first from a `git archive`
+  code snapshot of the pre-refactor commit `6e7f1df` (`PYTHONPATH` on the snapshot's `src`, so
+  the drivers and the workers they locate beside themselves are the committed pre-refactor
+  code; the four commits between `6e7f1df` and this pass's start `aa7cb70` touch only the
+  exemplar work), then from a snapshot of the post-refactor HEAD `2a90ed2`. Six before-runs
+  06:51:31-06:53:19, six after-runs 06:53:22-06:55:03, every job `succeeded`, every worker
+  `succeeded`, 300 frames each. No `runs/*-10s-*` smoke from Sep 16 was reused as a baseline:
+  their manifests predate schema fields added since (below), and a fresh pre-refactor run
+  from the same code costs under two minutes for all six.
+- **Group a, `video_driver.py`** (`d550d1a`; src+scripts +1236/-1581 over 10 files, of which
+  `video_driver.py` is 522; `tests/test_video_driver.py` 775).
+  `verify_inputs(*, repository_root, config_path, view_id, seconds, min_seconds, max_seconds,
+  checkpoints=(), min_frames=None)`: the SAM2 trackers' `[1, 20]` range with the checkpoint
+  and 30-frame rules, the hands / BoxMOT `(0, 60]` range (`min_seconds=None`), each
+  `(path, sha256, label)` checked as before (`"<label> checksum mismatch for <path>"`).
+  `run_external_worker(python, argv, *, run_directory, env=None, cwd=None,
+  record_command=False)`: `CUDA_VISIBLE_DEVICES=0`, `worker.stdout.log` / `worker.stderr.log`,
+  `worker_command.txt` for the three SAM2 trackers, the failed-state record when no
+  `worker_result.json`; `prepend_pythonpath(root)` for WiLoR's and the fine-substep worker's
+  `PYTHONPATH`. `load_worker_observations(..., exact=)` (DAM4SAM and SAMURAI demand the exact
+  count, the others at least). `bounded_video` is the one ffmpeg argv (libx264 crf 18, no
+  audio) for the eight identical copies and `four_part_segmentation`'s near-identical one
+  (its `frame_count=FRAME_COUNT` default was never used: the single call site passes the
+  count). `contact_sheet(draw=...)` with `tracker_contact_sheet` (box + `object_id: label`)
+  and `hands_contact_sheet` (skeleton, landmarks, box, `hand_id: side`; `HAND_CONNECTIONS`
+  now imported from `exporter`, whose tuple the two hands drivers duplicated). `worker_status`,
+  `worker_measurements`, `worker_runtime_settings` (scalars pass, anything else
+  `json.dumps(sort_keys=True)`, then `analysis_fps`, then the driver's extra worker keys in
+  order), `common_metadata_fields` (frame range, requested seconds, the raw-source / proxy /
+  config fingerprints, the observations / Rerun / QA URIs), `assemble_run_manifest` (clip cut
+  to the seconds, one covered interval, the zero-overlap `ChunkContinuityPolicy` that the
+  two-argument copies produced through the model defaults, the method status beside its
+  export status) and `export_manifest` (`export_run` plus the mask sidecar when a mask root is
+  given). The five worker drivers gain a `_build_manifest(...)` that `run()` and the tests
+  call; `mediapipe_hands` keeps its own `_verify_inputs` (different error texts, unresolved
+  proxy path, over-budget rather than minimum-frame rule) and its in-process detection.
+  **Tests.** `tests/test_video_driver.py` carries the former inline manifest code of
+  `samurai_video` and `boxmot_track` and the two contact-sheet drawers verbatim from
+  `6e7f1df`, and asserts the new path reproduces the `model_dump_json(indent=2)` text
+  (succeeded and failed worker states; the flattening of a nested setting, the `analysis_fps`
+  int overwrite, the key order) and the PNG bytes; a `real_data` test rebuilds every pass-2
+  smoke manifest through the current drivers from `worker_result.json` +
+  `observations.jsonl` + the config and requires the JSON text to equal the recorded
+  `manifest.json` byte for byte: 10 of 10 (five worker drivers x before/after; MediaPipe has
+  no worker result). The Sep 16 `runs/*-10s-*` smokes rebuild identically except for schema
+  fields added since (`nlf_body_2d` null -> [], WiLoR's `external_source_*` settings).
+- **Group b, `worker_common.py`** (`cc56797`; +122/-93 over 5 files, of which the module is 88).
+  `extract_frames(video, directory, frame_count, *, exact=True, check_open=True)` is the cv2
+  decode-to-`native/frames/<index:05d>.jpg` loop the four workers copied; the two behaviours
+  they differed in are parameters (the Grounding DINO worker tolerates a short video and errors
+  only on zero frames, `exact=False`; the four-part worker never checked `isOpened()`,
+  `check_open=False`), the three error texts collapse onto the DAM4SAM wording, and the count
+  callers take `len()`. `cuda_peak_bytes(device=None)` is `torch.cuda.max_memory_allocated`
+  (torch imported inside), the number every worker records as `gpu_peak_vram_bytes`.
+  `dam4sam_video_worker`, `samurai_video_worker`, `grounding_dino_sam2_video_worker` (try the
+  relative import, else the `sys.path` sibling) and `four_part_video_worker` (its `_sibling`)
+  call them. Import smokes: `worker_common` under samurai 3.10.19, grounded_sam2 3.10.19,
+  wilor 3.10.19 and muggled_sam 3.14.7; each touched worker answers `--help` under its own
+  interpreter; `extract_frames` decodes a synthetic clip under samurai and grounded_sam2.
+- **Group c, FineBio scripts** (`512a61e`; +65/-104 over 4 files). `finebio_sam3_smoke.py` and
+  `finebio_dino_detect.py` drop their `gpu_processes` / `looks_like_model_process` / blocking-
+  tolerated partition and `git_revision` copies: `gpu_guard.legacy_gpu_processes()` (the Sep 21
+  `{pid, process_name, memory}` records, `"N MiB"` / `"[N/A]"` as before) with
+  `partition_neighbours_strict`, and `fs_common.git_revision(path)` (`{revision, dirty}`,
+  `check=False`, stdout only). `gpu_guard` became Python 3.10 compatible
+  (`datetime.timezone.utc`) because the detector script's detect phase runs under the 3.10
+  MMDetection venv; both scripts import `gpu_guard` beside `fs_common` as `battle.*` or by
+  path. Left per script: `tracker_processes()` (the pgrep pattern and the 200-character
+  truncation differ) and the SAM3 track loop, the deliberate copy of `muggled_worker`, now
+  saying so in a comment. Smoke: `--help` and a module import with the guard evaluated under
+  muggled_sam 3.14.7 (sam3 smoke) and the detector venv 3.10.20 (dino detect: the calibration
+  worker tolerated, the exemplar worker blocking); `gpu_guard` and `fs_common` import under
+  samurai 3.10.19.
+- **Harness** (`2a90ed2`, `08c24cb`): `scripts/dedup_equivalence.py compare-runs A B
+  [--report] [--replace OLD=NEW]` compares two run directories of one driver: every PNG under
+  `native/masks/` or `masks/` by SHA-256, then the `compare` walk with both run directories
+  (absolute, repository-relative, the run id) folded onto `<run>`,
+  `time_to_first_usable_output_seconds` and `gpu_peak_vram_bytes` volatile in addition, the
+  mask cache's `stamp/<mask>` arrays (`[st_size, st_mtime_ns]`; the first comparison reported
+  exactly these 300 per tracker, mtime only, sizes equal) skipped while its bits / rgba / shape
+  arrays are compared, and `--replace` for the two code-snapshot directories named in
+  `worker_command.txt`. CPU harness: `pass2-before` at `aa7cb70`, `pass2-a` / `pass2-b` /
+  `pass2-c` after each group and `pass2-after` at `2a90ed2` all compare equivalent to
+  `pass2-before` (13 files, RRD by content digest); the harness artifacts do not exercise
+  these drivers, so the GPU smokes below are the evidence for this pass.
+- **Smokes.** Six 10 s runs per side under `runs/dedup-pass2-smokes-20260922/{before,after}/`
+  (`jobs_before.json` / `jobs_after.json`, `queue_before.log` / `queue_after.log`, `logs/`,
+  `compare/<driver>.json` from `compare-runs`, `make_jobs.py`, the two code snapshots). Masks
+  are the worker PNGs under `native/masks/` (DAM4SAM, SAMURAI, Grounding DINO + SAM2); BoxMOT,
+  WiLoR and MediaPipe write no masks, so for them the byte-identical `observations.jsonl` and
+  `contact_sheet.png` are the equivalent check (those two files and `input.mp4` are
+  byte-identical for all six pairs; the RRDs equal by content digest). `diff -rq` on the mask
+  directories agrees with the per-PNG SHA-256. The three trackers' before-masks are also byte
+  for byte the masks of the Sep 16 smokes (`runs/dam4sam_video_smoke-10s-20260916t052430z`,
+  `runs/samurai_sam2_video_smoke-10s-20260916t052328z`,
+  `runs/transformers_grounding_dino_plus_sam2_video_smoke-10s-20260916t0518z`), so the
+  workers are deterministic across days and a byte comparison is a meaningful test.
+
+  | driver | before (`runs/dedup-pass2-smokes-20260922/before/`) | after (`.../after/`) | masks identical | manifest equal (modulo volatile) |
+  |---|---|---|---|---|
+  | dam4sam_video | `dam4sam_video_smoke-10s-20260922t065131z` | `dam4sam_video_smoke-10s-20260922t065322z` | yes (300/300 PNG) | yes (609 files compared) |
+  | samurai_video | `samurai_sam2_video_smoke-10s-20260922t065149z` | `samurai_sam2_video_smoke-10s-20260922t065339z` | yes (300/300 PNG) | yes (609) |
+  | grounding_dino_sam2_video | `transformers_grounding_dino_plus_sam2_video_smoke-10s-20260922t065209z` | `transformers_grounding_dino_plus_sam2_video_smoke-10s-20260922t065359z` | yes (300/300 PNG) | yes (609) |
+  | boxmot_track | `boxmot-yolo-static-10s-20260922t065232z` | `boxmot-yolo-static-10s-20260922t065420z` | n/a (no masks; observations and sheet byte-identical) | yes (6) |
+  | wilor_hands | `wilor-hands-static-10s-20260922t065241z` | `wilor-hands-static-10s-20260922t065426z` | n/a (no masks; observations and sheet byte-identical) | yes (6) |
+  | mediapipe_hands | `mediapipe-hands-static-10s-20260922t065315z` | `mediapipe-hands-static-10s-20260922t065458z` | n/a (no masks; observations and sheet byte-identical) | yes (5) |
+
+  Volatile fields dropped from the manifests: `run_id`, `elapsed_seconds`,
+  `time_to_first_usable_output_seconds`, `gpu_peak_vram_bytes` (identical here anyway:
+  DAM4SAM 814398464, SAMURAI 818672640, Grounding DINO + SAM2 6372003328, WiLoR 2819373056,
+  BoxMOT 74796544 bytes on both sides) and the `*_at` keys; the run directory path inside every
+  URI is the same string on both sides once folded.
+- **Left in place, with reasons.** `kineo_fusion._run_worker` (pixi, `check=True`, no logs,
+  no result JSON: not the shape); `muggled_smoke._run_worker` (its failed-state record carries
+  six more keys and the six smokes do not exercise it; only a drop-in was to be adopted);
+  `mediapipe_hands._verify_inputs` (above); the finebio `tracker_processes()` pair and the
+  SAM3 track loop (above); `muggled_worker._gpu_processes` (the same records
+  `legacy_gpu_processes` now returns, but the SAM3 worker is outside this pass's smokes);
+  the `_normalize_box` copies in the workers and in `samurai_video` /
+  `grounding_dino_sam2_video` (the driver copies are imported by tests, the workers are
+  foreign-interpreter model code). Behaviour changes, all on error paths: WiLoR's missing
+  checkpoint or detector now raises `FileNotFoundError(path)` before hashing (same type as
+  before, different message); the fine-substep driver reports a worker that wrote no
+  `worker_result.json` as `RuntimeError(reason)` instead of `FileNotFoundError`, and a
+  `PYTHONPATH` with leading or trailing separators is no longer stripped there; the three
+  worker frame-extraction error texts are unified.
+- **Totals.** `git diff --shortstat aa7cb70..HEAD -- src scripts` less the other session's
+  two files in the range: 20 files, +1666/-1810 (net -144); the two new modules are +610
+  and the harness +246/-35, so inside the 17 existing modules -1778/+813 (net -965). Tests:
+  `pytest -q` 716 -> 740 passed (new: `video_driver` 11, `worker_common` 5, `fs_common` 1,
+  `gpu_guard` 2, harness 4; one from the other session), 9 skipped; `-m real_data` 52 -> 62
+  passed (the 10 smoke-manifest rebuilds); `ruff check` / `ruff format --check` clean on every
+  file of this pass. The `pass2-after` harness snapshot recorded one default-tier failure
+  (`test_exemplar_seed`) from the other session's then-uncommitted `exemplar_seed` edit; it
+  passes at their `7f608e5` and in the final run above.
+- **Not done here** (pass 3 per the plan): Rerun logging helpers, `media_probe` in
+  `exploratory_comparison`, the queue writers and a `battle-code-snapshot` helper (the
+  `git archive` + `PYTHONPATH` step this pass hand-ran again), `cli_common`, the remaining
+  contact-sheet grids, `metrics.py`, the README pointers to the new modules.
