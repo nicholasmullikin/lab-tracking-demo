@@ -22,6 +22,7 @@ from PIL import Image
 from .build_phases import PhaseTimer
 from .digest_cache import sha256_file
 from .exporter import HAND_CONNECTIONS, HAND_LANDMARK_NAMES, _rgba_mask_png
+from .fs_common import relative_uri
 from .schemas import (
     ArtifactFingerprint,
     ClockName,
@@ -155,15 +156,11 @@ class LoadedMethod:
     index_method: ExploratoryComparisonMethod
 
 
-def _relative_uri(path: Path, repository_root: Path) -> str:
-    return path.resolve().relative_to(repository_root.resolve()).as_posix()
-
-
 def _file_fingerprint(path: Path, repository_root: Path) -> ArtifactFingerprint:
     if not path.is_file():
         raise FileNotFoundError(f"comparison input is unavailable: {path}")
     return ArtifactFingerprint(
-        uri=_relative_uri(path, repository_root),
+        uri=relative_uri(path, repository_root),
         sha256=sha256_file(path),
         source="measured",
     )
@@ -190,10 +187,10 @@ def _mask_tree_fingerprint(
         child = (run_directory / uri).resolve()
         if not child.is_file():
             raise FileNotFoundError(f"referenced mask is unavailable: {child}")
-        digest.update(_relative_uri(child, repository_root).encode())
+        digest.update(relative_uri(child, repository_root).encode())
         digest.update(sha256_file(child, verify=verify).encode())
     return ArtifactFingerprint(
-        uri=_relative_uri(path, repository_root),
+        uri=relative_uri(path, repository_root),
         sha256=digest.hexdigest(),
         source="measured",
     )
@@ -374,7 +371,7 @@ def _load_method(spec: MethodSpec, *, repository_root: Path, frame_count: int) -
         method_id=spec.method_id,
         display_name=spec.display_name,
         state=spec.state,
-        run_directory_uri=_relative_uri(run_directory, repository_root),
+        run_directory_uri=relative_uri(run_directory, repository_root),
         input_manifest=input_artifacts[0],
         input_artifacts=tuple(input_artifacts[1:] or input_artifacts),
         inference_input_fingerprints=_declared_inference_fingerprints(metadata),
@@ -446,7 +443,7 @@ def _load_athena_metadata(
         method_id="athena",
         display_name="ATHENA multi-view hand triangulation",
         state="blocked",
-        run_directory_uri=_relative_uri(fixture, repository_root),
+        run_directory_uri=relative_uri(fixture, repository_root),
         input_manifest=_file_fingerprint(manifest, repository_root),
         input_artifacts=(_file_fingerprint(artifact, repository_root),),
         coordinate_semantics=("synthetic fixture coordinate system only",),

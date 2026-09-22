@@ -12,7 +12,7 @@ import cv2
 
 from .digest_cache import sha256_file
 from .exporter import export_run
-from .fs_common import run_timestamp
+from .fs_common import relative_uri, run_timestamp
 from .schemas import (
     AdapterMetadata,
     ArtifactFingerprint,
@@ -39,10 +39,6 @@ DEFAULT_SECONDS = 20.0
 MAX_SECONDS = 60.0
 WILOR_PYTHON = Path("/home/nick/.pyenv/versions/wilor/bin/python")
 DEFAULT_DETECTOR = Path("models/yolo/yolov8n.pt")
-
-
-def relative_uri(path: Path, repository_root: Path) -> str:
-    return path.resolve().relative_to(repository_root.resolve()).as_posix()
 
 
 def _verify_inputs(

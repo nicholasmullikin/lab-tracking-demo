@@ -13,7 +13,7 @@ import cv2
 from . import mask_cache
 from .digest_cache import sha256_file
 from .exporter import export_run
-from .fs_common import run_timestamp
+from .fs_common import relative_uri, run_timestamp
 from .schemas import (
     AdapterMetadata,
     ArtifactFingerprint,
@@ -50,10 +50,6 @@ SAM2_CONFIG = "sam21pp_hiera_t.yaml"
 TRACKER_NAME = "sam21pp-T"
 INIT_BBOX_XYWH = (881, 446, 152, 129)
 METHOD_NAME = "dam4sam_video_smoke"
-
-
-def relative_uri(path: Path, repository_root: Path) -> str:
-    return path.resolve().relative_to(repository_root.resolve()).as_posix()
 
 
 def _load_observations(path: Path) -> tuple[FrameObservations, ...]:

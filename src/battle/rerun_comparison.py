@@ -8,6 +8,7 @@ from pathlib import Path
 
 from . import digest_cache, media_probe
 from .exporter import export_synchronized_comparison
+from .fs_common import relative_uri
 from .schemas import (
     EncodedAssetInput,
     FullDurationCoverage,
@@ -86,13 +87,6 @@ def _load_manifest(run_directory: Path) -> RunManifest:
     if not manifest_path.is_file():
         raise FileNotFoundError(f"run manifest is unavailable: {manifest_path}")
     return RunManifest.model_validate_json(manifest_path.read_text())
-
-
-def _relative_uri(path: Path, repository_root: Path) -> str:
-    try:
-        return path.resolve().relative_to(repository_root).as_posix()
-    except ValueError:
-        return path.resolve().as_posix()
 
 
 def _load_proxy(
@@ -344,7 +338,7 @@ def build_focused_first_minute_comparison(
         ego_video_path=ego_video,
         ego_video_dimensions=(ego_proxy.dimensions.width, ego_proxy.dimensions.height),
         ego_asset_reference=EncodedAssetInput(
-            uri=_relative_uri(ego_video, repository_root),
+            uri=relative_uri(ego_video, repository_root),
             media_type="video/mp4",
             checksum_sha256=digest_cache.sha256_file(ego_video),
         ),
@@ -352,7 +346,7 @@ def build_focused_first_minute_comparison(
         static_video_path=static_video,
         static_video_dimensions=(static_proxy.dimensions.width, static_proxy.dimensions.height),
         static_asset_reference=EncodedAssetInput(
-            uri=_relative_uri(static_video, repository_root),
+            uri=relative_uri(static_video, repository_root),
             media_type="video/mp4",
             checksum_sha256=digest_cache.sha256_file(static_video),
         ),

@@ -13,7 +13,7 @@ import cv2
 from . import mask_cache
 from .digest_cache import sha256_file
 from .exporter import export_run
-from .fs_common import run_timestamp
+from .fs_common import relative_uri, run_timestamp
 from .schemas import (
     AdapterMetadata,
     ArtifactFingerprint,
@@ -48,10 +48,6 @@ SAM2_CHECKPOINT_SHA256 = "7402e0d864fa82708a20fbd15bc84245c2f26dff0eb43a4b5b9345
 SAM2_CONFIG = "configs/samurai/sam2.1_hiera_t.yaml"
 INIT_BBOX_XYWH = (881, 446, 152, 129)
 METHOD_NAME = "samurai_sam2_video_smoke"
-
-
-def relative_uri(path: Path, repository_root: Path) -> str:
-    return path.resolve().relative_to(repository_root.resolve()).as_posix()
 
 
 def _normalize_box(

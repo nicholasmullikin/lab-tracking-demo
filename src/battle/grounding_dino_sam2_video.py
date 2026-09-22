@@ -14,7 +14,7 @@ import cv2
 from . import mask_cache
 from .digest_cache import sha256_file
 from .exporter import export_run
-from .fs_common import run_timestamp
+from .fs_common import relative_uri, run_timestamp
 from .schemas import (
     AdapterMetadata,
     ArtifactFingerprint,
@@ -51,10 +51,6 @@ GROUNDING_MODEL_ID = "IDEA-Research/grounding-dino-tiny"
 GROUNDING_MODEL_REVISION = "a2bb814dd30d776dcf7e30523b00659f4f141c71"
 TEXT_PROMPT = "hand."
 METHOD_NAME = "transformers_grounding_dino_plus_sam2_video_smoke"
-
-
-def relative_uri(path: Path, repository_root: Path) -> str:
-    return path.resolve().relative_to(repository_root.resolve()).as_posix()
 
 
 def _normalize_box(

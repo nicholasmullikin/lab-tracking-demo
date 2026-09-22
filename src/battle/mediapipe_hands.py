@@ -17,7 +17,7 @@ import numpy as np
 
 from .digest_cache import sha256_file
 from .exporter import export_run
-from .fs_common import run_timestamp
+from .fs_common import relative_uri, run_timestamp
 from .schemas import (
     AdapterMetadata,
     ArtifactFingerprint,
@@ -79,10 +79,6 @@ HAND_CONNECTIONS = (
 )
 NormalizedRoi = tuple[float, float, float, float]
 HandCandidate = tuple[tuple[NormalizedPoint, ...], HandSide, float]
-
-
-def relative_uri(path: Path, repository_root: Path) -> str:
-    return path.resolve().relative_to(repository_root.resolve()).as_posix()
 
 
 def _side(value: str) -> HandSide:

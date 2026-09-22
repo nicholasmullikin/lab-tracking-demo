@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from . import gpu_guard, mask_cache
+from . import fs_common, gpu_guard, mask_cache
 from .digest_cache import sha256_file
 from .exporter import export_run
 from .fs_common import run_timestamp
@@ -109,11 +109,12 @@ DEFAULT_MODEL = MUGGLED_SAM_SOURCE / "model_weights" / "sam3.1_multiplex.pt"
 
 
 def relative_uri(path: Path, repository_root: Path) -> str:
-    """Prefer portable repository-relative paths in persisted metadata."""
-    try:
-        return path.relative_to(repository_root).as_posix()
-    except ValueError:
-        return path.as_posix()
+    """Prefer portable repository-relative paths in persisted metadata.
+
+    The paths are compared as given (`resolve=False`), the form every manifest written through
+    this module and the seed / score modules that import it has always carried.
+    """
+    return fs_common.relative_uri(path, repository_root, resolve=False)
 
 
 def load_manual_seed_target_config(

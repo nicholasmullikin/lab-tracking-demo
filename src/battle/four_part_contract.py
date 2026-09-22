@@ -10,14 +10,11 @@ from typing import Any
 from PIL import Image
 
 from .digest_cache import sha256_file
+from .fs_common import relative_uri
 
 TARGETS = ("chassis", "interior", "rear_body", "cabin")
 FRAME_COUNT = 600
 ANALYSIS_FPS = 30
-
-
-def relative_uri(path: Path, repository_root: Path) -> str:
-    return path.resolve().relative_to(repository_root.resolve()).as_posix()
 
 
 @dataclass(frozen=True)

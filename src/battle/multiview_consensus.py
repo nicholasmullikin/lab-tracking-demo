@@ -34,6 +34,7 @@ from .assembly101_pose_schemas import ASSEMBLY101_WRIST_INDEX
 from .assembly101_recordings import RECORDING_1, Assembly101Recording, get_recording
 from .digest_cache import sha256_file
 from .four_part_contract import TARGETS
+from .fs_common import relative_uri
 from .multiview_geometry import CameraRig
 from .multiview_schemas import (
     MULTIVIEW_CLAIM_BOUNDARIES,
@@ -92,13 +93,6 @@ class ViewRun:
         if item is None or item.mask is None:
             return None
         return self.cache.mask(item.mask.uri)
-
-
-def relative_uri(path: Path, repository_root: Path) -> str:
-    try:
-        return path.resolve().relative_to(repository_root.resolve()).as_posix()
-    except ValueError:
-        return path.resolve().as_posix()
 
 
 def _fingerprint(path: Path, repository_root: Path) -> ArtifactFingerprint:

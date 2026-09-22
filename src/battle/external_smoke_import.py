@@ -22,6 +22,7 @@ from PIL import Image
 
 from .digest_cache import sha256_file
 from .exporter import export_run
+from .fs_common import relative_uri
 from .schemas import (
     AdapterMetadata,
     ArtifactFingerprint,
@@ -57,10 +58,6 @@ DEFAULT_GROUNDED_SAM2_NATIVE = Path(
 DEFAULT_SMOKE_VIDEO = Path("data/derived/assembly101/smoke_frames/focused_static_20s.mp4")
 DEFAULT_SMOKE_IMAGE = Path("data/derived/assembly101/smoke_frames/focused_static_frame0.jpg")
 NLF_BODY_JOINT_COUNT = 55
-
-
-def relative_uri(path: Path, repository_root: Path) -> str:
-    return path.resolve().relative_to(repository_root.resolve()).as_posix()
 
 
 def _fingerprint(path: Path, repository_root: Path) -> ArtifactFingerprint:

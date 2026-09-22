@@ -54,6 +54,7 @@ from . import mask_cache
 from .assembly101_fetch_view import RECORDING_ID, proxy_path
 from .assembly101_pose_schemas import Assembly101ClockRule
 from .digest_cache import sha256_file as _sha256
+from .fs_common import relative_uri
 from .multiview_geometry import CameraRig
 from .schemas import ArtifactFingerprint, FrameObservations, VersionedModel
 
@@ -352,10 +353,6 @@ def fingerprint(path: Path, repository_root: Path) -> ArtifactFingerprint:
     return ArtifactFingerprint(uri=uri, sha256=_sha256(resolved), source="measured")
 
 
-def _relative(path: Path, root: Path) -> str:
-    return path.resolve().relative_to(root.resolve()).as_posix()
-
-
 def write_mask_png(path: Path, mask: np.ndarray) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     Image.fromarray(np.where(mask, 255, 0).astype(np.uint8), mode="L").save(path)
@@ -523,7 +520,7 @@ def _view_spec(
         proxy_size_wh=proxy_size_wh,
         raw_size_wh=(int(raw_w), int(raw_h)),
         pose_offset_frames=rig.clock_rule(camera).pose_offset_frames,
-        frames_dir=_relative(frames_dir, root),
+        frames_dir=relative_uri(frames_dir, root),
     )
 
 
@@ -619,7 +616,7 @@ def prepare(
                     )
                 target = query_root / EXO_VIEW_ID / part / f"{key}.png"
                 write_mask_png(target, mask)
-                exo_query[part] = _relative(target, run_directory)
+                exo_query[part] = relative_uri(target, run_directory)
             uri = mask_uri_for(ego_observation, part)
             if uri is None:
                 ego_reference[part] = None
@@ -631,7 +628,7 @@ def prepare(
                     )
                 target = reference_root / EGO_VIEW_ID / part / f"{key}.png"
                 write_mask_png(target, mask)
-                ego_reference[part] = _relative(target, run_directory)
+                ego_reference[part] = relative_uri(target, run_directory)
             hull_available[part] = bool(
                 hull_voxels is not None
                 and f"{part}/{key}" in hull_voxels.files
@@ -645,7 +642,7 @@ def prepare(
             mask = ego_cache.mask(uri)
             target = query_root / EGO_VIEW_ID / hand / f"{key}.png"
             write_mask_png(target, mask)
-            ego_query[hand] = _relative(target, run_directory)
+            ego_query[hand] = relative_uri(target, run_directory)
             any_hand_query = True
         pairs.append(
             KeyframePair(
@@ -655,8 +652,8 @@ def prepare(
                 exo_pose_frame=exo_pose,
                 ego_pose_frame=ego_pose,
                 residual_pose_frames=residual,
-                exo_frame_uri=_relative(exo_jpeg, run_directory),
-                ego_frame_uri=_relative(ego_jpeg, run_directory),
+                exo_frame_uri=relative_uri(exo_jpeg, run_directory),
+                ego_frame_uri=relative_uri(ego_jpeg, run_directory),
                 exo_query_masks=exo_query,
                 ego_reference_masks=ego_reference,
                 ego_query_masks=ego_query,
@@ -673,9 +670,9 @@ def prepare(
             direction="exo_to_ego",
             source_view=EXO_VIEW_ID,
             target_view=EGO_VIEW_ID,
-            source_frames_dir=_relative(exo_frames_dir, run_directory),
-            target_frames_dir=_relative(ego_frames_dir, run_directory),
-            query_mask_root=_relative(query_root / EXO_VIEW_ID, run_directory),
+            source_frames_dir=relative_uri(exo_frames_dir, run_directory),
+            target_frames_dir=relative_uri(ego_frames_dir, run_directory),
+            query_mask_root=relative_uri(query_root / EXO_VIEW_ID, run_directory),
             objects=PARTS,
             checkpoint=str(checkpoints["exo_to_ego"]),
             checkpoint_sha256=checkpoint_hashes["exo_to_ego"],
@@ -685,8 +682,8 @@ def prepare(
             direction="ego_to_exo",
             source_view=EGO_VIEW_ID,
             target_view=EXO_VIEW_ID,
-            source_frames_dir=_relative(ego_frames_dir, run_directory),
-            target_frames_dir=_relative(exo_frames_dir, run_directory),
+            source_frames_dir=relative_uri(ego_frames_dir, run_directory),
+            target_frames_dir=relative_uri(exo_frames_dir, run_directory),
             query_mask_root=(query_root / EGO_VIEW_ID).relative_to(run_directory).as_posix(),
             objects=HANDS,
             checkpoint=str(checkpoints["ego_to_exo"]),
@@ -764,7 +761,7 @@ def prepare(
             install_script=fingerprint(root / "scripts/install_lm_eec.sh", root),
             mode=mode,  # type: ignore[arg-type]
         ),
-        queue_job=_relative(queue_job_path, root),
+        queue_job=relative_uri(queue_job_path, root),
         queue_job_name=QUEUE_JOB_NAME,
         queue_timeout_s=QUEUE_TIMEOUT_S,
         claim_boundaries=CLAIM_BOUNDARIES,
@@ -951,7 +948,7 @@ def evaluate(
             )
             hull_path = hull_root / target_view.view_id / prediction.object / f"{pair.key}.png"
             write_mask_png(hull_path, hull_mask)
-            hull_uri = _relative(hull_path, run_directory)
+            hull_uri = relative_uri(hull_path, run_directory)
             if not hull_mask.any():
                 notes.append("hull projects outside the target image at this keyframe")
         elif hull_voxels is None:

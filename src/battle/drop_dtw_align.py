@@ -12,7 +12,7 @@ import rerun as rr
 
 from .assembly101_gt_transcript import parse_coarse_transcript
 from .digest_cache import sha256_file
-from .fs_common import run_timestamp
+from .fs_common import relative_uri, run_timestamp
 from .schemas import (
     AdapterMetadata,
     ArtifactFingerprint,
@@ -47,10 +47,6 @@ DEFAULT_OPENCLIP_CHECKPOINT = Path(
     f"snapshots/{OPENCLIP_REVISION}/open_clip_model.safetensors"
 )
 DEFAULT_OPENCLIP_CACHE = Path("/home/nick/.cache/huggingface/hub")
-
-
-def relative_uri(path: Path, repository_root: Path) -> str:
-    return path.resolve().relative_to(repository_root.resolve()).as_posix()
 
 
 def _bounded_video(proxy_path: Path, output_path: Path, frame_count: int) -> Path:
