@@ -285,3 +285,131 @@ def test_pytest_counts_reads_the_final_summary_line() -> None:
 )
 def test_is_volatile_key(key: str, value: object, volatile: bool) -> None:
     assert harness.is_volatile_key(key, value) is volatile
+
+
+# --------------------------------------------------------------------------- compare-runs
+
+
+def _write_run(
+    root: Path,
+    *,
+    run_id: str,
+    snapshot: str,
+    mask_byte: int,
+    peak: int,
+    label: str = "seeded_hand",
+) -> Path:
+    run = root / run_id
+    (run / "native" / "masks").mkdir(parents=True)
+    for index in range(2):
+        (run / "native" / "masks" / f"{index:05d}.png").write_bytes(
+            b"\x89PNG" + bytes([mask_byte, index])
+        )
+    uri = f"runs/smokes/{root.name}/{run_id}"
+    manifest = {
+        "run_id": run_id,
+        "clip": {"source_duration_seconds": 10.0},
+        "generated_at": f"2026-09-22T0{mask_byte}:00:00Z",
+        "method_statuses": [{"artifact_uri": f"{uri}/observations.jsonl", "state": "succeeded"}],
+        "dam4sam_video": {
+            "measurements": {
+                "elapsed_seconds": 12.0 + peak,
+                "time_to_first_usable_output_seconds": 0.1 * peak,
+                "gpu_peak_vram_bytes": peak,
+            },
+            "observations_uri": f"{uri}/observations.jsonl",
+            "native_masks_uri": f"{uri}/native/masks",
+        },
+        "observations": [
+            {"objects": [{"label": label, "mask": {"uri": "native/masks/00000.png"}}]}
+        ],
+    }
+    (run / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    (run / "observations.jsonl").write_text(
+        json.dumps({"analysis_frame_index": 0, "objects": [{"label": label}]}) + "\n"
+    )
+    (run / "worker_command.txt").write_text(
+        f"/pyenv/python {root.parent}/{snapshot}/src/battle/w.py --run-directory {run.resolve()}\n"
+    )
+    (run / "worker.stderr.log").write_text(f"took {peak}\n", encoding="utf-8")
+    (run / "contact_sheet.png").write_bytes(b"\x89PNG-sheet")
+    return run
+
+
+def test_compare_runs_folds_run_directories_and_measurements(tmp_path: Path, capsys) -> None:
+    before = _write_run(
+        tmp_path / "before",
+        run_id="dam4sam-10s-t1",
+        snapshot="code-snapshot-aaa",
+        mask_byte=1,
+        peak=100,
+    )
+    after = _write_run(
+        tmp_path / "after",
+        run_id="dam4sam-10s-t2",
+        snapshot="code-snapshot-bbb",
+        mask_byte=1,
+        peak=250,
+    )
+    report = tmp_path / "report.json"
+
+    harness.main(
+        [
+            "--repository-root",
+            str(tmp_path),
+            "compare-runs",
+            str(before),
+            str(after),
+            "--report",
+            str(report),
+            "--replace",
+            "code-snapshot-aaa=<code>",
+            "--replace",
+            "code-snapshot-bbb=<code>",
+        ]
+    )
+
+    out = capsys.readouterr().out
+    assert "masks: 2 before / 2 after, identical: yes" in out
+    assert "EQUIVALENT" in out
+    written = json.loads(report.read_text(encoding="utf-8"))
+    assert written["equivalent"] is True
+    assert written["masks"] == {
+        "before_count": 2,
+        "after_count": 2,
+        "identical": True,
+        "differing": [],
+    }
+    assert written["manifest_equal_modulo_volatile"] is True
+    assert "gpu_peak_vram_bytes" in written["volatile_keys"]
+
+
+def test_compare_runs_reports_a_changed_mask_and_a_changed_label(tmp_path: Path, capsys) -> None:
+    before = _write_run(tmp_path / "before", run_id="r1", snapshot="s", mask_byte=1, peak=1)
+    after = _write_run(
+        tmp_path / "after", run_id="r2", snapshot="s", mask_byte=2, peak=1, label="other"
+    )
+
+    with pytest.raises(SystemExit) as raised:
+        harness.main(["--repository-root", str(tmp_path), "compare-runs", str(before), str(after)])
+
+    assert raised.value.code == 1
+    out = capsys.readouterr().out
+    assert "identical: NO" in out
+    assert "native/masks/00000.png" in out and "native/masks/00001.png" in out
+    assert "manifest.json: $.observations[0].objects[0].label: 'seeded_hand' != 'other'" in out
+    assert "observations.jsonl" in out
+
+
+def test_run_directory_replacements_cover_absolute_relative_and_name(tmp_path: Path) -> None:
+    run = tmp_path / "runs" / "x" / "run-1"
+    run.mkdir(parents=True)
+
+    replacements = harness.run_directory_replacements([run], tmp_path)
+
+    assert (run.resolve().as_posix(), "<run>") in replacements
+    assert ("runs/x/run-1", "<run>") in replacements
+    assert ("run-1", "<run>") in replacements
+    assert harness.normalise_text(
+        f"see {run.resolve()}/manifest.json and runs/x/run-1", (), replacements
+    ) == ("see <run>/manifest.json and <run>")

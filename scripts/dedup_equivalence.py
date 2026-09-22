@@ -41,11 +41,21 @@ every such file on each side to prove the recorded digest still matches it (the 
 embeds its own absolute path, so its digest legitimately differs between labels).  A
 non-volatile difference exits 1 and prints the first twenty differing paths.
 
+`compare-runs A B` (pass 2) compares two run directories of one GPU driver executed before and
+after a refactor: every PNG under `native/masks/` or `masks/` byte for byte (reported
+separately), then the same tree walk as `compare` with both run directories (absolute,
+repository-relative and the run id itself) folded onto `<run>`, the per-execution
+measurements `time_to_first_usable_output_seconds` and `gpu_peak_vram_bytes` treated as
+volatile in addition, and `--replace OLD=NEW` for anything else that legitimately differs
+(the two code-snapshot directories named in `worker_command.txt`).  Any mask difference or
+non-volatile difference exits 1; `--report` writes the result as JSON.
+
 Usage:
 
     uv run python scripts/dedup_equivalence.py snapshot --label before
     uv run python scripts/dedup_equivalence.py snapshot --label after
     uv run python scripts/dedup_equivalence.py compare
+    uv run python scripts/dedup_equivalence.py compare-runs runs/x/before/<run> runs/x/after/<run>
 """
 
 from __future__ import annotations
@@ -316,7 +326,9 @@ def _is_string_like(arrow_type: Any) -> bool:
     return False
 
 
-def rrd_content_digest(path: Path, *, labels: Iterable[str] = ()) -> dict[str, str]:
+def rrd_content_digest(
+    path: Path, *, labels: Iterable[str] = (), replacements: Replacements = ()
+) -> dict[str, str]:
     """Digest a recording's content independently of chunk layout, log time and blueprint ids.
 
     Returns ``{"recording:<entity>#<column>": "<sha256[:16]>/<rows>", "blueprint:<entity>":
@@ -350,7 +362,9 @@ def rrd_content_digest(path: Path, *, labels: Iterable[str] = ()) -> dict[str, s
         for name in names:
             column = table.column(name)
             if _is_string_like(column.type):
-                payload = normalise_text(repr(column.to_pylist()), labels).encode("utf-8")
+                payload = normalise_text(repr(column.to_pylist()), labels, replacements).encode(
+                    "utf-8"
+                )
             else:
                 payload = _arrow_ipc_bytes(pa.table({name: column}).combine_chunks())
             digest = hashlib.sha256(payload).hexdigest()[:16]
@@ -485,8 +499,11 @@ def snapshot(args: argparse.Namespace) -> None:
 # --------------------------------------------------------------------------- compare
 
 
-def is_volatile_key(key: str, value: Any) -> bool:
-    if key in VOLATILE_KEYS:
+Replacements = Sequence[tuple[str, str]]
+
+
+def is_volatile_key(key: str, value: Any, extra_keys: frozenset[str] = frozenset()) -> bool:
+    if key in VOLATILE_KEYS or key in extra_keys:
         return True
     if key.endswith(VOLATILE_KEY_SUFFIXES):
         return True
@@ -495,8 +512,15 @@ def is_volatile_key(key: str, value: Any) -> bool:
     return False
 
 
-def normalise_text(text: str, labels: Iterable[str]) -> str:
-    """Replace `runs/dedup-equivalence/<label>` (whole path component) with a placeholder."""
+def normalise_text(text: str, labels: Iterable[str], replacements: Replacements = ()) -> str:
+    """Replace `runs/dedup-equivalence/<label>` (whole path component) with a placeholder.
+
+    `replacements` are literal `(old, new)` substitutions applied afterwards, longest `old`
+    first; `compare-runs` uses them to fold two run directories onto one placeholder.
+    """
+    for old, new in sorted(replacements, key=lambda item: len(item[0]), reverse=True):
+        if old:
+            text = text.replace(old, new)
     names = sorted({label for label in labels if label}, key=len, reverse=True)
     if not names:
         return text
@@ -554,36 +578,43 @@ def strip_volatile(
     *,
     labels: Iterable[str] = (),
     drop_paths: frozenset[str] = frozenset(),
+    extra_keys: frozenset[str] = frozenset(),
+    replacements: Replacements = (),
     _path: str = "",
 ) -> Any:
     """Return `value` without volatile keys and with scratch labels normalised in strings.
 
     `drop_paths` names dotted JSON paths (e.g. ``output_rrd.sha256``) to drop as well; the
     caller uses it when the Rerun recording has been shown to differ only in its header.
+    `extra_keys` are further volatile keys and `replacements` further literal string
+    substitutions (see :func:`normalise_text`), both used by `compare-runs`.
     """
     labels = tuple(labels)
+    options = {
+        "labels": labels,
+        "drop_paths": drop_paths,
+        "extra_keys": extra_keys,
+        "replacements": replacements,
+    }
     if isinstance(value, dict):
         out: dict[str, Any] = {}
         uri = value.get("uri")
         scratch_fingerprint = isinstance(uri, str) and _in_scratch(uri, labels)
         for key, item in value.items():
             path = f"{_path}.{key}" if _path else key
-            if is_volatile_key(key, item) or path in drop_paths:
+            if is_volatile_key(key, item, extra_keys) or path in drop_paths:
                 continue
             if key == "sha256" and scratch_fingerprint:
                 # The file itself is compared by the tree walk and the digest is checked
                 # against the file by `scratch_fingerprint_mismatches`.
                 out[key] = "<scratch-file>"
                 continue
-            out[key] = strip_volatile(item, labels=labels, drop_paths=drop_paths, _path=path)
+            out[key] = strip_volatile(item, _path=path, **options)
         return out
     if isinstance(value, list):
-        return [
-            strip_volatile(item, labels=labels, drop_paths=drop_paths, _path=f"{_path}[]")
-            for item in value
-        ]
+        return [strip_volatile(item, _path=f"{_path}[]", **options) for item in value]
     if isinstance(value, str):
-        return normalise_text(value, labels)
+        return normalise_text(value, labels, replacements)
     return value
 
 
@@ -620,7 +651,13 @@ def _load_jsonl(path: Path) -> list[Any]:
 
 
 def compare_json_files(
-    before: Path, after: Path, labels: Sequence[str], drop_paths: frozenset[str]
+    before: Path,
+    after: Path,
+    labels: Sequence[str],
+    drop_paths: frozenset[str],
+    *,
+    extra_keys: frozenset[str] = frozenset(),
+    replacements: Replacements = (),
 ) -> list[str]:
     if before.suffix == ".jsonl":
         left: Any = _load_jsonl(before)
@@ -628,14 +665,20 @@ def compare_json_files(
     else:
         left = json.loads(before.read_text(encoding="utf-8"))
         right = json.loads(after.read_text(encoding="utf-8"))
-    left = strip_volatile(left, labels=labels, drop_paths=drop_paths)
-    right = strip_volatile(right, labels=labels, drop_paths=drop_paths)
-    return diff_json(left, right)
+    options = {
+        "labels": labels,
+        "drop_paths": drop_paths,
+        "extra_keys": extra_keys,
+        "replacements": replacements,
+    }
+    return diff_json(strip_volatile(left, **options), strip_volatile(right, **options))
 
 
-def compare_text_files(before: Path, after: Path, labels: Sequence[str]) -> list[str]:
-    left = normalise_text(before.read_text(encoding="utf-8"), labels).splitlines()
-    right = normalise_text(after.read_text(encoding="utf-8"), labels).splitlines()
+def compare_text_files(
+    before: Path, after: Path, labels: Sequence[str], replacements: Replacements = ()
+) -> list[str]:
+    left = normalise_text(before.read_text(encoding="utf-8"), labels, replacements).splitlines()
+    right = normalise_text(after.read_text(encoding="utf-8"), labels, replacements).splitlines()
     if left == right:
         return []
     diffs = []
@@ -676,12 +719,14 @@ def compare_bytes(before: Path, after: Path) -> list[str]:
     return [f"bytes differ ({before.stat().st_size} vs {after.stat().st_size} bytes)"]
 
 
-def compare_rrd(before: Path, after: Path, labels: Sequence[str]) -> tuple[list[str], str]:
+def compare_rrd(
+    before: Path, after: Path, labels: Sequence[str], replacements: Replacements = ()
+) -> tuple[list[str], str]:
     """Compare a recording by bytes, falling back to the chunk-independent content digest."""
     if before.read_bytes() == after.read_bytes():
         return [], "bytes"
-    left = rrd_content_digest(before, labels=labels)
-    right = rrd_content_digest(after, labels=labels)
+    left = rrd_content_digest(before, labels=labels, replacements=replacements)
+    right = rrd_content_digest(after, labels=labels, replacements=replacements)
     diffs = []
     for key in sorted(set(left) | set(right)):
         if left.get(key) != right.get(key):
@@ -703,6 +748,9 @@ def compare_trees(
     *,
     repository_root: Path,
     labels: Sequence[str],
+    extra_keys: frozenset[str] = frozenset(),
+    replacements: Replacements = (),
+    fingerprint_self_check: bool = True,
 ) -> tuple[list[str], dict[str, Any]]:
     before_files = _relative_files(before_root)
     after_files = _relative_files(after_root)
@@ -718,7 +766,9 @@ def compare_trees(
     # Recordings first: whether their bytes match decides how their digests are compared.
     rrds = [p for p in shared if p.suffix == ".rrd"]
     for relative in rrds:
-        result, method = compare_rrd(before_root / relative, after_root / relative, labels)
+        result, method = compare_rrd(
+            before_root / relative, after_root / relative, labels, replacements
+        )
         notes["rrd_method"] = method
         notes["compared"] += 1
         if method != "bytes":
@@ -728,10 +778,11 @@ def compare_trees(
                 "index is a scratch-file fingerprint, checked against the file per side"
             )
         diffs.extend(f"{relative}: {d}" for d in result)
-    for side, root in (("before", before_root), ("after", after_root)):
-        label = root.name
-        for mismatch in scratch_fingerprint_mismatches(root, repository_root, label):
-            diffs.append(f"{side} fingerprint self-check: {mismatch}")
+    if fingerprint_self_check:
+        for side, root in (("before", before_root), ("after", after_root)):
+            label = root.name
+            for mismatch in scratch_fingerprint_mismatches(root, repository_root, label):
+                diffs.append(f"{side} fingerprint self-check: {mismatch}")
     for relative in shared:
         if (
             relative.name in SKIP_NAMES
@@ -741,9 +792,16 @@ def compare_trees(
             continue
         before, after = before_root / relative, after_root / relative
         if relative.suffix in {".json", ".jsonl"}:
-            result = compare_json_files(before, after, labels, drop_paths)
+            result = compare_json_files(
+                before,
+                after,
+                labels,
+                drop_paths,
+                extra_keys=extra_keys,
+                replacements=replacements,
+            )
         elif relative.suffix in {".md", ".txt"}:
-            result = compare_text_files(before, after, labels)
+            result = compare_text_files(before, after, labels, replacements)
         elif relative.suffix == ".npz":
             result = compare_npz_files(before, after)
         else:
@@ -792,6 +850,125 @@ def compare(args: argparse.Namespace) -> None:
     print("EQUIVALENT: no non-volatile differences")
 
 
+# --------------------------------------------------------------------------- compare-runs
+
+# Per-run measurements that legitimately differ between two executions of the same code.
+RUN_VOLATILE_KEYS = frozenset({"time_to_first_usable_output_seconds", "gpu_peak_vram_bytes"})
+RUN_PLACEHOLDER = "<run>"
+MASK_DIRECTORIES = ("native/masks", "masks")
+
+
+def run_directory_replacements(
+    run_directories: Sequence[Path], repository_root: Path
+) -> list[tuple[str, str]]:
+    """Substitutions folding each run directory (absolute and repository-relative) onto `<run>`.
+
+    The run id is the directory name, so a URI such as `runs/x/<run-id>/observations.jsonl`
+    and the `run_id` field both normalise, whichever side of the comparison they come from.
+    """
+    replacements: list[tuple[str, str]] = []
+    for directory in run_directories:
+        resolved = directory.resolve()
+        replacements.append((resolved.as_posix(), RUN_PLACEHOLDER))
+        try:
+            replacements.append(
+                (resolved.relative_to(repository_root.resolve()).as_posix(), RUN_PLACEHOLDER)
+            )
+        except ValueError:
+            pass
+        replacements.append((directory.name, RUN_PLACEHOLDER))
+    return replacements
+
+
+def compare_masks(before_root: Path, after_root: Path) -> dict[str, Any]:
+    """Every PNG under the mask directories, by SHA-256; identical means equal names and bytes."""
+    import hashlib
+
+    def digests(root: Path) -> dict[str, str]:
+        out: dict[str, str] = {}
+        for directory in MASK_DIRECTORIES:
+            base = root / directory
+            if base.is_dir():
+                for png in sorted(base.rglob("*.png")):
+                    out[png.relative_to(root).as_posix()] = hashlib.sha256(
+                        png.read_bytes()
+                    ).hexdigest()
+        return out
+
+    left, right = digests(before_root), digests(after_root)
+    differing = sorted(name for name in set(left) | set(right) if left.get(name) != right.get(name))
+    return {
+        "before_count": len(left),
+        "after_count": len(right),
+        "identical": not differing and len(left) == len(right),
+        "differing": differing,
+    }
+
+
+def compare_runs(args: argparse.Namespace) -> None:
+    """Compare two run directories of one driver: masks byte for byte, the rest as `compare`."""
+    repository_root: Path = args.repository_root.resolve()
+    before_root: Path = args.before.resolve()
+    after_root: Path = args.after.resolve()
+    for root in (before_root, after_root):
+        if not root.is_dir():
+            raise SystemExit(f"missing run directory {root}")
+    replacements = run_directory_replacements([before_root, after_root], repository_root)
+    for item in args.replace:
+        old, separator, new = item.partition("=")
+        if not separator or not old:
+            raise SystemExit(f"--replace expects OLD=NEW, got {item!r}")
+        replacements.append((old, new))
+    masks = compare_masks(before_root, after_root)
+    diffs, notes = compare_trees(
+        before_root,
+        after_root,
+        repository_root=repository_root,
+        labels=(),
+        extra_keys=RUN_VOLATILE_KEYS,
+        replacements=replacements,
+        fingerprint_self_check=False,
+    )
+    manifest_diffs = [line for line in diffs if line.startswith("manifest.json:")]
+    other_diffs = [line for line in diffs if not line.startswith("manifest.json:")]
+    report = {
+        "before": before_root.relative_to(repository_root).as_posix()
+        if before_root.is_relative_to(repository_root)
+        else str(before_root),
+        "after": after_root.relative_to(repository_root).as_posix()
+        if after_root.is_relative_to(repository_root)
+        else str(after_root),
+        "masks": masks,
+        "manifest_equal_modulo_volatile": not manifest_diffs,
+        "manifest_differences": manifest_diffs[:MAX_REPORTED_DIFFS],
+        "other_differences": other_diffs[:MAX_REPORTED_DIFFS],
+        "files_compared": notes["compared"],
+        "rrd_method": notes["rrd_method"],
+        "volatile_keys": sorted(VOLATILE_KEYS | RUN_VOLATILE_KEYS),
+        "equivalent": not diffs and masks["identical"],
+    }
+    if args.report is not None:
+        args.report.parent.mkdir(parents=True, exist_ok=True)
+        args.report.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    print(
+        f"masks: {masks['before_count']} before / {masks['after_count']} after, "
+        f"identical: {'yes' if masks['identical'] else 'NO'}"
+    )
+    print(f"manifest equal modulo volatile fields: {'yes' if not manifest_diffs else 'NO'}")
+    print(f"compared {notes['compared']} files; rrd compared by: {notes['rrd_method']}")
+    if masks["differing"]:
+        print(f"DIFFERING MASKS: {len(masks['differing'])} (first {MAX_REPORTED_DIFFS})")
+        for name in masks["differing"][:MAX_REPORTED_DIFFS]:
+            print(f"  {name}")
+    if diffs:
+        print(f"NON-VOLATILE DIFFERENCES: {len(diffs)} (first {MAX_REPORTED_DIFFS})")
+        for line in diffs[:MAX_REPORTED_DIFFS]:
+            print(f"  {line}")
+    if diffs or not masks["identical"]:
+        raise SystemExit(1)
+    print("EQUIVALENT: masks identical, no non-volatile differences")
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -808,6 +985,27 @@ def main(argv: Sequence[str] | None = None) -> None:
     comp.add_argument("--before", default="before")
     comp.add_argument("--after", default="after")
     comp.set_defaults(func=compare)
+    runs = sub.add_parser(
+        "compare-runs",
+        help=(
+            "compare two run directories of one driver: masks byte for byte, manifest and the "
+            "other files modulo volatile fields with both run directories folded onto <run>"
+        ),
+    )
+    runs.add_argument("before", type=Path)
+    runs.add_argument("after", type=Path)
+    runs.add_argument("--report", type=Path, default=None, help="write the comparison as JSON")
+    runs.add_argument(
+        "--replace",
+        action="append",
+        default=[],
+        metavar="OLD=NEW",
+        help=(
+            "further literal substitution applied to strings before comparing (repeatable), "
+            "e.g. the two code-snapshot directories named in worker_command.txt"
+        ),
+    )
+    runs.set_defaults(func=compare_runs)
     args = parser.parse_args(argv)
     args.func(args)
 
