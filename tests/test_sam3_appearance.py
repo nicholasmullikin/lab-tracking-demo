@@ -55,7 +55,7 @@ class StubBackend:
     def concat_tokens(self, token_sets):
         return {"tokens": [t for s in token_sets for t in s["tokens"]]}
 
-    def detect(self, encoding, token_sets, top_k):
+    def detect(self, encoding, token_sets, top_k, *, tracked=None, keep_masks=True):
         self.detect_calls += 1
         out = []
         for tokens in token_sets:
@@ -494,3 +494,39 @@ def test_cli_parser_defaults() -> None:
         ]
     )
     assert serve.candidate_source == "both" and serve.exemplar_variant == "posneg"
+
+
+def test_detection_row_uses_precomputed_statistics_without_masks() -> None:
+    detections = app.Detections(
+        scores=np.array([0.4, 0.9]),
+        boxes_norm=np.zeros((2, 2, 2)),
+        masks=None,
+        presence=0.7,
+        areas=np.array([100.0, 400.0]),
+        centroids=np.array([[10.0, 10.0], [30.0, 40.0]]),
+        iou_tracked=np.array([0.2, 0.6]),
+    )
+    tracked = _rect((10, 10, 30, 30))
+    row = app.detection_row(
+        frame=1,
+        target="chassis",
+        set_name="same_view",
+        reference_view="V",
+        variant="posneg",
+        reference_frames=(0,),
+        excluded_frame=None,
+        tracked=tracked,
+        detections=detections,
+        width=WIDTH,
+        height=HEIGHT,
+    )
+    assert row["top_area_px"] == 400 and row["top_iou_tracked"] == pytest.approx(0.6)
+    assert row["best_overlap_index"] == 1 and row["best_overlap_iou"] == pytest.approx(0.6)
+    assert row["top_centroid_distance_px"] == pytest.approx(np.hypot(30 - 19.5, 40 - 19.5))
+    with pytest.raises(ValueError):
+        app.detection_statistics(
+            app.Detections(
+                scores=np.array([0.1]), boxes_norm=np.zeros((1, 2, 2)), masks=None, presence=0.1
+            ),
+            None,
+        )

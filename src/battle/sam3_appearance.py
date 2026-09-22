@@ -42,6 +42,7 @@ import json
 import os
 import sys
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -258,12 +259,20 @@ def read_run_masks(run_directory: Path, frame_count: int) -> dict[int, dict[str,
 
 @dataclass
 class Detections:
-    """Top-K detections of one exemplar set on one frame, masks at frame resolution."""
+    """Top-K detections of one exemplar set on one frame.
+
+    `masks` are at frame resolution and may be None when the caller asked for statistics only;
+    `areas`, `centroids` (x, y) and `iou_tracked` (IoU with the tracked mask handed to `detect`,
+    NaN without one) are then computed on the device.
+    """
 
     scores: np.ndarray  # [K]
     boxes_norm: np.ndarray  # [K, 2, 2]
-    masks: np.ndarray  # [K, H, W] bool
+    masks: np.ndarray | None  # [K, H, W] bool
     presence: float
+    areas: np.ndarray | None = None  # [K]
+    centroids: np.ndarray | None = None  # [K, 2]
+    iou_tracked: np.ndarray | None = None  # [K]
 
 
 class Sam3Backend:
@@ -330,9 +339,20 @@ class Sam3Backend:
         return self.torch.cat(token_sets, dim=1)
 
     def detect(
-        self, encoding: dict[str, Any], token_sets: list[Any], top_k: int
+        self,
+        encoding: dict[str, Any],
+        token_sets: list[Any],
+        top_k: int,
+        *,
+        tracked: Sequence[np.ndarray | None] | None = None,
+        keep_masks: bool = True,
     ) -> list[Detections]:
-        """Batched `generate_detections` with the segmentation head run on the top-K tokens only."""
+        """Batched `generate_detections` with the segmentation head run on the top-K tokens only.
+
+        Areas, centroids and the IoU with each set's `tracked` mask are computed on the device
+        so the pass does not move 80-160 full-resolution masks per frame to the CPU unless
+        `keep_masks` asks for them (the frames whose masks are written).
+        """
         torch = self.torch
         detector = self.detector
         low, x2, x4 = encoding["encoded"][-1]
@@ -369,16 +389,47 @@ class Sam3Backend:
                 masks.float(), size=(frame_h, frame_w), mode="bilinear", align_corners=False
             ).gt(0)
             presence_flat = presence.float().reshape(batch)
+            area = masks_full.sum(dim=(2, 3)).float()
+            xs = torch.arange(frame_w, device=low.device, dtype=torch.float32)
+            ys = torch.arange(frame_h, device=low.device, dtype=torch.float32)
+            sum_x = (masks_full.sum(dim=2).float() * xs).sum(dim=2)
+            sum_y = (masks_full.sum(dim=3).float() * ys).sum(dim=2)
+            safe = area.clamp(min=1.0)
+            centroids = torch.stack((sum_x / safe, sum_y / safe), dim=-1)
+            centroids[area == 0] = float("nan")
+            iou = torch.full(area.shape, float("nan"), device=low.device)
+            if tracked is not None:
+                has_tracked = [t is not None and bool(t.any()) for t in tracked]
+                if any(has_tracked):
+                    tracked_t = torch.zeros(
+                        (batch, frame_h, frame_w), device=low.device, dtype=torch.bool
+                    )
+                    for index, mask in enumerate(tracked):
+                        if has_tracked[index]:
+                            tracked_t[index] = torch.from_numpy(np.ascontiguousarray(mask)).to(
+                                low.device
+                            )
+                    inter = (masks_full & tracked_t.unsqueeze(1)).sum(dim=(2, 3)).float()
+                    tracked_area = tracked_t.sum(dim=(1, 2)).float().unsqueeze(1)
+                    union = area + tracked_area - inter
+                    valid = torch.tensor(has_tracked, device=low.device).unsqueeze(1) & (union > 0)
+                    iou = torch.where(valid, inter / union.clamp(min=1.0), iou)
             scores_np = top_scores.cpu().numpy()
             boxes_np = top_boxes.float().cpu().numpy()
-            masks_np = masks_full.cpu().numpy()
+            masks_np = masks_full.cpu().numpy() if keep_masks else None
             presence_np = presence_flat.cpu().numpy()
+            areas_np = area.cpu().numpy()
+            centroids_np = centroids.cpu().numpy()
+            iou_np = iou.cpu().numpy()
         return [
             Detections(
                 scores=scores_np[i],
                 boxes_norm=boxes_np[i],
-                masks=masks_np[i],
+                masks=masks_np[i] if masks_np is not None else None,
                 presence=float(presence_np[i]),
+                areas=areas_np[i],
+                centroids=centroids_np[i],
+                iou_tracked=iou_np[i],
             )
             for i in range(batch)
         ]
@@ -520,6 +571,32 @@ def read_frame(capture: Any, frame_index: int) -> np.ndarray:
 # --------------------------------------------------------------------------------- the pass
 
 
+def detection_statistics(
+    detections: Detections, tracked: np.ndarray | None
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """(areas [K], centroids [K, 2], IoU with `tracked` [K]); from the device when precomputed."""
+    k = int(detections.scores.size)
+    if detections.areas is not None and detections.centroids is not None:
+        ious = detections.iou_tracked if detections.iou_tracked is not None else np.full(k, np.nan)
+        return np.asarray(detections.areas), np.asarray(detections.centroids), np.asarray(ious)
+    if detections.masks is None:
+        raise ValueError("detections carry neither masks nor precomputed statistics")
+    areas = np.zeros(k)
+    centroids = np.full((k, 2), np.nan)
+    ious = np.full(k, np.nan)
+    for index in range(k):
+        mask = detections.masks[index]
+        areas[index] = int(mask.sum())
+        centroid = mask_centroid(mask)
+        if centroid is not None:
+            centroids[index] = centroid
+        if tracked is not None:
+            iou = mask_iou(tracked, mask)
+            if iou is not None:
+                ious[index] = iou
+    return areas, centroids, ious
+
+
 def detection_row(
     *,
     frame: int,
@@ -539,8 +616,11 @@ def detection_row(
     tracked_centroid = mask_centroid(tracked) if tracked is not None and tracked_area else None
     scores = detections.scores
     order = int(np.argmax(scores)) if scores.size else None
-    top_mask = detections.masks[order] if order is not None else None
-    top_centroid = mask_centroid(top_mask) if top_mask is not None else None
+    areas, centroids, ious = detection_statistics(detections, tracked if tracked_area else None)
+    top_area = int(areas[order]) if order is not None else None
+    top_centroid: tuple[float, float] | None = None
+    if order is not None and np.isfinite(centroids[order]).all():
+        top_centroid = (float(centroids[order][0]), float(centroids[order][1]))
     if top_centroid is None and order is not None:
         box = detections.boxes_norm[order]
         top_centroid = (
@@ -557,10 +637,10 @@ def detection_row(
     best_iou: float | None = None
     best_index: int | None = None
     top_iou: float | None = None
-    if tracked is not None and tracked_area:
+    if tracked_area:
         for index in range(scores.size):
-            iou = mask_iou(tracked, detections.masks[index])
-            if iou is None:
+            iou = float(ious[index])
+            if not np.isfinite(iou):
                 continue
             if index == order:
                 top_iou = iou
@@ -580,7 +660,7 @@ def detection_row(
         "detections": int(scores.size),
         "detections_above_0.5": int((scores >= 0.5).sum()),
         "top_score": float(scores[order]) if order is not None else None,
-        "top_area_px": int(top_mask.sum()) if top_mask is not None else None,
+        "top_area_px": top_area,
         "top_centroid_px": list(top_centroid) if top_centroid else None,
         "top_centroid_distance_px": distance,
         "top_iou_tracked": top_iou,
@@ -622,9 +702,9 @@ def run_pass(args: argparse.Namespace, *, backend: Any | None = None) -> Path:
         backend = Sam3Backend(
             Path(args.model), device=args.device, max_side_length=int(args.max_side_length)
         )
-    run_directory = Path(args.run).resolve()
+    run_directory = Path(args.run).resolve() if args.run else None
     frame_count = int(args.frame_count)
-    run_masks = read_run_masks(run_directory, frame_count)
+    run_masks = read_run_masks(run_directory, frame_count) if run_directory is not None else {}
     frames = sorted({int(f) for f in args.frames}) if args.frames else list(range(frame_count))
     keep_frames = {int(f) for f in (args.keep_frame or [])}
     bank = ExemplarBank(backend=backend, sets=sets)
@@ -712,7 +792,18 @@ def run_pass(args: argparse.Namespace, *, backend: Any | None = None) -> Path:
                         continue
                     token_sets.append(tokens)
                     meta.append((set_name, target, variant, used))
-                results = backend.detect(encoding, token_sets, top_k) if token_sets else []
+                keep = frame_index in keep_frames
+                results = (
+                    backend.detect(
+                        encoding,
+                        token_sets,
+                        top_k,
+                        tracked=[tracked[target] for (_, target, _, _) in meta],
+                        keep_masks=keep,
+                    )
+                    if token_sets
+                    else []
+                )
                 for (set_name, target, variant, used), detections in zip(
                     meta, results, strict=True
                 ):
@@ -732,7 +823,7 @@ def run_pass(args: argparse.Namespace, *, backend: Any | None = None) -> Path:
                     )
                     det_handle.write(json.dumps(row) + "\n")
                     rows_written += 1
-                    if frame_index in keep_frames:
+                    if keep and detections.masks is not None:
                         kept = []
                         for index in range(int(detections.scores.size)):
                             mask = detections.masks[index]
@@ -802,7 +893,7 @@ def run_pass(args: argparse.Namespace, *, backend: Any | None = None) -> Path:
         "schema": MANIFEST_SCHEMA,
         "detections_schema": DETECTIONS_SCHEMA,
         "target_view": target_view,
-        "run_directory": str(run_directory),
+        "run_directory": str(run_directory) if run_directory is not None else None,
         "proxy": str(args.proxy),
         "references": str(Path(args.references).resolve()),
         "reference_sets": [
@@ -1202,7 +1293,10 @@ def build_parser() -> argparse.ArgumentParser:
     run = commands.add_parser("pass", help="offline embeddings + detections over a tracked run")
     common(run)
     run.add_argument(
-        "--run", required=True, help="tracked run directory (observations.jsonl, masks/)"
+        "--run",
+        default=None,
+        help="tracked run directory (observations.jsonl, masks/); without it no tracked-mask "
+        "signals are computed (zero-shot detections only)",
     )
     run.add_argument("--output", required=True)
     run.add_argument("--frame-count", type=int, default=1800)

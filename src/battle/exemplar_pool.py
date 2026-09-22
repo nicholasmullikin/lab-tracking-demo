@@ -1110,6 +1110,217 @@ def compare_table(report: Mapping[str, Any], *, title: str) -> str:
     return "\n".join(lines)
 
 
+# ------------------------------------------------------------------------------ zero-shot
+
+
+def rec2_reference_spec(
+    rec1_spec: Path, *, target_view: str, repository_root: Path
+) -> dict[str, Any]:
+    """Recording 1's C10379 human masks as the only (cross-view) reference set for recording 2."""
+    other = json.loads(rec1_spec.read_text(encoding="utf-8"))
+    same = next(s for s in other["sets"] if s["name"] == "same_view")
+    return {
+        "schema": REFERENCE_SCHEMA,
+        "view": target_view,
+        "sets": [{**same, "name": "cross_view", "distractors": []}],
+        "sources": {"rec1_spec": _fingerprint(rec1_spec, repository_root)},
+        "notes": [
+            "zero-shot: recording-1 exemplars applied to recording 2; no recording-2 mask is a "
+            "reference, so nothing here is leave-reference-out"
+        ],
+        "generated_at": datetime.now(UTC).isoformat(),
+        "claim_boundary": CLAIM_BOUNDARY,
+    }
+
+
+def human_cells_from_calibration(
+    manifest_path: Path,
+) -> tuple[list[dict[str, Any]], list[tuple[int, str]]]:
+    """Accepted human masks (frame, target, mask path) and hidden marks of a calibration workspace."""
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    workspace = manifest_path.parent
+    accepted = []
+    for candidate in manifest["candidates"]:
+        if not candidate.get("human_accepted") or candidate.get("rejected"):
+            continue
+        if candidate.get("selected_by") != "human":
+            continue
+        index = int(candidate["human_selected_candidate_index"])
+        option = next(
+            o
+            for o in candidate["decoder_result"]["candidates"]
+            if int(o["candidate_index"]) == index
+        )
+        accepted.append(
+            {
+                "frame": int(candidate["frame"]["analysis_frame_index"]),
+                "target": str(candidate["intended_target"]),
+                "mask_path": str((workspace / option["mask_uri"]).resolve()),
+                "candidate_id": candidate["candidate_id"],
+            }
+        )
+    hidden = sorted(
+        (int(h["frame"]["analysis_frame_index"]), str(h["intended_target"]))
+        for h in manifest.get("hidden_targets", ())
+    )
+    return accepted, hidden
+
+
+def score_zero_shot(
+    *,
+    pass_dir: Path,
+    calibration_manifest: Path,
+    set_name: str = "cross_view",
+    repository_root: Path,
+) -> dict[str, Any]:
+    """IoU of the exemplar detections against recording 2's human masks; presence at hidden cells."""
+    accepted, hidden = human_cells_from_calibration(calibration_manifest)
+    rows = _load_kept_rows(pass_dir)
+    detections = {}
+    with (pass_dir / "detections.jsonl").open(encoding="utf-8") as handle:
+        for line in handle:
+            if line.strip():
+                row = json.loads(line)
+                detections[(row["frame"], row["target"], row["set"], row["variant"])] = row
+    cells = []
+    for cell in accepted:
+        truth = mask_cache.decode_mask_png(Path(cell["mask_path"]))
+        entry: dict[str, Any] = {
+            **cell,
+            "human_area_px": int(truth.sum()),
+            "variants": {},
+        }
+        for variant in VARIANTS:
+            candidates, used = exemplar_candidates_for_cell(
+                pass_dir,
+                rows,
+                frame=cell["frame"],
+                part=cell["target"],
+                set_name=set_name,
+                variant=variant,
+                truth_mask=truth,
+                gate_box=None,
+            )
+            row = detections.get((cell["frame"], cell["target"], set_name, variant), {})
+            top = max(candidates, key=lambda c: c.score, default=None)
+            best = max(candidates, key=lambda c: c.iou_vs_truth, default=None)
+            entry["variants"][variant] = {
+                "presence": row.get("presence"),
+                "top_score": top.score if top else None,
+                "top_iou_vs_human": top.iou_vs_truth if top else None,
+                "top_area_px": top.area_px if top else None,
+                "best_iou_vs_human": best.iou_vs_truth if best else None,
+                "best_score": best.score if best else None,
+                "candidates": len(candidates),
+                "reference_frames_used": list(used),
+            }
+        cells.append(entry)
+    hidden_rows = []
+    for frame, target in hidden:
+        for variant in VARIANTS:
+            row = detections.get((frame, target, set_name, variant))
+            if row is None:
+                continue
+            hidden_rows.append(
+                {
+                    "frame": frame,
+                    "target": target,
+                    "variant": variant,
+                    "presence": row.get("presence"),
+                    "top_score": row.get("top_score"),
+                    "top_area_px": row.get("top_area_px"),
+                }
+            )
+    summary: dict[str, Any] = {}
+    for variant in VARIANTS:
+        top_ious = [
+            c["variants"][variant]["top_iou_vs_human"]
+            for c in cells
+            if c["variants"][variant]["top_iou_vs_human"] is not None
+        ]
+        best_ious = [
+            c["variants"][variant]["best_iou_vs_human"]
+            for c in cells
+            if c["variants"][variant]["best_iou_vs_human"] is not None
+        ]
+        presence_visible = [
+            c["variants"][variant]["presence"]
+            for c in cells
+            if c["variants"][variant]["presence"] is not None
+        ]
+        presence_hidden = [
+            h["presence"]
+            for h in hidden_rows
+            if h["variant"] == variant and h["presence"] is not None
+        ]
+        summary[variant] = {
+            "cells": len(cells),
+            "top_mean_iou": float(np.mean(top_ious)) if top_ious else None,
+            "best_mean_iou": float(np.mean(best_ious)) if best_ious else None,
+            "top_at_least_0.5": int(sum(1 for v in top_ious if v >= 0.5)),
+            "presence_visible_mean": float(np.mean(presence_visible)) if presence_visible else None,
+            "presence_hidden_mean": float(np.mean(presence_hidden)) if presence_hidden else None,
+            "presence_hidden_cells": len(presence_hidden),
+        }
+    return {
+        "manifest_kind": "exemplar_zero_shot",
+        "pass": relative_uri(pass_dir, repository_root),
+        "calibration_manifest": _fingerprint(calibration_manifest, repository_root),
+        "set": set_name,
+        "accepted_cells": cells,
+        "hidden_cells": hidden_rows,
+        "summary": summary,
+        "generated_at": datetime.now(UTC).isoformat(),
+        "claim_boundary": (
+            f"{len(cells)} human-accepted masks and {len(hidden)} hidden marks on recording 2 so "
+            "far (a calibration in progress): review evidence, not ground truth; the exemplars are "
+            "recording 1's human masks, so this is zero-shot on the new recording."
+        ),
+    }
+
+
+def zero_shot_table(report: Mapping[str, Any]) -> str:
+    lines = [
+        "| frame | part | human px | variant | presence | top score | top IoU vs human | top px | best IoU in top-K |",
+        "|---|---|---|---|---|---|---|---|---|",
+    ]
+
+    def f(v: Any, d: int = 3) -> str:
+        return "-" if v is None else f"{v:.{d}f}"
+
+    for cell in report["accepted_cells"]:
+        for variant, v in cell["variants"].items():
+            lines.append(
+                f"| {cell['frame']} | {cell['target']} | {cell['human_area_px']} | {variant} | "
+                f"{f(v['presence'])} | {f(v['top_score'])} | {f(v['top_iou_vs_human'])} | "
+                f"{v['top_area_px'] if v['top_area_px'] is not None else '-'} | {f(v['best_iou_vs_human'])} |"
+            )
+    lines += [
+        "",
+        "| hidden cell | variant | presence | top score | top px |",
+        "|---|---|---|---|---|",
+    ]
+    for h in report["hidden_cells"]:
+        lines.append(
+            f"| {h['frame']} {h['target']} | {h['variant']} | {f(h['presence'])} | {f(h['top_score'])} | "
+            f"{h['top_area_px'] if h['top_area_px'] is not None else '-'} |"
+        )
+    lines += [
+        "",
+        "| variant | cells | mean top IoU | mean best IoU | top >= 0.5 | presence visible | presence hidden (n) |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for variant, s in report["summary"].items():
+        lines.append(
+            f"| {variant} | {s['cells']} | {f(s['top_mean_iou'])} | {f(s['best_mean_iou'])} | "
+            f"{s['top_at_least_0.5']} / {s['cells']} | {f(s['presence_visible_mean'])} | "
+            f"{f(s['presence_hidden_mean'])} ({s['presence_hidden_cells']}) |"
+        )
+    lines.append("")
+    lines.append(report["claim_boundary"])
+    return "\n".join(lines) + "\n"
+
+
 # ------------------------------------------------------------------------------------- CLI
 
 
@@ -1259,11 +1470,47 @@ def main() -> None:
     )
     compare.add_argument("--title", default="Pool comparison")
 
+    rec2 = commands.add_parser(
+        "rec2-references", help="recording-1 masks as the reference set for recording 2"
+    )
+    rec2.add_argument("--rec1-spec", type=Path, required=True)
+    rec2.add_argument("--target-view", default="C10379-rec2")
+    rec2.add_argument("--output", type=Path, required=True)
+
+    zero = commands.add_parser(
+        "zero-shot", help="score a zero-shot pass against recording 2's human masks"
+    )
+    zero.add_argument("--pass", dest="pass_dir", type=Path, required=True)
+    zero.add_argument("--calibration-manifest", type=Path, required=True)
+    zero.add_argument("--set", default="cross_view")
+    zero.add_argument("--output", type=Path, required=True)
+
     args = parser.parse_args()
     root = Path.cwd().resolve()
     try:
         if args.command == "references":
             _references_main(args, root)
+        elif args.command == "rec2-references":
+            spec = rec2_reference_spec(
+                args.rec1_spec.resolve(), target_view=args.target_view, repository_root=root
+            )
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(json.dumps(spec, indent=2) + "\n", encoding="utf-8")
+            print(
+                f"Reference spec: {args.output} ({len(spec['sets'][0]['references'])} references)"
+            )
+        elif args.command == "zero-shot":
+            report = score_zero_shot(
+                pass_dir=args.pass_dir.resolve(),
+                calibration_manifest=args.calibration_manifest.resolve(),
+                set_name=args.set,
+                repository_root=root,
+            )
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(json.dumps(report, indent=1) + "\n", encoding="utf-8")
+            table = zero_shot_table(report)
+            args.output.with_suffix(".md").write_text(table, encoding="utf-8")
+            print(table)
         elif args.command == "pass":
             _pass_main(args, root)
         elif args.command == "truth-plan":
