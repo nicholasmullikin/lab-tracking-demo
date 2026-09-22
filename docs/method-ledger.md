@@ -5268,3 +5268,139 @@ any knob is turned, and turning one first would make those labels confirmatory.
   `class_counts.md`, `manifest.json`, logs; ignored), `scripts/finebio_dino_detect.py`,
   `scripts/install_finebio_detector.sh`, `docs/SOURCES.md` and `docs/LICENSES.md` entries, this
   entry. View: `uv run rerun runs/finebio-dino-20260921/recording.rrd`.
+
+### Sep 22: dedup pass 1 (hashing, paths, fingerprints, masks, observation loaders; commits `41052ac`, `b6d84af`, `ad2b3f3`, `39f4b3c`, `d813829`, `3f19d31`)
+
+- **What.** The first of the three deduplication passes over `src/battle` and `scripts`: the
+  byte-identical helper copies (SHA-256 loops, `relative_uri`, `ArtifactFingerprint`
+  factories, mask decode / IoU / centroid / overlap, `observations.jsonl` readers) replaced by
+  four shared modules, one commit per family, every family proven equivalent by rebuilding
+  three CPU artifacts before and after. No GPU was used (`CUDA_VISIBLE_DEVICES=""` on every
+  command; the human's calibration worker stayed on the card). Nothing in a manifest, digest
+  or URI moved.
+- **Harness** (`scripts/dedup_equivalence.py`, commit `41052ac`; tests
+  `tests/test_dedup_equivalence.py`). `snapshot --label before|after` rebuilds into
+  `runs/dedup-equivalence/<label>/`: the eight-view r1280 `pm-append` consensus
+  (`battle-build-multiview-part-consensus`, 73-101 s), the 19-arm anchor scoreboard
+  (`battle-anchor-iou` plus `runs/anchor-scoreboard-20260919/scoreboard_table.py`, 6 s) and the
+  `reference_masks`-only interaction review v4 with `--verify-fingerprints` (22 s) followed by
+  `rerun rrd verify`; it also records `pytest -q`, `pytest -q -m real_data` and `ruff check` in
+  `summary.json`. The `before` snapshot at `20fdffd` reproduces the committed consensus and
+  scoreboard runs exactly (manifest and `anchor_iou.json` equal after the volatile keys, the
+  `per_frame.jsonl` and the scoreboard markdown byte for byte). `compare` deep-compares
+  JSON/JSONL after dropping `generated_at`, `created_at`, `elapsed_seconds`, `duration_s`,
+  `runtime_seconds`, `run_id`, every key ending in `_at` and a `comparison_id` that embeds a
+  timestamp, normalising `runs/dedup-equivalence/<label>` inside strings; Markdown as text
+  with the same substitution; `.npz` array by array (the zip container carries a write time);
+  PNG and everything else by bytes. **RRD determinism.** Two builds of the same code do not
+  give the same `.rrd` bytes: the recording carries `RecordingInfo:start_time` and a
+  `log_time` per row, the SDK batches rows into chunks of varying size (`num_rows_max` 579 vs
+  593), and the blueprint store gets fresh view/container UUIDs, so `rerun rrd compare
+  --unordered` fails too. The recording is therefore compared by a chunk-independent content
+  digest through `rerun.experimental.RrdReader`: for every entity path and column the rows of
+  all chunks are concatenated, sorted on the recording's own timelines and hashed (`RowId`,
+  `log_time`, `RecordingInfo:start_time` dropped, string columns label-normalised); the
+  blueprint as a UUID-normalised multiset of rows per entity kind. 282 columns; two builds of
+  unchanged code digest identically and a one-character change to a logged text is caught. A
+  `{uri, sha256}` whose `uri` points into the scratch root (the index's own recording, guide
+  and contact sheet; the consensus's `per_frame.jsonl`) is compared as a placeholder and
+  re-hashed against its file on each side, because the review guide embeds its own absolute
+  path and its digest legitimately differs between labels.
+- **Family 1, hashing** (`b6d84af`; 29 files, +230/-261 in src+scripts). New stdlib-only,
+  Python-3.10-compatible `src/battle/fs_common.py` (`sha256_file`, `write_json` with each
+  caller's `indent`/`sort_keys` and an `atomic` tmp+replace form, `run_timestamp`
+  `%Y%m%dt%H%M%Sz`, `relative_uri` with the resolving default and a `resolve=False` form),
+  imported as `battle.fs_common` or as a sibling module by the workers (`muggled_worker`,
+  `muggled_calibration_worker`, `four_part_video_worker`, `ego_diagnostic`,
+  `dam4sam_streaming`, the finebio and LM-EEC scripts; the samurai/dam4sam/wilor/LM-EEC/
+  FineBio interpreters are 3.10, so no `datetime.UTC`). `digest_cache` hashes through it. The
+  17 local SHA-256 loops and thin wrappers and the 6 `_write_json` copies and 12 run-id
+  timestamp sites now call `digest_cache.sha256_file` (battle venv), `fs_common.sha256_file`
+  (workers) or `fs_common.write_json` / `run_timestamp`. Harness equivalent (13 files).
+- **Family 2, paths** (`ad2b3f3`; 16 files, +43/-101). The 15 `relative_uri` /
+  `_relative_uri` / `_relative` definitions become imports of `fs_common.relative_uri`; no
+  caller caught the strict forms' `ValueError`. `four_part_contract.relative_uri` and
+  `multiview_consensus.relative_uri` stay as re-exports for their importers;
+  `muggled_smoke.relative_uri` stays a one-line wrapper with `resolve=False` because the seed
+  / score / calibration manifests written through it have always compared paths as given
+  (identical whenever the root is `Path.cwd()`, which every CLI uses, but not proven for other
+  roots, so the form is kept); `human_qa.repository_relative_uri` keeps its
+  must-be-inside-the-repository error contract. Harness equivalent.
+- **Family 3, fingerprints** (`39f4b3c`; 22 files, +139/-270). `schemas.fingerprint(path,
+  repository_root, *, source="measured", verify=False)` beside `ArtifactFingerprint`
+  (`source` admits the model's two literals) replaces 19 per-module factories: the 12
+  identical ones plus the public `fingerprint()` of `egoexo_correspondence` and
+  `multiview_reprompt`; `athena_hands` and `kineo_multiview` (uncached `hashlib` loop, same
+  digest), `multiview_seed_transfer` and `calibration_rescale` (a `source` parameter) call it
+  directly; `assembly101_reference` (with its `verify` flag), `assembly101_clock_offset` and
+  `exploratory_comparison._file_fingerprint` keep their existence check and call it inside.
+  Harness equivalent. **Note.** This commit swept in one hunk that was not part of the pass:
+  another worker's uncommitted `api: Literal[..., "muggledsam_sam3_exemplar_detector"]` line
+  in `schemas.py`, staged because `git add schemas.py` takes the whole file; that worker's
+  `0ef1868` records it. Later commits were checked hunk by hunk before staging.
+- **Family 4, masks** (`d813829`; 13 files, +161/-102, of which `mask_ops.py` is 120). New
+  `src/battle/mask_ops.py`: `decode_mask_png` (re-exporting `mask_cache`), `mask_area`,
+  `mask_centroid(mask, *, pixel_center=False, scale=1.0)`, `mask_iou(a, b, *,
+  empty_union=0.0)` with a shape check, `overlap_fraction(mask, region, *, empty=0.0)` and
+  `overlap_fraction_union`. The six IoU copies agreed on the arithmetic and differed at the
+  edges, so the edge is the parameter and each former copy is one call:
+
+  | former copy | missing (`None`) mask | empty union | shapes differ |
+  |---|---|---|---|
+  | `interaction_review._mask_iou` | not accepted | 0.0 | numpy error |
+  | `ensemble_reference.mask_iou` | None | 0.0 | numpy error |
+  | `segmentation_disagreement.mask_iou` | `(0.0, "missing_in_a|b")`; both: `(None, "both_missing")` | `(None, "both_missing")` | numpy error |
+  | `detector_scorecard._iou` | both: NaN; one: 0.0 (an all-False mask counts as missing) | NaN | resize b nearest |
+  | `egoexo_correspondence.iou` | not accepted | None | ValueError |
+  | `multiview_seed_transfer.iou` | not accepted | 0.0 | numpy error |
+
+  `segmentation_disagreement` keeps its reason labels and `detector_scorecard` its presence
+  test and nearest resize as wrappers; the others import the shared function under their old
+  names. Centroids: `ensemble_reference` `(x, y)` or None; `multiview_seed_transfer` the
+  pixel centre as an array, raising on empty; `multiview_consensus.mask_centroid_raw` the
+  pixel centre through `cv2.moments` scaled to raw pixels. Overlap: two single-region copies
+  with 0.0 on an empty mask, one union-of-others copy with NaN. **Evidence.** All 7200
+  `pm-append` masks decode identically through `cv2.IMREAD_GRAYSCALE > 0`, PIL `L > 0` and
+  `mask_cache.decode_mask_png`, and `cv2.moments` and the numpy mean agree bit for bit on
+  all 7200 (every mask non-empty), so one arithmetic serves the three centroids and the PIL
+  copies in `external_smoke_import`, `exploratory_comparison`, `four_part_comparison` and the
+  cv2 reader in `multiview_seed_transfer` call `decode_mask_png`. `tests/test_mask_ops.py`
+  pins every caller's edge contract; the tests were run green against the copies before the
+  copies were deleted. Harness equivalent (the consensus centroids and the review's
+  reference masks are in it). Left in place: the worker-side readers (`four_part_video_worker`,
+  `dam4sam_streaming`, `muggled_calibration_worker`, `ego_diagnostic`) and the uint8 overlay
+  readers that resize or blend (`g3_contact_sheet`, `four_part_segmentation`,
+  `calibration_rescale`); `seed_search._mask_area(path)` already reads through `mask_cache`.
+- **Family 5, observations** (`3f19d31`; 15 files, +145/-220, of which `observations.py`
+  is 103). New `src/battle/observations.py`: `load_observations` (schema-validated, the
+  `muggled_smoke` reader with its `path:line` error), `observations_by_frame`,
+  `rebuild_tracker_observations` (the tolerant known-fields rebuild of the external-worker
+  drivers: `view_id` / `analysis_frame_index` / `source_seconds` and per object `object_id` /
+  `label` / `confidence` / `box` / `mask`, everything else a worker wrote ignored, with a
+  `hand_builder` hook) and `object_for_label(frame, label, *, require_mask=True)`. The two
+  readers stay distinct on purpose: `VersionedModel` forbids extra keys, so the strict reader
+  cannot read a worker's file that carries diagnostics the schema does not declare, and the
+  rebuild must not be used on exporter output whose hands or scores it would drop.
+  `dam4sam_video`, `samurai_video`, `grounding_dino_sam2_video`, `boxmot_track` (no mask key
+  in its records, so the shared mask branch is inert) and `four_part_segmentation` (now also
+  skips blank lines) bind `_load_observations` to the rebuild; `wilor_hands` keeps only its
+  `PerFrameHand` builder; `muggled_smoke` and `fine_substep_pipeline` re-export;
+  `egoexo_correspondence.load_observations` wraps the run directory. Six `next(...)` label
+  lookups (`interaction_review`, `interaction_review_v4` x2, `ensemble_reference`,
+  `multiview_review`, `multiview_consensus`) call `object_for_label`. Harness equivalent.
+- **Totals.** Over the five dedup commits, src+scripts: 954 lines deleted, 718 inserted
+  (312 of them the three new modules with their docstrings), net -236; inside the existing
+  modules -548. Tests: `pytest -q` 646 -> 696 passed (50 new: harness 19, `fs_common` 11,
+  `schemas.fingerprint` 1, `mask_ops` 14, `observations` 5), 9 skipped, 54 deselected;
+  `-m real_data` 52 passed before and after; `ruff check` / `ruff format --check` clean on
+  every tracked file of this pass. Final harness `compare` at `3f19d31`: 13 files, no
+  non-volatile difference; the RRD by content digest as above. Worker imports were
+  smoke-checked under their own interpreters (`muggled_worker`, `muggled_calibration_worker`,
+  `ego_diagnostic`, `finebio_sam3_smoke` under MuggledSAM 3.14; `four_part_video_worker`,
+  `dam4sam_streaming` under samurai 3.10; `lm_eec_driver` under LM-EEC 3.10;
+  `finebio_dino_detect` under the detector venv 3.10), `--help` or import only.
+- **Not done here** (later passes per the plan): the six cloned video drivers and worker
+  `_extract_frames` (pass 2, needs GPU smokes), Rerun logging helpers, queue writers,
+  contact-sheet grids and `metrics.py` (pass 3), the README pointers. Test counts above
+  exclude the other worker's `test_sam3_appearance.py`, `test_exemplar_pool.py` and
+  `test_detector_scorecard_v2.py`, which landed in the same window.
