@@ -1,5 +1,10 @@
 # Labeling sessions prepared on Sep 20 (three labelled on Sep 21; see the outcome lines)
 
+**Sep 24 status (Assembly101 phase closed).** (a), (b), (c) done Sep 21; (d) recording 2 left
+part-labelled (7 accepted masks and 5 hidden marks on 4 of 13 frames, not exported, unscored);
+(e) interior seeds not held (0 of 7 decisions). Nothing further is labelled on Assembly101;
+see the ledger's "Sep 24: Assembly101 phase closed".
+
 **Sep 21 status.** Sessions (a), (b) and (c) were completed by the human on Sep 21; (d)
 recording 2 is in progress in the calibration workspace on port 8765. The outcome of each is
 one line at the end of its section; the numbers are in the ledger's Sep 21 entry. A fifth
@@ -219,6 +224,12 @@ open tooling step: the runs live on the seed-window clip (frame 0 = proxy 383), 
 frames map by `proxy frame - 383`, and `battle-anchor-iou --view static-c10379` needs
 `--anchors` pointed at this workspace's export rather than recording 1's.
 
+**Outcome (Sep 24, at the close).** Not labelled to completion: the workspace holds 7 accepted
+masks (chassis 456 / 483 / 552 / 1191, cabin 456 / 1191, rear_body 1191) and 5 hidden marks
+(interior 456 / 552 / 1191, rear_body 456 / 552) on 4 of the 13 frames, 40 of 52 cells untouched;
+no export, no human record, `battle-anchor-iou` never run; recording 2 stays unscored and the
+generalization claim stays open (the anchor config has no status field and is unchanged).
+
 ## (e) Interior seeds at frame 0: 7 accept/reject decisions (about ten minutes, no GPU)
 
 Prepared Sep 21 by `battle-human-accepted-seeds interior-accept`. The interior is in the
@@ -241,6 +252,10 @@ Record decisions in `configs/qa/interior_seed_decisions.template.json` (copy to
 `decision` and `accepted_candidate`). Accepting the marked candidate changes the seed's
 provenance to `agent_proposed_human_accepted`; accepting another one, or rejecting all, means
 that view's four-part run is rerun with your choice (or three parts).
+
+**Outcome (Sep 24, at the close).** Not held: `configs/qa/interior_seed_decisions.template.json`
+has 0 of 7 decisions and is left as the template; the five seeded views keep provenance
+`geometric_from_two_human_views`, unconfirmed, and every four-part number on them is labelled so.
 
 ## Order and time
 

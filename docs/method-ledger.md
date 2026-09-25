@@ -35,28 +35,32 @@ no-annotation, no-accuracy-claims rule.
 
 ### Goals scorecard
 
-| Goal (from the Sep 8 ask and plan) | Status | Evidence |
+Final statuses as of the Sep 24 close (the Sep 18 wording each row replaced is in the git
+history of this file; the closing record is
+[Sep 24: Assembly101 phase closed](#sep-24-assembly101-phase-closed)).
+
+| Goal (from the Sep 8 ask and plan) | Status at close (Sep 24) | Evidence |
 | --- | --- | --- |
-| Typed manifests, fixture tests, inference-free Rerun exporter | Done | `src/battle/schemas.py`, `src/battle/exporter.py`; 419 tests in the 11 s default tier, 37 more behind `real_data` and 1 behind `gpu` |
-| Pin one Assembly101 segment with source/analysis/annotation/pose clocks | Done | `configs/clips/*.json`; nusar-9033, 215.000–395.000 s |
-| MuggledSAM/SAM3 running over the full 180 s static view | Done (aligned hybrid: three text, one reviewed mask) | [Sep 14 aligned hybrid](#sep-14-aligned-static-hybrid-candidate) |
-| MuggledSAM/SAM3 running over the full 180 s ego view | Done, but only with human-seeded masks | [Four-target 180 s baseline](#sep-9-evening-four-target-180-second-ego-baseline) |
-| Both views on one synchronized Rerun timeline | Done; the 9-pose-frame (0.150 s) static lag found Sep 17 is now applied in the rebuilt two-view recordings `runs/four-part-focused-first-minute-comparison-offset-v2/` and `runs/ego-static-synchronized-comparison-offset-v2/` (static entries shift by 4 integer analysis frames, exact on `analysis_time`); the zero-offset originals are kept as superseded | `battle-build-ego-static-comparison`; [Sep 15 four-part experiment](#sep-15-four-part-static-reassembly-experiment); [Sep 18 Track 1](#sep-18-track-1-one-calibrated-rig-for-all-twelve-views-and-the-two-view-clock-fix) |
+| Typed manifests, fixture tests, inference-free Rerun exporter | Done. 762 tests in the default tier, 62 behind `real_data`, 2 behind `gpu`; ruff clean; three dedup passes (Sep 22) removed 1,675 lines inside the pre-existing modules with equivalence proven on three CPU artifacts | `src/battle/schemas.py`, `src/battle/exporter.py`; [dedup summary](#sep-22-dedup-passes-1-3-summary); [close](#sep-24-assembly101-phase-closed) |
+| Pin one Assembly101 segment with source/analysis/annotation/pose clocks | Done, twice: nusar-9033 215.000–395.000 s (focused four-part window 294.000–386.700 s, first minute retained), and recording 2 nusar-9061 374–454 s fetched and calibrated Sep 20 for the generalization test | `configs/clips/*.json`; [Track C1](#sep-20-track-c1-of-the-multicam-plan-a-second-recording-fetched-and-prepared-nusar_9061) |
+| MuggledSAM/SAM3 running over the full 180 s static view | Done (aligned hybrid: three text, one reviewed mask). Superseded as the comparison unit by the first minute of the four-part window at 1280 px `pm-append`, **0.743** mean IoU on the 52 human anchor cells (13 frames of C10379) | [Sep 14 aligned hybrid](#sep-14-aligned-static-hybrid-candidate); [memory arms](#sep-19-sam3-correction-memory-arms-on-c10379-at-1280-plan-step-1b); `runs/anchor-scoreboard-20260919/anchor_iou.md` |
+| MuggledSAM/SAM3 running over the full 180 s ego view | Done, only with human-seeded masks. On the retained first minute e4 scores 0.558 (`r1280`, 3 parts) -> 0.589 (human-accepted 4-part seeds) on its 26-frame anchors; the interior stays behind the head camera at frame 0 and a per-slot start frame was never built | [Four-target 180 s baseline](#sep-9-evening-four-target-180-second-ego-baseline); [Sep 21, night](#sep-21-night-the-three-labelling-sessions-acted-on-human-accepted-seeds-an-interior-seed-from-two-human-masks-the-four-part-rerun-the-c10119-rear_body-finding-and-a-distractor-guard); `runs/multiview-reprompt-20260921/anchor_iou_e4.md` |
+| Both views on one synchronized Rerun timeline | Done. The 9-pose-frame static lag (Sep 17) is applied in the `-offset-v2` two-view recordings and per view in every multi-camera build; the final surface is the **v6** recording (`runs/interaction-review-first-minute-v6/interaction_review_combined.rrd`) with three blueprint presets (`segmentation.rbl`, `hands.rbl`, `multiview.rbl`) | [Sep 18 Track 1](#sep-18-track-1-one-calibrated-rig-for-all-twelve-views-and-the-two-view-clock-fix); [v6](#sep-20-v6-review-surface-one-recording-with-three-blueprint-presets-track-d-of-the-multicam-plan); [`docs/review-guide-2026-09-20-multiview-presets.md`](review-guide-2026-09-20-multiview-presets.md) |
 | Five pre-accuracy measures recorded per run | Done | Every `worker_result.json` and `manifest.json` |
-| MediaPipe Hands static-view baseline (core spine) | Selected 60 s run complete | [hand-pose adapter](#hand-pose-adapter) |
-| Second method in the viewer (MediaPipe) | Done; merged into focused first-minute comparison | [hand-pose adapter](#hand-pose-adapter) |
-| Fixed two-timestamp human QA per completed method | Records prepared; human dispositions pending | Human-selected source frames 14,868/21,732; aligned static, ego, and preserved historical records under `docs/qa/` |
-| Exploratory queue (WiLoR, BoxMOT, CLIP + Drop-DTW, Grounded-SAM-2, SAMURAI, DAM4SAM, ATHENA, Kineo) | All eight attempted in one autonomous pass at smoke tier; four-part segmentation arms and a unified review surface built; ATHENA blocked on intrinsics until Sep 17 and Kineo body-only partial, both closed by the Sep 18 multi-camera rows below | [Sep 16 queue](#sep-16-exploratory-queue-autonomous-pass); [review surface](#sep-16-final-unified-exploratory-review-surface) |
-| Multi-view geometry (8 static + 4 ego cams, dataset extrinsics, fitted intrinsics) | Done, as external context (not in the plan): 7 static views fetched by HTTP Range for the 92.7 s window only, per-view clock offsets measured (+5..+9 pose frames static, 0 ego), 12 camera estimates checked in; the rig reproduces the dataset's shipped 2D to <= 0.0023 px RMS (static) and 0.27-5.1 px (ego) | `configs/assembly101/`, `runs/assembly101-multiview-rig-check/`; [Track 0](#sep-18-track-0-of-the-overnight-multicam-pass-all-static-views-per-view-clocks-per-view-cameras); [Track 1](#sep-18-track-1-one-calibrated-rig-for-all-twelve-views-and-the-two-view-clock-fix) |
-| Cross-view SAM3 consensus + visual hull | Done on the first minute with agent-authored seeds on 7 static views and e4 (no human has reviewed a mask on them); interior never seeded off C10379; consensus contradicts C10379 on chassis 585-702 and 1089-1172 and rear_body 1677-1800, the hull agrees on the chassis windows; 13 consensus and 37 hull `not_contact_eligible` proposals await human dispositions, nothing substituted | `runs/multiview-part-consensus-first-minute/`, `runs/multiview-visual-hull-first-minute/`, `runs/multiview-static-comparison-first-minute/`; [Track 2](#sep-18-track-2-of-the-overnight-multicam-pass-cross-view-sam3-with-a-geometric-combiner); [Track 5](#sep-18-track-5-of-the-overnight-multicam-pass-per-part-visual-hulls-from-eight-silhouettes); [Track 6](#sep-18-track-6-of-the-overnight-multicam-pass-the-other-ego-cameras) |
-| Multi-view hand triangulation (ATHENA on MediaPipe/WiLoR) | Done: ATHENA's own filter on an 8-view MediaPipe arm and a 3-view WiLoR arm; wrist disagreement vs the dataset tracker 20-29 mm median, fingertips roughly twice that; WiLoR's 3D hopping shown to be its per-frame depth and a triangulated wrist is 3.5-6x steadier (measured, not built) | `runs/athena-hands-first-minute-mediapipe/`, `runs/athena-hands-first-minute-wilor/`; [Track 3a](#sep-18-track-3a-mediapipe-on-every-static-view-plus-the-ego-mono-stress-test); [Track 3b](#sep-18-track-3b-athena-multi-view-hand-triangulation-against-the-dataset-3d); [GPU results](#sep-18-gpu-queue-results-wilor-arm-kineo-ego-exo) |
-| Kineo multi-camera | Done, both arms in 8.4 min of the 2 h box: known-camera wrists 17 mm median from the dataset's; self-calibrated cameras 7.3 deg / 115 mm median from the dataset's after similarity alignment (body consistent up to a similarity, camera placement not) | `runs/kineo-multiview-{known,selfcal}-first-minute-20260918/`; [Track 4 prep](#sep-18-track-4-preparation-kineo-on-all-eight-static-views-cpu-only-gpu-jobs-queued); [GPU results](#sep-18-gpu-queue-results-wilor-arm-kineo-ego-exo) |
-| Ego-exo correspondence (LM-EEC) | Done at 12 keyframes, un-deferred at the user's request: exo->ego IoU vs the ego SAM3 mask 0.41 chassis / 0.27 interior median, 0.00 rear_body and cabin; checkpoint direction inferred from the file name; hands skipped (no ego hand masks) | `runs/egoexo-correspondence-first-minute-20260918/`; [Track 7 prep](#sep-18-track-7-preparation-lm-eec-ego-exo-correspondence-cpu-only-gpu-job-queued); [GPU results](#sep-18-gpu-queue-results-wilor-arm-kineo-ego-exo) |
-| No training, no annotation project, no accuracy claims | Held, with one gate crossed on request: dataset poses and fine-grained labels were acquired Sep 17 as review context only | Reviewed masks are calibration seeds, not labels; no metric vs. ground truth anywhere; [Sep 17 acquisition](#sep-17-assembly101-poses-extrinsics-and-fine-grained-annotations-selective-acquisition) |
-| Four physical components through reassembly | Focused 92.7 s run completed; the first minute was human-reviewed Sep 17 and is the retained comparison window; identity failures at 279/573/1043 are the documented SAM3 limit | [Sep 15 four-part experiment](#sep-15-four-part-static-reassembly-experiment); [Sep 17 human review](#sep-17-first-minute-v4-human-review-and-follow-up-rebuild) |
-| Git history from the start | Missed, then repaired | First commit Sep 13 after five days of uncommitted work |
-| FineBio | Still pending | Not part of any run |
-| Audio | Deferred by plan | Not revisited |
+| MediaPipe Hands static-view baseline (core spine) | Done: selected 60 s run, then every static view (Track 3a) and the ATHENA triangulation below | [hand-pose adapter](#hand-pose-adapter); [Track 3a](#sep-18-track-3a-mediapipe-on-every-static-view-plus-the-ego-mono-stress-test) |
+| Second method in the viewer (MediaPipe) | Done; in the v6 recording under the `hands.rbl` preset with WiLoR, the dataset hand poses and ATHENA | [hand-pose adapter](#hand-pose-adapter); [v6](#sep-20-v6-review-surface-one-recording-with-three-blueprint-presets-track-d-of-the-multicam-plan) |
+| Fixed two-timestamp human QA per completed method | **Closed without dispositions.** Records prepared Sep 13 (`docs/qa/*.human-qa.json`, all `pending`); never marked pass/flag/fail. Superseded Sep 19 by the human review anchors and `battle-anchor-iou` as the yardstick (52 + 64 + 75 cells on three cameras) | `docs/qa/`; [anchors](#sep-18-human-review-anchors-labeling-run-prepared-not-labelled-sep-18-labelled-sep-19); [close](#sep-24-assembly101-phase-closed) |
+| Exploratory queue (WiLoR, BoxMOT, CLIP + Drop-DTW, Grounded-SAM-2, SAMURAI, DAM4SAM, ATHENA, Kineo) | All eight attempted at smoke tier (Sep 16). DAM4SAM then given a fair run (shared predictor, large checkpoint, the SAM3 schedule): **0.715**, tied with SAM3-1280 (0.724) within the 0.01 rule and the ensemble's fallback arm; SAMURAI+schedule unsupported upstream; the rest stay smoke-tier evidence. Cutie / XMem (E2) never tried | [Sep 16 queue](#sep-16-exploratory-queue-autonomous-pass); [DAM4SAM arms](#sep-19-dam4sam-and-samurai-arms-under-the-sam3-run-conditions-plan-step-2) |
+| Multi-view geometry (8 static + 4 ego cams, dataset extrinsics, fitted intrinsics) | Done, as external context: 7 static views fetched for the 92.7 s window, per-view clock offsets measured, 12 camera estimates checked in; the rig reproduces the dataset's shipped 2D to <= 0.0023 px RMS (static) and 0.27-5.1 px (ego); the same tooling calibrated recording 2 | `configs/assembly101/`, `runs/assembly101-multiview-rig-check/`; [Track 0](#sep-18-track-0-of-the-overnight-multicam-pass-all-static-views-per-view-clocks-per-view-cameras); [Track 1](#sep-18-track-1-one-calibrated-rig-for-all-twelve-views-and-the-two-view-clock-fix) |
+| Cross-view SAM3 consensus + visual hull | Done and answered: **multicam is a detector, not yet a corrector.** Consensus-only corrections with decoder-score ranking reach 0.659 (chassis 0.609, within 0.03 of the human's 0.637) against 0.743 human-corrected and a 0.591 seed-only floor; the interior gap (0.288 vs 0.585) is what no other camera tracks. Seeds for rear_body / cabin transfer automatically (0.80 / 0.95 held-out), chassis / interior do not (0.53 / 0.47). The 13 consensus and 37 hull `not_contact_eligible` proposals of Sep 18 were never dispositioned | [multicam closing](#closing-the-multicam-plan-the-two-goals-answered-with-numbers); [decoder-score run](#sep-20-evening-the-named-next-experiment-run-decoder-score-ranking-in-the-consensus-re-prompt-loop-commit-625321a-tooling-this-entrys-commit); `runs/multiview-reprompt-2026092{0,1}/anchor_iou_arms.md` |
+| Multi-view hand triangulation (ATHENA on MediaPipe/WiLoR) | Done: ATHENA's own filter on an 8-view MediaPipe arm and a 3-view WiLoR arm; wrist disagreement vs the dataset tracker 20-29 mm median, fingertips roughly twice that; WiLoR's 3D hopping shown to be its per-frame depth and a triangulated wrist is 3.5-6x steadier (measured, not built). Unchanged since Sep 18 | `runs/athena-hands-first-minute-mediapipe/`, `runs/athena-hands-first-minute-wilor/`; [Track 3b](#sep-18-track-3b-athena-multi-view-hand-triangulation-against-the-dataset-3d); [GPU results](#sep-18-gpu-queue-results-wilor-arm-kineo-ego-exo) |
+| Kineo multi-camera | Done, both arms in 8.4 min of the 2 h box: known-camera wrists 17 mm median from the dataset's; self-calibrated cameras 7.3 deg / 115 mm median from the dataset's after similarity alignment. Unchanged since Sep 18 | `runs/kineo-multiview-{known,selfcal}-first-minute-20260918/`; [GPU results](#sep-18-gpu-queue-results-wilor-arm-kineo-ego-exo) |
+| Ego-exo correspondence (LM-EEC) | Done at 12 keyframes: exo->ego IoU vs the ego SAM3 mask 0.41 chassis / 0.27 interior median, 0.00 rear_body and cabin; checkpoint direction inferred from the file name, never checked. Unchanged since Sep 18 | `runs/egoexo-correspondence-first-minute-20260918/`; [GPU results](#sep-18-gpu-queue-results-wilor-arm-kineo-ego-exo) |
+| No training, no annotation project, no accuracy claims | Held. Two gates crossed on request and labelled: dataset poses and fine-grained labels acquired Sep 17 as review context; human review anchors (52 cells C10379, 64 C10119, 75 e4) labelled Sep 19-21 as review evidence for ranking arms, one person's choice of decoder masks, not ground truth. No metric against ground truth anywhere; every table says so | [Sep 17 acquisition](#sep-17-assembly101-poses-extrinsics-and-fine-grained-annotations-selective-acquisition); [anchors](#sep-18-human-review-anchors-labeling-run-prepared-not-labelled-sep-18-labelled-sep-19) |
+| Four physical components through reassembly | First minute closed at **0.743** (`pm-append`, human seeds + four corrections, C10379). On C10119 the chassis reaches 0.740 with five exemplar corrections at agent onsets (4-part seeds alone 0.339; 3-part `r1280` 0.758); the interior is the part that stays human on every camera (0.585 human, 0.288-0.363 agent). The late reassembly beyond the first minute (target loss at 1946, 2381, 2578, 2684) was never dispositioned | [Sep 17 human review](#sep-17-first-minute-v4-human-review-and-follow-up-rebuild); [exemplar Track B](#sep-22-exemplar-detections-as-correction-candidates-track-b-of-the-exemplar-plan-the-c10119-chassis-arm); [close](#sep-24-assembly101-phase-closed) |
+| Git history from the start | Missed, then repaired; first commit Sep 13 after five days of uncommitted work. The phase closes at the annotated tag `assembly101-lab-close` | `git tag -n9 assembly101-lab-close` |
+| FineBio | Started Sep 21 (SAM3 smoke, shipped detector run); next phase planned, see [`docs/plan-2026-09-24-finebio-detector-seeded-lab.md`](plan-2026-09-24-finebio-detector-seeded-lab.md) | [FineBio first look](#sep-21-finebio-first-look-sam3-zero-shot-text-prompts-on-one-first-person-clip); [shipped detector](#sep-21-finebio-shipped-detector-first-run-mmdetection-dino-and-deformable-detr-on-the-cpu-beside-the-sam3-smoke) |
+| Audio | Deferred by plan; never revisited; closed with the phase | [close](#sep-24-assembly101-phase-closed) |
 
 The honest summary, as of the morning of Sep 18: nine-plus methods attempted, one clip,
 one minute reviewed closely. SAM3 with human seeds is still the only method that completed
@@ -76,6 +80,20 @@ view in about half the keyframes and never the rear body or cabin; and the datas
 hand poses, which every one of those numbers is measured against, are themselves a
 tracker's estimate that stretches when fingers hide behind the held part. Every number on
 that line is cross-source disagreement between estimates, not accuracy.
+
+The closing summary, Sep 24: what changed after Sep 18 is the yardstick and what it showed.
+The human labelled review anchors on three cameras (Sep 19-21) and `battle-anchor-iou`
+replaced self-consistency; on those anchors 1280 px and an appended prompt bank are the SAM3
+run condition (`pm-append` 0.743 against the old reference's 0.668), DAM4SAM-large ties it,
+and ensemble v2 is a named candidate with no adoption decision recorded. The multicam block
+answered its two questions with numbers: SAM3's own object score detects its failures as a
+ranker (AUROC 0.91-0.96) but no threshold transfers; other cameras seed the rear body and
+cabin automatically and not the chassis or interior, and their corrections reach the human's
+level on the chassis (0.609 vs 0.637) and nowhere near it on the interior. SAM3's own
+exemplar detector then cleared the correction bar on one camera for one part (C10119 chassis
+0.740). Recording 2 ran with zero human input and was never scored. The phase closes there;
+the numbers, dispositions and open items are in
+[Sep 24: Assembly101 phase closed](#sep-24-assembly101-phase-closed).
 
 ### Timeline
 
@@ -443,6 +461,28 @@ right-hand box swallows the upright pipette, nothing fires on the fiducials. Qua
 annotations here, no accuracy claim. Record:
 [FineBio shipped detector](#sep-21-finebio-shipped-detector-first-run-mmdetection-dino-and-deformable-detr-on-the-cpu-beside-the-sam3-smoke).
 
+#### Sep 22: exemplar detectors and three dedup passes
+
+SAM3's own memory-free signals (mask-pooled backbone embeddings, the visual-exemplar
+detector) scored as failure detectors on three cameras and used as a correction candidate
+pool: the one pool to clear the bar (C10119 chassis, cross-view exemplars, 0.740 on the
+anchors). Three deduplication passes over `src/battle` and `scripts` (-1675 lines inside the
+pre-existing modules, tests 646 -> 762), each proven equivalent on three CPU artifacts. Records:
+[Track A](#sep-22-sam3-appearance-detectors-on-three-cameras-track-a-of-the-exemplar-plan-commits-0ef1868-fb426c2-d914bef-d5298a8-7f608e5-329eea1-bc794a1),
+[Track B](#sep-22-exemplar-detections-as-correction-candidates-track-b-of-the-exemplar-plan-the-c10119-chassis-arm),
+[dedup summary](#sep-22-dedup-passes-1-3-summary).
+
+#### Sep 24: the Assembly101 phase closed
+
+Decision: close now; nothing else runs on Assembly101 unless a FineBio result sends us
+back. No labeling, no GPU, no run re-scored. Dispositions recorded as they stand (ensemble v2
+a candidate with no adoption decision recorded; recording 2 unscored; interior seeds
+unconfirmed; the resolution plan's E2-E9 and the exemplar plan's remaining items not run), the
+goals table above finalized, one table of final numbers, the `runs/` archive list written
+(nothing deleted), the tag `assembly101-lab-close` placed, and the next phase written down as
+[`docs/plan-2026-09-24-finebio-detector-seeded-lab.md`](plan-2026-09-24-finebio-detector-seeded-lab.md)
+(planned, not started). Record: [Sep 24: Assembly101 phase closed](#sep-24-assembly101-phase-closed).
+
 ### Plan versus actual
 
 What the plan said, what happened instead, and why, in one line each.
@@ -550,12 +590,15 @@ Technical:
   correspondence.
 - Human-review nits not yet addressed: SAM mask palette (orange on yellow), skeleton lines
   for Kineo body joints.
-- 74 unreferenced run directories (1.93 GB) plus the superseded
-  `runs/interaction-review-first-minute-v4-local` await a deletion decision;
-  `scripts/prune_runs.py` lists them and never deletes.
+- 76 unreferenced run directories (1.94 GB) and the archive groups listed in
+  [`docs/qa/runs-archive-list-2026-09-24.md`](qa/runs-archive-list-2026-09-24.md) await a
+  deletion decision; `scripts/prune_runs.py` lists them and never deletes (Sep 24 listing;
+  the `-v4-local` root named here on Sep 18 no longer exists).
 - `yellow_toy_top` leaves the frame at ~216.2 s in every 180 s arm; its coverage numbers
   describe the scene, not the tracker.
-- FineBio access and audio: never entered; close out explicitly or drop.
+- FineBio: entered Sep 21 (SAM3 smoke, shipped detector); the next phase is planned in
+  [`docs/plan-2026-09-24-finebio-detector-seeded-lab.md`](plan-2026-09-24-finebio-detector-seeded-lab.md).
+  Audio: never entered, closed with the phase (Sep 24).
 
 ### Sep 13: fixed two-timestamp QA infrastructure
 
@@ -6030,3 +6073,141 @@ new command against them) and the difference in twelve shared modules
 tier, 52 -> 62 in `real_data`. Deliberately not merged, as the plan said: the seed and score
 module families, the per-product blueprints, the worker model code, the FineBio track loop
 and the 83 `main()` entry points beyond their shared fragments.
+
+### Sep 24: Assembly101 phase closed
+
+- **What this is.** The decision was "close now": nothing else runs on Assembly101 unless a
+  FineBio result sends us back. This entry records the dispositions as they stand on Sep 24
+  (nothing inferred, nothing labelled, no run re-scored), finalizes the goals scorecard at the
+  top of this file, puts the final numbers in one table with their counts and sources, lists
+  what `runs/` holds for the user's deletion decision (nothing deleted), and names the tag.
+  CPU only; no GPU job; the calibration web server was not touched. Every IoU below is against
+  one person's choice of SAM3 image-decoder masks on a handful of frames of one camera at a
+  time: review evidence that ranks arms against each other, not ground truth, not a dataset, no
+  accuracy claim. CC BY-NC 4.0 on every frame and everything derived from it.
+- **Ensemble v2.** Ensemble v2 remains the named candidate; **no adoption decision was recorded
+  by the human.** The v4 builder's default reference stays v1 (also unchanged):
+  `configs/ensemble_reference/first_minute_v2.json` builds
+  `runs/ensemble-reference-first-minute-v2/` (0.743 on the 52 anchor cells, arm choice
+  selection-biased), and `battle-build-interaction-review-v4` still defaults to the v1 ensemble.
+  Record: [ensemble v2](#sep-20-ensemble-reference-v2-the-named-candidate-plan-step-3-deciding-half-closes-the-resolution-and-dam4sam-follow-up-plan).
+- **Recording 2 (`nusar_9061`) C10379 anchors: not labelled to completion; recording 2 stays
+  unscored; the generalization claim stays open.** The workspace
+  `runs/human-review-anchors-nusar_9061-static-c10379/` is kept as-is. Its
+  `calibration_manifest.json` on Sep 24 holds 7 decoded candidates, every one with
+  `human_accepted: true`, `selected_by: human` (chassis at 456 / 483 / 552 / 1191, cabin at
+  456 / 1191, rear_body at 1191, all decoder candidate 0), and 5 human `hidden` marks (interior
+  456 / 552 / 1191, rear_body 456 / 552): 12 of the 52 cells on 4 of the 13 frames, the other 9
+  frames untouched, `final_proposal_uri` null, no `battle-anchor-export` run, no human record
+  under `docs/qa/`, `battle-anchor-iou` never run on it. (The Sep 22 zero-shot exemplar check
+  used those 7 masks and 5 marks as they stood; the close-out brief described the workspace as
+  "7 candidates, 0 accepted", and the manifest says otherwise, so the manifest's state is what
+  is written here.) The zero-human-input run `runs/rec2-automatic-20260920/` and its
+  consensus-only arm therefore have no anchor score, and "proven on a second recording" is not
+  claimed. `configs/qa/nusar_9061_review_anchors_c10379.json` has no status field (its
+  `provenance` block carries `author`, `reviewed_at`, `tool`, `notes`, the first two and the last
+  null) and is left unchanged; this paragraph is the status record. Records:
+  [C2/C3](#sep-20-track-c2c3-recording-2-nusar_9061-seeded-and-run-with-zero-human-input-commits-78f2eca-21da378-cf8007e),
+  session (d) in [`docs/labeling-sessions-2026-09-20.md`](labeling-sessions-2026-09-20.md).
+- **Interior seeds on five statics: unconfirmed.** The frame-0 interior seeds on C10095, C10115,
+  C10119, C10390 and C10404 keep provenance `geometric_from_two_human_views` (triangulated from
+  the human's C10379 frame-0 mask and C10119 anchor at 41, decoded and filtered by the agent);
+  C10118 and C10395 have no accepted candidate and ran with three parts.
+  `configs/qa/interior_seed_decisions.template.json` has 0 of 7 decisions (`decision` and
+  `accepted_candidate` null on every cell, `author` / `reviewed_at` null); session (e) was not
+  held; the template is left in place. Every four-part number on those views (the Sep 21 rerun,
+  the four-part consensus, the C10119 interior 0.106-0.290) rests on unconfirmed interior seeds
+  and is labelled so where it appears. Record:
+  [Sep 21, night](#sep-21-night-the-three-labelling-sessions-acted-on-human-accepted-seeds-an-interior-seed-from-two-human-masks-the-four-part-rerun-the-c10119-rear_body-finding-and-a-distractor-guard).
+- **Extended experiments E2-E9 of the resolution plan: not run** (the plan file's todos
+  `e-cutie`, `e-bidir`, `e-negprompt`, `e-reprompt`, `e-appearance`, `e-roi1080`, `e-anchors2`,
+  `e-matrix` stay `pending`; the plan has no Outcome section, its main track closed in the
+  Sep 20 ensemble v2 entry). Per item, with what later work touched instead: E2 Cutie / XMem,
+  not tried. E3 bidirectional SAM3 from the 1700 anchors, not tried. E4 automatic mutual
+  negative prompts in the worker, not built. E5 consensus/hull-driven re-prompting, not run as
+  specified; the multicam plan's B4 loop (`battle-multiview-reprompt`, Sep 20) is the same idea
+  with a different design and is recorded there. E6 DINOv2 appearance templates, not built;
+  the exemplar plan's Track A (Sep 22) used SAM3's own backbone embeddings and exemplar
+  detector instead, and the Sep 19-20 seed search found DINOv2 exemplar re-ranking no better
+  than the decoder score. E7 tracked-ROI SAM3 at native 1080p, not run (1920 full-frame
+  saturated at 0.708, so the premise lapsed). E8 a second anchor set on C10115 plus extra C10379
+  frames in 1230-1300, around 1700 and inside 573-722, not done; anchors were labelled on
+  C10119 and e4 instead (Sep 21), so the 1235 screwdriver correction on C10379 is still unscored.
+  E9 method x view matrix, not run.
+- **Remaining items of the multicam and exemplar plans: not run.** Multicam plan (Outcome,
+  Sep 20; `g-label` partly done Sep 21): recording 2's 13 frames (above); the per-slot start
+  frame for e4's interior (first human e4 interior mask at 224); the 13 consensus and 37 hull
+  `not_contact_eligible` proposals of Sep 18 (never dispositioned); the confidence series as a
+  gate (kept as review context). Exemplar plan (Outcome, Sep 22): iteration 2 of the C10119
+  chassis arm (capped at two, budget spent on the passes); a C10379 consensus-only-exemplar arm
+  (chassis 0.594 / harm 0.23 and interior 0.323 / 0.50 below the bar, the one rear_body onset
+  rejected); logging `confidence_v2` into a v6 rebuild (command written in the Track A entry,
+  not run); the README lines for `battle-exemplar-pool` and `battle-detector-scorecard-v2`
+  (kept in the Track A entry because `README.md` holds the user's uncommitted edit).
+- **Older open items closed as not dispositioned** (they stay listed under "Open items" as the
+  record of what was never decided): the fixed two-timestamp QA records under `docs/qa/` (all
+  `pending`; superseded by the anchors as the yardstick on Sep 19); the hidden-interior
+  semantics for [1024, 1172); the late reassembly beyond the first minute (target loss at
+  1946 / 2381 / 2578 / 2684); the G5 claims gate including the CC BY-NC question for any demo
+  use; the LM-EEC checkpoint direction; seeding e1 mid-minute.
+- **The user's working tree.** The uncommitted `README.md` hunk (the Tailscale review-serving
+  subsection removed) and the untracked `test.sh` are the user's; neither was staged, reverted
+  or committed in this pass. The README edits of this entry were staged by hunk.
+- **Final numbers.** One table; each row names its truth set and where the number is on disk.
+  Truth sets: C10379 = 51 labelled + 1 hidden cells on 13 frames (`runs/human-review-anchors-first-minute/`);
+  C10119 = 63 labelled + 1 hidden on 26 frames (40 cells skipped); e4 = 52 labelled + 23 hidden
+  on 26 frames (29 skipped). Every number was re-read from the artifact named in its row on
+  Sep 24; none differed from the ledger.
+
+  | Measure | Value | Truth set / counts | Where |
+  | --- | --- | --- | --- |
+  | SAM3 1280 `pm-append` (human frame-0 seeds + corrections 327 / 900 / 1172 / 1235), C10379 | **0.743** all (chassis 0.637, interior 0.585, rear_body 0.790, cabin 0.962); 1265 px on the hidden 1700 cell | C10379, 51 / 1 | `runs/anchor-scoreboard-20260919/anchor_iou.md`; [memory arms](#sep-19-sam3-correction-memory-arms-on-c10379-at-1280-plan-step-1b) |
+  | Ensemble reference v2 (candidate; `pm-append` primary, DAM4SAM-large fallback in label-free consensus intervals) | **0.743** (arm choice saw these anchors: selection-biased, not out-of-sample) | C10379, 51 / 1 | same file, row `ensemble-reference-v2`; [ensemble v2](#sep-20-ensemble-reference-v2-the-named-candidate-plan-step-3-deciding-half-closes-the-resolution-and-dam4sam-follow-up-plan) |
+  | `off-r1280-sched` (1280 px, replace-memory corrections; the run condition before `pm-append`) | 0.724 | C10379, 51 / 1 | same file |
+  | Old reference (Sep 18 ensemble v1 primary = `off-r720-sched`, byte-equal on the first minute) | 0.668 (ensemble v1 0.681 with 3 missing cells) | C10379, 51 / 1 | same file, rows `reference`, `ensemble-reference-v1` |
+  | `seed-only-1280` (human frame-0 seeds, no corrections: the floor) | 0.591 (chassis 0.404, interior 0.228) | C10379, 51 / 1 | `runs/multiview-reprompt-20260920/anchor_iou_arms.md` |
+  | `consensus-only-ds` (frame-0 seeds + agent corrections from the cross-view consensus, decoder-score ranking) | 0.659 (chassis 0.609, interior 0.288); 4-part variant 0.659 (chassis 0.534, interior 0.363) | C10379, 51 / 1 | `runs/multiview-reprompt-20260920/anchor_iou_arms.md`, `runs/multiview-reprompt-20260921/anchor_iou_arms.md` |
+  | `human-plus-consensus-ds-4part` (human corrections + agent corrections) | 0.742 (vs 0.743 human only) | C10379, 51 / 1 | `runs/multiview-reprompt-20260921/anchor_iou_arms.md` |
+  | `dam4sam-large-1024-sched-60s` (shared predictor, large checkpoint, the SAM3 schedule) | 0.715 (chassis 0.697, the highest chassis on the C10379 scoreboard; tied with SAM3-1280's 0.724 under the 0.01 rule) | C10379, 51 / 1 | `runs/anchor-scoreboard-20260919/anchor_iou.md`; [DAM4SAM arms](#sep-19-dam4sam-and-samurai-arms-under-the-sam3-run-conditions-plan-step-2) |
+  | C10119 `r1280` (Sep 19 agent seeds, 3 parts, no interior slot) | 0.474 all (chassis 0.758, rear_body 0.839, cabin 0.859, interior 0.000 with 25 cells missing) | C10119, 63 / 1 (38 scored) | `runs/anchor-scoreboard-c10119-20260920/anchor_iou.md` |
+  | C10119 4-part + guarded `consensus-only-ds` (human-accepted seeds, decoder pool, distractor guard) | 0.554 all (chassis 0.667, interior 0.290, rear_body 0.833, cabin 0.945); 3,795 px hidden FP | C10119, 63 / 1 | `runs/multiview-reprompt-20260921/anchor_iou_c10119.md` |
+  | C10119 4-part `consensus-only-exemplar` (chassis only, cross-view exemplars, 5 corrections) | chassis **0.740** (all 0.513: no interior correction applied, 0.106) | C10119, 63 / 1 | `runs/sam3-exemplar-20260922/anchor_iou_c10119.md`; [exemplar Track B](#sep-22-exemplar-detections-as-correction-candidates-track-b-of-the-exemplar-plan-the-c10119-chassis-arm) |
+  | e4 `r1280` (agent seeds, 3 parts) -> `human-accepted-4part` | 0.558 -> 0.589 all (rear_body 0.262 -> 0.349; hidden FP 48,705 px on 8 cells -> 16,474 px on 7) | e4, 52 / 23 (42 scored; 10 interior cells have no slot) | `runs/anchor-scoreboard-e4-20260920/anchor_iou.md`, `runs/multiview-reprompt-20260921/anchor_iou_e4.md` |
+  | Failure detector, `sam3_score` (SAM3's own object score) | AUROC 0.91-0.96 in-sample, top-2 on every scored run | C10379, 52 cells, three runs (9 / 14 / 11 failures) | [multicam closing](#closing-the-multicam-plan-the-two-goals-answered-with-numbers); `runs/detector-scorecard-20260920/` |
+  | Combined detector, leave-one-frame-out (top-3 rank average, threshold at R >= 0.8 on 12 frames) | precision / recall 0.36-0.62 / 0.44-0.64 (4/7/5/36, 8/5/6/33, 7/5/4/36 TP/FP/FN/TN): the ranking transfers, the threshold does not | C10379, 52 cells | same |
+  | Seeding acceptance by the human (session (c), Sep 21) | chassis 7 / 8 accepted (C10390 undecided), rear_body 8 / 8, interior 1 / 8 | 24 cells, one frame each, 8 views | `configs/qa/seed_proposal_decisions_2026-09-21.json` |
+  | Seed transfer, held-out IoU of the winning strategy (leave-frames-out on the C10379 human masks; 0.6 gate) | chassis 0.53 / rear_body 0.80 / interior 0.47 / cabin 0.95 (rear_body and cabin pass; the 0.525 / 0.795 / 0.465 / 0.949 of the search rounded) | C10379 truth set, 13 anchor frames | [multicam closing](#closing-the-multicam-plan-the-two-goals-answered-with-numbers); `runs/seed-search-20260920/` |
+  | Dedup passes 1-3 (Sep 22) | 3,453 lines deleted / 3,419 inserted in `src` + `scripts`, net -34; **-1,675 inside the pre-existing modules**; tests 646 -> 762 default tier, 52 -> 62 `real_data`; equivalence on three CPU artifacts per pass | repository | [dedup summary](#sep-22-dedup-passes-1-3-summary) |
+  | Test tiers and lint at close (Sep 24) | default `uv run pytest -q`: **762 passed**, 9 skipped, 64 deselected, 16 s; `-m real_data`: **62 passed**; `-m gpu`: 2 collected, not run (CPU day); `uv run ruff check src tests scripts`: all checks passed | repository | this entry |
+
+- **Pointers.** The review surface is the v6 package `runs/interaction-review-first-minute-v6/`
+  (`interaction_review_combined.rrd` with `segmentation.rbl`, `hands.rbl`, `multiview.rbl`,
+  `review_guide.md`, `presets_check.json`); guides
+  [`docs/review-guide-2026-09-20-multiview-presets.md`](review-guide-2026-09-20-multiview-presets.md),
+  [`docs/review-guide-2026-09-20-ensemble-v2.md`](review-guide-2026-09-20-ensemble-v2.md),
+  [`docs/review-guide-2026-09-18-multicam.md`](review-guide-2026-09-18-multicam.md). The three
+  plan files' closing sections, by path: `/home/nick/.cursor/plans/resolution_and_dam4sam_follow-up_038860f0.plan.md`
+  (no Outcome section; the todo states are the record, E2-E9 `pending`),
+  `/home/nick/.cursor/plans/multicam_segmentation_transfer_8116dfb2.plan.md` ("Outcome (Sep 20,
+  closing)" with the Sep 21 addendum), `/home/nick/.cursor/plans/sam3_exemplar_detection_correction_87b15462.plan.md`
+  ("Outcome (2026-09-22 ...)"); the close-out and FineBio plan itself is
+  `/home/nick/.cursor/plans/finebio_pivot_and_assembly101_closeout.plan.md`, whose Part 2 is
+  copied into the repository as
+  [`docs/plan-2026-09-24-finebio-detector-seeded-lab.md`](plan-2026-09-24-finebio-detector-seeded-lab.md)
+  (status: planned, not started). Human records:
+  [`docs/labeling-sessions-2026-09-20.md`](labeling-sessions-2026-09-20.md) (outcome lines for
+  all five sessions), `docs/qa/*.human-record.json`, `docs/qa/anchor-scoreboard-*.md`.
+- **Disk.** `uv run python scripts/prune_runs.py` (dry run; the script never deletes): 255 run
+  directories, 161 cited by tracked files, 18 cited only by another run's manifest, **76
+  unreferenced, 1.94 GB**. The listing with sizes, grouped as the plan asked, is
+  [`docs/qa/runs-archive-list-2026-09-24.md`](qa/runs-archive-list-2026-09-24.md): unreferenced
+  runs 76 / 1,938,450,588 bytes; `blocked-by-gpu-guard/` 1 / 75,514; `failed-worker-edit-*`
+  1 / 91,352; `code-snapshot-*` 22 / 75,881,653; `runs/dedup-equivalence/` 1,165,708,288 (its
+  ten `pass3-*` roots 773,321,258); `runs/dedup-pass2-smokes-20260922/` 620,400,580; no
+  `*-local` root exists any more. De-duplicated total 3,793,709,039 bytes (3.79 GB). **Nothing
+  was deleted or moved**; the user decides.
+- **Tag and commits.** Annotated tag `assembly101-lab-close` on the last commit of this
+  close-out (its message carries the final-numbers summary; `git tag -n20 assembly101-lab-close`
+  prints it). The close-out commits, in order: `8921b56` (the FineBio plan document and its
+  README link), `ac52fd7` (the archive list), and this entry's commit (the dispositions, the
+  goals table, the labeling-sessions outcome lines), which the tag points at.
