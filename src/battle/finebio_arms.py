@@ -73,9 +73,13 @@ from .multiview_schemas import (
     TrackEvent,
     read_jsonl,
 )
-from .multiview_tracks import SAM3_SOURCES, ResidualRow, project
+from .multiview_tracks import SAM3_SOURCES, SUPPORT0_STATES, ResidualRow, project
 
 SCHEMA = "battle-finebio-arms/1"
+# `run --ext`: the p3-tracker-ext flags, tracker output under tracks-ext/ beside tracks/ and
+# the measures / inventory with an `-ext` suffix, so the core results stay as written.
+EXT_SUFFIX = "ext"
+EXT_TRACKER_FLAGS = ("--motion-model", "--group-tracks", "--held")
 ARMS = ("a", "b", "c", "d")
 ARM_NAMES = {
     "a": "boxes-only control (detector + 3D tracker on box centres, no SAM3)",
@@ -541,7 +545,17 @@ IDENTITY_KEYS = (
     "id_switches",
     "id_switch_reference",
     "events",
+    # Sep 25 (p3-tracker-ext): what each extension did; None on core runs before it existed.
+    "extensions",
 )
+
+
+def _suffixed(name: str, suffix: str | None) -> str:
+    """`tracks` -> `tracks-ext`, `measures.json` -> `measures-ext.json`."""
+    if not suffix:
+        return name
+    stem, dot, ext = name.partition(".")
+    return f"{stem}-{suffix}{dot}{ext}"
 
 
 def identity_summary(
@@ -559,6 +573,10 @@ def identity_summary(
         "classes": len(objects),
     }
     out["probes_excluded"] = list(probes)
+    out["per_class"] = {
+        cls: {"tracks_born": v.get("tracks_born"), "fragmentation": v.get("fragmentation")}
+        for cls, v in sorted(per_class.items())
+    }
     return out
 
 
@@ -591,6 +609,12 @@ class Episode:
     held_in_all_projected_views: bool = False
     successor_tracks: list[dict[str, Any]] = field(default_factory=list)
     ambiguous_events: int = 0
+    # Sep 25 (p3-tracker-ext): the tracker's own states over the episode's rows (coasting /
+    # contained / held) and the one it handled the episode as (None = plain coasting).
+    tracker_states: dict[str, int] = field(default_factory=dict)
+    tracker_handled: str | None = None
+    container_id: str | None = None
+    held_by: str | None = None
 
     def to_record(self) -> dict[str, Any]:
         return asdict(self)
@@ -601,7 +625,8 @@ def _inside(point: Sequence[float], box: Box) -> bool:
 
 
 def episodes_from_tracks(rows: Sequence[Track3D]) -> list[Episode]:
-    """Support-0 episodes: maximal runs of `coasting` rows per track."""
+    """Support-0 episodes: maximal runs of support-0 rows per track (`coasting`, and with the
+    tracker extensions on, `contained` / `held`; the tracker's state per row is recorded)."""
     by_track: dict[str, list[Track3D]] = defaultdict(list)
     for r in rows:
         by_track[r.track_id].append(r)
@@ -610,13 +635,16 @@ def episodes_from_tracks(rows: Sequence[Track3D]) -> list[Episode]:
         track_rows.sort(key=lambda r: r.frame_index)
         i = 0
         while i < len(track_rows):
-            if track_rows[i].state != "coasting":
+            if track_rows[i].state not in SUPPORT0_STATES:
                 i += 1
                 continue
             j = i
-            while j + 1 < len(track_rows) and track_rows[j + 1].state == "coasting":
+            while j + 1 < len(track_rows) and track_rows[j + 1].state in SUPPORT0_STATES:
                 j += 1
             first, last = track_rows[i], track_rows[j]
+            run_rows = track_rows[i : j + 1]
+            states = Counter(r.state for r in run_rows)
+            handled = next((s for s in ("contained", "held") if states.get(s)), None)
             prev = track_rows[i - 1] if i > 0 else None
             nxt = track_rows[j + 1] if j + 1 < len(track_rows) else None
             if nxt is None:
@@ -653,6 +681,10 @@ def episodes_from_tracks(rows: Sequence[Track3D]) -> list[Episode]:
                     identical_instance_class=first.object_class in IDENTICAL_INSTANCE_CLASSES,
                     group_slot=first.object_class.endswith(GROUP_SUFFIX),
                     lost_at_timeout=outcome == "lost",
+                    tracker_states=dict(states),
+                    tracker_handled=handled,
+                    container_id=next((r.container_id for r in run_rows if r.container_id), None),
+                    held_by=next((r.held_by for r in run_rows if r.held_by), None),
                 )
             )
             i = j + 1
@@ -772,6 +804,15 @@ def inventory_summary(episodes: Sequence[Episode], *, coast_timeout: int) -> dic
         if ep.inferred_state in ("contained", "held+contained"):
             votes = Counter(c for classes in ep.in_container_views.values() for c in classes)
             contained_class[votes.most_common(1)[0][0]] += 1
+    handled = Counter(ep.tracker_handled or "coasting" for ep in episodes)
+    handled_by_container = Counter(
+        ep.container_id for ep in episodes if ep.tracker_handled == "contained" and ep.container_id
+    )
+    agreement = Counter(
+        (ep.inferred_state, ep.tracker_handled or "coasting")
+        for ep in episodes
+        if ep.tracker_handled is not None
+    )
     return {
         "episodes": len(episodes),
         "tracks_with_episodes": len({ep.track_id for ep in episodes}),
@@ -796,6 +837,25 @@ def inventory_summary(episodes: Sequence[Episode], *, coast_timeout: int) -> dic
                 "detector_visible_association_miss", 0
             ),
             "unexplained": by_state.get("unexplained", 0),
+        },
+        # What the tracker did with the episodes (all `coasting` on a core run).
+        "tracker_handled": {
+            "by_state": dict(sorted(handled.items())),
+            "contained_by_container": dict(handled_by_container.most_common()),
+            "contained_reacquired": sum(
+                1
+                for ep in episodes
+                if ep.tracker_handled == "contained" and ep.outcome == "reacquired"
+            ),
+            "contained_open_at_window_end": sum(
+                1
+                for ep in episodes
+                if ep.tracker_handled == "contained" and ep.outcome == "open_at_window_end"
+            ),
+            "held_reacquired": sum(
+                1 for ep in episodes if ep.tracker_handled == "held" and ep.outcome == "reacquired"
+            ),
+            "inferred_vs_handled": {f"{a} -> {b}": n for (a, b), n in sorted(agreement.items())},
         },
         "reacquired_latency_frames": _percentiles(
             [ep.reacquisition_latency_frames for ep in episodes if ep.outcome == "reacquired"]
@@ -850,6 +910,21 @@ def inventory_markdown(summary: dict[str, Any], episodes: Sequence[Episode], *, 
         "`possibly_same_as` successor",
         f"- association misses (detector still within the gate in >= 2 views): "
         f"{needs['detector_visible_association_miss']}; unexplained: {needs['unexplained']}",
+    ]
+    handled = summary.get("tracker_handled")
+    if handled:
+        lines += [
+            "",
+            "## What the tracker did with them",
+            "",
+            f"- by tracker state: {handled['by_state']}; contained by container: "
+            f"{handled['contained_by_container']}; contained episodes re-acquired: "
+            f"{handled['contained_reacquired']}, open at the window end: "
+            f"{handled['contained_open_at_window_end']}; held episodes re-acquired: "
+            f"{handled['held_reacquired']}",
+            f"- inventory inference -> tracker state: {handled['inferred_vs_handled']}",
+        ]
+    lines += [
         "",
         "## Episodes by class",
         "",
@@ -863,14 +938,15 @@ def inventory_markdown(summary: dict[str, Any], episodes: Sequence[Episode], *, 
         "",
         "## Longest 25 episodes",
         "",
-        "| track | class | start | length | outcome | state | hand views | container views | "
-        "detector in gate | successors |",
-        "|---|---|---|---|---|---|---|---|---|---|",
+        "| track | class | start | length | outcome | state | tracker | hand views | "
+        "container views | detector in gate | successors |",
+        "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for ep in longest:
         lines.append(
             f"| {ep.track_id} | {ep.object_class} | {ep.start_frame} | {ep.length_frames} | "
-            f"{ep.outcome} | {ep.inferred_state} | {','.join(sorted(ep.in_hand_views)) or '-'} | "
+            f"{ep.outcome} | {ep.inferred_state} | {ep.tracker_handled or 'coasting'} | "
+            f"{','.join(sorted(ep.in_hand_views)) or '-'} | "
             f"{','.join(sorted(ep.in_container_views)) or '-'} | "
             f"{','.join(sorted(ep.detector_within_gate_views)) or '-'} | "
             f"{len(ep.successor_tracks)} |"
@@ -1114,11 +1190,23 @@ def run_arm(
     jobs: int = 6,
     fpv_poses: Path | None = None,
     reuse_observations: bool = False,
+    ext: bool = False,
 ) -> dict[str, Any]:
     """observations -> tracker -> measures + inventory under `output`. With
     `reuse_observations` an existing `observations.jsonl` (and its summary) is read back instead
-    of rebuilt, so the tracker and the measures can be re-run without re-reading the masks."""
+    of rebuilt, so the tracker and the measures can be re-run without re-reading the masks.
+    With `ext` the tracker runs with the p3-tracker-ext flags (`--motion-model --containers
+    <the clip's containers> --group-tracks --held`, plus `tracker_extra`) into `tracks-ext/`
+    beside `tracks/`, and the measures and inventory are written with an `-ext` suffix, so the
+    core results are never overwritten."""
     output = Path(output)
+    suffix = EXT_SUFFIX if ext else None
+    if ext:
+        tracker_extra = [
+            *EXT_TRACKER_FLAGS,
+            *(["--containers", ",".join(clip.containers)] if clip.containers else []),
+            *tracker_extra,
+        ]
     output.mkdir(parents=True, exist_ok=True)
     obs_path = output / "observations.jsonl"
     summary_path = output / "observations_summary.json"
@@ -1139,8 +1227,10 @@ def run_arm(
             fpv_poses=fpv_poses,
         )
         obs_summary["rows_written"] = write_observations(rows, obs_path)
-    summary_path.write_text(json.dumps(obs_summary, indent=1) + "\n", encoding="utf-8")
-    tracks_dir = output / "tracks"
+    if not (ext and reuse_observations):
+        # An ext re-run over the core's observations leaves the core's files as written.
+        summary_path.write_text(json.dumps(obs_summary, indent=1) + "\n", encoding="utf-8")
+    tracks_dir = output / _suffixed("tracks", suffix)
     metrics = run_tracker_cli(
         obs_path, clip.camera_config, gates, tracks_dir, tracker_extra, fpv_poses=fpv_poses
     )
@@ -1155,6 +1245,7 @@ def run_arm(
         worker_root=worker_root,
         min_score=min_score,
         fpv_poses=fpv_poses,
+        suffix=suffix,
     )
 
 
@@ -1200,9 +1291,10 @@ def finish_arm(
     worker_root: Path | None,
     min_score: float,
     fpv_poses: Path | None = None,
+    suffix: str | None = None,
 ) -> dict[str, Any]:
     output = Path(output)
-    tracks_dir = output / "tracks"
+    tracks_dir = output / _suffixed("tracks", suffix)
     tracks = list(read_jsonl(tracks_dir / "tracks.jsonl", Track3D))
     events = list(read_jsonl(tracks_dir / "events.jsonl", TrackEvent))
     residuals = list(read_jsonl(tracks_dir / "residuals.jsonl", ResidualRow))
@@ -1226,6 +1318,8 @@ def finish_arm(
         "residual_px_by_class_and_view": metrics.get("residual_px_by_class_and_view"),
         "gates": gates,
         "tracker_params": {k: v for k, v in params.items() if k != "gates"},
+        "tracks_dir": tracks_dir.name,
+        "tracker_extensions": suffix is not None,
         "claim_boundary": CLAIM_BOUNDARY,
         "licence_note": LICENCE_NOTE,
     }
@@ -1257,14 +1351,21 @@ def finish_arm(
         episodes, coast_timeout=int(params.get("coast_timeout_frames", 30))
     )
     measures["occlusion_inventory"] = inv_summary
-    with (output / "occlusion_inventory.jsonl").open("w", encoding="utf-8") as handle:
+    label = f"{arm}-{suffix}" if suffix else arm
+    with (output / _suffixed("occlusion_inventory.jsonl", suffix)).open(
+        "w", encoding="utf-8"
+    ) as handle:
         for ep in sorted(episodes, key=lambda ep: (ep.start_frame, ep.track_id)):
             handle.write(json.dumps(ep.to_record()) + "\n")
-    (output / "occlusion_inventory.md").write_text(
-        inventory_markdown(inv_summary, episodes, arm=arm), encoding="utf-8"
+    (output / _suffixed("occlusion_inventory.md", suffix)).write_text(
+        inventory_markdown(inv_summary, episodes, arm=label), encoding="utf-8"
     )
-    (output / "measures.json").write_text(json.dumps(measures, indent=1) + "\n", encoding="utf-8")
-    (output / "measures.md").write_text(measures_markdown(measures), encoding="utf-8")
+    (output / _suffixed("measures.json", suffix)).write_text(
+        json.dumps(measures, indent=1) + "\n", encoding="utf-8"
+    )
+    (output / _suffixed("measures.md", suffix)).write_text(
+        measures_markdown(measures), encoding="utf-8"
+    )
     return measures
 
 
@@ -1282,7 +1383,12 @@ def measures_markdown(m: dict[str, Any]) -> str:
         "",
         f"Trial {m['trial']}, raw frames [{m['window'][0]}, {m['window'][1]}); gates "
         f"association {_fmt(m['gates'].get('association_px'), 1)} px, hand-off "
-        f"{_fmt(m['gates'].get('handoff_px'), 1)} px.",
+        f"{_fmt(m['gates'].get('handoff_px'), 1)} px"
+        + (
+            f"; tracker extensions on (`{m.get('tracks_dir', 'tracks-ext')}/`)."
+            if m.get("tracker_extensions")
+            else "."
+        ),
         "",
         "## Identity metrics (tracker)",
         "",
@@ -1290,11 +1396,43 @@ def measures_markdown(m: dict[str, Any]) -> str:
         "|---|---|",
     ]
     for key in IDENTITY_KEYS:
-        if key == "events":
+        if key in ("events", "extensions"):
             continue
         lines.append(f"| {key} | {m['identity'].get(key)} |")
     lines.append(f"| events | {m['identity'].get('events')} |")
     lines.append(f"| objects only (hands excluded) | {m['identity'].get('objects_only')} |")
+    extensions = m["identity"].get("extensions")
+    if extensions and any(extensions.get("enabled", {}).values()):
+        lines += ["", "## Tracker extensions", "", "| extension | what it did |", "|---|---|"]
+        lines.append(f"| enabled | {extensions['enabled']} |")
+        motion = extensions.get("motion_model", {})
+        lines.append(
+            f"| motion model | movers {motion.get('mover_tracks')} "
+            f"({motion.get('mover_tracks_by_class')}), mover frames {motion.get('mover_frames')}, "
+            f"single-view ray updates {motion.get('single_view_ray_updates')} |"
+        )
+        contained = extensions.get("contained", {})
+        lines.append(
+            f"| contained | episodes {contained.get('episodes')} by container "
+            f"{contained.get('by_container')}, re-acquired {contained.get('reacquired')}, live at "
+            f"the window end {contained.get('live_at_end')}; volumes "
+            f"{[v['container_id'] for v in contained.get('volumes', [])]}, skipped "
+            f"{(contained.get('volume_report') or {}).get('skipped')} |"
+        )
+        groups = extensions.get("group_tracks", {})
+        lines.append(
+            f"| group tracks | formed {groups.get('group_tracks_formed')} (footprint "
+            f"{groups.get('footprint_groups')}), splits {groups.get('splits')}, individuals joined "
+            f"{groups.get('individuals_joined_a_group')}, candidates merged "
+            f"{groups.get('candidates_merged')}, observations absorbed "
+            f"{groups.get('observations_absorbed')}, max size "
+            f"{groups.get('max_group_size_by_class')} |"
+        )
+        held = extensions.get("held", {})
+        lines.append(
+            f"| held | episodes {held.get('episodes')} by hand {held.get('by_hand')}, re-acquired "
+            f"{held.get('reacquired')}, fell back to coasting {held.get('fell_back_to_coasting')} |"
+        )
     res = m["residual_px"]
     lines += [
         "",
@@ -1466,8 +1604,25 @@ def scoreboard(arms: dict[str, dict[str, Any]]) -> dict[str, Any]:
             }
         row["occlusion_inventory"] = m["occlusion_inventory"]["extension_needs"]
         row["occlusion_episodes"] = m["occlusion_inventory"]["episodes"]
+        row["tracker_handled"] = m["occlusion_inventory"].get("tracker_handled")
+        row["extensions"] = m["identity"].get("extensions")
+        row["per_class_ids"] = {
+            cls: v.get("tracks_born")
+            for cls, v in (m["identity"].get("per_class") or {}).items()
+            if cls in SCOREBOARD_CLASSES
+        }
         table["rows"][arm] = row
     return table
+
+
+SCOREBOARD_CLASSES = (
+    "blue_pipette",
+    "8_channel_pipette",
+    "micro_tube",
+    "50ml_tube",
+    "centrifuge",
+    "cell_culture_plate",
+)
 
 
 def scoreboard_markdown(board: dict[str, Any]) -> str:
@@ -1538,6 +1693,38 @@ def scoreboard_markdown(board: dict[str, Any]) -> str:
             f"{needs['group_tracks_identical_instance_episodes']} | "
             f"{needs['detector_visible_association_miss']} | {needs['unexplained']} |"
         )
+    ext_rows = {
+        arm: row
+        for arm, row in board["rows"].items()
+        if row.get("extensions") and any(row["extensions"].get("enabled", {}).values())
+    }
+    if ext_rows:
+        lines += [
+            "",
+            "Tracker extensions (`tracks-ext/`; the core rows above are `tracks/`):",
+            "",
+            "| arm | born | fragmentation | ambiguities | id switches | pipette ids | micro-tube "
+            "ids | movers | contained episodes (tracker) / re-acquired / open | group tracks "
+            "formed / footprint / splits | held episodes / re-acquired | inventory: contained "
+            "handled / held handled / coasting |",
+            "|---|---|---|---|---|---|---|---|---|---|---|---|",
+        ]
+        for arm, row in ext_rows.items():
+            ident, ext = row["identity"], row["extensions"]
+            handled = (row.get("tracker_handled") or {}).get("by_state", {})
+            contained, groups, held = ext["contained"], ext["group_tracks"], ext["held"]
+            per_class = row.get("per_class_ids", {})
+            lines.append(
+                f"| ({arm}) | {ident.get('tracks_born')} | {ident.get('fragmentation')} | "
+                f"{ident.get('ambiguities')} | {ident.get('id_switches')} | "
+                f"{per_class.get('blue_pipette')} | {per_class.get('micro_tube')} | "
+                f"{ext['motion_model'].get('mover_tracks')} | {contained.get('episodes')} / "
+                f"{contained.get('reacquired')} / {contained.get('live_at_end')} | "
+                f"{groups.get('group_tracks_formed')} / {groups.get('footprint_groups')} / "
+                f"{groups.get('splits')} | {held.get('episodes')} / {held.get('reacquired')} | "
+                f"{handled.get('contained', 0)} / {handled.get('held', 0)} / "
+                f"{handled.get('coasting', 0)} |"
+            )
     return "\n".join(lines) + "\n"
 
 
@@ -1575,6 +1762,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="read <output>/observations.jsonl instead of rebuilding it",
     )
+    run.add_argument(
+        "--ext",
+        action="store_true",
+        help="tracker extensions on (--motion-model --containers <clip> --group-tracks --held) "
+        "into <output>/tracks-ext/ with measures-ext.* and occlusion_inventory-ext.*",
+    )
 
     sanity = sub.add_parser("sanity", help="first-view check of a worker run")
     sanity.add_argument("--run", type=Path, required=True, help="worker run dir or its root")
@@ -1600,7 +1793,12 @@ def build_parser() -> argparse.ArgumentParser:
     mark.add_argument("--note", required=True)
 
     board = sub.add_parser("scoreboard", help="arms x measures from measures.json files")
-    board.add_argument("--arm", action="append", required=True, help="<letter>=<arm dir>")
+    board.add_argument(
+        "--arm",
+        action="append",
+        required=True,
+        help="<label>=<arm dir or measures JSON> (e.g. b-ext=<dir>/measures-ext.json)",
+    )
     board.add_argument("--output", type=Path, required=True)
 
     decide = sub.add_parser("decide", help="the (c)-vs-(b) rule for arm (d)")
@@ -1611,7 +1809,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _load_measures(arm_dir: Path) -> dict[str, Any]:
-    return json.loads((Path(arm_dir) / "measures.json").read_text(encoding="utf-8"))
+    """`<arm dir>/measures.json`, or a measures JSON given directly (`measures-ext.json`)."""
+    path = Path(arm_dir)
+    if path.is_file():
+        return json.loads(path.read_text(encoding="utf-8"))
+    return json.loads((path / "measures.json").read_text(encoding="utf-8"))
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -1631,6 +1833,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             jobs=args.jobs,
             fpv_poses=args.fpv_poses,
             reuse_observations=args.reuse_observations,
+            ext=args.ext,
         )
         print(
             json.dumps(

@@ -80,9 +80,42 @@ def test_episodes_from_tracks_reacquired_lost_and_open():
     assert first.last_observed_frame == 10 and first.reacquired_frame == 14
     assert first.length_frames == 4 and first.reacquisition_latency_frames == 4
     assert first.identical_instance_class and not first.group_slot and not first.lost_at_timeout
+    assert first.tracker_handled is None and first.tracker_states == {"coasting": 3}
     second = episodes[3]
     assert second.lost_at_timeout and second.length_frames == 1 and second.end_frame == 16
     assert not episodes[0].identical_instance_class
+    # With the tracker extensions on, contained / held rows are support-0 rows of the same
+    # episode and the tracker's handling is recorded.
+    ext_rows = [
+        _track_row(10, "micro_tube-005", "observed"),
+        _track_row(
+            11, "micro_tube-005", "contained", frames_unobserved=1, container_id="centrifuge"
+        ),
+        _track_row(
+            12, "micro_tube-005", "contained", frames_unobserved=2, container_id="centrifuge"
+        ),
+        _track_row(13, "micro_tube-005", "observed"),
+        _track_row(20, "50ml_tube-006", "observed", cls="50ml_tube"),
+        _track_row(
+            21,
+            "50ml_tube-006",
+            "held",
+            cls="50ml_tube",
+            frames_unobserved=1,
+            held_by="left_hand-001",
+        ),
+        _track_row(22, "50ml_tube-006", "coasting", cls="50ml_tube", frames_unobserved=2),
+        _track_row(23, "50ml_tube-006", "lost", cls="50ml_tube", frames_unobserved=3),
+    ]
+    held, contained = sorted(episodes_from_tracks(ext_rows), key=lambda e: e.track_id)
+    assert contained.tracker_handled == "contained" and contained.container_id == "centrifuge"
+    assert contained.outcome == "reacquired" and contained.tracker_states == {"contained": 2}
+    assert held.tracker_handled == "held" and held.held_by == "left_hand-001"
+    assert held.outcome == "lost" and held.tracker_states == {"held": 1, "coasting": 1}
+    summary = inventory_summary([contained, held] + episodes, coast_timeout=30)
+    assert summary["tracker_handled"]["by_state"] == {"coasting": 4, "contained": 1, "held": 1}
+    assert summary["tracker_handled"]["contained_by_container"] == {"centrifuge": 1}
+    assert summary["tracker_handled"]["contained_reacquired"] == 1
 
 
 def _det(view: str, frame: int, cls: str, box, score: float = 0.9) -> FineBioObservation:
@@ -735,6 +768,76 @@ def test_arm_a_pipeline_on_the_preflight_fixtures(tmp_path: Path, fixtures):
         if "det_iou_pooled" in board["rows"]["a"]
         else True
     )
+    assert "Tracker extensions" not in text
+    # `--ext` runs the tracker with the extensions into tracks-ext/ beside tracks/, with the
+    # measures and the inventory suffixed; the core files are not touched.
+    core_bytes = {
+        name: (output / "tracks" / name).read_bytes()
+        for name in ("tracks.jsonl", "events.jsonl", "residuals.jsonl")
+    }
+    core_measures = (output / "measures.json").read_bytes()
+    rc = main(
+        [
+            "run",
+            "--clip-config",
+            str(clip_path),
+            "--detections",
+            str(detections),
+            "--arm",
+            "a",
+            "--gates",
+            str(gates),
+            "--output",
+            str(output),
+            "--fpv-poses",
+            str(FIXTURE_DIR / "fpv_poses.json"),
+            "--reuse-observations",
+            "--ext",
+        ]
+    )
+    assert rc == 0
+    for name in (
+        "tracks-ext/tracks.jsonl",
+        "tracks-ext/events.jsonl",
+        "tracks-ext/residuals.jsonl",
+        "tracks-ext/identity_metrics.json",
+        "measures-ext.json",
+        "measures-ext.md",
+        "occlusion_inventory-ext.jsonl",
+        "occlusion_inventory-ext.md",
+    ):
+        assert (output / name).is_file(), name
+    for name, data in core_bytes.items():
+        assert (output / "tracks" / name).read_bytes() == data
+    assert (output / "measures.json").read_bytes() == core_measures
+    ext = json.loads((output / "measures-ext.json").read_text())
+    assert ext["tracker_extensions"] is True and ext["tracks_dir"] == "tracks-ext"
+    enabled = ext["identity"]["extensions"]["enabled"]
+    assert enabled == {"motion_model": True, "containers": True, "group_tracks": True, "held": True}
+    assert ext["identity"]["per_class"]["cell_culture_plate"]["tracks_born"] == 1
+    assert "tracker_handled" in ext["occlusion_inventory"]
+    assert ext["tracker_params"]["extensions"]["containers"] == [
+        "centrifuge",
+        "micro_tube_rack",
+        "vortex_mixer",
+    ]
+    assert "## Tracker extensions" in (output / "measures-ext.md").read_text()
+    board = scoreboard({"a": measures, "a-ext": ext})
+    text = scoreboard_markdown(board)
+    assert "| (a-ext) |" in text and "Tracker extensions" in text
+    assert board["rows"]["a-ext"]["extensions"]["enabled"]["held"] is True
+    rc = main(
+        [
+            "scoreboard",
+            "--arm",
+            f"a={output}",
+            "--arm",
+            f"a-ext={output / 'measures-ext.json'}",
+            "--output",
+            str(tmp_path / "board"),
+        ]
+    )
+    assert rc == 0 and "| (a-ext) |" in (tmp_path / "board" / "scoreboard.md").read_text()
     # The arm (b) worker root is required.
     with pytest.raises(ValueError, match="worker-root"):
         from battle.finebio_arms import build_observations

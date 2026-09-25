@@ -354,6 +354,11 @@ TrackEventKind = Literal[
     "contained",
     "handoff_reseed",
     "detector_reseed",
+    # Sep 25 (p3-tracker-ext): identical-instance group tracks (formed inside a container
+    # footprint; a member born as its own track; an individual whose identity joins a group).
+    "group_formed",
+    "group_split",
+    "group_joined",
 ]
 
 Vec2 = tuple[float, float]
@@ -489,6 +494,13 @@ class Track3D(VersionedModel):
     support_slots: dict[str, str] = Field(default_factory=dict)
     slot_disagreement_views: tuple[str, ...] = ()
     frames_unobserved: int = Field(default=0, ge=0)
+    # Sep 25 (p3-tracker-ext), optional and None unless the extension that sets them is on:
+    # the member count of an identical-instance group track, the group a track split from,
+    # the container volume a `contained` track sits in, the hand track a `held` track follows.
+    group_size: int | None = Field(default=None, ge=1)
+    split_from: str | None = None
+    container_id: str | None = None
+    held_by: str | None = None
 
 
 class TrackEvent(VersionedModel):
