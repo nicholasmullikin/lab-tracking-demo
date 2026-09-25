@@ -484,6 +484,19 @@ goals table above finalized, one table of final numbers, the `runs/` archive lis
 [`docs/plan-2026-09-24-finebio-detector-seeded-lab.md`](plan-2026-09-24-finebio-detector-seeded-lab.md)
 (planned, not started). Record: [Sep 24: Assembly101 phase closed](#sep-24-assembly101-phase-closed).
 
+#### Sep 24, evening: cleanup pass
+
+The user approved the deletion and a small tidy-up. Deleted from `runs/`: 72 of the 76
+unreferenced runs (four kept because a surviving run's provenance names them), the whole
+`runs/dedup-equivalence/` and `runs/dedup-pass2-smokes-20260922/` roots, every `code-snapshot-*`
+directory (22; all `git archive`s of commits still in history), the `blocked-by-gpu-guard/` and
+`failed-worker-edit-*` sub-directories: 3.67 GB, `runs/` 60G -> 56G. In the repository: fourteen
+dead constants, two example YAML configs, five one-off scripts moved to `scripts/archive/`,
+`configs/methods.yaml` moved to `docs/methods-inventory-2026-09.md`, the Tailscale serve script
+pointed at the v6 package with its segmentation preset, superseded banners on the Sep 18 and
+ensemble-v2 review guides, `battle_plan.agent.final.md` untracked. No GPU, no run re-scored.
+Record: [Sep 24: cleanup pass](#sep-24-cleanup-pass).
+
 ### Plan versus actual
 
 What the plan said, what happened instead, and why, in one line each.
@@ -591,10 +604,13 @@ Technical:
   correspondence.
 - Human-review nits not yet addressed: SAM mask palette (orange on yellow), skeleton lines
   for Kineo body joints.
-- 76 unreferenced run directories (1.94 GB) and the archive groups listed in
-  [`docs/qa/runs-archive-list-2026-09-24.md`](qa/runs-archive-list-2026-09-24.md) await a
-  deletion decision; `scripts/prune_runs.py` lists them and never deletes (Sep 24 listing;
-  the `-v4-local` root named here on Sep 18 no longer exists).
+- Disk: closed Sep 24 evening. Of the 76 unreferenced run directories listed in
+  [`docs/qa/runs-archive-list-2026-09-24.md`](qa/runs-archive-list-2026-09-24.md), 72 were
+  deleted with the dedup roots, the code snapshots and the two failed sub-directories (3.67 GB;
+  the record is that file's "Deleted Sep 24" section); four stay because a surviving run's
+  provenance names them ([cleanup pass](#sep-24-cleanup-pass)). `scripts/prune_runs.py` still
+  lists and never deletes; note that the archive list is itself tracked and names every run, so
+  the script now counts them as cited.
 - `yellow_toy_top` leaves the frame at ~216.2 s in every 180 s arm; its coverage numbers
   describe the scene, not the tracker.
 - FineBio: entered Sep 21 (SAM3 smoke, shipped detector); the next phase is planned in
@@ -6213,3 +6229,102 @@ and the 83 `main()` entry points beyond their shared fragments.
   prints it). The close-out commits, in order: `8921b56` (the FineBio plan document and its
   README link), `ac52fd7` (the archive list), and this entry's commit (the dispositions, the
   goals table, the labeling-sessions outcome lines), which the tag points at.
+
+### Sep 24: cleanup pass
+
+- **What this is.** After the close and the tag, the user approved a cleanup: the `runs/`
+  deletion the archive list had been written for, and a small repository tidy-up (dead
+  constants, unused configs, one-off scripts, stale defaults, superseded guides). CPU only
+  (`CUDA_VISIBLE_DEVICES=""`); no GPU job, no run re-scored, no labeling; no calibration server or
+  Rerun viewer was running (`pgrep -af muggled_calibration` empty before and immediately before
+  the deletion). Nothing here changes a number in this ledger. Commits: `599c227` (code and
+  configs), `fd40794` (scripts and docs), and this entry's commit (the deletion record and this
+  entry). The user's own uncommitted README hunk (the Tailscale section) was left unstaged
+  throughout; only the cleanup's own README hunks were staged, by patch.
+- **Three decisions.** (1) The two Sep 15 policy JSONs the close-out plan named for deletion,
+  `configs/muggledsam_static_four_part_reassembly_correction_policy.json` and
+  `configs/muggledsam_static_four_part_reassembly_manual_seed.json`, are **kept as provenance**:
+  run manifests that survive the deletion fingerprint them by sha256 (`source: measured`): the
+  Sep 16 `muggledsam-sam3-four-part-static-full-exploratory-static-c10379-20260916t012945z`
+  manifest, the `...static-corrections-frames-0-36-65-162-20260915t2331z` schedule and prompt,
+  and the `...frame-zero-source190-calibration-redo-20260915t1749z` prompts. Deleting the files
+  would leave those fingerprints pointing at nothing. (2) `configs/methods.yaml` **moved** to
+  [`docs/methods-inventory-2026-09.md`](methods-inventory-2026-09.md) (`git mv`, body fenced as
+  YAML, still parses: 14 methods): a hand-maintained Sep 8-16 snapshot that no code ever loaded;
+  [`SOURCES.md`](SOURCES.md) and the goals table at the top of this file are the maintained
+  records. (3) Every `code-snapshot-*` directory **deleted**: each was `git archive <commit>
+  src/battle` for a commit still in this repository's history (`git cat-file -t` = commit for all
+  20 distinct short shas), so the bytes were reproducible; the full shas are recorded in the
+  archive list.
+- **Code (commit `599c227`).** Fourteen module constants removed, each shown by `rg` to have
+  no reference outside its own definition in `src/`, `scripts/`, `tests/`, `docs/`, README and
+  configs, and none exported through an `__all__` or a star import: `C10119_ANCHOR_RECORD`
+  (`human_seeds`), `CORRECTION_API` (`dam4sam_streaming`), `GATE_REASONS` (`muggled_worker`),
+  `IMAGE_API` (`sam3_appearance`), `NEIGHBOUR_CLASSES` (`gpu_guard`), `OUT_OF_FRAME_CLASS`
+  (`detector_scorecard_v2`), `MAX_COMMENT_LENGTH` (`zip_range`), the recording-1 `RAW_ROOT`
+  aliases in `assembly101_reference`, `assembly101_clock_offset` and `assembly101_fetch_view`,
+  `DERIVED_ROOT` and `LOCAL_RECORDINGS` (`assembly101_fetch_view`), `FINE_GRAINED_CSV` and
+  `EGO_PROXY_DIMENSIONS` (`assembly101_reference`). None was kept: no test or document used
+  any of them by name as an API. The workers that run under foreign interpreters were smoked
+  afterwards: `muggled_worker.py --help` and `sam3_appearance.py --help` under
+  `/home/nick/.pyenv/versions/muggled_sam/bin/python`, `dam4sam_video_worker.py --help` under
+  the `samurai` pyenv, and `gpu_guard` + `dam4sam_streaming` imported under both; all exit 0.
+  `configs/methods.example.yaml` and `configs/clips/assembly101_comparison.example.yaml`
+  deleted (cited only by the Sep 8 plan's rename-history line, which stays as written).
+  `battle_plan.agent.final.md` untracked (`git rm --cached`, `/battle_plan.agent.final.md` in
+  `.gitignore`; the 167,691-byte file stays on disk and its history stays in git); README, this
+  file's "original ask" paragraph and the Sep 8 plan's editorial preamble now say so, the plan
+  body's own link is preserved as written.
+- **Scripts and docs (commit `fd40794`).** `scripts/serve_review_over_tailscale.sh` defaults to
+  `runs/interaction-review-first-minute-v6/interaction_review_combined.rrd` plus
+  `segmentation.rbl`, passed to `rerun --serve-web` as a second positional path (the same form
+  the README's `uv run rerun <rrd> <rbl>` line uses); it accepts `[recording.rrd
+  [blueprint.rbl]]` and applies the default preset only when no path is given, since a preset
+  fits only the package it was built for; `--dry-run` checked for four argument shapes.
+  `scripts/rerun_client/README.md` updated to match; the working-tree README has no Tailscale
+  section any more (the user's hunk), so no README line was changed for this. Five one-off
+  helpers moved with `git mv` to `scripts/archive/` (`compare_frame_rate_arms.py`,
+  `report_e4_candidate.py`, `report_ego_viewpoint_screen.py`, `render_overnight_v3_audits.py`,
+  `profile_view_route.py`) with a [`README`](../scripts/archive/README.md) naming what each
+  produced and which run root (all those roots are ledger-cited and kept); the two that find the
+  repository root by `parents[]` now use `parents[2]`; README and ledger paths updated. The
+  [Sep 18 multicam](review-guide-2026-09-18-multicam.md) and
+  [ensemble v2](review-guide-2026-09-20-ensemble-v2.md) review guides carry a superseded banner
+  pointing at [the presets guide](review-guide-2026-09-20-multiview-presets.md) and the v6
+  package; the v4 and v5 recordings they open still exist. The user's untracked `test.sh` was
+  pointed at the same v6 pair in place (same `rerun --serve-web` form, other lines kept); it
+  stays untracked.
+- **Runs deleted (this entry's commit records it).** Re-verification per candidate before
+  deleting, stricter than `prune_runs.py`: no tracked file names it (the archive list itself
+  excluded from the corpus, because it names every candidate and is now tracked); no
+  manifest-like file (`*.json`, `*.md`, `*.yaml`, `*.txt`, `*.log`) anywhere under a surviving
+  run names it (the script reads only three top-level files); not on the protected list;
+  exists. **72 of the 76 passed and were deleted, 1,814,511,538 bytes.** Four failed the
+  surviving-run check and are kept (123,939,050 bytes): `wilor-hands-stabilized-60s-v4`
+  (`review-metrics-first-minute-v1/metrics.json`), `kineo-nlf-headless-60s-v4-postreboot`
+  (`kineo-nlf-fused-60s-v4/provenance.json`), and the two Sep 21 4-part consensus variants
+  `...-r1280-4part-excl-c10119-20260921` and `...-r1280-4part-others-only-20260921`, named by
+  `reprompt_plan.json` / `reprompt_provenance.json` / `chain2.log` under the protected
+  `multiview-reprompt-20260921` and by `sam3-exemplar-20260922` (`README.md`, `poolcmp/*/plan.json`,
+  `reprompt/*/iter1/*`). Also deleted: `runs/dedup-equivalence/` (17 sub-roots, 1,165,708,288
+  bytes), `runs/dedup-pass2-smokes-20260922/` (620,400,580), the 22 `code-snapshot-*`
+  directories (75,881,653; two of them inside the dedup-pass2 root),
+  `runs/sam3-views-r1280-4part-20260921/blocked-by-gpu-guard` (75,514) and
+  `runs/sam3-views-r1280-20260919/failed-worker-edit-20260920t0156z` (91,352); the parent runs
+  of the last two and of every snapshot stay. De-duplicated sum of deleted file sizes
+  **3,669,769,989 bytes (3.67 GB)**; `du -sb runs` 62,554,940,832 -> 58,885,393,099 bytes
+  (`du -sh` 60G -> 56G); 96 `rm -rf` targets, each resolved and checked to be a directory under
+  `runs/`; top-level run directories 255 -> 182. Every protected root (the v6 package, ensemble
+  v2, anchor scoreboards, per-view anchor workspaces, the r1280 and 4-part view passes, the
+  pm-append consensus and hull roots, the reprompt and exemplar roots, dam4sam arms, the policy
+  ablation, detector scorecard, seed search, finebio, rec2, assembly101, labeling sessions,
+  human-accepted seeds, the static comparison) and all 18 section-7 runs are present. The full
+  tables (names, bytes, snapshot shas, the skipped four) are the "Deleted Sep 24" section of
+  [`docs/qa/runs-archive-list-2026-09-24.md`](qa/runs-archive-list-2026-09-24.md).
+- **Tests and lint.** Before the deletion (after the code changes): default tier 762 passed /
+  9 skipped (the nine `test_worker_policy` torch-absent skips, as at the close), `-m real_data`
+  62 passed, `ruff check src tests scripts` clean. After the deletion: default tier 762 passed /
+  9 skipped, unchanged; `-m real_data` **52 passed / 1 skipped**: the ten parametrised cases of
+  `tests/test_video_driver.py::test_recorded_smoke_manifests_rebuild_byte_for_byte` over
+  `runs/dedup-pass2-smokes-*/*/*` collapsed to one "got empty parameter set" skip. No other test
+  newly skips or fails; `-m gpu` not run (CPU only).
