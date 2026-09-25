@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """FineBio preflight, detector pass: DINO boxes on a set of raw frames per view.
 
+Superseded Sep 24 by ``battle-finebio-detect`` (``src/battle/finebio_detect.py``), which
+reproduces these rows bit for bit on the CPU venv; kept because the preflight record cites it.
+
 Runs in the detector venv (CPU torch):
 
     CUDA_VISIBLE_DEVICES="" /home/nick/src/finebio-detector/.venv/bin/python \

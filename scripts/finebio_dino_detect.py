@@ -1,5 +1,8 @@
 """FineBio's shipped object detector on the SAM3 smoke clip, visualised in Rerun beside SAM3.
 
+Superseded Sep 24 by ``battle-finebio-detect`` (``src/battle/finebio_detect.py``: raw frames,
+six views, CPU or CUDA venv, strides + interpolation); kept because the Sep 21 record cites it.
+
 Runs the authors' MMDetection DINO (or Deformable DETR) checkpoint, fine-tuned on FineBio's
 35 wet-lab classes, over the 600-frame proxy that ``scripts/finebio_sam3_smoke.py`` tracked,
 and writes one RRD carrying the video, the detector's labelled boxes and the SAM3 smoke's

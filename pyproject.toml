@@ -81,6 +81,7 @@ battle-egoexo-correspondence = "battle.egoexo_correspondence:main"
 battle-prepare-human-qa = "battle.human_qa:main"
 battle-human-qa-candidates = "battle.human_qa:candidate_main"
 battle-code-snapshot = "battle.overnight_queue:code_snapshot_main"
+battle-finebio-detect = "battle.finebio_detect:main"
 
 [build-system]
 requires = ["uv_build>=0.11.2,<0.12.0"]
