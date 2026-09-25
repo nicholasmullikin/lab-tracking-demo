@@ -678,6 +678,25 @@ moves in protocol 03 and stays detector-only. Worker-ready box streams (arm b) a
 soft: the pipeline runs on `provenance: auto`, decisions filter afterwards). Record: [Sep 25:
 battle-detector-seed, observation adapters, gate-1 sheets (p2-seeds, p2-gate1)](#sep-25-battle-detector-seed-observation-adapters-gate-1-sheets-p2-seeds-p2-gate1).
 
+#### Sep 25: detector runs on the trial windows (p2-detect, runs)
+
+Every frame of both trial windows detected in all six views, DINO and Deformable DETR: four
+GPU runs of 14-18 min each (86,400 frames in 65 min of wall clock; DINO 46-47 ms/frame, DDETR
+38-43, peak 882 / 702 MiB, the card shared with nothing but the compositor at every start),
+every manifest `succeeded` / `full`, 3600 rows per view with `frame_index` 600..4199 and no
+interpolated row. The two detectors agree on **95.4%** of confident DINO boxes in room 1 and
+**90.4%** in room 2 (same class, IoU >= 0.5; 0.99 in the fpv, 0.96-1.00 on the static bench
+objects, 0.72-0.79 on the moving pipette, the hands and the centrifuge); the one target-level
+disagreement is the trial-2 plate, which DDETR sees in T2 and T4 as a ~100 px far box and DINO
+does not. Box-centre displacement over 30-frame steps in the fixed views gives the seeding rule
+its input: in trial 1 only the **blue pipette moves** (median 23-37 px, relocates up to 146 px,
+in a hand on 52% of frames), the micro and 50 ml tubes are handled without their top instance
+moving (in a hand on 44% / 11% of frames), and **the plate is static to 0.6 px and never in a
+hand**, so the plan's rule does not seed it, a named-object decision the seeds lane reached
+independently. Trial 2 with nothing changed: the yellow pipette and its tip rack move, the
+plate is static again, no 15 ml tube on that bench. Record: [Sep 25: detector runs on the trial
+windows (p2-detect, runs)](#sep-25-detector-runs-on-the-trial-windows-p2-detect-runs).
+
 ### Plan versus actual
 
 What the plan said, what happened instead, and why, in one line each.
@@ -7769,3 +7788,341 @@ and the 83 `main()` entry points beyond their shared fragments.
   2 runs the same command on `runs/finebio-detect-P20_03_01-600-4200-20260925/dino` once it
   lands; nothing in the parameters is P03-specific except the bench's singleton list, which
   holds for room 2 as well (one machine of each kind, one pipette of each colour).
+
+### Sep 25: detector runs on the trial windows (p2-detect, runs)
+
+- **What this is.** The runs half of `p2-detect` in the FineBio 3D-tracking plan
+  ([`docs/plan-2026-09-25-finebio-3d-tracking.md`](plan-2026-09-25-finebio-3d-tracking.md)):
+  FineBio's shipped detectors on **every frame of both trial windows in all six views**, with
+  the tooling of the previous night (`battle-finebio-detect`, the CUDA venv
+  `/home/nick/src/finebio-detector/.venv-cuda`; entry "Sep 24, night: FineBio detector, CUDA
+  build and battle-finebio-detect"). Windows from `configs/finebio/trials.json`: trial 1
+  `P03_03_01` and trial 2 `P20_03_01`, both raw frames **[600, 4200)** (3600 frames,
+  20.02-140.14 s). Four runs in order, DINO then Deformable DETR per trial, each a background
+  process watched to completion, each preceded by `nvidia-smi --query-compute-apps`: the card
+  held only `kwin_wayland` (144-145 MiB) at every start, so no `--allow-gpu-neighbour` was
+  passed and the guard (`vram` mode, `unknown` profile, 6 GiB required, 14,954-14,992 MiB
+  available) accepted every time; the seeds lane's two SAM3 decodes ran *beside* the trial-2
+  DINO worker with that worker named as their neighbour (their record), nothing was killed, no
+  viewer opened, `finebio_detect.py` untouched. Outputs (gitignored, FineBio licence; no frame,
+  mask or video anywhere): `runs/finebio-detect-P03_03_01-600-4200-20260925/{dino,ddetr}/` and
+  `runs/finebio-detect-P20_03_01-600-4200-20260925/{dino,ddetr}/`, each with `<view>.jsonl`
+  x 6, `frames.json`, `worker_command.json`, `worker.log`, `worker_result.json`,
+  `manifest.json`, `analysis.json` (this entry's numbers), plus a `README.md` per trial
+  directory with the same tables and the driver logs; 451 / 333 / 422 / 308 MB. Relative
+  symlinks `runs/finebio-detect-P03_03_01-600-4200 -> …-20260925/dino` and
+  `runs/finebio-detect-P20_03_01-600-4200 -> …-20260925/dino` make the `downstream.detections`
+  path and the `battle-finebio-rig --detections` command in the committed clip configs
+  (`configs/clips/finebio_<trial>_600-4200.json`) resolve as written. The analysis was one
+  script under `/tmp` (verification, per-frame counts, class presence, IoU agreement, box-centre
+  displacement, hand-box containment), not committed. Claim boundary: the detector was trained
+  on FineBio's own objects and cameras; every number below is model output at the detector's own
+  score, nothing is scored against the FineBio annotations (treated as unavailable), and the
+  move / in-hand tables are heuristics over those boxes.
+- **The four runs.** All `state: succeeded`, `detection_coverage: full`, TF32 off (the driver's
+  default), record threshold 0.05, `torch 2.13.0+cu130`, `mmcv 2.1.0`, `mmdet 3.3.0` at
+  `44ebd17b`, RTX 5070 Ti.
+
+  | run | elapsed (21,600 frames, incl. load + decode) | inference ms/frame mean (min / median / max) | per view fpv, T1..T5 | peak reserved / allocated | created (UTC) |
+  |---|---|---|---|---|---|
+  | trial 1 DINO | **1065.5 s (17.8 min)** | **47.3** (40 / 47 / 632 warm-up) | 45.8, 49.3, 47.2, 47.0, 47.2, 47.3 | **924,844,032 B (882 MiB)** / 517 MiB | 03:45:14 |
+  | trial 1 DDETR | **963.4 s (16.1 min)** | **42.8** (32 / 39 / 541) | 47.5, 52.5, 39.9, 39.3, 38.9, 38.7 | **736,100,352 B (702 MiB)** / 418 MiB | 04:01:30 |
+  | trial 2 DINO | **1028.5 s (17.1 min)** | **46.0** (38 / 47 / 326) | 39.6, 47.0, 47.8, 47.0, 47.2, 47.0 | 924,844,032 B (882 MiB) / 517 MiB | 04:19:05 |
+  | trial 2 DDETR | **854.3 s (14.2 min)** | **38.1** (32 / 38 / 311) | 32.9, 38.8, 39.0, 39.8, 39.1, 38.7 | 736,100,352 B (702 MiB) / 418 MiB | 04:33:33 |
+
+  Total GPU wall clock 65 min for 86,400 detected frames; the peak-memory figures are the
+  tooling night's to the byte. Trial 1's DDETR fpv and T1 means (47.5, 52.5) are host
+  contention, not the card: for about two minutes another lane ran `ffmpeg` on ~20 cores plus
+  several `ffprobe` and a `pytest` (load average 94 on 32 cores) while `nvidia-smi` showed the
+  detector alone at 60% utilisation, SM clock 2880 MHz, no throttle reason; the timer wraps
+  `inference_detector`, whose CPU-side resize/normalise slows under contention. Uncontended
+  DDETR is 33-40 ms, DINO 40-49. The fpv is the faster view for both models although it is the
+  larger frame: mmdet's `Resize (1333, 800) keep_ratio` turns the 4:3 fpv into 1067x800 and the
+  16:9 fixed frames into 1333x750 (fewer pixels through the backbone). DDETR's `max_per_img` is
+  100, hence its flat 99-100 detections per frame at 0.05.
+- **Verification, every run.** Each view's JSONL has exactly **3600 rows, `frame_index` 600..4199**
+  in order with no duplicates; `interpolated` is `false` on every row and `source_frames`
+  occurs nowhere; `image_hw` [1440, 1920] for the fpv and [1080, 1920] for T1..T5; `frames.json`
+  lists 3600 frames per view; the manifests record the window `{start 600, count 3600,
+  end_exclusive 4200}`, stride 1 in both view classes, the raw videos' sha256 (8492 frames each
+  in P03, 6045 in P20) and the checkpoint sha256s (`dino.pth` `e6399531…`, 579,232,009 B;
+  `deformable-detr.pth` `35982a45…`, 515,194,905 B; the SOURCES entries). Detections per frame,
+  median at score >= 0.05 / 0.3 / 0.5 (fpv, T1..T5): trial 1 DINO 112/39/36, 129/23/18,
+  166/29/21, 103/31/28, 151/38/31, 120/37/28; trial 1 DDETR 99/39/37, 100/26/22, 100/31/27,
+  99/31/28, 100/41/34, 100/35/31; trial 2 DINO 101/37/33, 136/23/17, 117/21/14, 142/29/21,
+  129/32/24, 105/35/28; trial 2 DDETR 80/37/34, 100/21/16, 100/19/16, 100/27/23, 100/27/24,
+  73/36/33. At 0.3 the two models agree on the count per view within 1-4 boxes.
+- **Frame presence, trial 1 (`P03_03_01`), DINO, fraction of the 3600 frames with at least one
+  box of the class; DDETR in brackets where it differs by >= 0.10.** At score >= 0.3:
+
+  | class | fpv | T1 | T2 | T3 | T4 | T5 |
+  |---|---|---|---|---|---|---|
+  | cell_culture_plate | 0.99 | 1.00 | 0.98 | 1.00 | 0.96 | 1.00 |
+  | blue_pipette | 0.59 | 0.37 (0.17) | 0.93 (0.58) | 0.59 | 0.49 (0.88) | 0.57 |
+  | yellow_pipette | 0.90 | 0.00 | 0.69 (0.96) | 0.92 (0.81) | 0.97 (0.78) | 1.00 |
+  | red_pipette | 0.79 | 0.00 | 0.01 | 0.01 | 0.92 | 0.98 |
+  | 8_channel_pipette | 0.61 | 0.43 (0.85) | 1.00 | 0.75 (0.86) | 1.00 | 0.97 |
+  | micro_tube | 1.00 | 0.93 | 1.00 | 1.00 | 1.00 | 1.00 |
+  | 50ml_tube | 0.87 | 0.88 | 1.00 | 0.95 | 0.99 | 0.99 |
+  | 15ml_tube | 0.89 | 1.00 (0.55) | 0.88 | 1.00 | 0.95 | 0.00 |
+  | blue_tip_rack | 0.78 | 0.85 | 1.00 | 0.69 (0.93) | 0.96 | 0.98 |
+  | yellow_tip_rack | 0.78 | 0.82 (0.97) | 1.00 | 0.94 | 0.98 | 0.99 |
+  | red_tip_rack | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 |
+  | 8_channel_tip_rack | 0.11 | 0.00 | 0.00 | 0.00 | 1.00 | 0.00 |
+  | centrifuge | 0.93 | 0.99 (0.78) | 1.00 | 1.00 | 1.00 | 1.00 |
+  | vortex_mixer | 0.92 | 1.00 | 0.99 | 0.99 | 0.96 | 1.00 |
+  | pcr_machine | 0.86 | 1.00 | 0.00 | 1.00 | 0.97 | 1.00 |
+  | left_hand | 0.96 | 0.61 | 0.20 (0.44) | 0.94 (0.81) | 0.94 | 0.94 |
+  | right_hand | 0.72 | 0.49 | 0.58 | 0.81 (0.93) | 0.93 (0.63) | 0.93 |
+
+  At score >= 0.5:
+
+  | class | fpv | T1 | T2 | T3 | T4 | T5 |
+  |---|---|---|---|---|---|---|
+  | cell_culture_plate | 0.99 | 1.00 | 0.97 | 1.00 | 0.92 | 1.00 |
+  | blue_pipette | 0.23 (0.37) | 0.11 | 0.12 | 0.20 (0.30) | 0.27 (0.40) | 0.20 (0.42) |
+  | yellow_pipette | 0.84 | 0.00 | 0.03 (0.85) | 0.77 (0.58) | 0.94 (0.65) | 0.99 |
+  | red_pipette | 0.66 (0.80) | 0.00 | 0.00 | 0.00 | 0.79 | 0.94 |
+  | 8_channel_pipette | 0.56 | 0.08 (0.52) | 0.72 | 0.68 | 0.99 | 0.79 (0.93) |
+  | micro_tube | 1.00 | 0.82 (0.99) | 0.99 | 1.00 | 1.00 | 1.00 |
+  | 50ml_tube | 0.84 | 0.83 | 1.00 | 0.94 | 0.99 | 0.82 |
+  | 15ml_tube | 0.87 | 1.00 (0.39) | 0.87 (0.71) | 1.00 | 0.94 (0.82) | 0.00 |
+  | blue_tip_rack | 0.76 | 0.78 | 1.00 | 0.60 (0.89) | 0.93 | 0.90 |
+  | yellow_tip_rack | 0.74 | 0.13 (0.92) | 1.00 | 0.93 | 0.95 | 0.97 |
+  | red_tip_rack | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 |
+  | 8_channel_tip_rack | 0.05 | 0.00 | 0.00 | 0.00 | 1.00 | 0.00 |
+  | centrifuge | 0.91 | 0.70 | 0.86 (0.99) | 0.96 | 0.99 | 1.00 |
+  | vortex_mixer | 0.89 | 1.00 | 0.97 | 0.97 | 0.93 | 1.00 |
+  | pcr_machine | 0.85 | 1.00 | 0.00 | 1.00 | 0.46 (0.98) | 1.00 |
+  | left_hand | 0.91 | 0.49 | 0.05 (0.24) | 0.80 | 0.72 (0.94) | 0.90 |
+  | right_hand | 0.66 | 0.25 | 0.33 | 0.55 (0.89) | 0.64 (0.48) | 0.87 |
+
+  Reading: the plate, the tubes, the machines and the two tip racks in use are on the bench in
+  every fixed view on 88-100% of frames at 0.3 (the plate 0.92-1.00 even at 0.5; the
+  preflight's transparent-plate worry does not show up as missed frames); the moving
+  `blue_pipette` is the weakest class (0.37-0.93 at 0.3, **0.11-0.27 at 0.5** in the fixed
+  views), the preflight's "object in the hand is the weakest detection" on 3600 frames; the
+  red pipette and the 15 ml tube are out of some cameras' view entirely (T1/T2/T3 and T5);
+  `red_tip_rack` is not on this bench; the `8_channel_tip_rack` is a T4-only detection (100%
+  there, 0-11% elsewhere), so either a rack only T4 can see or a T4-specific confusion; the
+  PCR machine is outside T2's frame. Hands: 0.49-0.96 at 0.3 per view, T2 sees the left hand
+  least (0.20).
+- **Frame presence, trial 2 (`P20_03_01`), DINO (DDETR in brackets where |delta| >= 0.10).** At
+  score >= 0.3:
+
+  | class | fpv | T1 | T2 | T3 | T4 | T5 |
+  |---|---|---|---|---|---|---|
+  | cell_culture_plate | 1.00 | 1.00 | **0.00 (0.90)** | 1.00 | **0.56 (0.89)** | 1.00 |
+  | blue_pipette | 0.74 (0.87) | 0.30 (0.04) | 0.90 (0.49) | 0.63 (0.49) | 1.00 | 0.92 |
+  | yellow_pipette | 0.87 | 0.09 | 0.48 | 0.37 | 0.47 | 0.87 |
+  | red_pipette | 0.71 | 0.00 | 0.00 | 0.02 (0.15) | 1.00 | 0.92 |
+  | 8_channel_pipette | 0.60 | 0.69 | 1.00 | 0.63 | 1.00 | 1.00 |
+  | micro_tube | 1.00 | 0.96 | 0.97 | 0.98 | 0.95 | 1.00 |
+  | 50ml_tube | 0.97 | 0.97 | 1.00 | 0.96 | 1.00 | 1.00 |
+  | 15ml_tube | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 |
+  | blue_tip_rack | 0.84 | 0.75 (0.15) | 1.00 | 0.90 | 1.00 | 0.97 |
+  | yellow_tip_rack | 0.94 | 0.72 | 1.00 | 0.75 | 1.00 | 1.00 |
+  | red_tip_rack | 0.54 | 0.99 (0.77) | 1.00 | 0.07 | 1.00 | 1.00 |
+  | 8_channel_tip_rack | 0.74 | 1.00 (0.77) | 1.00 | 0.91 (0.80) | 1.00 | 1.00 |
+  | centrifuge | 1.00 | 1.00 | 0.99 | 1.00 | 1.00 | 1.00 |
+  | vortex_mixer | 0.97 | 0.13 (0.84) | 0.00 (0.28) | 0.96 | 1.00 | 1.00 |
+  | pcr_machine | 1.00 | 1.00 | 0.11 (0.95) | 1.00 | 0.82 | 1.00 |
+  | left_hand | 0.99 | 0.78 (0.56) | 0.09 | 0.51 | 0.79 (0.92) | 0.97 |
+  | right_hand | 1.00 | 0.43 (0.97) | 0.39 (0.51) | 0.91 | 0.71 (0.17) | 0.94 |
+
+  At score >= 0.5:
+
+  | class | fpv | T1 | T2 | T3 | T4 | T5 |
+  |---|---|---|---|---|---|---|
+  | cell_culture_plate | 1.00 | 1.00 | 0.00 (0.89) | 1.00 | 0.09 (0.88) | 1.00 |
+  | blue_pipette | 0.59 (0.82) | 0.03 | 0.00 | 0.09 | 1.00 | 0.88 |
+  | yellow_pipette | 0.55 (0.65) | 0.00 | 0.12 (0.23) | 0.05 | 0.32 | 0.62 |
+  | red_pipette | 0.65 | 0.00 | 0.00 | 0.00 (0.11) | 0.98 (0.87) | 0.88 |
+  | 8_channel_pipette | 0.55 | 0.04 | 0.96 | 0.50 | 1.00 | 1.00 |
+  | micro_tube | 1.00 | 0.94 | 0.94 | 0.97 | 0.92 | 1.00 |
+  | 50ml_tube | 0.96 | 0.94 | 1.00 | 0.91 | 1.00 | 1.00 |
+  | 15ml_tube | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 |
+  | blue_tip_rack | 0.81 | 0.21 (0.03) | 1.00 | 0.84 | 1.00 | 0.97 |
+  | yellow_tip_rack | 0.91 | 0.70 | 1.00 | 0.68 | 1.00 | 0.96 |
+  | red_tip_rack | 0.53 | 0.96 (0.71) | 1.00 | 0.01 | 1.00 | 1.00 |
+  | 8_channel_tip_rack | 0.71 | 0.96 (0.17) | 1.00 | 0.79 (0.60) | 1.00 | 1.00 |
+  | centrifuge | 1.00 | 0.98 | 0.65 (0.97) | 1.00 | 0.99 | 1.00 |
+  | vortex_mixer | 0.95 | 0.01 (0.64) | 0.00 | 0.95 | 0.96 | 1.00 |
+  | pcr_machine | 0.99 | 1.00 | 0.00 (0.89) | 1.00 | 0.17 (0.90) | 1.00 |
+  | left_hand | 0.97 | 0.16 (0.39) | 0.01 | 0.31 (0.47) | 0.31 (0.81) | 0.94 |
+  | right_hand | 0.98 | 0.17 (0.66) | 0.19 | 0.75 (0.96) | 0.34 (0.09) | 0.89 |
+
+  Reading: room 2's bench holds no 15 ml tube and does hold the red tip rack; the vortex mixer
+  is outside T2's frame and at the edge of T1's; the moving `yellow_pipette` is the weak class
+  here (0.09-0.87 at 0.3 in the fixed views, 0.00-0.62 at 0.5). **The plate**: DINO never
+  detects it in T2 and sees it on 56% of T4 frames at 0.3 (9% at 0.5), while DDETR has it on
+  90% / 89% of frames in both. Looked at: DDETR's T2 plate is a 97x84 px box near the top of
+  the frame (`[1220, 110, 1317, 194]`) where DINO has **no box of any class at IoU >= 0.5 at
+  any score >= 0.05 on 3207 of those 3215 frames** (its best plate score per frame is 0.07
+  median); in T4 DDETR's 109x72 px plate (`[595, 154, 704, 226]`) coincides with DINO's
+  low-score plate (median 0.32) on 2111 frames and with DINO's `pcr_machine` box on 1045. No
+  ground truth to adjudicate a ~100 px far object; recorded as the one class-level
+  disagreement that touches a tracked target. Under DINO the plate has three confident fixed
+  views in room 2 (T1, T3, T5), the plan's minimum for a birth without the fpv; under DDETR it
+  has five.
+- **Agreement, DINO vs Deformable DETR** (fraction of DINO boxes at score >= 0.5 with a
+  same-class DDETR box at IoU >= 0.5 on the same frame; the DDETR partner at >= 0.3 unless
+  stated). Trial 1:
+
+  | view | DINO boxes >= 0.5 | DDETR >= 0.3 | DDETR >= 0.5 | any DDETR box | reverse (DDETR >= 0.5 matched by DINO >= 0.3) |
+  |---|---|---|---|---|---|
+  | fpv | 119,037 | 0.986 | 0.974 | 0.995 | 0.977 (124,215) |
+  | T1 | 63,786 | 0.857 | 0.790 | 0.930 | 0.778 (77,379) |
+  | T2 | 73,260 | 0.953 | 0.894 | 0.996 | 0.887 (94,959) |
+  | T3 | 96,021 | 0.964 | 0.937 | 0.992 | 0.964 (97,276) |
+  | T4 | 109,208 | 0.945 | 0.900 | 0.988 | 0.911 (120,926) |
+  | T5 | 99,045 | 0.976 | 0.934 | 0.992 | 0.937 (111,783) |
+  | all | 560,357 | **0.954** | 0.915 | - | 0.917 (626,538) |
+
+  Per class (all views, DINO boxes in brackets): cell_culture_plate 1.000 (21,193), pcr_machine
+  1.000 (16,069), yellow_tip_rack 0.998, vortex_mixer 0.995, blue_tip_rack 0.994,
+  8_channel_tip_rack 0.994, red_pipette 0.991, 8_channel_pipette 0.976, micro_tube 0.967
+  (150,228), yellow_pipette 0.927, 50ml_tube 0.927, left_hand 0.887, 15ml_tube 0.873,
+  centrifuge 0.814, right_hand 0.789, **blue_pipette 0.732 (4,110)**. Trial 2:
+
+  | view | DINO boxes >= 0.5 | DDETR >= 0.3 | DDETR >= 0.5 | any DDETR box | reverse |
+  |---|---|---|---|---|---|
+  | fpv | 113,104 | 0.986 | 0.970 | 0.996 | 0.978 (117,838) |
+  | T1 | 62,631 | 0.772 | 0.724 | 0.901 | 0.831 (59,455) |
+  | T2 | 50,351 | 0.810 | 0.762 | 0.897 | 0.748 (56,623) |
+  | T3 | 71,860 | 0.939 | 0.902 | 0.972 | 0.918 (79,269) |
+  | T4 | 85,185 | 0.861 | 0.830 | 0.980 | 0.927 (84,060) |
+  | T5 | 101,532 | 0.952 | 0.927 | 0.982 | 0.924 (116,734) |
+  | all | 484,663 | **0.904** | 0.873 | - | 0.906 (513,979) |
+
+  Per class: cell_culture_plate 1.000 (14,708), pcr_machine 0.998, yellow_tip_rack 0.994,
+  vortex_mixer 0.986, blue_pipette 0.973, blue_tip_rack 0.964, red_tip_rack 0.958, red_pipette
+  0.956, micro_tube 0.920 (98,635), left_hand 0.891, yellow_pipette 0.881, 8_channel_tip_rack
+  0.875, centrifuge 0.786, right_hand 0.785, 50ml_tube 0.771, **8_channel_pipette 0.723**.
+  Reading: the two detectors agree on 95% of confident DINO boxes in room 1 and 90% in room 2,
+  the fpv at 0.99 in both; the static bench objects agree at 0.96-1.00; the disagreement sits
+  on the moving pipette (the blue one in trial 1, the 8-channel and 50 ml tube in trial 2),
+  the hands (0.79-0.89) and the centrifuge (0.79-0.81, its box straddles the lid state), and
+  in room 2 in the two side views T1 / T2 (0.77 / 0.81) whose rig is asymmetric. Nine
+  percent of DINO's confident boxes have a DDETR partner only below 0.3 or not at all; the
+  plan's `p5-confidence` flag ("DINO vs DDETR agreement, near-redundant") therefore fires on
+  5-10% of boxes, concentrated where the SAM3 score and the cross-view residual will also be
+  weakest.
+- **What moves and what sits in a hand, trial 1, DINO, fixed views (the input to the
+  `p2-seeds` rule).** Method: at score >= 0.3, for every 30-frame step k -> k+30 (3570 steps),
+  the top-scoring instance's box-centre displacement (`top`), the top instance at k against the
+  nearest same-class box at k+30 (`nearest`, not inflated by the top instance switching
+  objects), and the fraction of steps on which *any* instance has no same-class box within
+  20 px thirty frames later (`steps with a move`, an upper bound: a vanished box counts);
+  `start-to-end` = the top instance's median centre over the first 60 frames vs the last 60;
+  `in hand` = fraction of the 3600 frames on which some instance's box centre lies inside a
+  `left_hand` / `right_hand` box at >= 0.3 (`centre`) or >= 50% of its box area does
+  (`covered`). Labels: **moves** = top median > 20 px in some fixed view; **static** = nearest
+  p90 <= 20 px and <= 5% of steps with a move in every fixed view; **intermittent** otherwise.
+  A fixed view sets a label only when it sees the class on both frames of >= 900 steps (a
+  persistent detection: trial 2's `blue_pipette` in T1, seen on 30% of frames at 0.3 and 2.7%
+  at 0.5, moves 56 px median as a flickering box and would otherwise mislabel a static object).
+  **The fpv column is excluded from the labels: with the head moving, 86-99% of every class's
+  steps exceed 20 px there.** Every column below is the max over the counted fixed views.
+
+  | class | label | inst/frame | top median px | nearest p90 px | steps with a move | start-to-end px | in hand (centre / covered) | > 10% in hand |
+  |---|---|---|---|---|---|---|---|---|
+  | cell_culture_plate | **static** | 1 | 0.6 | 2.3 | 0.00 | 1 | 0.056 / 0.040 | no |
+  | blue_pipette | **moves** | 1 | 36.8 | 324.4 | 0.64 | 146 | 0.524 / 0.424 | **yes** |
+  | yellow_pipette | intermittent | 1 | 1.6 | 46.6 | 0.21 | 1 | 0.093 / 0.070 | no |
+  | red_pipette | intermittent | 1 | 0.8 | 49.2 | 0.21 | 17 | 0.022 / 0.012 | no |
+  | 8_channel_pipette | intermittent | 1 | 4.2 | 24.4 | 0.12 | 5 | 0.053 / 0.052 | no |
+  | micro_tube | intermittent | 12 | 2.0 | 3.1 | 0.40 | 272 | 0.440 / 0.439 | **yes** |
+  | 50ml_tube | intermittent | 2 | 0.9 | 13.0 | 0.18 | 100 | 0.113 / 0.110 | **yes** |
+  | 15ml_tube | static | 1 | 0.6 | 7.7 | 0.02 | 4 | 0.146 / 0.143 | **yes** |
+  | blue_tip_rack | intermittent | 1 | 1.3 | 22.6 | 0.14 | 7 | 0.074 / 0.072 | no |
+  | yellow_tip_rack | intermittent | 1 | 2.0 | 10.4 | 0.06 | 5 | 0.084 / 0.070 | no |
+  | red_tip_rack | absent | - | - | - | - | - | 0.000 / 0.000 | no |
+  | 8_channel_tip_rack | static | 1 | 0.6 | 1.2 | 0.00 | 1 | 0.001 / 0.001 | no |
+  | centrifuge | intermittent | 2 | 0.9 | 25.1 | 0.12 | 212 | 0.096 / 0.055 | no |
+  | vortex_mixer | static | 1 | 0.2 | 5.8 | 0.04 | 0 | 0.139 / 0.130 | **yes** |
+  | pcr_machine | static | 1 | 0.6 | 1.7 | 0.00 | 0 | 0.015 / 0.012 | no |
+  | left_hand | moves | 1 | 45.1 | 307.7 | 0.62 | 193 | - | - |
+  | right_hand | moves | 1 | 104.4 | 482.2 | 0.71 | 307 | - | - |
+
+  Per fixed view (top median px / fraction of steps with a move / in-hand centre fraction; n =
+  steps with the class on both frames):
+
+  | class | T1 | T2 | T3 | T4 | T5 |
+  |---|---|---|---|---|---|
+  | cell_culture_plate | 0.2 / 0.00 / 0.00 (3570) | 0.2 / 0.00 / 0.04 (3421) | 0.2 / 0.00 / 0.00 (3570) | 0.6 / 0.00 / 0.06 (3345) | 0.1 / 0.00 / 0.00 (3570) |
+  | blue_pipette | 12.2 / 0.41 / 0.05 (765) | 36.8 / 0.60 / 0.06 (3081) | 35.8 / 0.61 / 0.17 (1576) | 23.2 / 0.53 / 0.43 (1256) | 35.8 / 0.64 / 0.52 (1448) |
+  | yellow_pipette | - | 1.5 / 0.21 / 0.01 (1823) | 1.6 / 0.19 / 0.09 (3139) | 1.0 / 0.15 / 0.05 (3340) | 0.3 / 0.05 / 0.02 (3566) |
+  | red_pipette | - | - | - | 0.8 / 0.21 / 0.02 (3058) | 0.8 / 0.21 / 0.00 (3444) |
+  | 8_channel_pipette | 2.7 / 0.26 / 0.05 (830) | 4.2 / 0.02 / 0.00 (3552) | 1.6 / 0.10 / 0.03 (2381) | 0.4 / 0.07 / 0.01 (3568) | 0.3 / 0.12 / 0.05 (3368) |
+  | micro_tube | 0.6 / 0.40 / 0.26 (3200) | 0.8 / 0.34 / 0.20 (3564) | 0.6 / 0.28 / 0.33 (3570) | 0.4 / 0.40 / 0.44 (3554) | 2.0 / 0.36 / 0.26 (3570) |
+  | 50ml_tube | 0.4 / 0.09 / 0.06 (2929) | 0.2 / 0.08 / 0.05 (3568) | 0.6 / 0.12 / 0.11 (3337) | 0.3 / 0.12 / 0.11 (3534) | 0.9 / 0.18 / 0.03 (3526) |
+  | 15ml_tube | 0.6 / 0.00 / 0.15 (3568) | 0.5 / 0.01 / 0.01 (3001) | 0.3 / 0.00 / 0.00 (3570) | 0.5 / 0.02 / 0.08 (3268) | - |
+  | blue_tip_rack | 1.3 / 0.02 / 0.07 (2888) | 0.4 / 0.01 / 0.00 (3570) | 0.6 / 0.02 / 0.07 (2025) | 0.7 / 0.14 / 0.04 (3338) | 0.3 / 0.11 / 0.01 (3444) |
+  | yellow_tip_rack | 2.0 / 0.03 / 0.04 (2518) | 0.2 / 0.00 / 0.00 (3570) | 0.3 / 0.01 / 0.08 (3309) | 0.5 / 0.06 / 0.04 (3408) | 0.3 / 0.02 / 0.03 (3534) |
+  | 8_channel_tip_rack | - | - | - | 0.6 / 0.00 / 0.00 (3570) | - |
+  | centrifuge | 0.6 / 0.10 / 0.04 (3500) | 0.9 / 0.12 / 0.01 (3545) | 0.2 / 0.05 / 0.10 (3539) | 0.3 / 0.12 / 0.08 (3556) | 0.2 / 0.05 / 0.06 (3570) |
+  | vortex_mixer | 0.2 / 0.00 / 0.05 (3570) | 0.1 / 0.04 / 0.09 (3491) | 0.2 / 0.00 / 0.06 (3520) | 0.2 / 0.02 / 0.14 (3299) | 0.1 / 0.00 / 0.07 (3570) |
+  | pcr_machine | 0.2 / 0.00 / 0.00 (3570) | - | 0.3 / 0.00 / 0.00 (3570) | 0.6 / 0.00 / 0.01 (3414) | 0.3 / 0.00 / 0.00 (3570) |
+  | left_hand | 6.5 / 0.32 (1688) | 14.9 / 0.48 (420) | 15.7 / 0.46 (3192) | 45.1 / 0.62 (3231) | 12.7 / 0.44 (3228) |
+  | right_hand | 43.3 / 0.60 (1237) | 22.5 / 0.59 (1579) | 104.4 / 0.71 (2545) | 96.2 / 0.71 (3107) | 50.0 / 0.66 (3105) |
+
+  Hand boxes for scale: diagonal median / p90 px fpv 517 / 694, T1 223 / 342, T2 304 / 448,
+  T3 288 / 358, T4 305 / 412, T5 248 / 306; a hand is in view on 2272 (T2) to 3597 (T5) of the
+  3600 frames. Reading, for the rule "seed what moves or sits in a hand box": (i) **moves**:
+  `blue_pipette` only (median 23-37 px in T2/T3/T4/T5, relocates 35-146 px, in a hand on 52% of
+  T5 frames): the pipette in use. (ii) **Handled although the top instance is still**:
+  `micro_tube` (12 per frame in T4/T5; 28-40% of steps some tube has no same-class box within
+  20 px thirty frames later; in a hand on 26-44% of frames; the top instance jumps 272 px in
+  T3) and `50ml_tube` (2 per frame, 18% of steps, 11% in hand, the top tube relocates 46-100 px
+  in four views): the "or in a hand" clause is what catches them, the displacement clause alone
+  would not, which is the plan's reason for having both. (iii) **Static and not in a hand**:
+  `cell_culture_plate` (**0.6 px median, 2.3 px p90, no step with any instance moved, 0-1 px
+  start-to-end, in a hand on at most 5.6% of frames in any fixed view**), `pcr_machine`,
+  `8_channel_tip_rack`, both tip racks in use (7 and 5 px start-to-end; the blue one has 14%
+  of steps with a move in T4, hands over it). (iv) **Static but in a hand > 10%**: `15ml_tube`
+  (14.6% in T1) and `vortex_mixer` (13.9% in T4, tubes being vortexed on it): the hand test
+  fires on contact with a resting object, so the rule would open them; the seeds lane's cap
+  order (landmarks first, held-only objects after movers) is what keeps that harmless.
+  (v) **Intermittent but not relocated**: `yellow_pipette`, `red_pipette`,
+  `8_channel_pipette` (12-21% of steps over 20 px, p90 24-49 px, but 1-17 px start-to-end and
+  < 10% in hand): brief handling or flicker, not use; the `centrifuge` (2 instances in T1/T2,
+  12% of steps; 155-212 px start-to-end in T1/T2 and 49-54 px in T3..T5) is the **lid**, closed
+  at frame 600 and open at 4199 (trials.json's T5 closed vs open centres are 62 px apart), not
+  the body. (vi) Deformable DETR, same method, gives the same label to every class of interest
+  except `yellow_tip_rack` (static vs intermittent, 5% vs 6% of steps) and the same > 10%
+  in-hand set except `15ml_tube` (5.4% vs 14.6% in T1).
+- **The plate finding.** In this window of protocol 03 the plate is a bench object: it does not
+  move and no hand rests on it in any fixed view, in either trial (trial 2: 0.2 px median,
+  1.4 px p90, 1% in hand). The plan's rule therefore does **not** open a slot for it, while the
+  storyboard needs it (the fpv pans off the plate and back; the transparent plate masked in six
+  views). The seeds lane reached the same conclusion from its tracklets while these runs were
+  in flight (its entry above: "the plate never moves in protocol 03 and stays detector_only in
+  every fixed view", with `--container-classes` + plate as the switch that opens it as a static
+  volume). Both methods agree; the decision is the gate-1 human's or the arms lane's, and it is
+  a named-object decision, not a threshold.
+- **Trial 2, the same tables in brief (DINO, fixed views; full tables in its README).** The
+  pipette in use is the **yellow** one (median 38.8 px in T5, relocates 173 px in T5 / 228 px in
+  T3, in a hand on 52.5% of T5 frames), and its `yellow_tip_rack` is the rack that moved
+  (39-57 px start-to-end in every fixed view, 12.6% in hand); `blue_pipette` is static where
+  it is seen persistently (T4 0.7 px at 100% presence, T5 0.3 px) and `intermittent` overall
+  (13.1 px median in T3, 20 px start-to-end, 9.9% in hand); `micro_tube` handled (9-11 per
+  frame, 60% of steps with a move in T5, 30% in hand, top instance relocates 207 px in T4);
+  `50ml_tube` 25% of steps, the top tube relocates 107 px in T5, 8.5% in hand (under the line
+  here); `cell_culture_plate` static (above); `red_tip_rack` static (present in room 2 only);
+  `centrifuge` 28% of steps, 0-2 px start-to-end (four spins; in a hand on 10.9% of frames by
+  the centre test, 3.7% by coverage: both hands on the lid during each spin, as the trials QA
+  saw), `vortex_mixer` and `pcr_machine` static, `8_channel_tip_rack` 44% of steps with 2
+  instances per frame and 2 px start-to-end (instance switching), `15ml_tube` absent. The rule
+  picks the right pipette in each room with nothing changed between them, which is what "zero
+  per-trial tuning" needs to be true. DDETR agrees on the plate, the yellow pipette, the micro
+  tubes, the red tip rack and the hands; it puts `blue_pipette` in a hand on 13.8% (DINO 9.9%)
+  and the `vortex_mixer` at 14% of steps (DINO 3%).
+- **For the arms and the tracker.** Rows are in raw pixels at raw frame indices (proxy frame k
+  == raw 600 + k); `class_id` indexes the 35-class list; no row is interpolated, so the seeder
+  and the observation adapter never meet a `strided_interpolated` manifest on these trials. The
+  fpv's per-frame pose validity is not in these files (`fpv_pose_validity(trial)` in the
+  adapters). Per-class agreement above is the prior for the `p5-confidence` flag. The trial-2
+  plate in T2/T4 is the first concrete case where the two detectors disagree on a tracked
+  target's existence in a view; the tracker's birth rule (>= 3 fixed views) does not need those
+  views under either detector.
