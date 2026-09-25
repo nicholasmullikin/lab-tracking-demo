@@ -517,6 +517,20 @@ six-view annotated frame 916) is the trial to use. Eleven plan modifications pro
 applied. Record: [`docs/preflight-2026-09-24-finebio.md`](preflight-2026-09-24-finebio.md);
 outputs `runs/preflight-finebio-20260924/` (gitignored) including `preflight.rrd`.
 
+#### Sep 24, night: FineBio contracts and fixtures (p0-contracts)
+
+The data contracts the FineBio lanes split on: observation, camera-config, track and event
+schemas in `multiview_schemas.py`; the preflight's camera library moved into
+`battle.finebio_cameras` with the `mapping` and `rig` outputs reproduced byte for byte; the
+P03_01_01 camera config committed (`configs/finebio/cameras/P03_01_01.json`); the preflight's
+detections and SAM3 series converted into 20,209 observation rows under
+`tests/fixtures/finebio_preflight/` (4.5 MB, numbers only) that re-triangulate the eleven
+static objects and the plate hand-off to the preflight's numbers; the frame-index contract as a
+`real_data` test (proxy frame k == raw frame start+k at 0.7-0.9 grey levels against 1.0-5.2 one
+frame off, pose length == raw frame count on two trials, markers on the proxy at 0.7-1.0 px). CPU
+only, no GPU, no viewer. Record: [Sep 24, night: FineBio contracts and fixtures
+(p0-contracts)](#sep-24-night-finebio-contracts-and-fixtures-p0-contracts).
+
 ### Plan versus actual
 
 What the plan said, what happened instead, and why, in one line each.
@@ -6348,3 +6362,119 @@ and the 83 `main()` entry points beyond their shared fragments.
   `tests/test_video_driver.py::test_recorded_smoke_manifests_rebuild_byte_for_byte` over
   `runs/dedup-pass2-smokes-*/*/*` collapsed to one "got empty parameter set" skip. No other test
   newly skips or fails; `-m gpu` not run (CPU only).
+
+### Sep 24, night: FineBio contracts and fixtures (p0-contracts)
+
+- **What this is.** The first todo of the FineBio 3D-tracking plan
+  ([`docs/plan-2026-09-25-finebio-3d-tracking.md`](plan-2026-09-25-finebio-3d-tracking.md)):
+  the contracts the lanes develop against, the preflight's geometry code moved into the
+  package, recorded preflight observations as committed fixtures, and the frame-index contract
+  as a test. Evidence base: [`docs/preflight-2026-09-24-finebio.md`](preflight-2026-09-24-finebio.md).
+  CPU only, no GPU, no Rerun viewer, nothing under `data/` or `runs/` written except the two
+  preflight files re-generated for the byte-identity check. Other lanes committed concurrently
+  in the same checkout (trial selection, the detector driver, the worker modes); only the files
+  named below were staged, by path. Commits: `9bfbeed` (schemas), `ce9b010` (camera library,
+  refactor, config), `835566b` (fixtures), `7436c7a` (frame-index contract test), and this
+  entry's commit.
+- **Schemas (`src/battle/multiview_schemas.py`, commit `9bfbeed`).** Four `VersionedModel`
+  contracts (extra fields forbidden, frozen, `schema_version`), kept small so the lanes can
+  extend them. `FineBioObservation`: `view`, raw `frame_index`, `slot` (`<class>#<k>`; for
+  detector rows k is the same-class score rank within the frame, not an identity; for SAM3 rows
+  the seeded slot), `object_class` (the field is not called `class`, a keyword),
+  `detector_score`, `box_xyxy_px`, optional `mask_bbox_px`, `mask_centroid_px`,
+  `mask_area_px`, `sam3_object_score`, `pose_valid`, `source` in {`detector`, `sam3_decode`,
+  `sam3_video`}, `provenance` dict; a row must carry a box or a mask bbox (detector rows a box,
+  SAM3 rows a mask bbox), and `point_px` is the mask centroid when present, else the box centre.
+  One deviation from the plan's wording: `box_xyxy_px` is optional, because a SAM3 video-memory
+  row has a detector box only on frames where the detector ran. `FineBioCameraConfig`: trial,
+  recording day, `fixed` keyed by view (`FineBioFixedCamera`: camera id, `provenance` in
+  {`shipped`, `marker_pnp`}, K for the shipped video resolution, five distortion terms, `rvec`,
+  `tvec`, image size, the marker-fit residual of the pose in use and of the shipped pose, so
+  camera 6's 93.7 px sits beside its 0.7 px), `fpv` (`FineBioFpvCamera`: rescaled K,
+  distortion, pose source file, pose frame count, valid fraction, marker-residual and velocity
+  gate parameters), `units` = "board centimetres, z into the bench", `frame_index_offset`
+  (raw = proxy + offset; 0 for the trial-level config). `Track3D`: frame, track id, class,
+  position cm, scalar uncertainty cm, support views, `state` in {`observed`, `single_view`,
+  `coasting`, `held`, `contained`, `lost`}, confidence, abstain, `possibly_same_as`.
+  `TrackEvent`: frame, track id, `kind` in {`birth`, `lost`, `coasting`, `reacquired`,
+  `ambiguous`, `held`, `contained`, `handoff_reseed`, `detector_reseed`}, payload. Plus
+  `write_jsonl` / `read_jsonl` (`compact=True` omits `schema_version` and empty provenance,
+  restored on read). 13 tests in `tests/test_finebio_contracts.py`.
+- **Camera library (`src/battle/finebio_cameras.py`, commit `ce9b010`).** `Camera`,
+  `intrinsics(kind)` with the 0.5 / 0.48 rescale, `days`, `fixed_camera`, `marker_points`,
+  `fpv_poses`, `fpv_camera`, `detect_markers` (ArUco `DICT_6X6_50`), `match_markers`,
+  `rig_cameras` (shipped pose kept within 10 px, else marker PnP) moved verbatim out of
+  `scripts/finebio_preflight.py`; new `camera_config_from_mapping(mapping, trial)`,
+  `cameras_from_config`, `fpv_camera_from_config`, `write_camera_config`,
+  `read_camera_config`, `marker_corner_rms`. `video_path` and `read_frame` went to
+  `finebio_frames.py`. The script imports both modules and keeps its own `STATIC_CLASSES`,
+  `MOVING_CLASSES`, `draw_markers` and subcommands. **Byte-identity check:** the Sep 24
+  `mapping/mapping.json`, `mapping.md`, `rig/rig.json`, `rig.md` were copied to `/tmp`, then
+  `uv run python scripts/finebio_preflight.py --trial P03_01_01 mapping --seconds 30,60,90`
+  and `... rig --detections runs/preflight-finebio-20260924/detections` were re-run from the
+  refactored script; all four files were rewritten (mtimes 23:03) and `cmp` finds no
+  difference (`mapping.json` sha256 `d85122db…`, `rig.json` `89fb6928…`). The trial config
+  `configs/finebio/cameras/P03_01_01.json` (5,192 bytes, numbers only) was written by
+  `camera_config_from_mapping` from that mapping: day 221013; `T1..T5` = cameras 1,2,3,4,6;
+  T1-T4 `shipped` at 6.32 / 6.94 / 5.08 / 2.23 px; T5 `marker_pnp` at 0.71 px with the shipped
+  93.71 px recorded beside it, centre (-2.87, 5.27, -90.58) cm; fpv K rescaled, 5032 pose
+  frames, 97.18% valid, gates 20 px and 5 cm/frame (parameters, not measurements). 5 default
+  tests plus 2 `real_data` tests (`camera_config_from_mapping` reproduces the committed config
+  field for field; the T4 frame at 60 s fits the committed pose under 10 px).
+- **Fixtures (`tests/fixtures/finebio_preflight/`, commit `835566b`).** 4,523,703 bytes:
+  `observations.jsonl` 4,448,885 bytes, 20,209 rows (15,695 `detector`: every FineBio DINO box
+  at score >= 0.3 on the 78 preflight frames 1798..1858 consecutive plus 1888..2368 every 30th,
+  six views; 52 `sam3_decode`: the box-prompt masks at frame 1798, encoder side 1280, six
+  views; 4,462 `sam3_video`: the SAM3.1 track series 1799..2097 in fpv, T2, T4, T5 on plate,
+  pipette, centrifuge and 50ml tube, with object score, mask bbox, mask area, and the detector
+  box and `detector_box_iou` on the 67 frames where the detector ran; the 14 T2 tube frames
+  behind the arm and the 9 fpv pipette frame-edge frames are absent rows, listed in the
+  reference); `cameras.json` 5,192 bytes, identical to the committed config;
+  `fpv_poses.json` 43,686 bytes (the shipped fpv `rvec`/`tvec` and validity for the 310 frames
+  that carry an observation, so six-view triangulation needs no `data/`); `rig_reference.json`
+  20,237 bytes; `README.md` with the commands, the licence note (numbers only; no frame,
+  video, mask or `.rrd` anywhere in the repository) and the centroid approximation: SAM3 rows
+  carry the **mask-bbox centre** as `mask_centroid_px`, not the area centroid, because the
+  preflight kept only bounding boxes. Boxes rounded to 0.1 px, scores to 4 decimals. Builder
+  `scripts/finebio_preflight_fixtures.py`; loader `tests/finebio_fixtures.py`
+  (`load_preflight_fixtures()` -> observations, cameras, rig reference, fpv poses, with
+  `rows(...)`, `by_frame()`, `fixed_cameras()`, `fpv_camera(frame)`). `tests/test_finebio_fixtures.py`
+  (7): the eleven static objects re-triangulated from the fixture boxes and `cameras.json`
+  match the preflight points within 0.05 cm and every leave-one-view-out residual within
+  0.5 px (LOO summary 10.4 / 25.3 px); the plate hand-off into the fpv reproduces 45 frames,
+  median and p90 within 0.5 px, inside the fpv box on 100%; the frame-1798 fpv centre
+  (5.96, 36.31, -35.54) cm; 197 fpv rows carry `pose_valid: false`.
+- **Frame-index contract (`src/battle/finebio_frames.py`, `tests/test_finebio_frames.py`,
+  commit `7436c7a`).** `proxy_ffmpeg_args(raw, out, start_frame, frame_count)` is the one
+  proxy recipe for this phase and the contract lane B's `finebio_preprocessing` builds on:
+  native resolution, native 30000/1001, **no `fps=` filter**, exact-frame trim
+  `select='between(n,start,end)',setpts=N/FRAME_RATE/TB` on a full decode (no `-ss`),
+  `-fps_mode passthrough`, `-frames:v count`, libx264 crf 18, yuv420p, faststart, no audio.
+  `build_proxy` verifies the counted frame count; `frame_index_contract` reports the mean
+  absolute grey difference between proxy frame k and raw frames start+k-1, start+k, start+k+1;
+  `pose_length_check`; `proxy_marker_check`. **Numbers** (P03_01_01 fpv, 30-frame proxy from
+  raw 1798 built into `tmp_path` in 2.5 s; 1920x1440, `r_frame_rate` 30000/1001, 30 counted
+  frames): proxy frames 0 / 14 / 29 vs raw 1798 / 1812 / 1827 differ by **0.71 / 0.69 / 0.91**
+  grey levels at offset 0, **1.41 / 1.05 / 4.27** at -1 and **1.42 / 1.19 / 5.24** at +1; the
+  minimum is at 0 on every sample (the head barely moves over 1798-1812, so the margin there is
+  1.5-2x; at 1827 it is 5x). Pose length: 5032 == fpv, T1, T5 frame counts for P03_01_01;
+  8492 for P03_03_01 (fpv 99.0% valid). Markers on the three proxy frames fit the shipped pose
+  of raw frame 1798+k at **1.03 / 0.74 / 0.89 px** median corner RMS (2 markers each), the same
+  0.9 px the preflight measured on raw frames. Raw frames are read by cv2 seek, the access path
+  the preflight's detections and fpv-pose check used, so the seek index and the pose index are
+  already known to agree. The default tier checks the recipe's arguments and an exact 2-of-3
+  frame trim on the synthetic clip.
+- **Tests and lint.** Default tier **789 passed / 9 skipped** (762 + 27 new; the nine skips are
+  the `test_worker_policy` torch-absent skips as before); `uv run pytest -q -m real_data -k
+  finebio` **7 passed** (2 camera, 5 frame-index); `uv run ruff check src tests scripts` clean
+  and `ruff format --check` clean on the ten files touched. `-m gpu` not run.
+- **For the next phase.** Lane B (`p0-cameras`, `p1-configs`, `p1-rig`): build proxies with
+  `proxy_ffmpeg_args` unchanged and record `frame_index_offset = start_frame` in a per-window
+  copy of the config; `camera_config_from_mapping` is the function the `battle-finebio-cameras`
+  step should wrap (the mapping report shape is the preflight's); `rig_reference.json` holds the
+  numbers the `-rig` regression reproduces. Lane C (`p0-slice`, `p3-tracker`):
+  `load_preflight_fixtures()` gives six views, 78 detector frames and 299 SAM3 frames in raw
+  pixels with `fixed_cameras()` and `fpv_camera(frame)`; detector `slot` ranks are not
+  identities; SAM3 centroids are bbox centres; missing SAM3 masks are missing rows; every
+  triangulation goes through `Camera.undistort` then `dlt_triangulate` on the `projection`
+  matrices, as in `tests/test_finebio_fixtures.py`.
