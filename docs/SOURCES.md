@@ -449,6 +449,75 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
 - Battle-owned glue: `scripts/finebio_dino_detect.py` (detect phase under the detector
   interpreter, export under Battle), `scripts/install_finebio_detector.sh`.
 
+## Approved local source: FineBio camera poses and shipped checkpoints (Sep 24, 2026)
+
+- Status: `access granted` under the same signed FineBio licence agreement as the videos
+  above (non-commercial research/development, citation of Yagi et al., IJCV 2025); local
+  handling approved for the 3D object tracking plan
+  ([`docs/plan-2026-09-25-finebio-3d-tracking.md`](plan-2026-09-25-finebio-3d-tracking.md)). No
+  determination has been made about any display beyond the local procedure. The dataset
+  README (`github.com/aistairc/FineBio`, read Sep 24) notes the licence agreement was updated
+  on 2026-09-10; which version the user signed is the user's record, not the repository's.
+- Retrieved Sep 24, 2026 (files placed 21:04-21:05 local) from the dataset release's `misc/`
+  and `ckpts/` directories, the same gated download as the videos; the server mtimes
+  (2024-06-27) are preserved on the files. Stored under `data/raw/finebio/` (gitignored).
+- **Camera poses**: `misc/finebio_camera_poses.zip`, 64,013,894 B, SHA-256
+  `ee8ee467804d84ff8584565155a81b95322f66d3559014c7548752597a217c3a`, extracted beside it to
+  `misc/finebio_camera_poses/` (291 files, 77,073,685 B): `intrinsic_parameters/` with two
+  GoPro 9 calibrations by `cv2.findChessboardCorners`, `gopro9_5_wide_4k_43_0.50.npz` (first
+  person, 4000x3000 wide, SHA-256
+  `58b5e95f3920afd0d5c9acfa5c581ed28554849eef9fc5d122cd8f62ed8d76c8`) and
+  `gopro9_6_linear_4k_169_0.50.npz` (third person, 3840x2160, SHA-256
+  `fe5080041180278008d82f79407046a9525a4b51fe7c5a795e70a04a3e42187d`);
+  `third_person_camera_poses/<yymmdd>/`
+  for the ten recording days `221013, 221021, 221109, 221110, 221117, 221118, 221124, 221125,
+  221207, 221208`, each with `extrinsics/{1,2,3,4,6}_board.npz` (rotation and translation
+  vectors from `cv2.calibrateCamera` on a checkerboard at the table centre, origin at its
+  top-left corner) and `params/marker_points.npy` (AR marker positions by PnP from those
+  extrinsics); `first_person_camera_poses/` with 226 per-trial `.npz` files (`rets`, `rots`,
+  `trans`, one row per video frame, obtained by the authors from the markers); the authors'
+  `README.txt` (1,714 B, SHA-256 `6c20376f…36789`), `vis_extrinsic_parameters.py` (6,614 B,
+  `145e3116…6cf23`) and `vis_first_person_camera_poses.py` (4,519 B, `de2a4b92…31e3c`). The
+  intrinsics are for the calibration resolutions and are rescaled by 0.5 (fixed) / 0.48 (fpv)
+  for the shipped videos, as the README instructs and the preflight verified.
+- How Battle uses them: the shipped fixed-camera extrinsics are kept only where they fit the
+  bench markers within 10 px and replaced by a marker PnP where they do not (camera 6 on every
+  day so far), the shipped per-frame fpv pose is used with an outlier gate, and the resulting
+  per-trial camera config is committed as numbers only
+  (`configs/finebio/cameras/<trial>.json`, six poses and two intrinsics fitted or copied from
+  the dataset's calibration); that config is attributed to the dataset and is not a
+  redistribution of the archive. `configs/finebio/trials.json` records frame counts, pose
+  validity fractions and centrifuge lid intervals derived from the videos: numbers only.
+- **Checkpoints** (`ckpts/`, the seven files the release ships; SHA-256, bytes, what each is
+  per the dataset README and the benchmark READMEs):
+  `dino.pth` `e63995318ac28e230105f61f3e1db6c5de40748cb73850576f7c75cfc8029d94`, 579,232,009 B
+  (object detection, MMDetection DINO 4-scale R50, identical to the Sep 21 `gdown` copy in the
+  detector venv); `deformable-detr.pth`
+  `35982a45a17b4c7abf09f894feee8c43fd20413d105d9b984c1ff45be85bd6c3`, 515,194,905 B (object
+  detection, two-stage Deformable DETR, identical to the Sep 21 copy); `dino_checkpoint_e30.pth`
+  `70558986bc02324f95c6c3c383c085ba6ba7dc54dfe7224dfc88b64da474497d`, 561,278,348 B (the
+  IDEA-Research DINO codebase object detector, 30 epochs, used frozen inside the
+  manipulated/affected object detection benchmark); `handobj_checkpoint_e5.pth`
+  `e092e4ec76bef02e5c7b160e3d442f6846d5c6d2299231bd6792bbc8794b4af2`, 188,348,734 B (the
+  authors' manipulated/affected object detector: Shan et al., "Understanding Human Hands in
+  Contact at Internet Scale", CVPR 2020, re-implemented on IDEA DINO with hand-state,
+  manipulated-object and affected-object heads, 5 epochs); `actionformer.pth.tar`
+  `20498a7a50ca028439c8320af73d60525097e38d5ea1e3555b4df3a1ed397fb4`, 540,945,256 B (atomic
+  operation detection, ActionFormer on I3D features); `asformer.model`
+  `85ae91fe30581c629f7a047a0536301476c4f7d9eb475a800afd466c2c62a237`, 7,513,633 B (step
+  segmentation, ASFormer on I3D); `mstcn.model`
+  `54332a08f8be319ee81f0e2e98fc04c69dc467468d58a37501499f1e6e27e6df`, 5,725,097 B (step
+  segmentation, MS-TCN++ on I3D). Only `dino.pth` and `deformable-detr.pth` are used (through
+  the detector venv, see above); the other five are inventoried, not loaded, and the atomic
+  operation and step segmentation models are out of the plan's scope. All seven are the
+  authors' research artefacts trained on FineBio annotations, carry no licence file of their
+  own and are treated under the FineBio agreement; the FineBio README asks that the underlying
+  methods (DINO, Deformable DETR, Hand Object Detector, ActionFormer, ASFormer, MS-TCN++, I3D,
+  RAFT) be cited if the baselines are used.
+- Repository policy, restated: nothing under `data/` is committed (no pose file, marker file,
+  checkpoint, frame, video, mask or `.rrd`); derived numbers (camera configs, trial windows,
+  lid intervals, observation fixtures) are.
+
 ## Candidate source: creator-uploaded video
 
 - Status: `not approved`.

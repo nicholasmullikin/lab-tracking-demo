@@ -104,6 +104,25 @@ inputs outside Git.
   redistributed. Every detection in `runs/finebio-dino-20260921/` is made on FineBio frames
   and inherits those terms; the run is unscored (no annotations here) and makes no accuracy
   claim for the detector or for SAM3.
+- **FineBio camera poses and shipped checkpoints (Sep 24):** the calibration archive
+  (`misc/finebio_camera_poses/`: two GoPro intrinsic files, ten recording days of fixed-camera
+  extrinsics and marker points, 226 per-trial first-person pose files, the authors' README and
+  two visualisation scripts) and the seven checkpoints under `ckpts/` (`dino.pth`,
+  `dino_checkpoint_e30.pth`, `deformable-detr.pth`, `handobj_checkpoint_e5.pth`,
+  `actionformer.pth.tar`, `asformer.model`, `mstcn.model`; SHA-256 of each in
+  `docs/SOURCES.md`) came through the same gated FineBio download and are covered by the same
+  FineBio licence agreement (Yagi et al., IJCV 2025; non-commercial research/development,
+  citation required; the authors note the agreement text was updated 2026-09-10). They carry
+  no licence of their own. The `handobj` model is the authors' re-implementation of the Shan et
+  al. (CVPR 2020) hand-object detector on the IDEA DINO codebase; the FineBio README asks that
+  the underlying methods be cited if the baselines are used, and only the two object detectors
+  are used here. Everything under `data/raw/finebio/misc/` and `data/raw/finebio/ckpts/` stays
+  outside Git, as does every frame, video, mask, contact sheet and `.rrd` derived from the
+  videos (the Sep 24 trial-selection images under `runs/preflight-finebio-20260924/trials/`
+  included). What the repository commits from these sources is numbers: per-trial camera
+  configs fitted to or copied from the dataset's calibration, trial windows, centrifuge lid
+  intervals, pose validity fractions and the preflight observation fixtures, attributed to the
+  dataset. No sharing determination beyond the local procedure is made.
 
 ## Dependency and future-model review
 
