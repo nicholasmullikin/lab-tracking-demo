@@ -15,6 +15,7 @@ from battle.finebio_observations import (
     detection_row_to_observations,
     detections_to_observations,
     fill_pose_valid,
+    filter_mask_components,
     mask_measurements,
     pose_validity_from_fixture,
     worker_to_observations,
@@ -196,6 +197,38 @@ def test_worker_to_observations_video_rows_match_detector_boxes(tmp_path: Path):
     assert tube_601.provenance["detector_slot"] == "micro_tube#0"
     assert 0.6 < tube_601.provenance["detector_box_iou"] < 1.0
     assert tube_601.sam3_object_score == 9.5
+
+
+def test_worker_rows_drop_speckle_components_like_the_worker_box(tmp_path: Path):
+    """Sep 25 (p4-arms): SAM3.1 video-memory masks carry a few isolated positive pixels far
+    from the object; the bbox, centroid and area come from the components the worker's own
+    box rule keeps, and the dropped pixels are on the record."""
+    import cv2
+
+    _write_worker_run(tmp_path, video_mode=True)
+    path = tmp_path / "masks/000000_00.png"
+    mask = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
+    mask[2, 60] = 255  # one stray pixel far from the 16x12 plate
+    mask[45, 1] = 255
+    mask[46, 1] = 255  # a two-pixel speckle
+    cv2.imwrite(str(path), mask)
+    rows = worker_to_observations(tmp_path, "T2", 600)
+    plate = rows[0]
+    assert plate.mask_bbox_px == (8.0, 8.0, 24.0, 20.0)
+    assert plate.mask_centroid_px == (16.0, 14.0) and plate.mask_area_px == 16 * 12
+    assert plate.provenance["mask_speckle_pixels_dropped"] == 3
+    assert plate.provenance["mask_components"] == 3
+    clean = rows[1]
+    assert "mask_speckle_pixels_dropped" not in clean.provenance
+    kept, dropped, components = filter_mask_components(mask > 0)
+    assert dropped == 3 and components == 3 and int(kept.sum()) == 16 * 12
+    # A component at least 20% of the largest is part of the object, not a speckle.
+    two = np.zeros((20, 40), dtype=bool)
+    two[2:12, 2:12] = True
+    two[5:10, 30:36] = True
+    kept, dropped, components = filter_mask_components(two)
+    assert dropped == 0 and components == 2 and kept.sum() == two.sum()
+    assert filter_mask_components(np.zeros((4, 4), dtype=bool))[1:] == (0, 0)
 
 
 def test_worker_rows_fallback_to_the_box_when_the_mask_is_missing(tmp_path: Path):

@@ -11,9 +11,11 @@ and raw frame indices.  Two tools produce the evidence in their own formats:
   the provenance, so a reader can tell a detector box from a linear guess.
 * The SAM3 worker (`battle-muggled-arms`, both modes) writes ``observations.jsonl`` in analysis
   frames (frame 0 = ``--start-frame``) with normalised boxes and mask PNGs.
-  :func:`worker_to_observations` reads the masks back, computes the **area centroid** (the
-  preflight fixtures carry the bbox centre; the arms carry the real one), the mask bbox and
-  area, maps analysis frame ``k`` to raw frame ``start_frame + k``, keeps the decoder's IoU
+  :func:`worker_to_observations` reads the masks back, drops isolated speckle components the
+  way the worker's own box rule does (:func:`filter_mask_components`, recorded in the
+  provenance), computes the **area centroid** (the preflight fixtures carry the bbox centre;
+  the arms carry the real one), the mask bbox and area, maps analysis frame ``k`` to raw frame
+  ``start_frame + k``, keeps the decoder's IoU
   or the tracker's presence logit as ``sam3_object_score`` and names the source
   (``sam3_decode`` for the memory-free decode, ``sam3_video`` for the video-memory tracker).
   A box-decode row carries the detector box that prompted it; a video row is matched to a
@@ -48,6 +50,12 @@ from .schemas import FrameObservations, PerFrameObject
 VIEWS: tuple[str, ...] = ("fpv", "T1", "T2", "T3", "T4", "T5")
 DEFAULT_MIN_SCORE = 0.3
 DEFAULT_MATCH_IOU = 0.3
+# The worker derives its own box from the mask's 8-connected components with area >= this
+# fraction of the largest (`muggled_worker.BOX_COMPONENT_KEEP_FRACTION`). SAM3.1 video-memory
+# masks carry a few isolated positive pixels far from the object (Sep 25, p4-arms: 1-15 single
+# pixels per mask), which would otherwise set the bbox; the same rule is applied here before a
+# mask is measured, and the dropped pixels are recorded in the row's provenance.
+MASK_COMPONENT_KEEP_FRACTION = 0.20
 PoseValidity = Callable[[int], bool]
 
 
@@ -207,6 +215,25 @@ def mask_measurements(mask: np.ndarray) -> tuple[BoxXYXY, tuple[float, float], i
     return bbox, centroid, int(xs.size)
 
 
+def filter_mask_components(
+    mask: np.ndarray, keep_fraction: float = MASK_COMPONENT_KEEP_FRACTION
+) -> tuple[np.ndarray, int, int]:
+    """Keep the 8-connected components with area >= `keep_fraction` x the largest one, the
+    worker's own box rule; returns (filtered mask, pixels dropped, components found)."""
+    import cv2
+
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(
+        mask.astype(np.uint8), connectivity=8
+    )
+    components = max(int(count) - 1, 0)
+    if components <= 1:
+        return mask, 0, components
+    areas = stats[1:, cv2.CC_STAT_AREA]
+    keep = np.flatnonzero(areas >= keep_fraction * areas.max()) + 1
+    kept = np.isin(labels, keep)
+    return kept, int(np.count_nonzero(mask) - np.count_nonzero(kept)), components
+
+
 def read_mask(path: Path) -> np.ndarray | None:
     import cv2
 
@@ -286,6 +313,11 @@ def worker_to_observations(
                 "sam3_decode" if obj.source == "sam3_decode" else "sam3_video"
             )
             provenance: dict[str, Any] = {"worker_label": obj.label, "object_id": obj.object_id}
+            if mask is not None:
+                mask, dropped, components = filter_mask_components(mask)
+                if dropped:
+                    provenance["mask_speckle_pixels_dropped"] = dropped
+                    provenance["mask_components"] = components
             measured = mask_measurements(mask) if mask is not None else None
             if measured is None:
                 mask_bbox = _normalised_to_px(obj.box, width, height)
