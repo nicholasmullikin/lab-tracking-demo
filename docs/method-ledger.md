@@ -572,6 +572,21 @@ trial windows chosen (p0-trials, p-docs)](#sep-24-night-plan-approved-trial-wind
 evidence [`docs/qa/finebio-trials-2026-09-25.md`](qa/finebio-trials-2026-09-25.md), config
 `configs/finebio/trials.json`.
 
+#### Sep 25: thin slice on the preflight window (p0-slice)
+
+The whole chain on the 60-frame preflight window of `P03_01_01` before anything scales:
+fixtures -> per-frame same-class triangulation (>= 3 fixed views, or 2 fixed plus a valid fpv
+pose) -> 3D points, per-view and leave-one-view-out residuals, the fixed -> fpv hand-off, and
+the seven preflight cross-checks as standing entities in one Rerun recording
+(`battle-finebio-slice`, 3 s, no viewer). The eleven static classes land 0.00-0.01 cm from the
+preflight's points; the plate triangulates on 60/60 frames at 16.9 px with the preflight's LOO
+per view (34.9 / 17.1 / 44.5 / 17.2 / 33.7) and projects into the fpv box on 60/60 frames
+(36.8 px median). Four multi-instance classes (50 ml tubes, micro tubes, pens, the 50 ml rack)
+fail a one-object flag under the top-box-per-class rule, and the preflight's per-view SAM3
+tube slots turn out to track different tubes: the identity problem the tracker is for, seen
+on real rows. Record: [Sep 25: thin slice on the preflight window
+(p0-slice)](#sep-25-thin-slice-on-the-preflight-window-p0-slice).
+
 ### Plan versus actual
 
 What the plan said, what happened instead, and why, in one line each.
@@ -6788,3 +6803,90 @@ and the 83 `main()` entry points beyond their shared fragments.
   `p0-cameras` before its rig check; its fpv gaps around the spins are drop-outs of the shipped
   pose, not outliers to gate. For `p5-events`: the lid intervals above are the reference the
   `contained` event's lid state can be checked against on these two trials.
+### Sep 25: thin slice on the preflight window (p0-slice)
+
+- **What this is.** The `p0-slice` todo of the FineBio 3D-tracking plan
+  ([`docs/plan-2026-09-25-finebio-3d-tracking.md`](plan-2026-09-25-finebio-3d-tracking.md)):
+  the whole chain, observations -> per-frame same-class triangulation -> 3D points, residuals
+  and the seven preflight cross-checks in one Rerun recording, run end to end on the 60-frame
+  preflight window of `P03_01_01` before any phase scales up. Built against the `p0-contracts`
+  fixtures only (`tests/fixtures/finebio_preflight`, no `data/` needed except for the optional
+  frame images and the marker corners), CPU, 3 s, no GPU, no viewer opened. Other lanes
+  committed concurrently in the same checkout (camera CLI, worker modes); only the files named
+  here were staged, by path. Commit `c23ba6b` and this entry's commit.
+- **Tool (`src/battle/finebio_slice.py`, console script `battle-finebio-slice`).**
+  `--fixtures <dir>` or `--observations <jsonl> --cameras <config.json>` (plus `--fpv-poses`
+  in the fixtures' JSON shape, else the shipped pose file named in the config when it is on
+  disk, and `--rig-reference` for the static comparison), `--frames start:count | a-b | list |
+  all` (default: the consecutive frames present), `--min-score 0.3`, `--min-fixed-views 3`,
+  `--fixed-views-with-fpv 2`, `--video-root data/raw/finebio --image-every N` (JPEG frames
+  logged into the recording, guarded on the files existing; never committed), `--no-rerun`.
+  Two observation sets go through one code path: `detector` (the top-scoring box per class per
+  view at score >= 0.3) and `sam3` (`sam3_decode` and `sam3_video` rows, one per class per
+  view by object score, `point_px` = the mask centroid, which in these fixtures is the
+  mask-bbox centre). A class is triangulated when it is seen in >= 3 fixed views, or in 2 fixed
+  views plus the fpv with a valid pose (`fpv_used: true`, the plan's birth rule for the raised
+  in-hand object). Geometry as the preflight and `tests/test_finebio_fixtures.py`:
+  `Camera.undistort` then DLT on the projection matrices (`triangulate_pixels`, which also
+  accepts per-view weights for the tracker; equal weights reproduce `dlt_triangulate`
+  exactly), reprojection with distortion, leave-one-view-out residual per view, height `-z`,
+  fpv reprojection against the fpv box (skipped when the fpv is in the triangulation or the
+  point is behind it). Outputs: `points3d.jsonl` (`SlicePoint`: frame, class, set, point cm,
+  height, views used, fpv used, per-view residual and LOO px, fpv residual and inside flag,
+  scores), `summary.json`, `summary.md` (per class: frames, residual and LOO median/p90,
+  height, fpv residual and inside fraction, a **one-object flag** = median all-view residual
+  within 30 px, P03's association gate; static classes against `rig_reference.json`; what the
+  floor still needs), `slice.rrd`.
+- **Recording (`runs/finebio-slice-20260925/slice.rrd`, 11.8 MB, 262 entity paths, `rerun rrd
+  verify` clean, gitignored).** `rr.init(spawn=False)` + `rr.save` through
+  `rerun_logging.init_and_save` with the blueprint (3D view left, six camera tiles in a 2x3
+  grid right, time series and text tabs below). World `RIGHT_HAND_Z_DOWN`: bench outline,
+  board origin, the day's three markers, five static frusta (`Transform3D` + `Pinhole`), the
+  fpv frustum and trail per frame, `world/points3d/detector` and `/sam3` coloured by class
+  with labels, `world/static_reference` (the preflight's eleven points, magenta) beside
+  `world/static_objects` (the slice's window medians, green). The seven cross-checks as
+  standing entities: (1) `world/<view>/markers_projected` (static for the fixed views, per
+  frame for the fpv); (2) `world/<view>/fpv_camera_centre` in every fixed view per frame; (3)
+  `world/static_objects` + `world/<view>/static_reprojected`; (4) `world/left_hand`,
+  `world/right_hand` + `world/<view>/<hand>_triangulated`; (5) `checks/clock_scan`, the
+  preflight's table as a `TextDocument` (not recomputed; on a window without a reference it
+  says so); (6) `checks/loo/<class>/<view>` `Scalars` per frame; (7)
+  `checks/handoff/cell_culture_plate` and `_inside` `Scalars` per frame. Also per view and
+  frame: `detector` boxes (the top box per class), `sam3_masks` boxes, `points_reprojected_*`,
+  `image` every 10th frame (36 JPEGs), `checks/support/<class>` (fixed views used) and
+  `checks/summary` (the markdown).
+- **Numbers, frames 1798..1857 (60 frames; the fixtures' 61st consecutive frame 1858 came
+  from the spaced set and is left out).** Static classes, detector set, window median vs the
+  preflight point: **0.00-0.01 cm on all eleven** (per-frame distance median 0.01-0.02 cm,
+  p90 0.02-0.27), heights equal to the preflight's to 0.01 cm. `cell_culture_plate`: 60/60
+  frames from 5 views, all-view residual **16.9 px median / 33.7 p90**, LOO per view
+  **34.9 / 17.1 / 44.5 / 17.2 / 33.7 px** (T1..T5; preflight 34.8 / 17.2 / 43.7 / 17.1 /
+  33.5 at score 0.4), height 3.25 cm; fixed -> fpv hand-off **36.8 px median / 43.1 p90 on
+  60/60 frames, inside the fpv box on 100%** (preflight 36.5 / 51.9 on 45 frames at score
+  0.4). `left_hand` 60/60 at 7.8 px (LOO 13.1), 3.25 cm; `right_hand` 51/60 frames (score
+  0.3 vs the preflight's 0.5 and 14/61 at >= 3 fixed views; here 2 fixed + fpv fills in),
+  17.6 px, 20.5 cm; `blue_pipette` 60/60, 16.1 px, 18.1 cm; `centrifuge` 8.6 px, 4.08 cm;
+  `pcr_machine` 4.5 px; `trash_can` 16.6 px. SAM3 set: plate 60/60 from T2/T4/T5 at 11.2 px
+  (LOO 26.9), hand-off 13.9 px median into the fpv mask, inside 100%; centrifuge 3.6 px;
+  pipette from T2 + T5 + fpv on 59 frames. **Four classes fail the one-object flag**:
+  `50ml_tube` (154 px), `micro_tube` (58 px), `pen` (304 px), `50ml_tube_rack` (389 px), and
+  the SAM3 `50ml_tube` (121 px, height 21 cm): several instances on the bench and a different
+  instance as the top box in each view, and the preflight seeded each view's SAM3 tube slot
+  from its own top box, so the four SAM3 tube tracks are not one tube. That is the identity
+  problem the tracker's pairwise-assignment birth exists for, seen on real rows.
+- **Tests (`tests/test_finebio_slice.py`, 8, default tier).** Weighted DLT equals
+  `dlt_triangulate` at equal weights and recovers a synthetic point to 1e-6; frame parsing;
+  top-per-class selection (detector top box; SAM3 rows for the four seeded classes); the plate
+  triangulates on every window frame with LOO medians within 1.5 px of the reference per view
+  and the hand-off median within 1 px, inside 100%; the eleven static classes within 0.05 cm
+  of the preflight and the one-object flag false for `50ml_tube` and `micro_tube`; the SAM3
+  set uses the 2-fixed-plus-fpv rule for the pipette; settings change the rule; the CLI writes
+  points, summaries and a recording into `tmp_path`. Default tier after this commit: 8 new
+  tests; `uv run ruff check src tests scripts` clean.
+- **What the floor still needs (also in `summary.md`).** SAM3 per-frame masks over the whole
+  window in every view (arm b) instead of the preflight's four-view video-memory run with
+  bbox-centre centroids; identity (a point here is one frame's agreement between views under
+  the top-box rule; nothing links frames or survives an occlusion, and two instances collapse
+  onto one box); detections on every frame of the trial-1 window, lane B's per-trial camera
+  solve and rig gates. The tool already runs on real window outputs through `--observations`
+  and `--cameras`.
