@@ -359,3 +359,116 @@ ships without it.
 - Every table states: anchors are review evidence on a handful of frames, one person's choice
   of decoder masks; the shipped detector was trained on FineBio's own objects and cameras, so
   its seeding quality is an upper bound for a new lab's bench.
+
+## Outcome (Sep 25)
+
+Written at the close of the phase (ledger entry "Sep 25: FineBio 3D tracking phase, close-out
+(p-docs)" in [`method-ledger.md`](method-ledger.md)); the plan text above is unchanged. Every
+number below is copied from the ledger entry named for its todo and is traceable there to a
+path under `runs/` (gitignored). The plan's claim boundaries hold verbatim: "anchors are review
+evidence on a handful of frames, one person's choice of decoder masks; the shipped detector was
+trained on FineBio's own objects and cameras, so its seeding quality is an upper bound for a new
+lab's bench"; "FineBio non-commercial research; nothing under `data/` or `runs/` is committed;
+no sharing determination is made by this plan"; "the plan runs without ground truth, and the
+human anchors are the only truth". No anchor was labelled, so **no human-anchored number exists
+anywhere in this phase**; every IoU is agreement between a SAM3 mask and the FineBio detector's
+box, model against model.
+
+### Per todo
+
+| todo | status | the number that matters |
+|---|---|---|
+| `p0-contracts` | done | four schemas; 20,209 fixture rows (numbers only); frame-index contract: proxy frame k == raw start+k at 0.7-0.9 grey levels against 1.0-5.2 one frame off, markers on the proxy at 0.7-1.0 px |
+| `p0-slice` | done | the eleven static classes 0.00-0.01 cm from the preflight's points; the plate on 60/60 frames, fixed -> fpv hand-off 36.8 px inside the fpv box on 100%; four multi-instance classes fail the one-object flag (the identity problem the tracker is for) |
+| `p0-cameras` | done | P03_03_01 day 221013, T5 marker PnP 0.72 px (shipped 93.7); P20_03_01 day 221124, T1-T4 marker PnP 0.7-2.1 px (shipped 14.7-32.2), T5 shipped 7.47 px; no view dropped on either |
+| `p0-trials` | done | one window for both trials, raw [600, 4200); trial 1 two centrifuge cycles with frame 916 at 10.5 s in, trial 2 three cycles with 1442 at 28.1 s; four spins per trial, not the preflight's "six" |
+| `p1-configs` | done | six native-resolution, native-rate proxies per trial window; the contract's minimum at offset 0 on every sample; fpv markers 0.76 / 0.97 px; the Assembly101 view asserts config-driven |
+| `p1-rig` | done | gates as formulas: trial 1 association 30.1 / hand-off 27.0 px, trial 2 27.5 / 80.0 (the cap); the preflight reproduced on P03_01_01 (31.1 / 51.9) |
+| `p2-detect` | done | CUDA venv in 9 min of the 60; 86,400 frames (both trials, DINO + DDETR, six views, every frame) in 65 min of GPU at 46-47 ms/frame; the two detectors agree on 95.4% / 90.4% of confident boxes |
+| `p2-seeds` | done | trial 1 60/60 seeds accepted (mask-bbox IoU 0.63-0.99), 66/66 with the plate; trial 2 66/66 (0.60-0.98); the plate `detector_unseeded` in trial 2's T2 |
+| `p2-gate1` | prepared, awaiting the human | 60 tiles per trial on the sheets, the 15-minute brief written; no `decisions.json` exists; every seed ran with `provenance: auto` |
+| `p3-tracker` | done | 12 synthetic-rig tests plus the fixtures; one plate id over 300/300 frames; the two 50 ml tubes the slice collapsed at 154 px are two tracks at 1.5-4 px |
+| `p3-tracker-ext` | done | four extensions, each on an inventory count; trial 1 tracks born 285 / 308 / 270 -> 191 / 186 / 147, ambiguities 126 / 158 / 133 -> 33 / 54 / 22; the core byte-identical with the flags off |
+| `p3-worker` | done | memory-free box decode at 152 ms per prompted frame (149 the encoder) reproducing the preflight's masks (0.94 / 0.95 / 0.99 / 0.97); the tau hook, box re-prompts with `detector_reseed` / `track_reproject`, per-slot start frames |
+| `p4-arms` | done | (a), (b), (c), (d) on trial 1 in about 4.0 h of GPU; (b) 0.926 median / 99.1% of masks >= 0.5 IoU vs the detector, (c) 0.914 / 79.3%, (d) 0.911 / 75.7%; (e) not run |
+| `p5-confidence` | done | five label-free signals ranked within the arm; abstain (b) 0.723 over all rows and 0.070 on the rows with all five signals; DINO-vs-DDETR agreement near-redundant (0.73-0.87 in the lowest confidence quartile, 0.96-0.97 in the highest) |
+| `p5-events` | done | (b) contained 145, held 64, proximity 0 on the core tracks; on `tracks-ext/` contained 45 and one tube `contained` through both closures |
+| `p5-viewer` | done | one recording per build: 915.6 MB, 508 entity paths, 44,448 mask cut-outs, `rerun rrd verify` clean; three validated presets; the seven cross-checks and the camera-6 negative control standing; ten storyboard items |
+| `p6-anchors` | prepared, awaiting the human | 440 cells on 18 frames (916 in six views, 12 disagreement, 5 random), 337 with decoded candidates; 0 labelled; the scoreboard runs on the empty record |
+| `p6-trial2` | done | trial 2 with the trial id swapped and nothing else: (b) 0.919 / 98.5%, (c) 0.883 / 65.3%; both trials in the viewer (trial 2: 817.2 MB, 399 entity paths, 37,058 masks, verify clean) |
+| `p-docs` | done | 17 Part 2 ledger entries for the phase (contracts to close-out), the plan copy with this section, the review guide over both trials, the README section |
+
+### The decisions the data made
+
+- **Per-frame box-prompted decode (b) is the mask source, on both trials.** Against the best
+  same-class DINO box, (b) reads **0.926 median / 99.1%** of masks >= 0.5 IoU on trial 1 and
+  **0.919 / 98.5%** on trial 2; SAM3.1 video memory seeded once (c) reads **0.914 / 79.3%** and
+  **0.883 / 65.3%**. The stop rule "(b) within 0.02 of (c)/(d): video memory and re-seeding are
+  not adopted" fired in the stronger form: (b) is ahead, by 0.012 in room 1 and 0.036 in room 2.
+- **(d), video memory with detector and hand-off re-seeds, is negative.** It ran on trial 1
+  under the pre-registered identity clause ((c) better than (b) on id switches, fragmentation
+  and ambiguities) and came out at 0.911 / 75.7%, with more ambiguities than either (173 vs 133
+  / 158): 986 tracker-emitted boxes installed under `append` with no acceptance test injected
+  wrong prompts more often than they repaired (one box took a 97%-clean slot to 0.1%). Not run
+  on trial 2 although the identity clause would have fired again.
+- **(e) DAM4SAM was not run** (optional; the GPU went to (d)).
+- **Tracker extensions, each justified by an inventory count, with the before/after.** From
+  the arms' occlusion inventory on trial 1 ((a) / (b) / (c)): `contained` would serve 125 / 135
+  / 138 support-0 episodes (four fifths of them micro tubes under a hand in the micro-tube
+  rack), group tracks 145 / 156 / 171 candidate episodes (half ending ambiguous), `held` 16 /
+  19 / 6 by the strict test, and the in-hand pipette 47 / 80 / 30 ids before any occlusion under
+  the stationary prior. With the four extensions (motion model, `contained`, group tracks,
+  `held`) on the same observations and gates: tracks born 285 / 308 / 270 -> 191 / 186 / 147,
+  ambiguities 126 / 158 / 133 -> 33 / 54 / 22, fragmentation 220 / 242 / 207 -> 134 / 129 / 93,
+  the pipette 47 / 80 / 30 -> 41 / 59 / 20 ids, the micro tubes 96 / 100 / 101 -> 32 / 26 / 17;
+  on trial 2 the same direction and size (born 290 / 321 / 208 -> 166 / 202 / 152, ambiguities
+  70 / 97 / 25 -> 8 / 35 / 7, the yellow pipette 32 / 58 / 25 -> 24 / 48 / 21, micro tubes 100 /
+  100 / 41 -> 18 / 17 / 9). `contained` without the group tracks is harmful (ambiguities 158 ->
+  3268 on (b)); measured and kept on the record.
+- **Named as overfit** (the plan's rule: anything that only helps trial 1). (1) The rig's
+  moving-object witness class list (`cell_culture_plate` + `blue_pipette`, set on the preflight
+  where the blue pipette was in use): in room 2 the blue pipette rests on the bench as a weak
+  detection and its residuals put the hand-off gate at the 80 px cap instead of 27 px; the
+  formula, floor and cap transfer, the class list does not. (2) The trial-1 slot cap
+  (`--slot-cap 11`, chosen to make room for the plate) gave trial 2's T2 a `magnetic_rack` slot
+  where no plate instance exists: a second-order effect of a trial-1 setting. (3) In the review
+  surface, the drawn negative control (`world/T5_shipped`) names camera 6; on trial 2 the
+  re-solved cameras are T1-T4 and the control exists there as numbers only.
+- **A plan-driven addition, not a rule outcome:** the plate as a seed slot. The seed rule
+  ("what moves or sits in a hand") leaves the plate `detector_only` in every fixed view of both
+  trials (it is static to 0.6 px in protocol 03 and never in a hand); it was opened as a
+  landmark container because the plan's shortlist and storyboard name it, and every record says
+  so (`rule: landmark_plan_shortlist`).
+- **The stop rules that fired.** The camera drop rule never fired (no view over 10 px after
+  PnP). The seed tool's `detector_unseeded` fired once: trial 2's T2 has no plate box from DINO
+  at score >= 0.3 on any of 3600 frames (Deformable DETR sees a ~100 px box there); recorded,
+  DDETR not substituted, the plate keeps four fixed views and the fpv. The (c)-vs-(b) rule fired
+  on its identity clause on both trials. Every arm's first-view sanity check passed (one after
+  the adapter's speckle fix).
+- **Costs against the plan.** GPU about 7.6 h against the plan's 5 (detector 1.1 h for both
+  trials and both detectors, arms on trial 1 4.0 h of which (d) 1.8 h, trial 2 2.3 h, the rest
+  minutes); human 0 h at the gates (both soft, both unlabelled); CPU not separately timed.
+
+### What stays open
+
+- **Gates 1 and 2 are unlabelled**, so no human-anchored number exists: the arms are ranked on
+  label-free measures only, and every "IoU" in this phase is model-vs-model agreement. The
+  workspaces (`runs/finebio-seeds-<trial>-20260925/with-plate/sheets/`,
+  `runs/finebio-anchors-P03_03_01-20260925/`) and the briefs
+  ([`labeling-sessions-2026-09-25-finebio.md`](labeling-sessions-2026-09-25-finebio.md)) stand;
+  the scoreboard re-runs when labels land.
+- **Proximity events are zero by protocol**: no pipette comes within 30 cm of the plate in
+  either window (the plate is a bench object in protocol 03). The mechanism is tested on
+  synthetic tracks only.
+- **The in-hand pipette fragments in both trials** (blue 47 / 80 / 30 -> 41 / 59 / 20 ids in
+  room 1, yellow 32 / 58 / 25 -> 24 / 48 / 21 in room 2): an observation problem (seen in 1-2
+  views; a long object's box centre is not one 3D point), not a motion-model one; the next step
+  (a tip or handle keypoint, or a hand-relative prior) is named, not done.
+- **Video memory's only win is identity through appearance change** (the centrifuge one id
+  across the lid cycles in (c), 8-9 ids in (a)/(b) on trial 1, 7 / 2 on trial 2; masks on frames
+  the detector misses); its cost is drift on objects that leave or are held (9 dead slots of 58
+  on trial 1, 24 of 61 on trial 2). A correction path with an acceptance test before a re-seed
+  is installed is the change (d) would need; not made.
+- Left open on purpose and still open: K before a re-seed, tau for memory writes (never set),
+  the hysteresis widths (enter <= 0 cm, exit >= 3 cm, dwell 5 frames, read off trial 1 and not
+  revisited), the window length (one for both trials).
