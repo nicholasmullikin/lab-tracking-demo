@@ -1,5 +1,7 @@
 # Plan, Sep 24, 2026: FineBio perception lab, detector-seeded, objects only
 
+> **Superseded (Sep 24, night)** by [`plan-2026-09-25-finebio-3d-tracking.md`](plan-2026-09-25-finebio-3d-tracking.md), the plan rewritten after the preflight ([`preflight-2026-09-24-finebio.md`](preflight-2026-09-24-finebio.md)) and approved that night; nothing below ran. Kept as written.
+
 **Status: planned, not started.** Written down at the Assembly101 close (ledger, "Sep 24:
 Assembly101 phase closed") so the next phase has a fixed text to be measured against, the way
 [`plan-2026-09-08-assembly-rerun-lab.md`](plan-2026-09-08-assembly-rerun-lab.md) served the
