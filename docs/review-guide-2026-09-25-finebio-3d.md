@@ -1,12 +1,18 @@
-# Review guide, Sep 25, 2026: the FineBio 3D object-tracking recording (trial 1, `P03_03_01`)
+# Review guide, Sep 25, 2026: the FineBio 3D object-tracking recordings (trial 1 `P03_03_01`, trial 2 `P20_03_01`)
 
-One Rerun recording of the trial-1 window (raw frames [600, 4200), 20.02-140.14 s, six views)
+One Rerun recording per trial window (raw frames [600, 4200), 20.02-140.14 s, six views)
 with three layout presets, built by `battle-finebio-viewer` from the tracking arms, the
 confidence and events passes, the rig check, the seeds and the lane-B proxies
 (plan `docs/plan-2026-09-25-finebio-3d-tracking.md`, todos `p5-confidence`, `p5-events`,
-`p5-viewer`; ledger entry "Sep 25: confidence, events and the review recording"). Nothing in
-the recording is committed (FineBio licence: it holds the proxy videos and SAM3 masks); the
-presets under `configs/rerun/finebio_{world,cameras,evidence}.rbl` hold entity paths only.
+`p5-viewer`, `p6-trial2`; ledger entries "Sep 25: confidence, events and the review recording"
+and "Sep 25: FineBio 3D tracking phase, close-out"). The first part of this guide describes the
+trial-1 recording on the core tracker; the trial-2 recording (room 2, built on the tracker
+extensions with nothing tuned) and the two-trial scoreboard are in
+[Trial 2](#trial-2-p20_03_01-room-2-the-same-build-on-the-second-trial), and a 20-minute route
+through both is in [What to look at first](#what-to-look-at-first-20-minutes-both-trials).
+Nothing in the recordings is committed (FineBio licence: they hold the proxy videos and SAM3
+masks); the presets under `configs/rerun/finebio_{world,cameras,evidence}.rbl` hold entity paths
+only.
 
 **Claim boundary, read first.** Everything drawn is model output. The FineBio DINO detector was
 trained on FineBio's own bench and on frames from these cameras, so its boxes, and every SAM3
@@ -205,6 +211,173 @@ No `proximity` episode exists in this window: no pipette comes within 30 cm of t
 plate is a bench object in protocol 03; `--proximity-targets` accepts other volumes). The lid is
 closed on 638 of the 3600 frames; contained track-frames while closed 11-12k per arm.
 
+## Trial 2 (`P20_03_01`, room 2): the same build on the second trial
+
+`runs/finebio-review-P20_03_01-20260925-ext/review.rrd` is the trial-2 recording (`p6-trial2`;
+ledger entries "Sep 25: second trial P20_03_01 with zero tuning" and "Sep 25: FineBio 3D
+tracking phase, close-out"): raw frames [600, 4200) of `P20_03_01` (room 2, protocol 03,
+six-view annotated frame 1442 = proxy 842), six views, built on the tracker extensions'
+`tracks-ext/` of arms (a), (b), (c) with the three commands below and **no parameter changed
+against trial 1** (arm (d) was negative on trial 1 and did not run here). Room 2's own camera
+solve (day 221124; cameras 1-4 re-solved by marker PnP at 0.7-2.1 px because no shipped pose of
+the day fits them; camera 6 kept shipped at 7.5 px) and its own rig gates (association 27.5 px;
+hand-off 80 px, the cap). **817.2 MB, 399 entity paths, 37,058 mask cut-outs, `rerun rrd
+verify` clean ("1 file verified without error"), 356 s to build**; its three presets resolve
+every query against its own entity tree (`world.rbl` 8 views / 47 queries, `cameras.rbl` 8 /
+41, `evidence.rbl` 28 / 65) and live beside the recording only: the committed
+`configs/rerun/finebio_*.rbl` are the trial-1 presets, bound to that recording's application id
+(`finebio-review-P03_03_01`), so trial 2 was built with `--preset-dir ""` and its presets are
+bound to `finebio-review-P20_03_01`.
+
+### Open
+
+```bash
+E=runs/finebio-review-P20_03_01-20260925-ext
+uv run rerun $E/review.rrd $E/world.rbl      # World: rig, arm (b) tracks incl. contained / held, volumes, events, confidence, storyboard
+uv run rerun $E/review.rrd $E/cameras.rbl    # Cameras: six tiles, DINO boxes, masks of (b), track ids, seeds
+uv run rerun $E/review.rrd $E/evidence.rbl   # Evidence: cross-checks, the negative control on T1-T4 (numbers), reports
+```
+
+Raw frame = proxy frame + 600, as on trial 1. Rebuild (CPU: 12-16 s per arm for confidence,
+5-8 s for events, about 6 min for the recording); the lid intervals and the three centrifuge
+cycles in the window ([895, 937), [2500, 2539), [3798, 3834)) are read by both tools from
+`configs/finebio/trials.json` through the clip config's trial id, nothing is passed for them:
+
+```bash
+R=runs/finebio-arms-P20_03_01-20260925
+for arm in a-boxes-only b-box-decode-arm c-video-memory-arm; do
+  uv run battle-finebio-confidence --arm-dir $R/$arm --detections runs/finebio-detect-P20_03_01-600-4200-20260925/dino --tracks-dir tracks-ext --output $R/$arm/confidence-ext
+  uv run battle-finebio-events --arm-dir $R/$arm --config configs/clips/finebio_P20_03_01_600-4200.json --rig runs/finebio-rig-P20_03_01-600-4200/rig.json --tracks-dir tracks-ext --output $R/$arm/events-ext
+done
+uv run battle-finebio-viewer --clip-config configs/clips/finebio_P20_03_01_600-4200.json \
+  --arm-dirs a=$R/a-boxes-only,b=$R/b-box-decode-arm,c=$R/c-video-memory-arm \
+  --rig runs/finebio-rig-P20_03_01-600-4200/rig.json --seeds runs/finebio-seeds-P20_03_01-20260925/with-plate \
+  --tracks-dir tracks-ext --preset-dir "" --output runs/finebio-review-P20_03_01-20260925-ext
+```
+
+### What differs from the trial-1 recording
+
+- **The negative control is a document here, not a drawing.** In room 2 the cameras the solve
+  replaced are T1-T4, and `checks/negative_control` carries their numbers (marker RMS 0.97 /
+  1.80 / 0.71 / 2.09 px under the marker-PnP pose vs 29.4 / 16.2 / 14.7 / 32.2 shipped; static
+  LOO median 7.9 / 11.8 / 8.0 / 7.0 vs 23.7 / 29.9 / 19.0 / 31.6 px; centres 2.8-4.8 cm apart):
+  the checks catch the shipped error on four cameras where trial 1 had one. But the viewer draws
+  the shipped frustum and the red marker set only for T5 (`world/T5_shipped`,
+  `world/T5/markers_projected_shipped`, logged when T5 is `marker_pnp`), and T5 is the one
+  camera that kept its shipped pose in room 2, so neither entity exists in this recording and
+  the document's opening sentence still speaks of camera 6. **Named as a trial-1 constant in the
+  review surface**: the drawn control should iterate over every `marker_pnp` view; recorded,
+  not patched, in the close-out entry.
+- **The head camera's frustum has gaps.** The fpv pose is invalid on 248 frames in six runs
+  around the three spins ([892, 908] + [915, 991], [2503, 2511] + [2523, 2588], [3800, 3806] +
+  [3812, 3882]); `world/fpv`, its trail and markers, `world/<view>/fpv_camera_centre` and the
+  `checks/handoff/*` series are empty there, and the fpv tile shows the video without a
+  projected track. The fixed cameras carry the spins (the centrifuge volume was built from
+  T2/T3/T4/T5).
+- **No plate mask in the T2 tile, by design.** DINO never sees the plate in T2 (recorded as
+  `detector_unseeded`; Deformable DETR's box was not substituted), so there is no
+  `world/T2/masks/b/cell_culture_plate-0` entity; the plate is one id on 3600/3600 frames from
+  T1 / T3 / T5 / fpv and T4 from raw 1250. T2's eleventh slot is the `magnetic_rack` instead
+  (the trial-1 slot cap's side effect).
+- **Storyboard: six items, not ten.** The picker found no fpv look-away (the plate projects
+  inside the head camera on 100% of its 3352 valid-pose frames, against 96.5% in room 1) and no
+  frame with the plate masked in all six views (impossible without T2), so the three fpv items
+  and the plate item are absent by the picker's own rules; the centrifuge story is the plan's
+  as written, and the confidence drop is arm (c)'s again:
+
+  | # | story | raw | proxy | s | what to see |
+  |---|---|---|---|---|---|
+  | 1 | a tube in the centrifuge | 600 | 0 | 20.0 | `micro_tube-013` (arm b) is inside the centrifuge volume from the window start; `contained` starts |
+  | 2 | the lid closes | 895 | 295 | 29.9 | `world/containers/centrifuge_lid` turns red (cycle [895, 937), 42 frames); the tube stays `contained` |
+  | 3 | inside while the lid is closed | 915 | 315 | 30.5 | every tile empty for the tube; the point sits inside the box under `world/tracks/b/contained` |
+  | 4 | the lid opens | 937 | 337 | 31.3 | the slab turns green; `micro_tube-013` has kept its id through the closure |
+  | 5 | the same id back | 939 | 339 | 31.3 | `micro_tube-013` observed again inside the centrifuge; the same id also holds through the spins at [2500, 2539) and [3798, 3834), as does `micro_tube-033` (contained from 838) |
+  | 6 | a confidence drop that is a real failure | 1188 | 588 | 39.6 | arm (c): `50ml_tube-008` falls from confidence 0.58 to 0.30 over the 15 frames either side; its T4 slot `50ml_tube#0` mask-vs-box IoU falls from 0.92 to 0.00 as the video-memory mask leaves the detector's tube (`world/T4/masks/c/50ml_tube-0` against `world/T4/detector`) |
+
+- **Eight container volumes** (`world/containers/*`: centrifuge, PCR machine, vortex, trash
+  can, micro-tube rack, tube-strip rack and, new against room 1's seven, the magnetic rack; no
+  15 ml rack on this bench), from the rig's static points and the arm's own box widths;
+  centrifuge centre (-1.2, -22.4) cm, half-extent 9.7 cm.
+- **The fpv residual series sit higher.** `checks/residuals/<arm>/fpv` reads 15-16 px median
+  against 9 in room 1: the fpv gate is the hand-off gate, which came out at the 80 px cap
+  because the rig's moving-object witness list names the `blue_pipette` (in use in room 1,
+  resting in room 2), the one overfit the trial-2 entry names. The fixed views' residuals are
+  4.5-7.7 px in both rooms.
+
+### Two-trial scoreboard
+
+Same measures, same reference (the best same-class DINO box; model vs model), same code and
+parameters; trial 2 differs only in the trial id. Core = `tracks/`, ext = `tracks-ext/`; (a) /
+(b) / (c) throughout, trial 1's (d) in brackets where it exists.
+
+| measure | trial 1 `P03_03_01` (room 1) | trial 2 `P20_03_01` (room 2) | where |
+|---|---|---|---|
+| cameras in use | T1-T4 shipped (4.8-6.7 px), T5 marker PnP (0.72 px; shipped 93.7) | T1-T4 marker PnP (0.7-2.1 px; shipped 14.7-32.2), T5 shipped (7.47 px) | `configs/finebio/cameras/<trial>_600-4200.json` |
+| static LOO median -> association gate | 10.0 px -> 30.1 px | 9.2 px -> 27.5 px | `runs/finebio-rig-<trial>-600-4200/rig.json` |
+| hand-off gate | 27.0 px (the fpv sets it) | **80.0 px, the cap** (the resting blue pipette sets it) | same |
+| fpv pose valid / plate fixed -> fpv hand-off | 3587 / 3600; 8.6 px, inside 96.5% | 3352 / 3600; 4.4 px, inside 100% | same |
+| seeds accepted / plate slots | 66 / 66; six views | 66 / 66; five views (T2 `detector_unseeded`) | `runs/finebio-seeds-<trial>-20260925/with-plate/seeds.md` |
+| (b) det-box IoU median / >= 0.5 | **0.926 / 99.1%** | **0.919 / 98.5%** | `runs/finebio-arms-<trial>-20260925/scoreboard/scoreboard.md` |
+| (c) det-box IoU median / >= 0.5 | 0.914 / 79.3% [(d) 0.911 / 75.7%] | 0.883 / 65.3% [(d) not run] | same |
+| (c) - (b) on the median; slots with median IoU < 0.35 | -0.012; 9 of 58 | -0.036; 24 of 61 | same; `c-video-memory-arm/measures.md` |
+| tracks born, core -> ext | 285 / 308 / 270 -> 191 / 186 / 147 | 290 / 321 / 208 -> 166 / 202 / 152 | `<arm>/tracks[-ext]/identity_metrics.json` |
+| ambiguities, core -> ext | 126 / 158 / 133 -> 33 / 54 / 22 | 70 / 97 / 25 -> 8 / 35 / 7 | same |
+| pipette in use, ids, core -> ext | blue 47 / 80 / 30 -> 41 / 59 / 20 | yellow 32 / 58 / 25 -> 24 / 48 / 21 | same |
+| micro tubes, ids, core -> ext | 96 / 100 / 101 -> 32 / 26 / 17 | 100 / 100 / 41 -> 18 / 17 / 9 | same |
+| centrifuge ids (core) | 8 / 9 / 1 | 7 / 2 / 1 | same |
+| plate, machines, trash can, tip racks in use | one id each, every arm | one id each, every arm (yellow tip rack 2: relocated) | same |
+| confidence (ext) median; abstain all rows / rows with all five signals | (a) 0.531 / 1.000; (b) 0.520 / 0.668 / 0.058 on 47,271; (c) 0.485 / 0.638 / 0.009 on 45,058 | (a) 0.516 / 1.000; (b) 0.484 / 0.623 / 0.013 on 45,791; (c) 0.505 / 0.640 / 0.015 on 41,264 | `<arm>/confidence-ext/confidence_summary.json` |
+| DDETR disagreement (ext, b) / agreement by confidence quartile | 6.3% / 0.75 -> 0.97 | 3.7% / 0.74 -> 0.96 | same |
+| events (ext): contained / held / proximity | 43 / 45 / 36; 55 / 61 / 58; 0 | 21 / 20 / 11; 60 / 76 / 25; 0 | `<arm>/events-ext/events_summary.json` |
+| centrifuge cycles in the window; lid closed frames | 2 ([1176, 1228), [3224, 3311)); 638 | 3 ([895, 937), [2500, 2539), [3798, 3834)); 117 | `configs/finebio/trials.json` |
+| (b) tubes `contained` in the centrifuge with the same id through every closure | 1 (`micro_tube-032`, from 887) | 2 (`micro_tube-013` from 600, `-033` from 838; `-037` through the last two) | `<arm>/events-ext/events_summary.json` -> `centrifuge_cycles_vs_contained` |
+| recording (ext): size / entities / masks / storyboard items | 887.6 MB / 402 / 41,835 / 10 | 817.2 MB / 399 / 37,058 / 6 | `runs/finebio-review-<trial>-20260925-ext/review_index.json` |
+| worker cost | (b) 150 ms per prompted frame, 2.2 GiB; (c) 195-217 ms/step, 3.6-4.2 GiB | (b) 150 ms, 2.2 GiB; (c) 202-213 ms/step, 3.6-4.1 GiB | `runs/finebio-arms-<trial>-20260925/README.md` |
+| GPU | about 4.0 h (with (d) 1.8 h) | about 2.3 h | same |
+
+Every (a) row abstains on both trials because a boxes-only arm carries no mask signal; its
+median is the rank combination of the three signals it does have and compares to nothing.
+
+## What to look at first (20 minutes, both trials)
+
+Times are rough; every step names the preset and the entities. Both recordings step on the
+`frame` timeline (raw frame index); `storyboard/marks` jumps to the storyboard frames.
+
+1. **The checks can fail (3 min).** Trial 1, Evidence preset: the T5 tile with the green
+   (`world/T5/markers_projected`) and red (`_shipped`) marker outlines a hand's width apart, the
+   two T5 frusta in the rig view, `checks/negative_control` (93.7 vs 0.72 px on the markers,
+   97.7 vs 4.8 px static LOO). Then trial 2's `checks/negative_control`: the same table on four
+   cameras (T1-T4), numbers only.
+2. **The storyboard's centrifuge story, three ways (5 min).** Trial 1 core recording
+   (`runs/finebio-review-P03_03_01-20260925/`), World preset, items 1-5: the tube is lost 28
+   frames into a 52-frame closure and a successor id is born (the 30-frame coast timeout).
+   Trial 1 ext recording (`-ext/`), items 1-5: `micro_tube-032 [contained] in centrifuge`
+   through both closures, the same id back at 3313. Trial 2 ext, items 1-5: `micro_tube-013`
+   through three spins; watch `events/lid_closed` against `events/b/contained` in the strip.
+3. **The transparent plate (3 min).** Cameras preset, trial 1 at raw 916 (the six-view
+   annotated frame): `world/<view>/masks/b/cell_culture_plate-0` in all six tiles, the yellow
+   pipette beside it in T3-T5. Trial 2 at raw 1442 (proxy 842): the plate in five tiles and an
+   empty T2 tile, by design.
+4. **The object in the hand, where everything is weakest (3 min).** Trial 1, Cameras at raw
+   4032 (T4 blue pipette, the anchors' lowest mask-vs-box IoU 0.06) and 1521 / 2380 / 3054 (fpv):
+   the mask on the glove, the ids under `world/<view>/tracks/b` changing. Trial 2, Cameras
+   over raw 3950-4087: eight `yellow_pipette-*` ids are born in those 137 frames (48 over the
+   window on `tracks-ext/`), the densest turnover of the in-hand object;
+   `confidence/b/yellow_pipette` in the series below the tiles (median 0.23, abstain 45%).
+5. **A confidence drop that is a real failure (2 min).** Trial 1 item 10 (raw 3031): arm (c)'s
+   `world/T5/masks/c/8_channel_pipette-0` staying on the rack while `world/T5/detector` follows
+   the pipette; `confidence/c/tracks/8_channel_pipette-153` 0.64 -> 0.08. Trial 2 item 6 (raw
+   1188): `world/T4/masks/c/50ml_tube-0` vs the detector, `confidence/c/tracks/50ml_tube-008`
+   0.58 -> 0.30. Toggle `world/<view>/masks/b/*` on the same frames: the per-frame decode has
+   not drifted.
+6. **The decision and its evidence (2 min).** Evidence preset, `checks/scoreboard` on either
+   trial: (b) 0.926 / 0.919 median and 99.1 / 98.5% >= 0.5 against (c) 0.914 / 0.883 and 79.3 /
+   65.3%; `checks/measures` for arm (c), the per-slot table with the 0.000 rows.
+7. **What did not transfer (2 min).** Evidence preset, `checks/gates` on both trials (hand-off
+   27.0 vs 80.0 px) and `checks/residuals/b/fpv` (9 vs 15 px median): the witness class list
+   inside the hand-off formula. And in trial 2's World preset, the fpv frustum vanishing for
+   2.6-3.1 s at every spin (`world/fpv` empty on the 248 invalid-pose frames).
+
 ## Files
 
 `runs/finebio-review-P03_03_01-20260925/`: `review.rrd` (915.6 MB: the six proxies about
@@ -215,3 +388,10 @@ closed on 638 of the 3600 frames; contained track-frames while closed 11-12k per
 `entity_paths.txt`, `storyboard.md` / `.json`, `rrd_verify.txt`, `rrd_stats.txt`. Per arm:
 `<arm>/confidence/{confidence.jsonl,confidence_summary.json,confidence.md}` and
 `<arm>/events/{events.jsonl,episodes.jsonl,events_strip.jsonl,events_summary.json,events.md}`.
+
+`runs/finebio-review-P03_03_01-20260925-ext/` (trial 1 on `tracks-ext/`, 887.6 MB) and
+`runs/finebio-review-P20_03_01-20260925-ext/` (trial 2 on `tracks-ext/`, 817.2 MB, 89,285
+chunks, 698,620 rows, built in 356 s): the same file set, presets bound to their own
+recording; per arm `<arm>/confidence-ext/` and `<arm>/events-ext/` under
+`runs/finebio-arms-<trial>-20260925/`. Build logs beside each directory
+(`runs/finebio-review-<trial>-20260925[-ext].build.log`). All gitignored.
