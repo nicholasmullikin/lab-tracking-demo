@@ -572,6 +572,25 @@ trial windows chosen (p0-trials, p-docs)](#sep-24-night-plan-approved-trial-wind
 evidence [`docs/qa/finebio-trials-2026-09-25.md`](qa/finebio-trials-2026-09-25.md), config
 `configs/finebio/trials.json`.
 
+#### Sep 24, night: SAM3 worker modes for the FineBio arms (p3-worker)
+
+The two worker modes the tracking arms need, built on the preflight's two SAM3 paths. (i) A
+memory-free per-frame box decode (`--prompt-mode box_stream`): a JSONL box stream in, the
+standard `observations.jsonl` + mask PNGs out, one image encode per frame and all boxes in one
+batched decoder call, no video memory; on the preflight's fpv window it reproduces the
+preflight's masks (mask-bbox IoU vs the prompt box 0.94 / 0.95 / 0.99 / 0.97 for plate /
+pipette / centrifuge / tube) at **152 ms/frame** (149 ms of it the encoder; four decodes 2 ms),
+against 220 ms/step for the four-slot tracker, 2.15 GiB. (ii) Video-memory hooks: a tau
+memory-write gate (`--memory-write-min-score`, the score test alone, added beside the Sep 18
+`gate` rather than reusing it, since that gate bundles IoU, contest and area tests that starved
+slots); corrections and seeds that are boxes (`prompt_box`, provenance `detector_reseed` or
+`track_reproject`) decoded on the tracker's own image tokens and installed through the existing
+correction path; per-slot start frames (a slot allocated empty at frame 0, forced absent until
+its seed frame; the multiplex object count stays fixed). A sibling driver `battle-muggled-arms`
+(`box-decode`, `video-memory`) writes SHA-256-bound manifests for videos that have no G2
+config. 61 default-tier tests, 2 `gpu` smokes run. Record: [Sep 24, night: SAM3 worker modes
+for the FineBio arms (p3-worker)](#sep-24-night-sam3-worker-modes-for-the-finebio-arms-p3-worker).
+
 #### Sep 25: thin slice on the preflight window (p0-slice)
 
 The whole chain on the 60-frame preflight window of `P03_01_01` before anything scales:
@@ -6803,6 +6822,197 @@ and the 83 `main()` entry points beyond their shared fragments.
   `p0-cameras` before its rig check; its fpv gaps around the spins are drop-outs of the shipped
   pose, not outliers to gate. For `p5-events`: the lid intervals above are the reference the
   `contained` event's lid state can be checked against on these two trials.
+
+### Sep 24, night: SAM3 worker modes for the FineBio arms (p3-worker)
+
+- **What this is.** The `p3-worker` todo of the FineBio 3D-tracking plan: the two SAM3 worker
+  modes the tracking arms (`p4-arms`) need, built into the production worker
+  (`src/battle/muggled_worker.py`, MuggledSAM `a004ffc`, `sam3.1_multiplex.pt`) from the two
+  paths `scripts/finebio_preflight_sam3.py` measured on Sep 24 (section C of
+  [`docs/preflight-2026-09-24-finebio.md`](preflight-2026-09-24-finebio.md)). Four agents worked
+  in one checkout; only the files named below were staged, by path (the `pyproject.toml` hunk
+  by patch). GPU use: two smokes of 20 frames each, about 20 s in total, peak 2.8 GiB, no
+  neighbour other than the compositor; no viewer. Commit `6e3d1db` (code, schemas, driver,
+  tests) and this entry's commit. Claim boundary: every IoU below is between a SAM3 mask's
+  bounding box and the FineBio detector's box on one frame of one trial, i.e. agreement between
+  two models; nothing is measured against ground truth.
+- **What already existed, and what was reused.** The worker had: manual seeds and
+  multi-keyframe correction schedules with `selected_by: human | agent` provenance
+  (`_corrections_by_frame`, `_read_verified_mask`, `_replace_prompt_memory_for_correction`
+  rebasing a corrected slot into the predicted multiplex batch and installing it with
+  `encode_prompt_memory_from_mask` under `replace` or `append` semantics; Sep 20
+  `battle-multiview-reprompt` authored agent corrections through exactly this path); the Sep 18
+  memory policy arms `off | exclusivity | gate | exclusivity+gate` with `memory_gate` handing the
+  memory encoder score -1 (MuggledSAM's `no_object_embed`) for an untrusted slot; checkpoints
+  named by the frame they have not yet stepped, `stream_identity` hashing everything that
+  decides the stream, and the GPU guard (`strict` / `vram`, `--allow-gpu-neighbour`). All of it
+  is kept and reused; nothing was rewritten.
+- **Mode (i), memory-free per-frame box decode** (`--prompt-mode box_stream --box-stream
+  <jsonl>`, `run_box_stream`). Input, one JSON record per frame: `{"frame_index": k, "boxes":
+  [{"slot": s, "label": "...", "box_xyxy_px": [x0, y0, x1, y1] | "box_xyxy_norm": [...],
+  "score": f | null, "source": "..."}]}`; `parse_box_stream` requires slots contiguous from
+  zero over the stream, one label per slot (the labels are the run's concepts), exactly one box
+  form with finite ordered coordinates; a frame absent from the stream, or with no boxes,
+  writes an empty row. Per prompted frame: `interact.encode_image(frame, 1280, True)` once,
+  then every box in **one batched decoder call** (`decode_box_prompts`: boxes as a `Bx1x2x2`
+  tensor through `encode_prompts`; MuggledSAM's mask decoder expands the single image encoding
+  over the prompt batch, `mask_decoder_model.py` lines 152-164), top-IoU candidate per box,
+  logits > 0 bilinearly resized to source pixels. `--other-slots-as-negatives` adds the other
+  boxes' centres as background points (the same count for every prompt, as batching needs);
+  off by default so arm (b) is the plain decode the preflight measured. Output is the worker's
+  usual `observations.jsonl` + `masks/<frame>_<slot>.png`, one object per slot per frame, with
+  `object_score = iou_prediction = confidence =` the decoder's IoU prediction (0..1, not a
+  tracker logit) and per row `prompt_box`, `source: sam3_decode`, `prompt_source`,
+  `prompt_score`; the per-slot diagnostics carry the same plus `decoder_candidate_index`.
+  Timing after `cuda.synchronize` per prompted frame (image encode, decode of all boxes, per
+  box) goes into `runtime_settings.box_decode_timing_ms` with median / mean / p90 / max.
+  `--checkpoint-every` and `--checkpoint-at` are a no-op with a printed message and an
+  `ignored_checkpoint_flags` record (there is no tracker state; resume is re-running from
+  `--start-frame`); `--resume-from-checkpoint` is refused by the parser. `stream_identity` gains
+  the box stream's SHA-256, `other_slots_as_negatives` and `start_frame`, each only when used,
+  so every earlier identity is unchanged. New for both modes: `--start-frame N` makes source
+  frame N analysis frame 0 by decoding and discarding the earlier frames (no seek; the FineBio
+  pose is indexed by raw frame).
+- **GPU smoke of mode (i)** (`tests/test_muggled_arms_gpu.py::test_box_decode_arm_...`, run
+  once): `P03_01_01` fpv raw frames 1798..1817 (20 frames, 1920x1440) with the preflight's four
+  seed boxes (`sam3_preflight.json -> track.fpv.seeds`) on every frame, encoder 1280 square.
+  Masks written for all four slots on frame 0; mask-bbox IoU vs the prompt box **plate 0.944,
+  blue pipette 0.947, centrifuge 0.990, 50 ml tube 0.966** (the preflight's decode table has
+  0.94 / 0.95 / 0.99 / 0.96 for the same frame); **152 ms per prompted frame** median, of which
+  the image encode is 149 ms and the four decodes together 2 ms (1 ms per box); peak VRAM
+  2.15 GiB. Against the preflight's 214-220 ms/step for the four-slot tracker at the same side,
+  the memory-free arm is about 30% faster per frame and its cost is the encoder, not the box
+  count: adding slots is nearly free. A second run of the same smoke while the detector lane's
+  CUDA venv (882 MiB) shared the card gave identical masks (same four IoUs to the third
+  decimal) at 225 ms/frame (encode 220, decode 5): the number to plan with is the uncontended
+  one, and the arms should not share the GPU with the detector. Both smokes' outputs are kept
+  under `runs/p3-worker-gpu-smoke-20260924/` (gitignored, 1.6 MB).
+- **Mode (ii), the tau hook.** Checked first whether the Sep 18 `gate` already does it: with
+  `--memory-gate on` a slot is memorised as absent when its raw score `<=
+  gate_min_object_score` **or** its predicted IoU `< 0.5` **or** its contested fraction `> 0.2`
+  **or** its area leaves `[0.5, 2] x` the rolling median of trusted frames; the ablation found
+  the area band starving slots (53-67% gated without corrections). So it is not the plan's
+  "skip the write when score < tau" and was not reused. Added beside it, with the same policy
+  plumbing: `--memory-write-min-score TAU` (`memory_write_allowed(score, tau)`: write iff `score
+  >= tau`; unset writes every present slot as before). Inside `memory_gate` the tau test is
+  judged first and independently of the gate mode, so with the gate off it is the only test (no
+  area history is kept) and with the gate on the two compose (tau, then the Sep 18 order). A
+  gated slot is handed score -1 to `encode_frame_memory`, reason `low_object_score`, and its
+  mask is still reported. The value joins `tracker_memory_policy` (`memory_write_min_score`),
+  the `TrackerMemoryPolicy` schema (`is_default`, `worker_arguments`, run-id suffix `tau0p5`),
+  the manifest and `stream_identity` **only when set**, so the default policy record, older
+  checkpoints and the Sep 18 byte-identity regression are untouched. `battle-muggled-smoke`
+  passes the flag through as well.
+- **Mode (ii), box re-prompts and provenance.** A schedule correction may now be a box instead
+  of a mask: `{"frame_index": k, "multiplex_slot": s, "target": label, "prompt_box": {"x",
+  "y", "width", "height"} | "prompt_box_xyxy_px": [x0, y0, x1, y1], "selected_by":
+  "detector_reseed" | "track_reproject"}`; `_validate_prompt_entry` refuses a box with a mask, a
+  box in both forms, a malformed box, and a later box correction with any other `selected_by`
+  (mask corrections keep `human` / `agent`, and legacy payloads without either field still
+  load: the existing schedule-loading tests in `test_muggled_smoke.py` and
+  `test_worker_memory_arms.py` pass unchanged). At frame k the worker decodes the box with the
+  interactive decoder **on the tracker's own image tokens** (the tracking and interactive
+  contexts share `encode_image`, `sam_v3p1_model.py` line 498, so a re-prompt costs one decoder
+  call and no second encode), takes the top-IoU candidate, thresholds at source size and hands
+  it to `_replace_prompt_memory_for_correction`, i.e. rebased into the multiplex batch and
+  installed under the run's `--prompt-memory-semantics` (`append` for the arms) with the frame
+  memory cleared unless `--keep-frame-memory-at-correction`. A box that decodes to nothing is
+  skipped and recorded (`correction_skipped: decoded_empty`) rather than installed as an absent
+  prompt. The corrected row's confidence is the decoder's IoU (1.0 stays the reviewed-mask
+  sentinel); diagnostics carry `selected_by`, `prompt_box`, `prompt_decoder_iou`,
+  `decoder_candidate_index`. Frame-0 seeds may be boxes too (`prompt_box` /
+  `prompt_box_xyxy_px` on a seed, decoded at frame 0). `runtime_settings` records
+  `box_prompt_correction_frames`, `correction_selected_by_kinds`, `box_prompt_seed_slots`,
+  `box_prompt_api`.
+- **Per-slot start frame, and the fixed-slot-count constraint.** The multiplex object count is
+  fixed when the first prompt memory is encoded (`num_multiplex_objects`), so a slot cannot be
+  added later. A seed with `"start_frame": k > 0` is therefore allocated at frame 0 with an
+  all-false mask and its own prompt (box or verified mask) is applied at frame k through the
+  correction path (`_corrections_by_frame` synthesises the entry, `seed_start: true`,
+  `selected_by` defaulting to `detector_reseed`). Until then the slot is forced absent: no
+  object row, `active: false`, memory score -1 (`memory_written: false`, reason `unseeded`),
+  so its frame memory is only written once seeded. Two details: MuggledSAM's NumPy path in
+  `encode_prompt_memory_from_mask` rescales a mask by `max - min`, a division by zero for an
+  empty slot, so when any seed slot is empty the batch is handed over as a tensor of the same
+  +/-1024 logits per pixel (`_prompt_mask_batch`; the NumPy path is kept when every slot has
+  pixels, for byte-identity); and under `append` the frame-0 prompt memory with the empty slot
+  stays in the prompt bank beside the later seed (under `replace` it is dropped). In the smoke
+  the tracker itself scored the empty slot -2.2 to -2.3 on frames 1-4 (absent), so the empty
+  prompt did not invent an object. `slot_start_frames` is recorded in `runtime_settings` and
+  the metadata; a start frame that collides with a correction of the same slot is refused.
+- **GPU smoke of mode (ii)** (`test_video_memory_arm_...`, run twice, same numbers): same 20
+  fpv frames, three box seeds at frame 0 (plate, pipette, centrifuge; decoder IoU 0.90 / 0.91 /
+  0.97 as the frame-0 confidences), the 50 ml tube starting at **frame 5** by `detector_reseed`
+  box, a `track_reproject` box on the pipette at frame 10, `--prompt-memory-semantics append`,
+  `--memory-write-min-score 0.5`. Tube absent with reason `unseeded` on frames 1-4 (the tracker's
+  own raw score for the empty slot -2.2 to -2.5), seeded at 5 with decoder IoU 0.93 (mask-bbox
+  IoU vs its box 0.93), tracked with raw score 8.4-10.8 on **14/14** frames after; the pipette
+  re-prompt at 10 decoded at IoU 0.91 (mask-bbox IoU vs its box 0.94) and the slot continued at
+  9.9-11.1; every active slot scored 8.4-12.6, so no slot fell below tau 0.5 and the gate reasons
+  seen are `ok`, `corrected`, `unseeded`; 20 frames, 75 masks, 8.9 s (11.6 s beside the
+  detector) including model load, peak 2.81 GiB (the four-slot tracker plus one decoder pass on
+  a correction frame). Run id `muggledsam-arm-video-memory-fpv-<ts>-r1280-tau0p5-pm-append`.
+- **Driver: `battle-muggled-arms` rather than `battle-muggled-smoke`.** The smoke's manifest
+  path assumes an Assembly101 G2 preprocessing manifest (`--config`), a fixed `--view` choice
+  list, `view_id` Literals on the schedule / policy / metadata schemas, and a correction
+  schedule bound to a calibration workspace manifest; FineBio has none of these (its
+  preprocessing manifest kind is `p1-configs`, in progress), so a sibling
+  (`src/battle/muggled_arms.py`, two subcommands) spawns the same worker with the same GPU
+  guard, `CUDA_VISIBLE_DEVICES`, `PYTHONPATH` and log files, on a raw or trimmed video with
+  `--start-frame`, validates the box stream or schedule payload with the worker's own functions
+  before launch (mask paths resolved against the schedule file and hashed), and writes a
+  `MuggledSAMArmRunManifest` (`manifest_kind: muggledsam_sam3_arm_run`) binding video, prompt
+  file, checkpoint and worker source by SHA-256, with the worker's condition record flattened,
+  its measurements, `stream_identity` (now also written into `runtime_settings` in both modes),
+  the memory policy / settings / schedule metadata, `observation_rows` and the validated
+  `observations.jsonl` hash, and the FineBio licence note. Exit 3 when the worker did not
+  succeed. Invocations:
+  `uv run battle-muggled-arms box-decode --video <mp4> --view-id fpv --box-stream boxes.jsonl
+  --start-frame 1798 --max-frames 20 --max-side-length 1280 --run-root runs/<root>` and
+  `uv run battle-muggled-arms video-memory --video <mp4> --view-id fpv --schedule schedule.json
+  --start-frame 1798 --max-frames 20 --max-side-length 1280 --prompt-memory-semantics append
+  --memory-write-min-score 0.5 [--checkpoint-every 300] --run-root runs/<root>`; the schedule
+  file is the worker payload (`seeds` with `target`, `initial_multiplex_slot`, `mask_path` |
+  `prompt_box` | `prompt_box_xyxy_px`, optional `start_frame` and `selected_by`; `corrections`
+  as above; `memory_semantics` optional and checked against the run's flags).
+- **Schemas (`schemas.py`, additive hunks only).** `PerFrameObject.prompt_box / source
+  ("sam3_decode") / prompt_source / prompt_score`; `TrackerSlotDiagnostic` box-prompt fields and
+  `MemoryGateReason` `unseeded`; `PromptSelectedBy`; `TrackerMemoryPolicy.memory_write_min_score`;
+  `MuggledSAMMultiKeyframeCorrection.prompt_box` with `candidate_id`,
+  `human_selected_candidate_index` and `calibration_mask_fingerprint` optional **only** for a
+  box entry and `selected_by` restricted per kind (a mask entry still needs all three and
+  `human` / `agent`); the schedule validator skips uniqueness checks on absent candidates and
+  masks; `MultiKeyframeCorrectionScheduleMetadata.detector_reseed_correction_frame_indices /
+  track_reproject_correction_frame_indices / slot_start_frames`; `MuggledSAMArmRunManifest`.
+  Every existing schedule, metadata and policy JSON round-trips unchanged (legacy payloads
+  without the new keys are in the tests).
+- **Tests.** `tests/test_worker_finebio_modes.py`, worker loaded by file path: 49 default-tier
+  tests plus 5 torch cases (skipped in the battle venv, all 54 pass under the MuggledSAM
+  interpreter, as do the 12 Sep 18 policy tests): box-stream parsing and 19 named validation
+  faults, pixel / normalised box handling with clamping and the unit-square ulp guard, box
+  corrections with the two provenance kinds and the refusals, mid-stream seeds and start-frame
+  collisions, `memory_write_allowed`, tau alone and composed with the Sep 18 gate on synthetic
+  scores, `_mark_unseeded`, the empty-slot seed batch, what joins `stream_identity`, the CLI
+  cross-checks, a blocked `box_stream` run's condition record. `tests/test_muggled_arms.py`
+  (12): both worker commands, run ids, the schedule payload loader (normalisation, hashing,
+  refusals), schema round trips. `tests/test_muggled_arms_gpu.py` (`gpu`, 2): the two smokes
+  above. Default tier **871 passed / 14 skipped** (762 / 9 before tonight across all four
+  lanes); ruff clean on every file touched.
+- **What the arms phase must know.** (1) Arm (b) is `box-decode` fed by the detector's
+  per-view, per-frame boxes as a stream whose slots are the tracker's or seed tool's instance
+  ids (slot labels are the concepts; a slot may be absent on any frame); identity is entirely
+  the caller's. (2) Its cost is the encoder (~150 ms/frame at 1280 on this card), so a 3600-frame
+  window on six views is about 55 min of GPU regardless of box count. (3) Arms (c)/(d) are
+  `video-memory` with `--prompt-memory-semantics append`; seeds can be boxes, so no seed-mask
+  PNGs are needed, and a slot that first appears mid-window is a seed with `start_frame`; the
+  slot set must be known when the run starts (fixed multiplex count), so a new object that
+  appears late needs either a pre-allocated slot or a second run. (4) Re-seeds are box
+  corrections with `detector_reseed` / `track_reproject`; a box that decodes to nothing is
+  skipped and visible as `correction_skipped`. (5) Tau is off unless `--memory-write-min-score`
+  is given; the plan leaves its value to the data. (6) Checkpoint/resume works as before in
+  `video-memory` (the schedule JSON is hashed whole into the identity, so a resume needs the
+  same schedule); `box-decode` has no state. (7) The worker records `stream_identity` in
+  `runtime_settings` now; nothing else in the observations or manifests of earlier runs changed.
 ### Sep 25: thin slice on the preflight window (p0-slice)
 
 - **What this is.** The `p0-slice` todo of the FineBio 3D-tracking plan
