@@ -9,7 +9,10 @@ never accuracy; CC BY-NC 4.0 attribution applies to the dataset assets.
 
 from __future__ import annotations
 
-from typing import Literal
+import json
+from collections.abc import Iterable, Iterator
+from pathlib import Path
+from typing import Any, Literal
 
 from pydantic import Field, model_validator
 
@@ -322,3 +325,186 @@ class VisualHullManifest(VersionedModel):
     runtime_seconds: float = Field(ge=0)
     not_run: dict[str, str]
     claim_boundaries: tuple[str, ...] = Field(min_length=1)
+
+
+# -- FineBio 3D object tracking (Sep 24 contracts, p0-contracts) ----------------------------
+#
+# Frame indices are raw-video frame indices of the shipped FineBio mp4s (all six videos of a
+# trial have the same count at 30000/1001 fps); a window proxy built by
+# `finebio_frames.proxy_ffmpeg_args(start_frame=S)` has proxy frame k == raw frame S+k, so
+# `frame_index = S + k`. Pixels are raw-video pixels (fixed views 1920x1080, fpv 1920x1440).
+# World units are the calibration board's centimetres with z into the bench (height = -z).
+# Detector scores and SAM3 masks are model output, not truth; FineBio is non-commercial
+# research data and no frame, mask or video is stored in these records.
+
+FINEBIO_FIXED_VIEWS: tuple[str, ...] = ("T1", "T2", "T3", "T4", "T5")
+FINEBIO_FPV_VIEW = "fpv"
+FINEBIO_WORLD_UNITS = "board centimetres, z into the bench"
+
+ObservationSource = Literal["detector", "sam3_decode", "sam3_video"]
+CameraPoseProvenance = Literal["shipped", "marker_pnp"]
+TrackState = Literal["observed", "single_view", "coasting", "held", "contained", "lost"]
+TrackEventKind = Literal[
+    "birth",
+    "lost",
+    "coasting",
+    "reacquired",
+    "ambiguous",
+    "held",
+    "contained",
+    "handoff_reseed",
+    "detector_reseed",
+]
+
+Vec2 = tuple[float, float]
+Vec3 = tuple[float, float, float]
+Mat3 = tuple[Vec3, Vec3, Vec3]
+BoxXYXY = tuple[float, float, float, float]
+
+
+def _require_box(box: BoxXYXY, label: str) -> None:
+    if box[2] <= box[0] or box[3] <= box[1]:
+        raise ValueError(f"{label} must have positive width and height, got {box}")
+
+
+class FineBioObservation(VersionedModel):
+    """One per-view, per-frame report about one slot: a detector box and/or a SAM3 mask.
+
+    `slot` is the per-view instance id (``<class>#<k>``; for `detector` rows k is the
+    same-class score rank in that frame, not an identity; for SAM3 rows it is the seeded slot).
+    `point_px` is what the tracker consumes: the mask centroid when a mask is present, else the
+    box centre. A row with neither box nor mask bbox is not an observation and is rejected.
+    """
+
+    view: str = Field(min_length=1)
+    frame_index: int = Field(ge=0)
+    slot: str = Field(min_length=1)
+    object_class: str = Field(min_length=1)
+    detector_score: float | None = Field(default=None, ge=0, le=1)
+    box_xyxy_px: BoxXYXY | None = None
+    mask_bbox_px: BoxXYXY | None = None
+    mask_centroid_px: Vec2 | None = None
+    mask_area_px: int | None = Field(default=None, ge=0)
+    sam3_object_score: float | None = None
+    pose_valid: bool
+    source: ObservationSource
+    provenance: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def require_a_box_or_a_mask(self) -> FineBioObservation:
+        if self.box_xyxy_px is None and self.mask_bbox_px is None:
+            raise ValueError("an observation carries a detector box, a mask bbox, or both")
+        if self.box_xyxy_px is not None:
+            _require_box(self.box_xyxy_px, "box_xyxy_px")
+        if self.mask_bbox_px is not None:
+            _require_box(self.mask_bbox_px, "mask_bbox_px")
+        if self.source == "detector" and self.box_xyxy_px is None:
+            raise ValueError("a detector observation carries its box")
+        if self.source != "detector" and self.mask_bbox_px is None:
+            raise ValueError("a SAM3 observation carries its mask bbox")
+        return self
+
+    @property
+    def point_px(self) -> Vec2:
+        if self.mask_centroid_px is not None:
+            return self.mask_centroid_px
+        box = self.mask_bbox_px if self.box_xyxy_px is None else self.box_xyxy_px
+        assert box is not None
+        return ((box[0] + box[2]) / 2, (box[1] + box[3]) / 2)
+
+
+class FineBioFixedCamera(VersionedModel):
+    """One fixed camera of a trial, in the shipped video's pixels, board centimetres."""
+
+    view: str = Field(min_length=1)
+    camera_id: int = Field(ge=1)
+    provenance: CameraPoseProvenance
+    K: Mat3
+    distortion: tuple[float, float, float, float, float]
+    rvec: Vec3
+    tvec: Vec3
+    image_size: tuple[int, int]
+    # Median ArUco corner RMS of the pose in use, and of the shipped pose (equal when the
+    # shipped pose is the one in use; the pair is the negative control for camera 6).
+    marker_fit_residual_px: float | None = Field(default=None, ge=0)
+    shipped_marker_residual_px: float | None = Field(default=None, ge=0)
+
+
+class FineBioFpvCamera(VersionedModel):
+    """The head camera: rescaled intrinsics plus where its per-frame shipped pose lives."""
+
+    K: Mat3
+    distortion: tuple[float, float, float, float, float]
+    image_size: tuple[int, int]
+    pose_source: str = Field(min_length=1)
+    pose_frame_count: int = Field(ge=1)
+    valid_pose_fraction: float | None = Field(default=None, ge=0, le=1)
+    # Validity gate parameters for the shipped pose (the preflight's ~1.5% outlier frames):
+    # a frame fails when the marker reprojection exceeds the first where markers are seen,
+    # or the camera centre moves more than the second between consecutive frames.
+    marker_residual_gate_px: float = Field(gt=0)
+    velocity_gate_cm_per_frame: float = Field(gt=0)
+
+
+class FineBioCameraConfig(VersionedModel):
+    """Per-trial camera set: five fixed views plus the fpv, with pose provenance per view."""
+
+    config_kind: Literal["finebio_camera_config"] = "finebio_camera_config"
+    trial: str = Field(min_length=1)
+    recording_day: str = Field(pattern=r"^\d{6}$")
+    fixed: dict[str, FineBioFixedCamera]
+    fpv: FineBioFpvCamera
+    units: str = FINEBIO_WORLD_UNITS
+    # raw_frame = proxy_frame + frame_index_offset. The trial-level config is written in raw
+    # frames (offset 0); a per-window copy may set it to the proxy's start frame.
+    frame_index_offset: int = Field(default=0, ge=0)
+    provenance: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def require_views_keyed_by_name(self) -> FineBioCameraConfig:
+        for view, camera in self.fixed.items():
+            if camera.view != view:
+                raise ValueError(f"fixed camera {camera.view!r} is stored under key {view!r}")
+        return self
+
+
+class Track3D(VersionedModel):
+    """One 3D track's state at one frame (a row of tracks.jsonl)."""
+
+    frame_index: int = Field(ge=0)
+    track_id: str = Field(min_length=1)
+    object_class: str = Field(min_length=1)
+    position_cm: Vec3
+    uncertainty_cm: float = Field(ge=0)
+    support_views: tuple[str, ...] = ()
+    state: TrackState
+    confidence: float = Field(ge=0, le=1)
+    abstain: bool
+    possibly_same_as: tuple[str, ...] = ()
+
+
+class TrackEvent(VersionedModel):
+    """One identity event of the tracker (a row of events.jsonl)."""
+
+    frame_index: int = Field(ge=0)
+    track_id: str = Field(min_length=1)
+    kind: TrackEventKind
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+def write_jsonl(rows: Iterable[VersionedModel], path: Path) -> int:
+    """One compact JSON object per line, None fields omitted; returns the row count."""
+    count = 0
+    with path.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(row.model_dump_json(exclude_none=True))
+            handle.write("\n")
+            count += 1
+    return count
+
+
+def read_jsonl[T: VersionedModel](path: Path, model: type[T]) -> Iterator[T]:
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if line.strip():
+                yield model.model_validate(json.loads(line))
