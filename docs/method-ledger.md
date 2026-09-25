@@ -738,6 +738,31 @@ not generalised; gate 2 uses static sheets and a decisions JSON like gate 1. Rec
 anchor frames and workspace for gate 2 (p6-anchors,
 prepared)](#sep-25-anchor-frames-and-workspace-for-gate-2-p6-anchors-prepared).
 
+#### Sep 25: tracker extensions on the inventory's evidence (p3-tracker-ext)
+
+The four extensions the plan held back until the arms' occlusion inventory asked for them, each
+opt-in, each on a count: a **motion model** for tracks whose smoothed speed exceeds 0.5
+cm/frame for 3 updates (the in-hand pipette's 47 / 80 / 30 ids on arms (a)/(b)/(c); bench
+objects never cross the threshold and are unchanged to the last decimal), **`contained`**
+volumes = each container class's bench footprint as a visual hull of its median detector boxes
+across the fixed views, extruded to a height per class (rack 6, centrifuge 12 cm; the 125-138
+episodes, four fifths of them micro tubes in the rack), **group tracks** for the identical
+instances inside a footprint or one association gate, with a member count and `split_from`
+when a member leaves (the 145-171 candidate episodes, half ambiguous), and a minimal **`held`**
+(support 0 inside a hand box in >= 2 views, follows the hand track; 16 / 19 / 6 strict). On the
+same observations and gates, `tracks/` -> `tracks-ext/`: tracks born **285 / 308 / 270 -> 191
+/ 186 / 147**, ambiguities **126 / 158 / 133 -> 33 / 54 / 22**, fragmentation 220 / 242 / 207 ->
+134 / 129 / 93, proxy id switches (b) 629 -> 544, (c) 264 -> 202, the pipette 47 / 80 / 30 -> 41 /
+59 / 20 ids, the micro tubes 96 / 100 / 101 -> 32 / 26 / 17 (the rack's group of 12 formed at
+frame 600, a group of 2 in the centrifuge at 887, 13-25 splits), 19-20 micro-tube episodes per
+arm `contained` in the centrifuge and re-acquired through the closed-lid spins the core's
+30-frame timeout could not span. Measured on the way and kept on the record: `contained`
+without the group tracks is harmful (ambiguities 158 -> 3268 on (b): 70 rack tubes that never
+time out), the pipette's remaining ids are an observation problem (1-2 views, a long object's
+box centre is not one 3D point), and the core reproduces byte for byte with the flags off
+(tested by hash). Record: [Sep 25: tracker extensions on the inventory's evidence
+(p3-tracker-ext)](#sep-25-tracker-extensions-on-the-inventorys-evidence-p3-tracker-ext).
+
 ### Plan versus actual
 
 What the plan said, what happened instead, and why, in one line each.
@@ -8579,3 +8604,228 @@ and the 83 `main()` entry points beyond their shared fragments.
   `decisions.template.json` to `decisions.json`, fill `decision` and `instance_identity`, run
   `score`, then `export`. The arms are already ranked on the label-free measures; the anchors
   add the human's reading of the same frames and never block the pipeline.
+
+### Sep 25: tracker extensions on the inventory's evidence (p3-tracker-ext)
+
+- **What this is.** The `p3-tracker-ext` todo of the FineBio 3D-tracking plan
+  ([`docs/plan-2026-09-25-finebio-3d-tracking.md`](plan-2026-09-25-finebio-3d-tracking.md)):
+  the four extensions the plan held back until the occlusion inventory from arms (a)/(b) showed
+  episodes that need them, each added on a count from that inventory (the p4-arms entry above),
+  each opt-in and off by default so the core reproduces byte for byte, each tested on the
+  synthetic rig, then run on arms (a), (b), (c) into `tracks-ext/` beside the core's `tracks/`.
+  CPU only (about 50 s per arm for the tracker, 1-2 min for the measures), no GPU, no viewer.
+  Files: `src/battle/multiview_tracks.py`, `src/battle/multiview_schemas.py` (additive),
+  `src/battle/finebio_arms.py` (the `--ext` pass-through, the `tracks-ext` layout, the inventory
+  reading the new states, the scoreboard block), `tests/test_multiview_tracks.py` (+7),
+  `tests/test_finebio_arms.py` (extended). Other lanes committed concurrently; only these files
+  were staged, by path. **Claim boundary** as for the arms: identity metrics against the SAM3
+  per-view slots are a proxy, no human anchor is scored yet, nothing here is accuracy.
+- **The evidence, count by count (arms (a) / (b) / (c) of the p4-arms inventory).** `contained`
+  would serve **125 / 135 / 138** support-0 episodes, of which micro tubes in the micro-tube
+  rack 89 / 100 / 109 and the centrifuge 16 / 13 / 12; group-track candidates **145 / 156 /
+  171**, of which 74 / 80 / 88 ending in an ambiguity or a `possibly_same_as` successor; `held`
+  by the strict every-projecting-view test only **16 / 19 / 6** (142 / 166 / 102 by the two-view
+  test); and the in-hand blue pipette fragmented into **47 / 80 / 30 ids before any occlusion**
+  under the stationary prior at the rig's 30 px gate. Diagnosed on arm (b)'s rows before
+  anything was written: the pipette's 3D step is 0.44 cm per frame median, 2.5 p90, 29 max,
+  the hands' 0.37 / 1.9; the bench objects' smoothed speed p99 is 0.08-0.29 cm per frame (plate
+  0.11, PCR 0.08, vortex 0.29); the pipette fragments are born 1-10 frames after their
+  predecessor lost support, 7-30 cm away, often from a `single_view` predecessor whose position
+  had not moved (one view cannot re-triangulate).
+- **1. Motion model for movers (`--motion-model`; evidence: the 47 / 80 / 30 pipette ids).**
+  Per track a velocity = the exponentially smoothed (`velocity_smoothing` 0.3) finite difference
+  of the filtered position over >= 2-view updates. A track becomes a *mover* after
+  `mover_confirm_frames` = 3 consecutive updates with smoothed speed > `mover_speed_cm_per_frame`
+  = 0.5 cm/frame (15 cm/s; above every bench object's p99) and stops being one after 3 below
+  half of it (a turning point is one or two slow frames, not a stop; the first version switched
+  off at the first slow frame and lost the swung object at every reversal). A mover's prediction
+  adds `velocity * dt`; its process noise adds `mover_noise_factor` (1.0) x speed x dt, so the
+  gate opens with the speed; seen in one view it is updated laterally along that view's ray at
+  the predicted depth (`ray_point`; the stationary `single_view` rule is untouched for the
+  rest); coasting it follows a damped velocity (`mover_coast_damping` 0.8 per frame). Bench
+  objects never cross the threshold and keep the stationary prior to the last decimal. Measured
+  on arm (b) alone: **pipette 80 -> 65 ids**, hands 18 / 41 -> 7 / 32, tracks born 308 -> 270,
+  ambiguities 158 -> 130, fragmentation 242 -> 204, proxy id switches 629 -> 558, micro tubes
+  100 -> 99 (neutral), pipette residuals per view unchanged within 1 px (7-13 px fixed, 16-17
+  fpv). Two variants measured and not kept: without the confirmation the rack's micro tubes
+  became movers on box jitter and neighbour swaps (100 -> 126 ids, ambiguities 158 -> 189);
+  updating the velocity on single-view ray updates cost more ambiguities than it saved (131 vs
+  121 born). The pipette's remaining 65 ids are not a motion problem: it is seen in 1-2 views on
+  most frames (support median 2), its box centre is not one 3D point across views (a 30 cm
+  object raised and tilted; residuals 41-132 px in the rig), and its p99 step of 4.5 cm/frame is
+  above what a smoothed velocity follows through a reversal.
+- **2. `contained` (`--containers`; evidence: 125-138 episodes, four fifths in the micro-tube
+  rack, 12-16 in the centrifuge).** Container volumes are built from the arm's own detector
+  rows before tracking (`build_container_volumes`): per container class and fixed view the
+  median of the top-scoring (`<class>#0`) boxes over the run, a view being *stable* when the box
+  centre's inter-quartile spread is under half the box size; the footprint is the set of 1 cm
+  bench cells whose projection lies inside every stable view's box (a visual hull on the bench
+  plane, >= 3 stable views), reduced to the connected component that holds the rig's static
+  point (`--gates rig.json` supplies it; it must fall inside, and did for all six classes that
+  have one); the volume is the footprint extruded from 1.5 cm below the bench to a height per
+  class (`--container-heights-cm`: micro-tube rack **6**, centrifuge **12**, magnetic rack 6,
+  50 ml / 15 ml racks 12, tube-strip rack 6, vortex 8, PCR 10, trash 25, default 10). On trial
+  1 seven volumes were built: centrifuge 22 x 29 cm from T3 / T4 / T5 (T1 / T2 unstable: the
+  lid), vortex 11 x 11, micro-tube rack **24 x 7 cm centred at (7.6, 13.4) against the rig's
+  (7.96, 13.15)**, 50 ml rack 5 x 5 (no rig point), tube-strip rack 8 x 13, PCR 8 x 7 and trash
+  can 7 x 8 (conservative: the side views' boxes cut the far bench cells); skipped with the
+  reason on the record: the 15 ml rack (two instances, the stable boxes do not intersect) and
+  the magnetic rack (no stable view, its box jitters by more than half its size). A track whose
+  support drops to 0 with its position inside a volume of another class (a container is never
+  contained in itself) enters `contained` (event with the container id), keeps the container's
+  position (stationary here; `container_id` on the row), has its uncertainty held at the
+  container's radius and **does not time out** (`--contained-timeout 0`; a positive value bounds
+  the ghosts), and resumes under the core's rule when a candidate lies inside the volume or the
+  gate in >= 2 views, class-confirmed and unambiguous (`reacquired`, `from_state: contained`).
+  Measured on arm (b) alone the state is **harmful without the group tracks**: ambiguities 158
+  -> **3268**, micro tubes 100 -> 130 ids, 74 contained ghosts live at the window end, because
+  70 individual rack tubes never time out and every tube that reappears in the rack is a
+  candidate for all of them; the inventory's reading that the rack's `contained` and the group
+  track are one fix from two sides is confirmed from the other side.
+- **3. Group tracks (`--group-tracks`; evidence: 145-171 candidate episodes, half ambiguous).**
+  For the identical-instance classes (`group_classes`: micro / 50 ml / 15 ml tubes, tube strips,
+  the four tip classes) the observations whose pixel lies inside a container footprint's
+  projected volume in a view are one *footprint group* per (class, container): born under the
+  birth rule (>= 3 fixed views or 2 + fpv with >= 1 inside observation each, median per-view
+  count >= 2) at the triangulated per-view mean (the volume centre when that fails), with
+  `group_size` = the median per-view count re-measured every frame, support = the views with a
+  member, all members' slots on the record; an observation already assigned to an individual
+  track is not the group's (an individual that is carried into a rack keeps its id while it is
+  seen; when its support drops inside a footprint that has a group it ends and its identity
+  joins the group, `group_joined`, the plan's no-per-tube-identity rule); a group that loses
+  every member becomes `contained` in its own footprint and resumes directly when members
+  reappear (no ambiguity: there is one group per class and footprint). Outside footprints any
+  localised group-class track absorbs the same-class observations inside its own association
+  gate per view (`group_size` = 1 + the median absorbed count) instead of leaving them to be
+  born as near-duplicate ids, and birth candidates within `duplicate_distance_cm` (3 cm) of each
+  other become one candidate with a member count. A group-class candidate born outside every
+  footprint within `group_split_radius_cm` (25 cm) of a group with >= 2 members is a *split*
+  (`split_from` on every row, `group_split` event). On the arms two footprint groups formed in
+  each: **the micro-tube rack's group of 12 at frame 600** and **a group of 2 micro tubes in the
+  centrifuge at frame 887**; splits **25 / 19 / 13**, all micro tubes (one split track ended
+  `contained` in the vortex in (a) and (b), the storyboard's carry); individuals joined 4 / 1 / 3.
+  Measured on arm (b) with `--containers`: **micro tubes 100 -> 27 ids**, duplicate-pair frames
+  40,982 -> 2,210, ambiguities 158 -> 82, tracks born 308 -> 233, contained episodes 32 (20 of
+  them micro tubes in the centrifuge, re-acquired 29). The group's residual is the per-view mean
+  point's, so the micro-tube residual medians rise from 2.5-3.8 to 4.7-7.2 px per view; not an
+  error, a different quantity.
+- **4. `held` (`--held`; evidence: 16 / 19 / 6 strict, 142 / 166 / 102 loose).** Support 0,
+  not contained, and the projection inside a detector box of one hand class in >=
+  `held_min_views` = 2 views -> `held` (event with the hand class and views), following the
+  nearest live localised track of that hand class at the offset of the moment (`held_by` on the
+  row; the hands are tracked as objects from the detector rows, as the rig treats them as
+  probes), timing out as coasting does and falling back to plain coasting when the hand track is
+  not localised; resumes under the core rule (`from_state: held`). It is the smallest of the
+  four (one predicate, one position rule). Measured on arm (b) alone: 229 held episodes (right
+  hand 163, left 66), 56 re-acquired, 102 fell back; tracks born 308 -> 297, pipette 80 -> 73,
+  re-acquisitions 141 -> 152, ambiguities -4; on top of the other three it takes (b) from 197 to
+  186 born and the pipette from 66 to 59 ids.
+- **Before / after on the arms (`tracks/` vs `tracks-ext/`, all four extensions on, same
+  observations, same gates).** Objects = hands excluded; inventory = object episodes, the
+  tracker's state over the episode; movers, contained, groups, held from `identity_metrics.json
+  -> extensions`.
+
+  | arm | tracks born (objects) | fragmentation (objects) | ambiguities | id switches (SAM3-slot proxy) | re-acquired | pipette ids | 8-channel ids | micro-tube ids | 50 ml ids | hand ids L / R | movers | contained episodes / re-acquired / open at end | group tracks (footprint) / splits / joined | held episodes / re-acquired / fell back | inventory episodes: contained / held / coasting | slot disagreements | residual pooled px |
+  |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+  | (a) core | 285 (226) | 220 (168) | 126 | - | 129 | 47 | 19 | 96 | 5 | 18 / 41 | - | - | - | - | 284: 0 / 0 / 284 | 0 | 5.4 |
+  | (a) ext | **191** (154) | **134** (103) | **33** | - | 109 | **41** | 20 | **32** | 3 | 6 / 31 | 107 | 24 / 20 / 4 | 11 (2) / 25 / 4 | 139 / 50 / 42 | 200: 23 / 83 / 94 | 0 | 6.0 |
+  | (b) core | 308 (249) | 242 (190) | 158 | 629 | 141 | 80 | 8 | 100 | 6 | 18 / 41 | - | - | - | - | 317: 0 / 0 / 317 | 64 | 5.4 |
+  | (b) ext | **186** (149) | **129** (98) | **54** | **544** | 134 | **59** | 8 | **26** | 2 | 6 / 31 | 99 | 32 / 29 / 3 | 9 (2) / 19 / 1 | 155 / 56 / 53 | 220: 31 / 99 / 90 | 41 | 5.9 |
+  | (c) core | 270 (211) | 207 (155) | 133 | 264 | 101 | 30 | 15 | 101 | 19 | 18 / 41 | - | - | - | - | 247: 0 / 0 / 247 | 28 | 6.0 |
+  | (c) ext | **147** (110) | **93** (62) | **22** | **202** | 81 | **20** | 16 | **17** | 12 | 6 / 31 | 100 | 25 / 21 / 4 | 12 (2) / 13 / 3 | 102 / 25 / 44 | 136: 24 / 46 / 66 | 163 | 6.5 |
+
+  Ablation on arm (b), one extension at a time (born / ambiguities / fragmentation / proxy id
+  switches / pipette ids / micro-tube ids): core 308 / 158 / 242 / 629 / 80 / 100; motion model
+  270 / 130 / 204 / 558 / 65 / 99; `contained` alone 336 / **3268** / 199 / 627 / 80 / 130;
+  `contained` + groups 233 / 82 / 174 / 632 / 80 / 27; `held` alone 297 / 154 / 232 / 612 / 73
+  / 100; all four **186 / 54 / 129 / 544 / 59 / 26**. Contained episodes by container (tracker,
+  (a) / (b) / (c)): **centrifuge 19 / 20 / 15 micro-tube episodes** (the storyboard's tube in
+  the centrifuge; re-acquired with latencies 2-16 frames mostly, and 40-71 and 185-369 frames
+  through the closed-lid spins that the core's 30-frame timeout could not span), 50 ml rack 0 /
+  8 / 9, vortex 4 / 3 / 0, micro-tube rack 1 / 1 / 1 (the rack's 89-109 inventory episodes are
+  the group's now: the group of 12 never loses every member, so it never coasts). The
+  inventory's geometric inference against what the tracker did, arm (b): `contained ->
+  contained` 17, `held+contained -> contained` 12, `held+contained -> held` 12, `held -> held`
+  86, `held -> contained` 1, `unexplained -> held/contained` 2; the held episodes the loose
+  two-view test names (155 tracker episodes on (b), 65 of them the blue pipette) are more than
+  the strict 19, and 53 of them fell back to coasting when the hand track was not localised.
+- **Regression on the static tracks.** The plate, vortex, PCR, micro-tube rack, magnetic rack,
+  both tip racks, trash can, tube-strip rack, centrifuge and the 15 ml tube: one id each as
+  before (centrifuge **8 / 9 / 1 ids, unchanged**: its lid-opening box-centre jump is a step,
+  not a velocity, and the container it sits in is itself), median observed position of the
+  longest track identical to **0.004 cm** or better in all three arms (the magnetic rack's 0.004
+  is a different frame set through re-acquisition), plate rows 3600 / 3600 in every arm; the
+  red and yellow pipettes, blue tips, tube strips and the SAM3 `micro_tube_group` slot unchanged
+  in id count. What the extensions change that is not an improvement: the pooled residual
+  median rises 5.4 -> 5.9-6.5 px (group mean points, movers' predicted positions), and arm (c)'s
+  slot disagreements 28 -> 163, all but 25 of them on the 50 ml tubes whose SAM3 slots drift in
+  (c): a longer-lived 3D id keeps meeting the drifted slot in one view and the true one in
+  another, which the core's shorter tracks never lived to see. Both are the signal working, not
+  the fix failing; both are on the record per row.
+- **Byte-for-byte.** With every flag at its default the tracker writes the same
+  `tracks.jsonl`, `events.jsonl`, `residuals.jsonl` as the p3-tracker core: checked by `cmp`
+  against the arms' stored `tracks/` on (a) and (b) (same observations, same gates) and against
+  the fixtures window in both source modes; `identity_metrics.json` gains two additive keys
+  (`params.extensions`, `extensions`). The test records the core's sha256 of the three files on
+  the fixtures window and asserts them, and that no `group_size` / `split_from` /
+  `container_id` / `held_by` key appears in any core row.
+- **Schema (`multiview_schemas.py`, additive).** `Track3D` gains `group_size`, `split_from`,
+  `container_id`, `held_by`, all optional and None unless set (omitted from the JSON);
+  `TrackEventKind` gains `group_formed`, `group_split`, `group_joined` (`held` and `contained`
+  existed). `TrackerParams.as_dict()` nests the extension parameters under `extensions`.
+- **`finebio_arms` (`run --ext`).** Passes `--motion-model --containers <the clip's
+  containers> --group-tracks --held` (and any `--tracker-arg`) to the tracker, writes
+  `<arm>/tracks-ext/{tracks,events,residuals}.jsonl + identity_metrics.json` (the same layout as
+  `tracks/`), `measures-ext.json/.md` and `occlusion_inventory-ext.jsonl/.md`; with
+  `--reuse-observations` nothing of the core's is rewritten (checked by hash on the three arms'
+  `tracks/tracks.jsonl` and `measures.json`). The inventory now takes a support-0 episode as a
+  maximal run of `coasting` / `contained` / `held` rows and records `tracker_states`,
+  `tracker_handled`, `container_id`, `held_by` per episode and a `tracker_handled` block in
+  the summary (by state, by container, contained re-acquired / open, held re-acquired, inferred
+  -> handled); `identity_summary` passes `extensions` and a per-class id count through.
+  `scoreboard --arm <label>=<dir or measures JSON>` takes the suffixed file and adds a
+  "Tracker extensions" block; `runs/finebio-arms-P03_03_01-20260925/scoreboard/` was
+  regenerated with rows (a), (b), (c), (d), (a-ext), (b-ext), (c-ext).
+- **Tests.** `tests/test_multiview_tracks.py` +7 on the synthetic rig (19 in the file): the
+  byte-for-byte hashes with every flag off; an object swung back and forth at up to 6.25
+  cm/frame (47-66 px/frame in T1..T3) fragments under the core (>= 4 ids) and is one id on every
+  frame within 1.2 cm under the motion model, while a static plate in the same run is unchanged
+  to the last decimal; a mover seen in one view follows the ray within 3 px and a static object
+  seen in one view does not move (`ray_point` checked directly); a container volume from
+  synthetic detector boxes holds the true footprint within a few cm, its polygon and `contains`
+  behave at the bench, the height and far outside, the hull and point-in-polygon helpers, the
+  CLI parsers; a tube inside the volume that vanishes for 50 frames is `contained` (never lost,
+  position held, abstaining) and resumes with `from_state: contained` and latency 51 while an
+  identical tube outside is lost as before, the centrifuge is not contained in itself, and a
+  contained timeout bounds the ghost; four tubes in a rack are one group of 4 (0 duplicates, 0
+  ambiguities against >= 5 ids and > 50 duplicate frames in the core), the tube that leaves is a
+  split with `split_from`, two tubes 1.5 cm apart on the bench are one candidate with
+  `group_size` 2, and a class outside `group_classes` is untouched; a tube that vanishes inside
+  a moving hand's box in 4 views is `held`, follows the hand within 3 cm over 10 frames and
+  resumes with `from_state: held`, and coasts when no hand box is there.
+  `tests/test_finebio_arms.py`: episodes over contained / held rows with the handled state, and
+  the arm-(a) pipeline re-run with `--ext --reuse-observations` writing the suffixed files while
+  the core's bytes stay, the scoreboard with core and ext rows through the CLI. Default tier
+  **982 passed / 14 skipped** (964 at the anchors entry; other lanes' tests included); `uv run
+  ruff check src tests scripts` and `ruff format --check` clean on the files touched.
+- **Flags and parameters, for the record.** `battle-multiview-tracks ... --motion-model
+  [--mover-speed 0.5 --mover-confirm-frames 3 --mover-noise-factor 1.0] --containers
+  <classes | clip config> [--container-heights-cm class=cm,...] [--contained-timeout 0]
+  --group-tracks [--group-classes ... --group-split-radius-cm 25] --held [--held-min-views 2]`;
+  `battle-finebio-arms run --ext [--tracker-arg ...]`. In code also `velocity_smoothing` 0.3,
+  `mover_coast_damping` 0.8, footprint cell 1 cm on a +/-150 cm grid, >= 3 stable views, merge
+  distance = `duplicate_distance_cm` 3. `--containers` is meant to run with `--group-tracks` for
+  the identical-instance classes (the ablation above says why).
+- **Deviations and what is left.** (1) The plan's `contained` names the centrifuge lid state;
+  the state here is geometric (inside the volume, support 0) and the lid is the events lane's
+  (`p5-events` reads the closed intervals from `trials.json`). (2) Containers are stationary
+  here; a contained track keeps its position rather than following a moving container. (3) The
+  visual-hull footprint is conservative from side views alone (PCR 8 x 7 cm) and generous where
+  a lid moves the box (centrifuge 22 x 29); a top-down camera fixes it, which P03 has and a rig
+  without one would not. (4) The pipette keeps 41 / 59 / 20 ids: the next step is not in the
+  tracker but in the observation (a tip or handle keypoint that is one 3D point across views,
+  or a hand-relative prior), and is named, not done. (5) The `held` count by the two-view test
+  is an upper bound on carrying, as the inventory said; the state is kept because it re-acquires
+  50-56 episodes per arm and costs nothing when the hand track is absent (it falls back). (6)
+  Arm (d) was not re-run with the extensions (the p4-arms verdict left it aside). Runs are
+  gitignored (FineBio licence); the numbers are copied here and into the scoreboard.
