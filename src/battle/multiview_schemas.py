@@ -481,6 +481,14 @@ class Track3D(VersionedModel):
     confidence: float = Field(ge=0, le=1)
     abstain: bool
     possibly_same_as: tuple[str, ...] = ()
+    # Sep 25 (p3-tracker), all optional so earlier rows still validate: the per-view
+    # reprojection residual of the state, the per-view slot associated this frame, the views
+    # whose SAM3 slot differs from the slot this track had there before (a confidence signal,
+    # never resolved silently), and the frames since the last observation while coasting.
+    residual_px: dict[str, float] = Field(default_factory=dict)
+    support_slots: dict[str, str] = Field(default_factory=dict)
+    slot_disagreement_views: tuple[str, ...] = ()
+    frames_unobserved: int = Field(default=0, ge=0)
 
 
 class TrackEvent(VersionedModel):

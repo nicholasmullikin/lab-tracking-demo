@@ -84,6 +84,7 @@ battle-human-qa-candidates = "battle.human_qa:candidate_main"
 battle-code-snapshot = "battle.overnight_queue:code_snapshot_main"
 battle-finebio-detect = "battle.finebio_detect:main"
 battle-finebio-slice = "battle.finebio_slice:main"
+battle-multiview-tracks = "battle.multiview_tracks:main"
 battle-finebio-cameras = "battle.finebio_cameras_cli:main"
 
 [build-system]
