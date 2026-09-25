@@ -548,6 +548,30 @@ GPU-guard decision. It reproduces the preflight's T5 rows exactly on the CPU ven
 about 25 minutes of GPU. Record: [Sep 24, night: FineBio detector, CUDA build and
 battle-finebio-detect (p2-detect tooling)](#sep-24-night-finebio-detector-cuda-build-and-battle-finebio-detect-p2-detect-tooling).
 
+#### Sep 24, night: plan approved, trial windows chosen (p0-trials, p-docs)
+
+The rewritten plan was approved and copied verbatim into
+[`docs/plan-2026-09-25-finebio-3d-tracking.md`](plan-2026-09-25-finebio-3d-tracking.md) (its 19
+todos as a table, the Sep 24 draft marked superseded). The trials were then chosen on top-down
+evidence, CPU only: every 30th frame of the T5 videos through FineBio DINO (centrifuge box,
+hand boxes), frame-difference energy at every frame, and the centrifuge lid read at every frame
+as the teal fraction of a fixed rotor region of the top-down view (bimodal, threshold 0.24 at the
+widest gap, the same state runs at every threshold 0.15-0.35, checked by eye on 36 + 16 1:1
+crops). `P03_03_01` has the lid closed for its first 37 s and then **four** spins of 1.7-3.0 s
+with a hand on the lid (the preflight's "six" was a loose count); trial 1 is raw frames
+**[600, 4200)** (20.0-140.1 s): frame 916 at 10.5 s in, two full cycles ([1176, 1228) and
+[3224, 3311)) with loading and unloading, three shipped annotated frames inside, the busiest
+120 s that contains 916, fpv pose valid on 3587/3600. `P20_03_01` passes every check (six views
+x 6045 frames, pose file of that length, 94.6% valid) and has four spins of 1.1-1.4 s; the
+proposed window is the same **[600, 4200)** (frame 1442 at 28.1 s, three cycles, six of seven
+annotated frames), with one finding: its fpv pose drops out for 2-3 s around every spin (the
+head camera loses the markers over the centrifuge), so in room 2 the fixed cameras carry
+containment alone. `P03_01_01` stays the smoke. SOURCES and LICENSES gained the camera-pose
+archive and the seven shipped checkpoints with SHA-256s. Record: [Sep 24, night: plan approved,
+trial windows chosen (p0-trials, p-docs)](#sep-24-night-plan-approved-trial-windows-chosen-p0-trials-p-docs);
+evidence [`docs/qa/finebio-trials-2026-09-25.md`](qa/finebio-trials-2026-09-25.md), config
+`configs/finebio/trials.json`.
+
 ### Plan versus actual
 
 What the plan said, what happened instead, and why, in one line each.
@@ -6648,3 +6672,119 @@ and the 83 `main()` entry points beyond their shared fragments.
   index into the 35-class list; a filled row's `interpolated: true` must be honoured by the
   seeder (a `strided_interpolated` manifest means the in-hand object's boxes between detected
   frames are guesses). Scores are the detector's own; nothing here is accuracy.
+
+### Sep 24, night: plan approved, trial windows chosen (p0-trials, p-docs)
+
+- **What this is.** The `p0-trials` todo of the FineBio 3D-tracking plan and the "plan copied
+  into docs on approval" half of `p-docs`. The plan
+  (`/home/nick/.cursor/plans/finebio_3d_object_tracking_demo_5b2e9c17.plan.md`) was approved on
+  the night of Sep 24 after the preflight
+  ([`docs/preflight-2026-09-24-finebio.md`](preflight-2026-09-24-finebio.md)) and the build
+  started with four agents in one checkout (contracts, detector driver, SAM3 worker, this
+  lane); only the files named below were staged, by path. CPU only: the FineBio DINO detector
+  in its CPU venv (~2.2 s/frame), ffmpeg/ffprobe, cv2, PIL. No GPU, no viewer, nothing under
+  `data/` written. Commits: `83e980a` (plan copy), `aebf229` (trials config and QA doc),
+  `a9db73d` (SOURCES / LICENSES), and this entry's commit.
+- **Plan copy (`docs/plan-2026-09-25-finebio-3d-tracking.md`, commit `83e980a`).** Header
+  with the status (approved Sep 24 night, build started), the 19 todos from the plan's own
+  frontmatter as an id / content table (all `pending` at approval), the body copied verbatim
+  (checked with `diff` against the plan file). It is the fixed text this phase is measured
+  against, as [`plan-2026-09-24-finebio-detector-seeded-lab.md`](plan-2026-09-24-finebio-detector-seeded-lab.md)
+  was for the previous draft; that file now carries a one-line superseded note and is otherwise
+  as written.
+- **How the trials were read (`docs/qa/finebio-trials-2026-09-25.md`, commit `aebf229`).**
+  Three series per trial from the top-down `T5` video: (i) every 30th raw frame through
+  `scripts/finebio_preflight_detect.py --views T5 --spaced 0:N:30` (284 frames for `P03_03_01`
+  in 613 s, 202 for `P20_03_01` in 402 s; the centrifuge box at 0.84-0.87 on every frame, hand
+  boxes at score >= 0.3 counted per frame); (ii) mean absolute grey difference between
+  consecutive frames on a 192x108 downscale of the lower 75% of the frame, every frame; (iii)
+  the **lid state at every frame** as the fraction of pixels in a fixed rotor region inside the
+  centrifuge base (`P03_03_01` `(1135, 300, 1270, 445)`, `P20_03_01` `(800, 180, 900, 285)`,
+  raw T5 pixels, placed from the DINO box: closed `(1110, 271, 1294, 461)` / open
+  `(1128, 162, 1341, 462)` in P03, closed `(765, 129, 930, 332)` / open `(728, 0, 952, 332)` in
+  P20) whose OpenCV HSV hue is 75..100 with s > 70, v > 50: the rotor exposed when the lid is
+  open reads ~0.02, the teal dome ~0.85-0.97, a gloved hand pressing the dome 0.36-0.62. The
+  threshold **0.24** is the midpoint of the widest empty gap in the 1 fps sample of P03
+  (nothing between 0.123 and 0.357); the full-rate histogram is bimodal (P03: 7043 frames under
+  0.10, 62 between 0.10 and 0.35, 1387 above; P20: 5879 / 25 / 141) and thresholds 0.15, 0.20,
+  0.24, 0.30, 0.35 give the same 10 state runs on P03 and 9 on P20, the closed-frame total
+  moving by 52 and 17 frames across that range. By eye: 36 distinct 1:1 crops of P03 (every
+  10 s over 0-150 s plus the frames on either side of each transition) and 16 of P20 agree with
+  the state assigned; P20 frame 5190 (0.25) is the lid halfway down. Claim boundary: a pixel
+  heuristic on one camera, verified on a handful of frames; hand and moved counts are detector
+  output.
+- **`P03_03_01` (trial 1).** Six views x 8492 frames (`ffprobe -count_frames`), pose file
+  8492 rows, 8407 valid (99.0%), two invalid runs of >= 10 frames, [4851, 4907) and
+  [8287, 8300). Lid: closed [0, 1099), open [1099, 1176) (tubes loaded), **closed [1176, 1228)**,
+  open [1228, 3224), **closed [3224, 3311)**, open [3311, 5020), closed [5020, 5111), open
+  [5111, 7458), closed [7458, 7545), open [7545, 8492): the lid opens once at 36.7 s and every
+  later closure is a spin of 52-91 frames with a hand on the lid, **four cycles**, not the
+  preflight's "at least six" (a loose count from a 12-frame sheet). Hands: 1.6-2.4 boxes in
+  every sampled frame, so hands do not separate windows; bench motion does: 20-30 s is the
+  quietest bin of the trial (0.33, 2 moved instances), 30-80 s and 100-140 s are busy
+  (0.66-1.00), micro tubes move 4-12 instances per 10 s over 40-110 s (rack, vortex,
+  centrifuge), the blue tip rack moves in the 40, 60, 70 and 80 s bins. No 120 s window that
+  contains 916 can hold spin 3 (it ends at 5111, so the window would start at 1511), so two
+  cycles is the maximum. Six candidates scored (916 offset, cycles, annotated frames, hands,
+  motion, moved, fpv validity). **Window = raw frames [600, 4200)**, 20.02-140.14 s: 916 at
+  316 frames (10.5 s) in, both cycles with loading and 29.7 s of unloading after spin 2,
+  annotated frames 916 (six-view), 1544 and 3970 inside, motion 0.679 (highest), fpv pose valid
+  3587/3600 (longest gap 5 frames). Rejected: [0, 3600) (trial start, quiet 10-30 s, 9 s after
+  spin 2, 3970 lost), [900, 4500) (916 sixteen frames in), [750, 4350) (no gain over the
+  chosen), [0, 4200) (140 s for a quiet 20 s).
+- **`P20_03_01` (trial 2).** Checks passed: fpv and T1..T5 present, 6045 decoded frames in
+  each, 1920x1440 / 1920x1080 at 30000/1001, pose `rets (6045,)` with 5716 valid (94.6%). The
+  protocol-05 fallbacks were not needed. Lid open from frame 0, four spins of 34-42 frames:
+  **[895, 937), [2500, 2539), [3798, 3834)**, [5190, 5224). Room 2 is busier (motion 0.8-1.3 in
+  most bins) and its top-down camera sits higher (four markers in view). **Finding:** the fpv
+  pose's five long invalid runs, [892, 909) + [915, 992), [2523, 2589), [3812, 3883),
+  [5209, 5280), are one per spin, each starting between 3 frames before and 23 after the lid
+  closes and ending 49-56 frames after it re-opens: leaning over the centrifuge takes the
+  markers out of the head camera's view, so the fpv has no pose for the 2-3 s around every
+  containment episode in this trial and the fixed cameras carry it alone; P03 has no such
+  coupling. **Proposed window = raw frames [600, 4200)**, the same offset and length as trial
+  1 (no per-trial window tuning either): 1442 at 842 frames (28.1 s) in, three full cycles,
+  six of the seven annotated frames (695, 1112, 1442, 2368, 2769, 4196), motion 0.994 (highest),
+  208 moved instances, fpv valid 93.1% (248 frames, longest gap 77) against 95.3% for
+  [0, 3600) which has one cycle fewer; the drop-outs are the case the tracker is meant to
+  survive, so the busier window is proposed.
+- **`P03_01_01`** stays the smoke and the preflight regression reference: [1798, 1858), six
+  views x 5032 frames, pose 4890/5032 valid, detections and SAM3 masks on disk, fixtures
+  committed by `p0-contracts`.
+- **`configs/finebio/trials.json`.** Per trial: id, role (`trial1` / `trial2` / `smoke`),
+  protocol, room, day (P03 221013 from the preflight; P20 `null` until the camera solve), per-view
+  frame counts, pose file, length and validity, invalid runs of >= 10 frames, window (start, end
+  exclusive, seconds), in-window pose validity, shipped annotated frames and those inside the
+  window, centrifuge boxes and rotor region, all lid-closed intervals, cycles in the trial and in
+  the window, notes with the rationale and the rejected alternatives. Header comment states the
+  frame-index convention (proxy frame k == raw start + k, one window for all six views).
+- **SOURCES / LICENSES (commit `a9db73d`).** `docs/SOURCES.md` gains "Approved local source:
+  FineBio camera poses and shipped checkpoints (Sep 24, 2026)": the archive
+  `misc/finebio_camera_poses.zip` (64,013,894 B, SHA-256 `ee8ee467…217c3a`) and its 291 files
+  (two GoPro 9 intrinsic npz with full hashes, ten days 221013..221208 x cameras 1,2,3,4,6 of
+  extrinsics plus `marker_points.npy`, 226 fpv pose files, the authors' README and two vis
+  scripts with hashes), how Battle uses them, and the seven `ckpts/` files with full SHA-256
+  and sizes and what each is per the dataset and benchmark READMEs (`dino.pth` and
+  `deformable-detr.pth` identical to the Sep 21 `gdown` copies; `dino_checkpoint_e30.pth` the
+  IDEA DINO object detector frozen inside the manipulated/affected benchmark;
+  `handobj_checkpoint_e5.pth` the Shan et al. CVPR 2020 hand-object detector re-implemented on
+  IDEA DINO; `actionformer.pth.tar`, `asformer.model`, `mstcn.model` the atomic-operation and
+  step-segmentation baselines, inventoried, not loaded). The dataset README (read Sep 24) notes
+  the licence agreement text was updated 2026-09-10; the signed version is the user's record.
+  `docs/LICENSES.md` gains the matching bullet: same terms, no licence of their own, everything
+  under `data/` and every derived image outside Git, numbers only committed, no sharing
+  determination.
+- **Files kept and not kept.** Evidence images under
+  `runs/preflight-finebio-20260924/trials/<trial>/` (gitignored): every 30th T5 frame,
+  `motion.csv`, `lid_fullrate.csv`, `lid_state.csv`, `detections_T5_every30/T5.jsonl`, the
+  contact sheets (5 s / 10 s), the 1:1 centrifuge crops looked at, `detect_every30.log`. The
+  analysis was four one-off scripts under `/tmp` (sequential cv2 pass, HSV statistic, PIL
+  contact sheets, window scoring); none committed, nothing new under `scripts/`.
+- **For lane B (`p1-configs`).** Cut both proxies on exactly [600, 4200) with
+  `finebio_frames.proxy_ffmpeg_args(raw, out, 600, 3600)`; proxy frame k == raw 600 + k, pose
+  row `rets[600 + k]`; six-view anchor frames at proxy 316 (P03) and 842 (P20); cycles in proxy
+  frames [576, 628), [2624, 2711) (P03) and [295, 337), [1900, 1939), [3198, 3234) (P20); the
+  T5 centrifuge boxes and rotor regions apply unchanged to a native-resolution proxy. P20 needs
+  `p0-cameras` before its rig check; its fpv gaps around the spins are drop-outs of the shipped
+  pose, not outliers to gate. For `p5-events`: the lid intervals above are the reference the
+  `contained` event's lid state can be checked against on these two trials.
