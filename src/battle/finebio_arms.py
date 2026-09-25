@@ -1491,6 +1491,23 @@ def scoreboard_markdown(board: dict[str, Any]) -> str:
         )
     lines += [
         "",
+        "| arm | frac >= 0.5 pooled | " + " | ".join(f"{v} frac >= 0.5" for v in views) + " | "
+        "frames with mask pooled | " + " | ".join(f"{v} masks" for v in views) + " |",
+        "|---|---|" + "---|" * len(views) + "---|" + "---|" * len(views),
+    ]
+    for arm, row in board["rows"].items():
+        iou = row.get("det_iou_pooled")
+        if iou is None:
+            continue
+        lines.append(
+            f"| ({arm}) | {_fmt(iou['fraction_ge_0p5'])} | "
+            + " | ".join(_fmt(row["frac_ge_0p5_per_view"].get(v)) for v in views)
+            + f" | {sum(x or 0 for x in row['frames_with_mask_per_view'].values())} | "
+            + " | ".join(str(row["frames_with_mask_per_view"].get(v)) for v in views)
+            + " |"
+        )
+    lines += [
+        "",
         "| arm | tracks born | lost | reacquired | latency median | ambiguities | fragmentation | "
         "id switches (SAM3-slot proxy) | slot disagreements | residual pooled median px | "
         + " | ".join(f"{v} px" for v in views)
