@@ -22,6 +22,7 @@ from .build_phases import PhaseTimer
 from .cli_common import add_output_root, add_repository_root
 from .digest_cache import sha256_file
 from .exporter import HAND_CONNECTIONS, HAND_LANDMARK_NAMES, _rgba_mask_png
+from .four_part_contract import DEFAULT_APPROVED_VIEWS, review_scope
 from .fs_common import relative_uri
 from .mask_ops import decode_mask_png
 from .rerun_logging import (
@@ -333,15 +334,23 @@ def _method_coverage(
     return 1.0, float(has_output)
 
 
-def _load_method(spec: MethodSpec, *, repository_root: Path, frame_count: int) -> LoadedMethod:
+def _load_method(
+    spec: MethodSpec,
+    *,
+    repository_root: Path,
+    frame_count: int,
+    approved_views: tuple[str, ...] = DEFAULT_APPROVED_VIEWS,
+) -> LoadedMethod:
     run_directory = (repository_root / spec.run_directory).resolve()
     manifest_path = run_directory / "manifest.json"
     manifest = RunManifest.model_validate_json(manifest_path.read_text(encoding="utf-8"))
     metadata = _metadata(manifest)
     if metadata is None:
         raise ValueError(f"{spec.method_id} run has no recognized method metadata")
-    if manifest.clip.views != ("static-c10379",):
-        raise ValueError(f"{spec.method_id} does not target the approved static RGB view")
+    if tuple(manifest.clip.views) != tuple(approved_views):
+        raise ValueError(
+            f"{spec.method_id} does not target the approved view(s) {list(approved_views)}"
+        )
     metadata_fingerprints = _metadata_fingerprints(metadata)
     for fingerprint in metadata_fingerprints:
         if fingerprint.uri.startswith("hf://"):
@@ -381,7 +390,7 @@ def _load_method(spec: MethodSpec, *, repository_root: Path, frame_count: int) -
         input_manifest=input_artifacts[0],
         input_artifacts=tuple(input_artifacts[1:] or input_artifacts),
         inference_input_fingerprints=_declared_inference_fingerprints(metadata),
-        view_id="static-c10379",
+        view_id=approved_views[0],
         analysis_fps=ANALYSIS_FPS,
         source_offset_seconds=source_offset,
         coverage=manifest.coverage,
@@ -719,15 +728,22 @@ def build_exploratory_comparison(
     frame_count: int = FRAME_COUNT,
     overwrite: bool = True,
     timer: PhaseTimer | None = None,
+    clip_config: Path | None = None,
 ) -> Path:
     """Validate and compose the fixed bounded exploration without re-running inference."""
     timer = timer or PhaseTimer("exploratory comparison", enabled=False)
     if frame_count != FRAME_COUNT:
         raise ValueError("the final exploratory deliverable is fixed to 600 frames / 20 seconds")
+    scope = review_scope(clip_config, repository_root=repository_root)
     timer.start("validate")
     repository_root = repository_root.resolve()
     loaded = [
-        _load_method(spec, repository_root=repository_root, frame_count=frame_count)
+        _load_method(
+            spec,
+            repository_root=repository_root,
+            frame_count=frame_count,
+            approved_views=scope.views,
+        )
         for spec in methods
     ]
     source_fingerprint = _validate_shared_contract(loaded)
@@ -871,12 +887,19 @@ def main() -> None:
         action="store_true",
         help="Suppress the per-phase timing report.",
     )
+    parser.add_argument(
+        "--clip-config",
+        type=Path,
+        default=None,
+        help="Clip config whose views the method runs must match (default: Assembly101's).",
+    )
     args = parser.parse_args()
     output = build_exploratory_comparison(
         repository_root=args.repository_root,
         output_root=args.output_root,
         overwrite=not args.no_overwrite,
         timer=PhaseTimer("exploratory comparison", enabled=not args.quiet),
+        clip_config=args.clip_config,
     )
     print(f"Wrote exploratory comparison: {output}")
 

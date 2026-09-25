@@ -87,6 +87,7 @@ battle-finebio-slice = "battle.finebio_slice:main"
 battle-multiview-tracks = "battle.multiview_tracks:main"
 battle-finebio-cameras = "battle.finebio_cameras_cli:main"
 battle-finebio-rig = "battle.finebio_rig:main"
+battle-finebio-preprocess = "battle.finebio_preprocessing:main"
 
 [build-system]
 requires = ["uv_build>=0.11.2,<0.12.0"]

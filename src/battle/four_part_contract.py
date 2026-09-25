@@ -15,6 +15,48 @@ from .fs_common import relative_uri
 TARGETS = ("chassis", "interior", "rear_body", "cabin")
 FRAME_COUNT = 600
 ANALYSIS_FPS = 30
+# The Assembly101 review scope: the one human-reviewed static RGB view and the four parts.
+# Builders that used to assert these literals read them from a clip config when one is
+# given (`review_scope`) and fall back to these defaults, so the Assembly101 builds are
+# unchanged and a FineBio clip config (`views`, `targets`) can drive the same code.
+DEFAULT_TARGETS = TARGETS
+DEFAULT_APPROVED_VIEWS: tuple[str, ...] = ("static-c10379",)
+
+
+@dataclass(frozen=True)
+class ReviewScope:
+    """The views a build accepts and the ordered targets it expects."""
+
+    views: tuple[str, ...] = DEFAULT_APPROVED_VIEWS
+    targets: tuple[str, ...] = DEFAULT_TARGETS
+    source: str = "defaults (Assembly101)"
+
+
+def review_scope(
+    clip_config: Path | None = None, *, repository_root: Path | None = None
+) -> ReviewScope:
+    """Views and targets from a clip config, Assembly101 defaults when none is given.
+
+    Accepts both shapes in ``configs/clips``: the Assembly101 preprocessing manifest
+    (``clip.views``; no target list, so the four parts stay) and the FineBio clip config
+    (top-level ``views`` and ``targets``).
+    """
+    if clip_config is None:
+        return ReviewScope()
+    path = Path(clip_config)
+    if repository_root is not None and not path.is_absolute():
+        path = repository_root / path
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if "views" in payload:
+        views = tuple(str(v) for v in payload["views"])
+    elif isinstance(payload.get("clip"), dict) and "views" in payload["clip"]:
+        views = tuple(str(v) for v in payload["clip"]["views"])
+    else:
+        raise ValueError(f"{path} names no views")
+    targets = tuple(str(t) for t in payload.get("targets", DEFAULT_TARGETS))
+    if not views or not targets:
+        raise ValueError(f"{path} has an empty views or targets list")
+    return ReviewScope(views=views, targets=targets, source=str(clip_config))
 
 
 @dataclass(frozen=True)

@@ -1,0 +1,411 @@
+{
+ "schema_version": "1.0",
+ "config_kind": "finebio_camera_config",
+ "trial": "P03_01_01",
+ "recording_day": "221013",
+ "fixed": {
+  "T1": {
+   "schema_version": "1.0",
+   "view": "T1",
+   "camera_id": 1,
+   "provenance": "shipped",
+   "K": [
+    [
+     925.1271188035996,
+     0.0,
+     963.1621567970002
+    ],
+    [
+     0.0,
+     929.0941246958363,
+     541.5077368883501
+    ],
+    [
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "distortion": [
+    0.013557832156568798,
+    -0.020492998626421538,
+    0.0009030617816977623,
+    -0.0012203603081751325,
+    0.008145048227939083
+   ],
+   "rvec": [
+    -0.6785338029842908,
+    -0.9002022125074296,
+    -2.3053055090054633
+   ],
+   "tvec": [
+    -24.058064239123212,
+    9.469841364309158,
+    86.22607798618996
+   ],
+   "image_size": [
+    1920,
+    1080
+   ],
+   "marker_fit_residual_px": 6.315402159341875,
+   "shipped_marker_residual_px": 6.315402159341875
+  },
+  "T2": {
+   "schema_version": "1.0",
+   "view": "T2",
+   "camera_id": 2,
+   "provenance": "shipped",
+   "K": [
+    [
+     925.1271188035996,
+     0.0,
+     963.1621567970002
+    ],
+    [
+     0.0,
+     929.0941246958363,
+     541.5077368883501
+    ],
+    [
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "distortion": [
+    0.013557832156568798,
+    -0.020492998626421538,
+    0.0009030617816977623,
+    -0.0012203603081751325,
+    0.008145048227939083
+   ],
+   "rvec": [
+    -0.730108287011353,
+    0.7276793354260318,
+    2.2266163830833094
+   ],
+   "tvec": [
+    5.510599605598333,
+    2.1911428675335105,
+    81.2365859731503
+   ],
+   "image_size": [
+    1920,
+    1080
+   ],
+   "marker_fit_residual_px": 6.936933012594971,
+   "shipped_marker_residual_px": 6.936933012594971
+  },
+  "T3": {
+   "schema_version": "1.0",
+   "view": "T3",
+   "camera_id": 3,
+   "provenance": "shipped",
+   "K": [
+    [
+     925.1271188035996,
+     0.0,
+     963.1621567970002
+    ],
+    [
+     0.0,
+     929.0941246958363,
+     541.5077368883501
+    ],
+    [
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "distortion": [
+    0.013557832156568798,
+    -0.020492998626421538,
+    0.0009030617816977623,
+    -0.0012203603081751325,
+    0.008145048227939083
+   ],
+   "rvec": [
+    -0.7316212427477731,
+    -0.5481415467159516,
+    -1.0735336267410205
+   ],
+   "tvec": [
+    -5.661175375793848,
+    3.012989111389704,
+    83.75555066258342
+   ],
+   "image_size": [
+    1920,
+    1080
+   ],
+   "marker_fit_residual_px": 5.082131599356827,
+   "shipped_marker_residual_px": 5.082131599356827
+  },
+  "T4": {
+   "schema_version": "1.0",
+   "view": "T4",
+   "camera_id": 4,
+   "provenance": "shipped",
+   "K": [
+    [
+     925.1271188035996,
+     0.0,
+     963.1621567970002
+    ],
+    [
+     0.0,
+     929.0941246958363,
+     541.5077368883501
+    ],
+    [
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "distortion": [
+    0.013557832156568798,
+    -0.020492998626421538,
+    0.0009030617816977623,
+    -0.0012203603081751325,
+    0.008145048227939083
+   ],
+   "rvec": [
+    -0.6859196272255272,
+    0.24466573903689953,
+    0.5972908013924954
+   ],
+   "tvec": [
+    -9.351920719784124,
+    -4.965429318333125,
+    94.75136254726222
+   ],
+   "image_size": [
+    1920,
+    1080
+   ],
+   "marker_fit_residual_px": 4.782609926880004,
+   "shipped_marker_residual_px": 4.782609926880004
+  },
+  "T5": {
+   "schema_version": "1.0",
+   "view": "T5",
+   "camera_id": 6,
+   "provenance": "marker_pnp",
+   "K": [
+    [
+     925.1271188035996,
+     0.0,
+     963.1621567970002
+    ],
+    [
+     0.0,
+     929.0941246958363,
+     541.5077368883501
+    ],
+    [
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "distortion": [
+    0.013557832156568798,
+    -0.020492998626421538,
+    0.0009030617816977623,
+    -0.0012203603081751325,
+    0.008145048227939083
+   ],
+   "rvec": [
+    -0.005972493678917233,
+    0.02581915709711874,
+    0.013613623500883899
+   ],
+   "tvec": [
+    5.2736547130832925,
+    -4.671944492264925,
+    90.50185241425679
+   ],
+   "image_size": [
+    1920,
+    1080
+   ],
+   "marker_fit_residual_px": 0.7148250905777371,
+   "shipped_marker_residual_px": 93.70714685081349
+  }
+ },
+ "fpv": {
+  "schema_version": "1.0",
+  "K": [
+   [
+    920.3468250319663,
+    0.0,
+    975.2459916176497
+   ],
+   [
+    0.0,
+    925.6823049535076,
+    711.0114940997927
+   ],
+   [
+    0.0,
+    0.0,
+    1.0
+   ]
+  ],
+  "distortion": [
+   -0.2588695465204251,
+   0.09040996874397864,
+   0.0006619532022785958,
+   0.00006883486686910192,
+   -0.016631358443964447
+  ],
+  "image_size": [
+   1920,
+   1440
+  ],
+  "pose_source": "misc/finebio_camera_poses/first_person_camera_poses/P03_01_01.npz",
+  "pose_frame_count": 5032,
+  "valid_pose_fraction": 0.9717806041335453,
+  "marker_residual_gate_px": 20.0,
+  "velocity_gate_cm_per_frame": 5.0
+ },
+ "units": "board centimetres, z into the bench",
+ "frame_index_offset": 1798,
+ "provenance": {
+  "mapping_trial": "P03_01_01",
+  "mapping_seconds": [
+   30.0,
+   60.0,
+   90.0
+  ],
+  "mapping_frames": [
+   899,
+   1798,
+   2697
+  ],
+  "shipped_pose_max_rms_px": 10.0,
+  "pnp_drop_over_px": 10.0,
+  "intrinsics_rescale": {
+   "fixed": 0.5,
+   "fpv": 0.48
+  },
+  "views": {
+   "T1": {
+    "best_day": "221013",
+    "best_day_median_corner_rms_px": 6.315402159341875,
+    "chosen_day_median_corner_rms_px": 6.315402159341875,
+    "pnp_corner_rms_px": 0.783887353245538,
+    "pnp_vs_shipped_cm": 0.284684509423756,
+    "markers_detected_per_frame": [
+     2,
+     3,
+     3
+    ]
+   },
+   "T2": {
+    "best_day": "221013",
+    "best_day_median_corner_rms_px": 6.936933012594971,
+    "chosen_day_median_corner_rms_px": 6.936933012594971,
+    "pnp_corner_rms_px": 1.0965344919533058,
+    "pnp_vs_shipped_cm": 0.6200810034349805,
+    "markers_detected_per_frame": [
+     2,
+     3,
+     3
+    ]
+   },
+   "T3": {
+    "best_day": "221013",
+    "best_day_median_corner_rms_px": 5.082131599356827,
+    "chosen_day_median_corner_rms_px": 5.082131599356827,
+    "pnp_corner_rms_px": 0.39624232481363597,
+    "pnp_vs_shipped_cm": 0.8788022070339654,
+    "markers_detected_per_frame": [
+     2,
+     1,
+     2
+    ]
+   },
+   "T4": {
+    "best_day": "221109",
+    "best_day_median_corner_rms_px": 2.2341285151337646,
+    "chosen_day_median_corner_rms_px": 4.782609926880004,
+    "pnp_corner_rms_px": 0.8034278599668745,
+    "pnp_vs_shipped_cm": 0.3651249068653664,
+    "markers_detected_per_frame": [
+     2,
+     2,
+     3
+    ]
+   },
+   "T5": {
+    "best_day": "221013",
+    "best_day_median_corner_rms_px": 93.70714685081349,
+    "chosen_day_median_corner_rms_px": 93.70714685081349,
+    "pnp_corner_rms_px": 0.7148250905777371,
+    "pnp_vs_shipped_cm": 6.430374806631148,
+    "markers_detected_per_frame": [
+     3,
+     3,
+     3
+    ]
+   }
+  },
+  "dropped_views": {},
+  "source": "runs/finebio-cameras-P03_01_01-20260925/mapping.json (battle-finebio-cameras, 2026-09-25)",
+  "command": "/home/nick/src/battle/src/battle/finebio_cameras_cli.py solve --trial P03_01_01 --seconds 30,60,90 --output configs/finebio/cameras/P03_01_01.json --evidence runs/finebio-cameras-P03_01_01-20260925 --fpv-step 25",
+  "fpv_pose_check": {
+   "trial": "P03_01_01",
+   "day": "221013",
+   "step": 25,
+   "frames_checked": 196,
+   "frames_with_markers": 196,
+   "corner_rms_px": {
+    "median": 0.9290324667840012,
+    "p90": 1.9632867087714128,
+    "max": 130.9243164750084
+   },
+   "frames_over_gate": 3,
+   "residual_gate_px": 20.0,
+   "pnp_vs_shipped_cm": {
+    "median": 0.32772836163046687,
+    "p90": 2.0382639423372195,
+    "max": 59.18354553441204,
+    "n": 95
+   },
+   "velocity_gate": {
+    "consecutive_valid_pairs": 4877,
+    "pairs_over_gate": 16,
+    "fraction_over_gate": 0.003280705351650605,
+    "step_cm_p99": 3.1931445648262424,
+    "step_cm_max": 13.078924575350062
+   }
+  },
+  "fpv_day_crosscheck": {
+   "221013": {
+    "median": 0.8981525426807555,
+    "p90": 1.89152858111881,
+    "max": 4.267861018311118
+   },
+   "221021": {
+    "median": 21.990367122934757,
+    "p90": 26.6639927180356,
+    "max": 29.523412864798082
+   },
+   "221110": {
+    "median": 14.630806225499107,
+    "p90": 15.694800443912284,
+    "max": 19.353181328607935
+   }
+  },
+  "window": {
+   "start_frame": 1798,
+   "end_frame_exclusive": 2398,
+   "frame_index_offset": 1798,
+   "trial_camera_config": "configs/finebio/cameras/P03_01_01.json",
+   "note": "raw_frame = proxy_frame + frame_index_offset; poses unchanged"
+  }
+ }
+}

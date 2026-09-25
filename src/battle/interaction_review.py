@@ -32,7 +32,14 @@ from .exploratory_comparison import (
 )
 from .fine_substep_contract import load_contract as load_fine_substep_contract
 from .fine_substep_contract import substep_for_frame
-from .four_part_contract import ANALYSIS_FPS, FRAME_COUNT, TARGETS, load_contract
+from .four_part_contract import (
+    ANALYSIS_FPS,
+    DEFAULT_APPROVED_VIEWS,
+    FRAME_COUNT,
+    TARGETS,
+    load_contract,
+    review_scope,
+)
 from .mask_ops import mask_iou
 from .observations import object_for_label
 from .rerun_logging import (
@@ -141,6 +148,7 @@ def _validate_run(
     frame_count: int = FRAME_COUNT,
     require_every_frame: bool = True,
     verify_fingerprints: bool = False,
+    approved_views: tuple[str, ...] = DEFAULT_APPROVED_VIEWS,
 ) -> LoadedSource:
     """Validate source/proxy fingerprints and exact source-time mapping before use."""
     run_directory = (repository_root / spec.run_directory).resolve()
@@ -148,8 +156,10 @@ def _validate_run(
     if not manifest_path.is_file():
         raise FileNotFoundError(f"review input manifest is unavailable: {manifest_path}")
     manifest = RunManifest.model_validate_json(manifest_path.read_text(encoding="utf-8"))
-    if manifest.clip.views != ("static-c10379",):
-        raise ValueError(f"{spec.method_id} must use only the approved static RGB view")
+    if tuple(manifest.clip.views) != tuple(approved_views):
+        raise ValueError(
+            f"{spec.method_id} must use only the approved view(s) {list(approved_views)}"
+        )
     if manifest.clip.timing.clocks.fps_for(ClockName.ANALYSIS) != ANALYSIS_FPS:
         raise ValueError(f"{spec.method_id} must use the 30-fps analysis clock")
     metadata = _metadata(manifest)
@@ -1524,6 +1534,7 @@ def build_interaction_review(
     verify_fingerprints: bool = False,
     overwrite: bool = True,
     timer: PhaseTimer | None = None,
+    clip_config: Path | None = None,
 ) -> Path:
     """Build and validate the review package without model inference."""
     if reference_segmentation_method not in REFERENCE_SEGMENTATIONS:
@@ -1533,6 +1544,7 @@ def build_interaction_review(
     timer = timer or PhaseTimer("interaction review", enabled=False)
     timer.start("validate")
     repository_root = repository_root.resolve()
+    scope = review_scope(clip_config, repository_root=repository_root)
     contract = load_contract(
         repository_root, Path("configs/four_part_segmentation_comparison.json")
     )
@@ -1542,6 +1554,7 @@ def build_interaction_review(
             repository_root,
             require_every_frame=name != "drop_dtw",
             verify_fingerprints=verify_fingerprints,
+            approved_views=scope.views,
         )
         for name, spec in DEFAULT_SOURCES.items()
     }
@@ -1551,6 +1564,7 @@ def build_interaction_review(
         ),
         repository_root,
         verify_fingerprints=verify_fingerprints,
+        approved_views=scope.views,
     )
     control = _validate_run(
         SourceSpec(
@@ -1559,10 +1573,13 @@ def build_interaction_review(
         ),
         repository_root,
         verify_fingerprints=verify_fingerprints,
+        approved_views=scope.views,
     )
     _validate_shared_sources([*sources.values(), reference, control])
-    if tuple(item.label for item in reference.observations[0].objects) != TARGETS:
-        raise ValueError("reference segmentation must preserve the four-part target order")
+    if tuple(item.label for item in reference.observations[0].objects) != scope.targets:
+        raise ValueError(
+            f"reference segmentation must preserve the target order {list(scope.targets)}"
+        )
     # The corrected SAM3 reference preserves external masks but not a duplicated bounded
     # video. The stabilized WiLoR derivative retains the exact common approved proxy.
     video_path = sources["wilor"].run_directory / "input.mp4"
@@ -1847,6 +1864,12 @@ def main() -> None:
         action="store_true",
         help="Re-read every input instead of trusting a digest cached against size and mtime.",
     )
+    parser.add_argument(
+        "--clip-config",
+        type=Path,
+        default=None,
+        help="Clip config whose views / targets the inputs must match (default: Assembly101's).",
+    )
     args = parser.parse_args()
     print(
         build_interaction_review(
@@ -1856,6 +1879,7 @@ def main() -> None:
             verify_fingerprints=args.verify_fingerprints,
             overwrite=not args.no_overwrite,
             timer=PhaseTimer("interaction review", enabled=not args.quiet),
+            clip_config=args.clip_config,
         )
     )
 

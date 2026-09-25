@@ -1,0 +1,129 @@
+{
+  "schema_version": "1.0",
+  "config_kind": "finebio_clip_config",
+  "clip_id": "finebio-P03_01_01-1798-2398",
+  "source_name": "FineBio",
+  "source_license": "FineBio dataset terms: non-commercial research; nothing under data/ or runs/ is redistributed (docs/SOURCES.md)",
+  "trial": "P03_01_01",
+  "role": "smoke",
+  "room": 1,
+  "recording_day": "221013",
+  "fps": "30000/1001",
+  "window": {
+    "start_frame": 1798,
+    "end_frame_exclusive": 2398,
+    "frame_count": 600,
+    "seconds": [
+      59.99,
+      80.01
+    ]
+  },
+  "frame_index_offset": 1798,
+  "views": [
+    "T1",
+    "T2",
+    "T3",
+    "T4",
+    "T5",
+    "fpv"
+  ],
+  "fixed_views": [
+    "T1",
+    "T2",
+    "T3",
+    "T4",
+    "T5"
+  ],
+  "fpv_view": "fpv",
+  "view_sizes": {
+    "T1": [
+      1920,
+      1080
+    ],
+    "T2": [
+      1920,
+      1080
+    ],
+    "T3": [
+      1920,
+      1080
+    ],
+    "T4": [
+      1920,
+      1080
+    ],
+    "T5": [
+      1920,
+      1080
+    ],
+    "fpv": [
+      1920,
+      1440
+    ]
+  },
+  "targets": [
+    "cell_culture_plate",
+    "blue_pipette",
+    "yellow_pipette",
+    "red_pipette",
+    "8_channel_pipette",
+    "50ml_tube",
+    "15ml_tube",
+    "micro_tube",
+    "8_tube_stripes",
+    "blue_tip_rack",
+    "yellow_tip_rack",
+    "red_tip_rack",
+    "8_channel_tip_rack"
+  ],
+  "containers": [
+    "centrifuge",
+    "vortex_mixer",
+    "pcr_machine",
+    "micro_tube_rack",
+    "50ml_tube_rack",
+    "15ml_tube_rack",
+    "8_tube_stripes_rack",
+    "magnetic_rack",
+    "trash_can"
+  ],
+  "probes": [
+    "left_hand",
+    "right_hand"
+  ],
+  "camera_config": "configs/finebio/cameras/P03_01_01.json",
+  "window_camera_config": "configs/finebio/cameras/P03_01_01_1798-2398.json",
+  "preprocessing_manifest": "data/derived/finebio/P03_01_01/1798-2398/manifest.json",
+  "proxies": {
+    "T1": "data/derived/finebio/P03_01_01/1798-2398/P03_01_01_T1_1798-2398.mp4",
+    "T2": "data/derived/finebio/P03_01_01/1798-2398/P03_01_01_T2_1798-2398.mp4",
+    "T3": "data/derived/finebio/P03_01_01/1798-2398/P03_01_01_T3_1798-2398.mp4",
+    "T4": "data/derived/finebio/P03_01_01/1798-2398/P03_01_01_T4_1798-2398.mp4",
+    "T5": "data/derived/finebio/P03_01_01/1798-2398/P03_01_01_T5_1798-2398.mp4",
+    "fpv": "data/derived/finebio/P03_01_01/1798-2398/P03_01_01_fpv_1798-2398.mp4"
+  },
+  "proxy_sha256": {
+    "T1": "6be394091d723d5250db5783779307321dc640aa69d877e00d9b6bf8d2e32c51",
+    "T2": "f2d73f8dc0733c25065a71aae87d32deddab1aa7dab229736cc889944c28c7fa",
+    "T3": "5d460294aa2062716a2d8b9e8cb8abc9e4e0c3249815c3088712812cc050296c",
+    "T4": "c45bb840ca286c09411efc8f0819e782a93672119693f8e2bd6e1b077cc27af0",
+    "T5": "0f051ceb07506c613c105e1db6bb5f24e61de89c2ca1ef64c7b6135fcb55ca5f",
+    "fpv": "a054815a5e12543b3664d69709c974d9aeeed5bfbea4890f51c104293b4ec14e"
+  },
+  "annotated_frames_in_window": {
+    "six_view": [],
+    "fpv_only": []
+  },
+  "centrifuge_cycles_in_window": [],
+  "window_fpv_pose_valid_fraction": null,
+  "trials_source": {
+    "schema_version": "1.0",
+    "uri": "configs/finebio/trials.json",
+    "sha256": "63ef49e15bdc298abcadc4a9cb13522349844bd49aa03e30b70257acd4ac8c99"
+  },
+  "downstream": {
+    "detections": "runs/finebio-detect-P03_01_01-1798-2398/ (GPU phase, battle-finebio-detect on the six proxies; frame_index raw = proxy + offset)",
+    "rig": "uv run battle-finebio-rig --config configs/finebio/cameras/P03_01_01_1798-2398.json --detections runs/finebio-detect-P03_01_01-1798-2398 --frames 1798-2397 --output runs/finebio-rig-P03_01_01-1798-2398 --negative-control"
+  },
+  "licence": "FineBio (aistairc/FineBio), non-commercial research use; the proxies under data/derived and every frame, video or mask derived from them stay out of the repository"
+}

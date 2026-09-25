@@ -13,6 +13,7 @@ from pathlib import Path
 
 from .cli_common import add_output_root, add_repository_root
 from .external_smoke_import import import_kineo, sha256_file
+from .four_part_contract import DEFAULT_APPROVED_VIEWS, review_scope
 from .kineo_nlf import _validate_pkls
 from .schemas import (
     ClockName,
@@ -79,7 +80,12 @@ def _read_rows(path: Path, *, frame_count: int) -> dict[int, FrameObservations]:
     return result
 
 
-def verify_source_alignment(native: RunManifest, boxmot: RunManifest) -> None:
+def verify_source_alignment(
+    native: RunManifest,
+    boxmot: RunManifest,
+    *,
+    approved_views: tuple[str, ...] = DEFAULT_APPROVED_VIEWS,
+) -> None:
     """Require the same source asset, clocks, view, and exact frame timestamp mapping."""
 
     if native.clip.clip_id != boxmot.clip.clip_id or native.clip.asset != boxmot.clip.asset:
@@ -87,8 +93,8 @@ def verify_source_alignment(native: RunManifest, boxmot: RunManifest) -> None:
     if native.clip.timing != boxmot.clip.timing:
         raise ValueError("Kineo and BoxMOT must declare identical clock mappings")
     for manifest in (native, boxmot):
-        if manifest.clip.views != ("static-c10379",):
-            raise ValueError("fusion accepts only the approved static view")
+        if tuple(manifest.clip.views) != tuple(approved_views):
+            raise ValueError(f"fusion accepts only the approved view(s) {list(approved_views)}")
         if manifest.clip.timing.clocks.fps_for(ClockName.ANALYSIS) != 30:
             raise ValueError("fusion requires the 30-fps analysis clock")
         for row in manifest.observations:
@@ -292,7 +298,8 @@ def run(args: argparse.Namespace) -> Path:
         raise FileExistsError(output)
     native_manifest = RunManifest.model_validate_json((native_run / "manifest.json").read_text())
     boxmot_manifest = RunManifest.model_validate_json((boxmot_run / "manifest.json").read_text())
-    verify_source_alignment(native_manifest, boxmot_manifest)
+    scope = review_scope(args.config, repository_root=root)
+    verify_source_alignment(native_manifest, boxmot_manifest, approved_views=scope.views)
     frame_count = len(native_manifest.observations)
     if frame_count not in (600, 1800) or len(boxmot_manifest.observations) != frame_count:
         raise ValueError("Kineo fusion requires matching 600- or 1800-frame source runs")
