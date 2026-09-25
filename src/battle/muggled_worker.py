@@ -71,7 +71,6 @@ GATE_AREA_HISTORY_FRAMES = 30
 # The score the memory encoder sees for a gated slot: below zero it adds `no_object_embed`
 # for that multiplex entry only, so the frame is memorised as "absent" for that slot.
 GATED_OBJECT_SCORE = -1.0
-GATE_REASONS = ("ok", "warmup", "low_object_score", "low_iou", "contested", "area_jump")
 
 # object index, concept, mask logits, reported confidence, raw presence logit, predicted IoU.
 # The last two are tracker diagnostics and are absent for prompt and detector initialization.

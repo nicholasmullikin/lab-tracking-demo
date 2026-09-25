@@ -38,7 +38,6 @@ from .cli_common import add_output_root, add_repository_root
 from .schemas import ArtifactFingerprint, VersionedModel, fingerprint
 
 # Recording-1 constants, kept for every caller written before the recording registry existed.
-RAW_ROOT = RECORDING_1.raw_root
 POSES_ROOT = RECORDING_1.poses_root
 SHIPPED_2D_WINDOW = RECORDING_1.shipped_2d_window
 OUTPUT_ROOT = Path(RECORDING_1.clock_scan_root)

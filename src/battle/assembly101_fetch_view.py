@@ -45,9 +45,6 @@ from .schemas import VersionedModel
 
 # Recording-1 constants, kept for every caller written before the recording registry existed.
 RECORDING_ID = RECORDING_1.recording_id
-RAW_ROOT = RECORDING_1.raw_root
-LOCAL_RECORDINGS = RECORDING_1.local_recordings_root
-DERIVED_ROOT = RECORDING_1.derived_root
 REPORT_NAME = "static_views_focused_acquisition_report.md"
 MANIFEST_NAME = "static_views_focused_acquisition_manifest.json"
 

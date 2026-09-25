@@ -43,6 +43,9 @@ build/
 dist/
 *.egg-info/
 
+# The research brief that preceded the Sep 8 plan: kept locally, untracked since Sep 24.
+/battle_plan.agent.final.md
+
 # Editor and operating-system artifacts.
 .DS_Store
 .idea/

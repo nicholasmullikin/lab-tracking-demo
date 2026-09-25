@@ -48,9 +48,7 @@ from .schemas import fingerprint as measured_fingerprint
 
 # Recording-1 constants, kept for every caller written before the recording registry existed.
 RECORDING_ID = RECORDING_1.recording_id
-RAW_ROOT = RECORDING_1.raw_root
 POSES_ROOT = RECORDING_1.poses_root
-FINE_GRAINED_CSV = RECORDING_1.fine_grained_csv()
 CAMERA_ESTIMATE = Path("configs/assembly101/c10379_camera_estimate.json")
 SHIPPED_2D_WINDOW = RECORDING_1.shipped_2d_window
 OUTPUT_ROOT = Path(RECORDING_1.reference_root)
@@ -60,7 +58,6 @@ HANDS_NAME = "hands.jsonl"
 STATIC_VIEW_KEY = "C10379:rgb"
 STATIC_VIDEO_NAME = "C10379_rgb.mp4"
 PROXY_DIMENSIONS = (1280, 720)
-EGO_PROXY_DIMENSIONS = (954, 720)
 FRAME_COUNT = 1800
 ANALYSIS_FPS = 30
 SOURCE_START_SECONDS = RECORDING_1.window_start_seconds

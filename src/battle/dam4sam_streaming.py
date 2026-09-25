@@ -65,7 +65,6 @@ SAM2_MODELS: dict[str, dict[str, str]] = {
     },
 }
 IMAGE_SIZE_LINE = re.compile(r"^(\s*image_size:\s*)(\d+)(\s*(#.*)?)$", re.MULTILINE)
-CORRECTION_API = "add_new_mask"
 # ImageNet normalisation constants DAM4SAMTracker.__init__ would have set.
 IMG_MEAN = (0.485, 0.456, 0.406)
 IMG_STD = (0.229, 0.224, 0.225)

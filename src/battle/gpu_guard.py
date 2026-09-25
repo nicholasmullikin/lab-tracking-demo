@@ -67,7 +67,6 @@ GIB = 1024**3
 HEADROOM_FACTOR = 1.5
 SMALL_NEIGHBOUR_MIB = 512
 UNKNOWN_NEIGHBOUR_LIMIT_MIB = 2048
-NEIGHBOUR_CLASSES = ("own_repo_model", "known_benign", "unknown")
 # Growth a neighbour may still do on top of what it holds when the guard looks: a model
 # process allocates again when it decodes or grows its memory bank; a compositor, browser,
 # player or game holds a roughly steady working set.

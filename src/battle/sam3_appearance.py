@@ -69,7 +69,6 @@ EMPTY_MASK_LIMITATION = (
     "the acceptance rule rejects the onset"
 )
 EXEMPLAR_API = "muggledsam_sam3_exemplar_detector"
-IMAGE_API = "muggledsam_sam3_interactive"
 CANDIDATE_SOURCES = ("image_decoder", "exemplar_detector", "both")
 
 

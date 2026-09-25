@@ -84,7 +84,6 @@ B3_SEEDS_ROOT = Path("runs/seed-search-20260920/seeds")
 DEFAULT_DECISIONS = Path("configs/qa/seed_proposal_decisions_2026-09-21.json")
 C10119_VIEW = "C10119"
 C10119_ANCHOR_WORKSPACE = Path("runs/human-review-anchors-first-minute-static-c10119")
-C10119_ANCHOR_RECORD = Path("docs/qa/first-minute-review-anchors-static-c10119.human-record.json")
 C10379_ANCHOR_WORKSPACE = Path("runs/human-review-anchors-first-minute")
 E4_ANCHOR_WORKSPACE = Path("runs/human-review-anchors-first-minute-ego-hmc21179183")
 C10119_INTERIOR_FRAME = 41
