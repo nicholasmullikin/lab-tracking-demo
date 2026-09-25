@@ -414,6 +414,14 @@ class PerFrameObject(VersionedModel):
             "not measured against ground truth."
         ),
     )
+    # Rows written by the SAM3 image decoder from an external box (the memory-free
+    # `box_stream` worker mode, or a box re-prompt in video-memory mode): the box that was
+    # the only prompt, and `source` naming the decoder so a reader never mistakes the row's
+    # `object_score` (the decoder's IoU prediction, 0..1) for a tracker presence logit.
+    prompt_box: NormalizedBox | None = None
+    source: Literal["sam3_decode"] | None = None
+    prompt_source: str | None = None
+    prompt_score: float | None = None
 
 
 class ImageLandmark2D(VersionedModel):
@@ -501,8 +509,21 @@ class PerFrameHand(VersionedModel):
 
 
 MemoryGateReason = Literal[
-    "ok", "warmup", "low_object_score", "low_iou", "contested", "area_jump", "corrected"
+    "ok",
+    "warmup",
+    "low_object_score",
+    "low_iou",
+    "contested",
+    "area_jump",
+    "corrected",
+    # A slot allocated at frame 0 that starts later (per-slot start frame): forced absent and
+    # never written to memory until its start frame.
+    "unseeded",
 ]
+
+# Who chose a prompt: a human or an agent reviewing decoder masks (Assembly101), the
+# detector's box (`detector_reseed`) or the 3D track's reprojected box (`track_reproject`).
+PromptSelectedBy = Literal["human", "agent", "detector_reseed", "track_reproject"]
 
 
 class TrackerSlotDiagnostic(VersionedModel):
@@ -524,6 +545,16 @@ class TrackerSlotDiagnostic(VersionedModel):
     contested_fraction: float | None = Field(default=None, ge=0, le=1)
     memory_written: bool | None = None
     memory_gate_reason: MemoryGateReason | None = None
+    # Box-prompt provenance (box_stream rows and box corrections): the prompt, where it came
+    # from, the decoder's IoU prediction for the chosen candidate and which candidate it was.
+    prompt_box: NormalizedBox | None = None
+    prompt_source: str | None = None
+    prompt_score: float | None = None
+    prompt_decoder_iou: float | None = Field(default=None, ge=0, le=1)
+    decoder_candidate_index: int | None = Field(default=None, ge=0)
+    selected_by: str | None = None
+    seed_start: bool | None = None
+    correction_skipped: Literal["decoded_empty"] | None = None
 
 
 class TrackerMemoryPolicy(VersionedModel):
@@ -542,6 +573,10 @@ class TrackerMemoryPolicy(VersionedModel):
     gate_max_contested_fraction: float = Field(default=0.2, ge=0, le=1)
     gate_area_band: tuple[float, float] = (0.5, 2.0)
     gate_area_history_frames: int = Field(default=30, ge=1)
+    # The FineBio tau hook: skip the frame-memory write for a slot whose raw score is below
+    # this value.  The score test alone, independent of `memory_gate` (which bundles four
+    # tests); None is the pre-flag behaviour and is omitted from the worker's policy record.
+    memory_write_min_score: float | None = None
 
     @model_validator(mode="after")
     def require_ordered_area_band(self) -> TrackerMemoryPolicy:
@@ -552,7 +587,11 @@ class TrackerMemoryPolicy(VersionedModel):
 
     @property
     def is_default(self) -> bool:
-        return self.slot_exclusivity == "off" and self.memory_gate == "off"
+        return (
+            self.slot_exclusivity == "off"
+            and self.memory_gate == "off"
+            and self.memory_write_min_score is None
+        )
 
     def run_id_suffix(self) -> str:
         """Short arm label for run ids: empty for the default policy."""
@@ -561,10 +600,12 @@ class TrackerMemoryPolicy(VersionedModel):
             parts.append(f"x{self.slot_exclusivity}")
         if self.memory_gate != "off":
             parts.append(f"g{self.memory_gate}")
+        if self.memory_write_min_score is not None:
+            parts.append(f"tau{self.memory_write_min_score:g}".replace(".", "p").replace("-", "m"))
         return "-".join(parts)
 
     def worker_arguments(self) -> list[str]:
-        return [
+        arguments = [
             "--slot-exclusivity",
             self.slot_exclusivity,
             "--exclusivity-loser-logit",
@@ -582,6 +623,9 @@ class TrackerMemoryPolicy(VersionedModel):
             "--gate-area-history-frames",
             str(self.gate_area_history_frames),
         ]
+        if self.memory_write_min_score is not None:
+            arguments.extend(["--memory-write-min-score", str(self.memory_write_min_score)])
+        return arguments
 
 
 CorrectionMemorySemantics = Literal[
@@ -1457,21 +1501,50 @@ class MuggledSAMMultiplexSlot(VersionedModel):
 
 
 class MuggledSAMMultiKeyframeCorrection(VersionedModel):
-    """One selected source-size mask applied to one multiplex slot at one frame."""
+    """One selected source-size mask, or one box prompt, applied to one slot at one frame.
 
-    candidate_id: str = Field(pattern=r"^t\d{6}-b\d{2,}$")
-    human_selected_candidate_index: int = Field(ge=0)
-    selected_by: Literal["human", "agent"] = "human"
+    A mask entry (every schedule before Sep 24) names its calibration candidate and mask
+    fingerprint.  A box entry (`prompt_box`, FineBio arms) carries no mask: the worker decodes
+    the box with the image decoder at that frame and installs the top-IoU candidate as the
+    correction, and `selected_by` must say whether the box is the detector's
+    (`detector_reseed`) or the 3D track's reprojection (`track_reproject`).
+    """
+
+    candidate_id: str | None = Field(default=None, pattern=r"^t\d{6}-b\d{2,}$")
+    human_selected_candidate_index: int | None = Field(default=None, ge=0)
+    selected_by: PromptSelectedBy = "human"
     target_id: str = Field(min_length=1)
     object_id: str = Field(pattern=r"^sam3-\d{2,}$")
     multiplex_slot: int = Field(ge=0)
     frame: CalibrationFrameReference
-    calibration_mask_fingerprint: ArtifactFingerprint
+    calibration_mask_fingerprint: ArtifactFingerprint | None = None
+    prompt_box: NormalizedBox | None = None
+
+    @property
+    def is_box_prompt(self) -> bool:
+        return self.prompt_box is not None
 
     @model_validator(mode="after")
     def require_human_frame_zero_seed(self) -> MuggledSAMMultiKeyframeCorrection:
-        if self.selected_by == "agent" and self.frame.analysis_frame_index == 0:
-            raise ValueError("frame-0 seeds must be human-selected")
+        mask_fields = (
+            self.candidate_id,
+            self.human_selected_candidate_index,
+            self.calibration_mask_fingerprint,
+        )
+        if self.prompt_box is None:
+            if any(field is None for field in mask_fields):
+                raise ValueError(
+                    "a mask correction names its candidate, selected index and mask fingerprint"
+                )
+            if self.selected_by not in ("human", "agent"):
+                raise ValueError("a mask correction is selected by a human or an agent")
+            if self.selected_by == "agent" and self.frame.analysis_frame_index == 0:
+                raise ValueError("frame-0 seeds must be human-selected")
+            return self
+        if any(field is not None for field in mask_fields):
+            raise ValueError("a box correction carries no calibration candidate or mask")
+        if self.selected_by not in ("detector_reseed", "track_reproject"):
+            raise ValueError("a box correction is selected by detector_reseed or track_reproject")
         return self
 
 
@@ -1520,16 +1593,18 @@ class MuggledSAMMultiKeyframeCorrectionSchedule(VersionedModel):
                 or correction.object_id != slot.object_id
             ):
                 raise ValueError("correction target/object ID must match its multiplex slot")
-            if correction.candidate_id in seen_candidate_ids:
-                raise ValueError("correction schedule candidate IDs must be unique")
-            seen_candidate_ids.add(correction.candidate_id)
-            mask_key = (
-                correction.calibration_mask_fingerprint.uri,
-                correction.calibration_mask_fingerprint.sha256,
-            )
-            if mask_key in seen_mask_fingerprints:
-                raise ValueError("correction schedule masks must not be reused across slots")
-            seen_mask_fingerprints.add(mask_key)
+            if correction.candidate_id is not None:
+                if correction.candidate_id in seen_candidate_ids:
+                    raise ValueError("correction schedule candidate IDs must be unique")
+                seen_candidate_ids.add(correction.candidate_id)
+            if correction.calibration_mask_fingerprint is not None:
+                mask_key = (
+                    correction.calibration_mask_fingerprint.uri,
+                    correction.calibration_mask_fingerprint.sha256,
+                )
+                if mask_key in seen_mask_fingerprints:
+                    raise ValueError("correction schedule masks must not be reused across slots")
+                seen_mask_fingerprints.add(mask_key)
             if correction.frame.analysis_frame_index == 0:
                 frame_zero_slots.add(correction.multiplex_slot)
         if frame_zero_slots != set(slots_by_index):
@@ -1548,6 +1623,12 @@ class MultiKeyframeCorrectionScheduleMetadata(VersionedModel):
     scheduled_correction_frame_indices: tuple[int, ...] = ()
     # Frames whose correction masks were chosen by agent visual review rather than a human.
     agent_selected_correction_frame_indices: tuple[int, ...] = ()
+    # Frames re-prompted from a box rather than a mask, by provenance kind (FineBio arms).
+    detector_reseed_correction_frame_indices: tuple[int, ...] = ()
+    track_reproject_correction_frame_indices: tuple[int, ...] = ()
+    # (slot, start frame) for slots that start after frame 0: allocated empty at frame 0 and
+    # seeded at their start frame through the correction path.
+    slot_start_frames: tuple[tuple[int, int], ...] = ()
     # Later corrections the run deliberately did not apply: those past a bounded frame range,
     # those named by `--drop-correction-frame`, or all of them when the run was asked to
     # track from the frame-0 seeds alone.
@@ -3687,4 +3768,60 @@ class MultiviewAgentCorrectionSchedule(VersionedModel):
         cells = [(c.target, c.analysis_frame_index) for c in self.corrections]
         if len(set(cells)) != len(cells):
             raise ValueError("one correction per target and frame")
+        return self
+
+
+# --- SAM3 worker arms outside the Assembly101 profiles (FineBio, Sep 24) --------------------
+
+
+class MuggledSAMArmRunManifest(VersionedModel):
+    """Run record of `battle-muggled-arms`: one SAM3 worker pass with prompts from outside.
+
+    The FineBio arms have no G2 preprocessing manifest, so this record binds the run to its
+    inputs by content: the video, the prompt file (a per-frame box stream in `box_decode`
+    mode, a seed/correction schedule payload in `video_memory` mode), the checkpoint and the
+    worker source, plus the worker's own condition record, measurements and stream identity,
+    unchanged.  Nothing here is an accuracy claim.
+    """
+
+    manifest_kind: Literal["muggledsam_sam3_arm_run"]
+    run_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]*$")
+    mode: Literal["box_decode", "video_memory"]
+    view_id: str = Field(min_length=1)
+    video_fingerprint: ArtifactFingerprint
+    prompt_fingerprint: ArtifactFingerprint
+    model_fingerprint: ArtifactFingerprint
+    worker_fingerprint: ArtifactFingerprint
+    adapter: AdapterMetadata
+    start_frame: int = Field(ge=0)
+    requested_analysis_frame_range: FrameRange
+    analysis_fps: float = Field(gt=0)
+    source_offset_seconds: float = Field(ge=0)
+    max_side_length: int = Field(gt=0)
+    concepts: tuple[str, ...] = Field(min_length=1)
+    other_slots_as_negatives: bool = False
+    memory_policy: TrackerMemoryPolicy | None = None
+    memory_settings: CorrectionMemorySettings | None = None
+    multi_keyframe_corrections: MultiKeyframeCorrectionScheduleMetadata | None = None
+    stream_identity: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    method_statuses: tuple[MethodStatus, ...] = Field(min_length=1)
+    measurements: RuntimeMeasurements
+    runtime_settings: dict[str, str | int | float | bool | None]
+    observations_uri: str | None = None
+    observations_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    observation_rows: int = Field(ge=0)
+    mask_artifact_uri: str | None = None
+    mask_artifact_count: int = Field(ge=0)
+    licence_note: str = Field(min_length=1)
+    ground_truth_accuracy_claim: Literal[False] = False
+
+    @model_validator(mode="after")
+    def require_mode_specific_fields(self) -> MuggledSAMArmRunManifest:
+        if self.mode == "box_decode":
+            if self.memory_policy is not None or self.memory_settings is not None:
+                raise ValueError("box_decode keeps no video memory, so it has no memory condition")
+            if self.multi_keyframe_corrections is not None:
+                raise ValueError("box_decode takes a box stream, not a correction schedule")
+        elif self.other_slots_as_negatives:
+            raise ValueError("other_slots_as_negatives is a box_decode setting")
         return self

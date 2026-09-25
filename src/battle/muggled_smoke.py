@@ -1954,6 +1954,7 @@ def run_smoke(args: argparse.Namespace) -> Path:
         gate_max_contested_fraction=getattr(args, "gate_max_contested_fraction", 0.2),
         gate_area_band=tuple(getattr(args, "gate_area_band", (0.5, 2.0))),
         gate_area_history_frames=getattr(args, "gate_area_history_frames", 30),
+        memory_write_min_score=getattr(args, "memory_write_min_score", None),
     )
     if args.condition_config is not None:
         condition_config_path = args.condition_config.resolve()
@@ -3464,6 +3465,17 @@ def main() -> None:
         metavar="LOW,HIGH",
     )
     policy_group.add_argument("--gate-area-history-frames", type=int, default=30)
+    policy_group.add_argument(
+        "--memory-write-min-score",
+        type=float,
+        default=None,
+        metavar="TAU",
+        help=(
+            "Skip the frame-memory write for a slot whose raw object score is below TAU "
+            "(the FineBio tau hook; the score test alone, independent of --memory-gate). "
+            "Recorded in tracker_memory_policy and named in the run id."
+        ),
+    )
     args = parser.parse_args()
     if len(args.gate_area_band) != 2:
         parser.error("--gate-area-band takes exactly 'low,high'")

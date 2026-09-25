@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import subprocess
 import sys
@@ -71,6 +72,16 @@ GATE_AREA_HISTORY_FRAMES = 30
 # The score the memory encoder sees for a gated slot: below zero it adds `no_object_embed`
 # for that multiplex entry only, so the frame is memorised as "absent" for that slot.
 GATED_OBJECT_SCORE = -1.0
+# FineBio arms (Sep 24).  `box_stream` is the memory-free per-frame decode: every row it
+# writes carries this `source`, and its `object_score` is the image decoder's IoU prediction
+# for the chosen candidate, not a tracker presence logit.  A correction (or a mid-stream seed)
+# may be a box instead of a mask; these are the provenance kinds a box prompt may carry.
+BOX_STREAM_SOURCE = "sam3_decode"
+BOX_PROMPT_SELECTED_BY = ("detector_reseed", "track_reproject")
+# `--memory-write-min-score`: off by default, so a run without the flag is byte-identical to
+# the runs made before it existed.  The Sep 18 `memory_gate on` bundles four tests (score,
+# predicted IoU, contested fraction, area band); this is the score test alone.
+MEMORY_WRITE_MIN_SCORE: float | None = None
 
 # object index, concept, mask logits, reported confidence, raw presence logit, predicted IoU.
 # The last two are tracker diagnostics and are absent for prompt and detector initialization.
@@ -155,10 +166,18 @@ def _runtime_settings(args: argparse.Namespace, concepts: tuple[str, ...]) -> di
             "the memory encoder a score of -1 (its no-object embedding) for a slot whose raw "
             "score, predicted IoU, contested fraction or area (against the rolling median of "
             "its trusted frames) fails the thresholds, so that frame is memorised as absent "
-            "for that slot only. Both off reproduces the unpoliced tracker exactly. Neither "
-            "is an accuracy claim."
+            "for that slot only. memory_write_min_score (tau) is the score test alone: a "
+            "present slot whose raw score is below tau is memorised as absent for that frame "
+            "and still reported in the observations. Both off and tau unset reproduces the "
+            "unpoliced tracker exactly. Neither is an accuracy claim."
         ),
     }
+    if getattr(args, "start_frame", 0):
+        settings["start_frame"] = int(args.start_frame)
+        settings["start_frame_semantics"] = (
+            "analysis frame 0 is this source frame; the worker decodes and discards the "
+            "earlier frames rather than seeking, so the index is exact on every backend"
+        )
     if getattr(args, "resume_from_checkpoint", None):
         settings["resumed_from_checkpoint"] = args.resume_from_checkpoint
         settings["chunking"] = (
@@ -231,6 +250,53 @@ def _runtime_settings(args: argparse.Namespace, concepts: tuple[str, ...]) -> di
             "agent_selected_correction_frames": agent_frames,
             "memory_semantics": schedule["memory_semantics"],
         }
+        box_prompt_frames = sorted(
+            {
+                int(entry["frame_index"])
+                for entry in schedule["corrections"]
+                if _has_box_prompt(entry)
+            }
+        )
+        start_frames = slot_start_frames(schedule)
+        if (
+            box_prompt_frames
+            or start_frames
+            or any(_has_box_prompt(seed) for seed in schedule["seeds"])
+        ):
+            settings["multi_keyframe_correction_schedule"].update(
+                {
+                    "box_prompt_correction_frames": box_prompt_frames,
+                    "correction_selected_by_kinds": sorted(
+                        {
+                            str(entry.get("selected_by", "human"))
+                            for entry in schedule["corrections"]
+                        }
+                        | {
+                            str(schedule["seeds"][slot].get("selected_by") or "detector_reseed")
+                            for slot in start_frames
+                        }
+                    ),
+                    "slot_start_frames": {
+                        str(slot): frame for slot, frame in sorted(start_frames.items())
+                    },
+                    "box_prompt_seed_slots": [
+                        int(seed["initial_multiplex_slot"])
+                        for seed in schedule["seeds"]
+                        if _has_box_prompt(seed)
+                    ],
+                }
+            )
+            settings["box_prompt_api"] = (
+                "interactive encode_prompts([box], [], []) + generate_masks on the tracking "
+                "encoder's image tokens; top-IoU candidate, logits > 0, rebased into the "
+                "multiplex batch and installed with encode_prompt_memory_from_mask"
+            )
+            settings["slot_start_frame_semantics"] = (
+                "the multiplex object count is fixed when the first prompt memory is encoded, "
+                "so a slot with start_frame > 0 is allocated at frame 0 with an empty mask, "
+                "forced absent (no object row, memory score -1, reason unseeded) until its "
+                "start frame, where its seed prompt is applied through the correction path"
+            )
         settings["initialization_api"] = "encode_prompt_memory_from_mask"
         settings["correction_api"] = "encode_prompt_memory_from_mask"
         # `correction_memory_semantics` is derived from the flags above; `_corrections_by_frame`
@@ -460,7 +526,9 @@ def _observation(
     masks_directory: Path,
     run_directory: Path,
     diagnostics: list[dict[str, Any]] | None = None,
+    extras: dict[int, dict[str, Any]] | None = None,
 ) -> tuple[dict[str, Any], int]:
+    """One observations.jsonl row; `extras` adds per-object fields keyed by object index."""
     objects = []
     mask_count = 0
     for object_index, concept, mask_logits, confidence, object_score, iou_prediction in masks:
@@ -488,6 +556,7 @@ def _observation(
                 "mask": mask_reference,
                 "object_score": object_score,
                 "iou_prediction": iou_prediction,
+                **((extras or {}).get(object_index, {})),
             }
         )
     return (
@@ -601,7 +670,8 @@ def _corrections_by_frame(
             f"unsupported correction memory semantics {schedule.get('memory_semantics')!r}; "
             f"this worker is configured for {memory_semantics!r}"
         )
-    _validate_manual_seed_slots(list(schedule.get("seeds", [])), concepts)
+    seeds = list(schedule.get("seeds", []))
+    _validate_manual_seed_slots(seeds, concepts)
     grouped: dict[int, list[dict[str, Any]]] = {}
     seen: set[tuple[int, int]] = set()
     for correction in schedule.get("corrections", []):
@@ -610,9 +680,285 @@ def _corrections_by_frame(
             raise ValueError("correction frames must be positive and slots must name a target")
         if correction.get("target") != concepts[slot] or (frame_index, slot) in seen:
             raise ValueError("correction schedule has an ambiguous frame/slot assignment")
+        _validate_prompt_entry(correction, later_correction=True)
         seen.add((frame_index, slot))
         grouped.setdefault(frame_index, []).append(correction)
+    # A slot that starts mid-stream applies its own seed prompt through the correction path
+    # at its start frame; the slot itself exists from frame 0 (see `slot_start_frames`).
+    for slot, frame_index in slot_start_frames(schedule).items():
+        if (frame_index, slot) in seen:
+            raise ValueError("a slot's start frame cannot also carry a later correction")
+        seed = seeds[slot]
+        _validate_prompt_entry(seed, later_correction=False)
+        if seed.get("prompt_box") is None and seed.get("prompt_box_xyxy_px") is None:
+            if not seed.get("mask_path") or not seed.get("mask_sha256"):
+                raise ValueError("a mid-stream seed needs a prompt_box or a verified mask")
+        seen.add((frame_index, slot))
+        grouped.setdefault(frame_index, []).append(
+            {
+                **seed,
+                "frame_index": frame_index,
+                "multiplex_slot": slot,
+                "selected_by": str(seed.get("selected_by") or BOX_PROMPT_SELECTED_BY[0]),
+                "seed_start": True,
+            }
+        )
     return grouped
+
+
+def slot_start_frames(schedule: dict[str, Any]) -> dict[int, int]:
+    """{slot: start frame} for every seed that starts after frame 0; empty for today's payloads."""
+    starts: dict[int, int] = {}
+    for slot, seed in enumerate(schedule.get("seeds", [])):
+        start = int(seed.get("start_frame", 0) or 0)
+        if start < 0:
+            raise ValueError("a seed's start_frame must not be negative")
+        if start:
+            starts[slot] = start
+    return starts
+
+
+def _validate_prompt_entry(entry: dict[str, Any], *, later_correction: bool) -> None:
+    """A seed or correction carries a mask, a box, or (legacy payloads) neither; never both.
+
+    A box that re-prompts a slot after frame 0 must say where it came from: the detector
+    (`detector_reseed`) or the 3D track's reprojection (`track_reproject`).
+    """
+    has_mask = entry.get("mask_path") is not None or entry.get("mask_sha256") is not None
+    box = entry.get("prompt_box")
+    box_px = entry.get("prompt_box_xyxy_px")
+    if box is not None and box_px is not None:
+        raise ValueError("a prompt entry carries prompt_box or prompt_box_xyxy_px, not both")
+    if box is None and box_px is None:
+        return
+    if has_mask:
+        raise ValueError("a prompt entry carries a mask or a box, not both")
+    if box is not None:
+        if not isinstance(box, dict) or set(box) != {"x", "y", "width", "height"}:
+            raise ValueError("prompt_box must be a normalised {x, y, width, height} box")
+        values = [box[key] for key in ("x", "y", "width", "height")]
+        if not all(_is_finite_number(value) for value in values):
+            raise ValueError("prompt_box values must be finite numbers")
+        x, y, width, height = (float(value) for value in values)
+        if not (0.0 <= x <= 1.0 and 0.0 <= y <= 1.0 and width > 0 and height > 0):
+            raise ValueError("prompt_box must lie inside the unit square with positive size")
+        if x + width > 1.0 + 1e-6 or y + height > 1.0 + 1e-6:
+            raise ValueError("prompt_box must lie inside the unit square with positive size")
+    else:
+        _xyxy(box_px, normalised=False)
+    if later_correction and entry.get("selected_by") not in BOX_PROMPT_SELECTED_BY:
+        raise ValueError(
+            "a box correction must be selected_by one of "
+            + ", ".join(BOX_PROMPT_SELECTED_BY)
+            + f"; got {entry.get('selected_by')!r}"
+        )
+
+
+def _is_finite_number(value: Any) -> bool:
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and value == value
+        and value not in (float("inf"), float("-inf"))
+    )
+
+
+def _xyxy(values: Any, *, normalised: bool) -> tuple[float, float, float, float]:
+    """Four finite numbers, x1 > x0 and y1 > y0; inside the unit square when normalised."""
+    if not isinstance(values, (list, tuple)) or len(values) != 4:
+        raise ValueError("a box must be four numbers [x0, y0, x1, y1]")
+    if not all(_is_finite_number(value) for value in values):
+        raise ValueError("box coordinates must be finite numbers")
+    x0, y0, x1, y1 = (float(value) for value in values)
+    if x1 <= x0 or y1 <= y0:
+        raise ValueError("a box needs x1 > x0 and y1 > y0")
+    if normalised and not all(0.0 <= value <= 1.0 for value in (x0, y0, x1, y1)):
+        raise ValueError("a normalised box must lie inside the unit square")
+    return x0, y0, x1, y1
+
+
+def prompt_box_xyxy(
+    entry: dict[str, Any], frame_shape: tuple[int, int]
+) -> tuple[float, float, float, float]:
+    """The normalised (x0, y0, x1, y1) of a seed/correction/box-stream entry, clamped to [0, 1]."""
+    height, width = frame_shape
+    if entry.get("prompt_box") is not None:
+        box = entry["prompt_box"]
+        raw = (
+            float(box["x"]),
+            float(box["y"]),
+            float(box["x"]) + float(box["width"]),
+            float(box["y"]) + float(box["height"]),
+        )
+    elif entry.get("prompt_box_xyxy_px") is not None:
+        x0, y0, x1, y1 = _xyxy(entry["prompt_box_xyxy_px"], normalised=False)
+        raw = (x0 / width, y0 / height, x1 / width, y1 / height)
+    elif entry.get("box_xyxy_norm") is not None:
+        raw = _xyxy(entry["box_xyxy_norm"], normalised=True)
+    elif entry.get("box_xyxy_px") is not None:
+        x0, y0, x1, y1 = _xyxy(entry["box_xyxy_px"], normalised=False)
+        raw = (x0 / width, y0 / height, x1 / width, y1 / height)
+    else:
+        raise ValueError("entry carries no box prompt")
+    x0, y0, x1, y1 = (min(max(value, 0.0), 1.0) for value in raw)
+    if x1 <= x0 or y1 <= y0:
+        raise ValueError("box prompt lies outside the frame")
+    return x0, y0, x1, y1
+
+
+def normalised_box_record(xyxy: tuple[float, float, float, float]) -> dict[str, float]:
+    """The repo's `{x, y, width, height}` form of a normalised (x0, y0, x1, y1) box.
+
+    `NormalizedBox` requires ``x + width <= 1`` exactly, so the extent is nudged down by an
+    ulp where floating-point rounding would put it a hair past the edge.
+    """
+    x0, y0, x1, y1 = xyxy
+    width, height = x1 - x0, y1 - y0
+    while x0 + width > 1.0:
+        width = math.nextafter(width, 0.0)
+    while y0 + height > 1.0:
+        height = math.nextafter(height, 0.0)
+    return {"x": x0, "y": y0, "width": width, "height": height}
+
+
+def parse_box_stream(text: str) -> tuple[dict[int, list[dict[str, Any]]], tuple[str, ...]]:
+    """Validate a per-frame box stream into ``{frame_index: [box prompt, ...]}`` plus slot labels.
+
+    One JSON record per line::
+
+        {"frame_index": 12, "boxes": [{"slot": 0, "label": "cell_culture_plate",
+          "box_xyxy_px": [857.7, 462.8, 1216.6, 714.4], "score": 0.42, "source": "finebio_dino"}]}
+
+    A box carries exactly one of ``box_xyxy_px`` (source pixels) or ``box_xyxy_norm`` (unit
+    square); ``score`` and ``source`` are optional provenance copied into the observations.  A
+    frame absent from the stream, or listed with no boxes, produces an empty observation row.
+    Slots are contiguous from zero over the whole stream and a slot always carries one label,
+    so the labels double as the run's ordered concepts.
+    """
+    frames: dict[int, list[dict[str, Any]]] = {}
+    labels: dict[int, str] = {}
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError as error:
+            raise ValueError(f"box stream line {line_number} is not JSON: {error}") from None
+        if not isinstance(record, dict):
+            raise ValueError(f"box stream line {line_number} must be a JSON object")
+        frame_index = record.get("frame_index")
+        if isinstance(frame_index, bool) or not isinstance(frame_index, int) or frame_index < 0:
+            raise ValueError(f"box stream line {line_number}: frame_index must be an int >= 0")
+        if frame_index in frames:
+            raise ValueError(f"box stream line {line_number}: frame {frame_index} repeats")
+        boxes = record.get("boxes", [])
+        if not isinstance(boxes, list):
+            raise ValueError(f"box stream line {line_number}: boxes must be a list")
+        parsed: list[dict[str, Any]] = []
+        slots_seen: set[int] = set()
+        for box in boxes:
+            prompt = _box_stream_prompt(box, line_number)
+            slot = prompt["slot"]
+            if slot in slots_seen:
+                raise ValueError(f"box stream line {line_number}: slot {slot} repeats")
+            slots_seen.add(slot)
+            if labels.setdefault(slot, prompt["label"]) != prompt["label"]:
+                raise ValueError(
+                    f"box stream line {line_number}: slot {slot} is labelled "
+                    f"{prompt['label']!r} but was {labels[slot]!r} earlier"
+                )
+            parsed.append(prompt)
+        parsed.sort(key=lambda item: item["slot"])
+        frames[frame_index] = parsed
+    if labels and sorted(labels) != list(range(len(labels))):
+        raise ValueError("box stream slots must be contiguous from zero")
+    return frames, tuple(labels[slot] for slot in range(len(labels)))
+
+
+def _box_stream_prompt(box: Any, line_number: int) -> dict[str, Any]:
+    if not isinstance(box, dict):
+        raise ValueError(f"box stream line {line_number}: every box must be a JSON object")
+    slot = box.get("slot")
+    if isinstance(slot, bool) or not isinstance(slot, int) or slot < 0:
+        raise ValueError(f"box stream line {line_number}: slot must be an int >= 0")
+    label = box.get("label")
+    if not isinstance(label, str) or not label.strip():
+        raise ValueError(f"box stream line {line_number}: label must be a non-empty string")
+    pixels, unit = box.get("box_xyxy_px"), box.get("box_xyxy_norm")
+    if (pixels is None) == (unit is None):
+        raise ValueError(
+            f"box stream line {line_number}: exactly one of box_xyxy_px / box_xyxy_norm"
+        )
+    try:
+        values = _xyxy(pixels if pixels is not None else unit, normalised=unit is not None)
+    except ValueError as error:
+        raise ValueError(f"box stream line {line_number}: {error}") from None
+    score = box.get("score")
+    if score is not None and not _is_finite_number(score):
+        raise ValueError(f"box stream line {line_number}: score must be a number or null")
+    source = box.get("source", "unknown")
+    if not isinstance(source, str) or not source.strip():
+        raise ValueError(f"box stream line {line_number}: source must be a non-empty string")
+    return {
+        "slot": slot,
+        "label": label,
+        "box_xyxy_px": list(values) if pixels is not None else None,
+        "box_xyxy_norm": list(values) if unit is not None else None,
+        "score": float(score) if score is not None else None,
+        "source": source,
+    }
+
+
+def decode_box_prompts(
+    interact: Any,
+    encoded_image: Any,
+    boxes_xyxy_norm: list[tuple[float, float, float, float]],
+    *,
+    other_boxes_as_negatives: bool = False,
+) -> tuple[Any, list[float], list[int]]:
+    """One batched image-decoder pass over N box prompts; the top-IoU candidate of each.
+
+    MuggledSAM's `encode_prompts` batches prompts along B (`BxNx2x2` boxes, `BxKx2` points)
+    and the mask decoder expands one image encoding over that batch, so N boxes cost one
+    decoder call.  With ``other_boxes_as_negatives`` every prompt also carries the other
+    boxes' centres as background points (the same K for every prompt, as batching needs).
+    Returns the chosen logits as ``Bx1xHxW`` on the model grid, the predicted IoU per box and
+    the chosen candidate index per box.
+    """
+    import torch
+
+    if not boxes_xyxy_norm:
+        raise ValueError("decode_box_prompts needs at least one box")
+    boxes = torch.tensor([[[[x0, y0], [x1, y1]]] for x0, y0, x1, y1 in boxes_xyxy_norm])
+    background: Any = []
+    if other_boxes_as_negatives and len(boxes_xyxy_norm) > 1:
+        centres = [((x0 + x1) / 2, (y0 + y1) / 2) for x0, y0, x1, y1 in boxes_xyxy_norm]
+        background = torch.tensor(
+            [
+                [centre for other, centre in enumerate(centres) if other != index]
+                for index in range(len(centres))
+            ]
+        )
+    prompts = interact.encode_prompts(boxes, [], background)
+    masks, ious = interact.generate_masks(encoded_image, prompts)
+    best = ious.argmax(dim=1)
+    rows = torch.arange(masks.shape[0], device=masks.device)
+    chosen = masks[rows, best].unsqueeze(1)
+    return (
+        chosen,
+        [float(value) for value in ious[rows, best].float().tolist()],
+        [int(value) for value in best.tolist()],
+    )
+
+
+def memory_write_allowed(score: float, tau: float | None) -> bool:
+    """The tau hook: may this slot's mask enter frame memory on this frame?
+
+    ``tau`` unset writes every slot (the pre-flag behaviour).  Otherwise a slot is written
+    only when its raw presence score is at least ``tau``; below it the frame is memorised as
+    absent for that slot while the observation row still reports the mask.
+    """
+    return tau is None or score >= tau
 
 
 def _read_verified_mask(path: str, expected_sha256: str, frame_shape: tuple[int, int]) -> Any:
@@ -810,10 +1156,139 @@ def _source_binary_masks(mask_logits: Any, frame_shape: tuple[int, int]) -> Any:
     )
 
 
+def _open_capture(video_path: Path, start_frame: int) -> Any:
+    """Open the video positioned so that the next `read()` returns `start_frame`.
+
+    Frames before it are decoded and discarded rather than sought: seeking a long-GOP file
+    by index is not frame-exact in every backend, and the FineBio proxies index the shipped
+    per-frame pose by raw frame number.
+    """
+    import cv2
+
+    capture = cv2.VideoCapture(str(video_path))
+    capture.set(cv2.CAP_PROP_ORIENTATION_AUTO, 1)
+    for skipped in range(start_frame):
+        if not capture.grab():
+            raise RuntimeError(f"video ended at frame {skipped}, before start frame {start_frame}")
+    return capture
+
+
+def _has_box_prompt(entry: dict[str, Any]) -> bool:
+    return entry.get("prompt_box") is not None or entry.get("prompt_box_xyxy_px") is not None
+
+
+def _prompt_mask_batch(masks_bhw: Any) -> Any:
+    """The batch handed to `encode_prompt_memory_from_mask` for the frame-0 seeds.
+
+    MuggledSAM rescales a NumPy mask by its own min and max, which is a division by zero
+    when a slot is empty (a mid-stream start).  In that case the batch is handed over as a
+    tensor of the same +/-1024 logits the NumPy path would have produced, per pixel; when
+    every slot has pixels the NumPy path is kept so existing runs stay byte-identical.
+    """
+    if bool(masks_bhw.reshape(masks_bhw.shape[0], -1).any(axis=1).all()):
+        return masks_bhw
+    import torch
+
+    return torch.tensor(masks_bhw, dtype=torch.float32) * 2048.0 - 1024.0
+
+
+def _correction_masks_for_frame(
+    corrections: list[dict[str, Any]],
+    *,
+    frame_shape: tuple[int, int],
+    interact: Any,
+    encoded_frame: Any,
+) -> tuple[dict[int, Any], dict[int, dict[str, Any]]]:
+    """Source-size masks per corrected slot, from a verified mask or a decoded box prompt.
+
+    A box is decoded on the tracker's own image tokens (top-IoU candidate, logits > 0); one
+    that decodes to nothing is skipped and recorded rather than installed as an absent prompt.
+    The second mapping carries each slot's provenance for the observation row (`object_extras`)
+    and the diagnostics (`selected_by`, `prompt_box`, decoder IoU), plus the confidence the
+    row reports: 1.0 for a reviewed mask, the decoder's IoU prediction for a box.
+    """
+    masks: dict[int, Any] = {}
+    records: dict[int, dict[str, Any]] = {}
+    for correction in corrections:
+        slot = int(correction["multiplex_slot"])
+        selected_by = str(correction.get("selected_by") or "human")
+        if _has_box_prompt(correction):
+            xyxy = prompt_box_xyxy(correction, frame_shape)
+            decoded, decoder_ious, candidates = decode_box_prompts(interact, encoded_frame, [xyxy])
+            mask = _binary_mask(decoded[0:1], frame_shape)
+            box_record = normalised_box_record(xyxy)
+            if not bool(mask.any()):
+                records[slot] = {
+                    "confidence": 0.0,
+                    "object_extras": {},
+                    "diagnostics": {
+                        "selected_by": selected_by,
+                        "prompt_box": box_record,
+                        "prompt_decoder_iou": float(decoder_ious[0]),
+                        "correction_skipped": "decoded_empty",
+                    },
+                }
+                continue
+            masks[slot] = mask
+            records[slot] = {
+                "confidence": max(0.0, min(1.0, float(decoder_ious[0]))),
+                "object_extras": {"prompt_box": box_record, "source": BOX_STREAM_SOURCE},
+                "diagnostics": {
+                    "selected_by": selected_by,
+                    "prompt_box": box_record,
+                    "prompt_decoder_iou": float(decoder_ious[0]),
+                    "decoder_candidate_index": int(candidates[0]),
+                },
+            }
+        else:
+            masks[slot] = _read_verified_mask(
+                str(correction["mask_path"]), str(correction["mask_sha256"]), frame_shape
+            )
+            records[slot] = {
+                "confidence": 1.0,
+                "object_extras": {},
+                "diagnostics": (
+                    {"selected_by": selected_by} if selected_by not in ("human", "agent") else {}
+                ),
+            }
+        if correction.get("seed_start"):
+            records[slot]["diagnostics"]["seed_start"] = True
+    return masks, records
+
+
+def _mark_unseeded(
+    memory_scores: Any,
+    unseeded: list[bool],
+    policy_diagnostics: list[dict[str, Any]],
+    slot_count: int,
+) -> tuple[Any, list[dict[str, Any]]]:
+    """Hand the memory encoder score -1 for every slot that has not started yet.
+
+    The diagnostics say so per slot (`memory_written` False, reason `unseeded`), created if
+    the default policy had not produced any.
+    """
+    import torch
+
+    gated = memory_scores.clone()
+    flat = gated.reshape(-1)
+    diagnostics = list(policy_diagnostics) or [
+        {"memory_written": True, "memory_gate_reason": "ok"} for _ in range(slot_count)
+    ]
+    for position, flag in enumerate(unseeded):
+        if flag:
+            flat[position] = torch.tensor(GATED_OBJECT_SCORE, dtype=flat.dtype, device=flat.device)
+            diagnostics[position] = {
+                **diagnostics[position],
+                "memory_written": False,
+                "memory_gate_reason": "unseeded",
+            }
+    return gated, diagnostics
+
+
 def memory_policy_from_args(args: argparse.Namespace) -> dict[str, Any]:
     """Read the tracker memory policy as one plain record, so it can be logged and hashed."""
     band = getattr(args, "gate_area_band", GATE_AREA_BAND)
-    return {
+    policy = {
         "slot_exclusivity": getattr(args, "slot_exclusivity", "off"),
         "memory_gate": getattr(args, "memory_gate", "off"),
         "exclusivity_loser_logit": float(
@@ -831,10 +1306,20 @@ def memory_policy_from_args(args: argparse.Namespace) -> dict[str, Any]:
             getattr(args, "gate_area_history_frames", GATE_AREA_HISTORY_FRAMES)
         ),
     }
+    # The tau hook joins the record only when set, so a policy record written before the
+    # flag existed compares equal to today's default and old checkpoints keep their identity.
+    tau = getattr(args, "memory_write_min_score", MEMORY_WRITE_MIN_SCORE)
+    if tau is not None:
+        policy["memory_write_min_score"] = float(tau)
+    return policy
 
 
 def memory_policy_is_default(policy: dict[str, Any]) -> bool:
-    return policy["slot_exclusivity"] == "off" and policy["memory_gate"] == "off"
+    return (
+        policy["slot_exclusivity"] == "off"
+        and policy["memory_gate"] == "off"
+        and policy.get("memory_write_min_score") is None
+    )
 
 
 def resolve_slot_exclusivity(
@@ -897,12 +1382,19 @@ def memory_gate(
     median of the last ``gate_area_history_frames`` trusted areas and is never applied until
     that history is full (``warmup``).  With the gate off every slot is written with reason
     ``ok`` and the scores are returned as they came.
+
+    The tau hook (``memory_write_min_score``) is judged first and independently of the gate
+    mode: with the Sep 18 gate off it is the only test, so a FineBio arm can skip memory
+    writes on score alone without the IoU, contest and area-band tests that starved slots in
+    the ablation.
     """
     slot_count = int(scores_m.reshape(-1).shape[0])
     history = [list(entries) for entries in area_history]
     while len(history) < slot_count:
         history.append([])
-    if policy["memory_gate"] == "off":
+    tau = policy.get("memory_write_min_score")
+    gate_on = policy["memory_gate"] != "off"
+    if not gate_on and tau is None:
         return scores_m, [True] * slot_count, ["ok"] * slot_count, history
     import torch
 
@@ -916,7 +1408,11 @@ def memory_gate(
         area = float(areas[slot]) if slot < len(areas) else 0.0
         fraction = contested_fraction[slot] if slot < len(contested_fraction) else 0.0
         iou = raw_ious[slot]
-        if raw_scores[slot] <= policy["gate_min_object_score"]:
+        if not memory_write_allowed(raw_scores[slot], tau):
+            reason = "low_object_score"
+        elif not gate_on:
+            reason = "ok"
+        elif raw_scores[slot] <= policy["gate_min_object_score"]:
             reason = "low_object_score"
         elif iou is not None and iou < policy["gate_min_iou"]:
             reason = "low_iou"
@@ -931,7 +1427,7 @@ def memory_gate(
         trusted = reason in ("ok", "warmup")
         written.append(trusted)
         reasons.append(reason)
-        if trusted:
+        if trusted and gate_on:
             history[slot] = (history[slot] + [area])[-history_frames:]
     gated = scores_m.clone()
     flat = gated.reshape(-1)
@@ -1055,8 +1551,7 @@ def run(args: argparse.Namespace) -> int:
         torch.cuda.set_device(0)
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats(0)
-        capture = cv2.VideoCapture(str(video_path))
-        capture.set(cv2.CAP_PROP_ORIENTATION_AUTO, 1)
+        capture = _open_capture(video_path, int(getattr(args, "start_frame", 0) or 0))
         ok, first_frame = capture.read()
         if not ok:
             raise RuntimeError(f"could not decode first proxy frame: {video_path}")
@@ -1079,10 +1574,15 @@ def run(args: argparse.Namespace) -> int:
         tracking = core.get_tracking_context()
         if not hasattr(tracking, "step_video_masking_multiplex"):
             raise TypeError("configured checkpoint does not expose SAM3.1 multiplex video tracking")
+        # The interactive context shares every module with the tracker (no extra VRAM); its
+        # decoder reads the same image tokens the tracker encodes, so a box prompt at any
+        # frame costs one decoder call and no second image encode.
+        interact = core.get_interactive_context()
 
         initial_masks: list[TrackedMask] = []
         initial_memory: Any = None
         correction_schedule: dict[int, list[dict[str, Any]]] = {}
+        slot_starts: dict[int, int] = {}
         resumed: dict[str, Any] | None = None
         if args.resume_from_checkpoint:
             resumed = torch.load(
@@ -1160,16 +1660,35 @@ def run(args: argparse.Namespace) -> int:
                 if multi_keyframe_schedule is not None
                 else {}
             )
+            slot_starts = (
+                slot_start_frames(multi_keyframe_schedule)
+                if multi_keyframe_schedule is not None
+                else {}
+            )
+            tracking_encoded = tracking.encode_image(first_model_frame, MAX_SIDE_LENGTH, True)
             source_masks = []
             for slot, seed in enumerate(seed_records):
-                binary_mask = _read_verified_mask(
-                    str(seed["mask_path"]), str(seed["mask_sha256"]), first_frame.shape[:2]
-                )
+                if slot in slot_starts:
+                    # Allocated now, seeded at its start frame through the correction path.
+                    binary_mask = np.zeros(first_frame.shape[:2], dtype=bool)
+                    confidence = 0.0
+                elif _has_box_prompt(seed):
+                    decoded, decoder_ious, _ = decode_box_prompts(
+                        interact, tracking_encoded, [prompt_box_xyxy(seed, first_frame.shape[:2])]
+                    )
+                    binary_mask = _binary_mask(decoded[0:1], first_frame.shape[:2])
+                    if not bool(binary_mask.any()):
+                        raise ValueError(f"box seed for slot {slot} decoded to an empty mask")
+                    confidence = float(decoder_ious[0])
+                else:
+                    binary_mask = _read_verified_mask(
+                        str(seed["mask_path"]), str(seed["mask_sha256"]), first_frame.shape[:2]
+                    )
+                    confidence = 1.0
                 source_masks.append(binary_mask)
-                initial_masks.append((slot, concepts[slot], binary_mask, 1.0, None, None))
-            tracking_encoded = tracking.encode_image(first_model_frame, MAX_SIDE_LENGTH, True)
+                initial_masks.append((slot, concepts[slot], binary_mask, confidence, None, None))
             initial_memory = tracking.encode_prompt_memory_from_mask(
-                tracking_encoded, np.stack(source_masks, axis=0)
+                tracking_encoded, _prompt_mask_batch(np.stack(source_masks, axis=0))
             )
         elif manual_box is not None:
             normalized_box = manual_box["normalized_box"]
@@ -1234,6 +1753,7 @@ def run(args: argparse.Namespace) -> int:
         masks_written = 0
         first_usable: float | None = None
         identity = stream_identity(args, concepts)
+        runtime_settings["stream_identity"] = identity
         policy = memory_policy_from_args(args)
         policy_default = memory_policy_is_default(policy)
         gate_area_history: list[list[float]] = (
@@ -1333,14 +1853,23 @@ def run(args: argparse.Namespace) -> int:
                         num_multiplex_objects=len(initial_masks),
                     )
                     active = scores > 0
-                    correction_masks = {
-                        int(correction["multiplex_slot"]): _read_verified_mask(
-                            str(correction["mask_path"]),
-                            str(correction["mask_sha256"]),
-                            frame.shape[:2],
-                        )
-                        for correction in correction_schedule.get(frame_index, [])
-                    }
+                    correction_masks, correction_records = _correction_masks_for_frame(
+                        correction_schedule.get(frame_index, []),
+                        frame_shape=frame.shape[:2],
+                        interact=interact,
+                        encoded_frame=encoded,
+                    )
+                    # Slots that start later are forced absent until their start frame: no
+                    # object row, and the memory encoder sees them as absent (score -1).
+                    unseeded = [
+                        frame_index < slot_starts.get(index, 0) and position not in correction_masks
+                        for position, (index, *_) in enumerate(initial_masks)
+                    ]
+                    if any(unseeded):
+                        active = active.clone()
+                        for position, flag in enumerate(unseeded):
+                            if flag:
+                                active.reshape(-1)[position] = False
                     memory_scores = scores
                     policy_diagnostics: list[dict[str, Any]] = []
                     if not policy_default:
@@ -1377,6 +1906,10 @@ def run(args: argparse.Namespace) -> int:
                             }
                             for position in range(len(initial_masks))
                         ]
+                    if any(unseeded):
+                        memory_scores, policy_diagnostics = _mark_unseeded(
+                            memory_scores, unseeded, policy_diagnostics, len(initial_masks)
+                        )
                     if correction_masks:
                         source_masks = _replace_prompt_memory_for_correction(
                             predicted_source_masks=_source_binary_masks(masks, frame.shape[:2]),
@@ -1403,7 +1936,11 @@ def run(args: argparse.Namespace) -> int:
                                 if correction_masks
                                 else masks[position : position + 1]
                             ),
-                            1.0 if position in correction_masks else float(scores[position]),
+                            (
+                                correction_records[position]["confidence"]
+                                if position in correction_masks
+                                else float(scores[position])
+                            ),
                             float(scores[position]),
                             _scalar(ious, position),
                         )
@@ -1421,6 +1958,7 @@ def run(args: argparse.Namespace) -> int:
                             "active": bool(active[position]),
                             "corrected": position in correction_masks,
                             **(policy_diagnostics[position] if policy_diagnostics else {}),
+                            **(correction_records.get(position, {}).get("diagnostics", {})),
                         }
                         for position, (index, concept, *_) in enumerate(initial_masks)
                     ]
@@ -1433,6 +1971,11 @@ def run(args: argparse.Namespace) -> int:
                         masks_directory=masks_directory,
                         run_directory=run_directory,
                         diagnostics=diagnostics,
+                        extras={
+                            initial_masks[position][0]: record["object_extras"]
+                            for position, record in correction_records.items()
+                            if record["object_extras"]
+                        },
                     )
                     observations.write(json.dumps(observation, sort_keys=True) + "\n")
                     processed += 1
@@ -1511,6 +2054,339 @@ def run(args: argparse.Namespace) -> int:
         return 1
 
 
+def _box_stream_runtime_settings(
+    args: argparse.Namespace,
+    concepts: tuple[str, ...],
+    *,
+    box_stream_path: Path,
+    box_stream_sha256: str | None,
+    prompted_frames: int,
+    prompted_boxes: int,
+) -> dict[str, Any]:
+    """The condition record of a memory-free box-decode run, beside the worker measurements."""
+    settings: dict[str, Any] = {
+        "device": "cuda:0",
+        "dtype": "bfloat16",
+        "mode": "box_stream",
+        "max_frames": MAX_FRAMES,
+        "max_side_length": MAX_SIDE_LENGTH,
+        "use_square_sizing": True,
+        "mask_period_frames": MASK_PERIOD_FRAMES,
+        "box_derivation": (
+            "union of the mask's 8-connected components with area at least "
+            f"{BOX_COMPONENT_KEEP_FRACTION:g} of the largest; smaller components are ignored"
+        ),
+        "box_component_keep_fraction": BOX_COMPONENT_KEEP_FRACTION,
+        "concepts": list(concepts),
+        "prompt_mode": args.prompt_mode,
+        "preprocessing": args.preprocessing,
+        "analysis_fps": ANALYSIS_FPS,
+        "box_stream": str(box_stream_path),
+        "box_stream_sha256": box_stream_sha256,
+        "box_stream_prompted_frames": prompted_frames,
+        "box_stream_prompted_boxes": prompted_boxes,
+        "other_slots_as_negatives": bool(args.other_slots_as_negatives),
+        "decode_api": (
+            "interactive encode_image once per prompted frame; encode_prompts(BxNx2x2 boxes"
+            + (
+                ", other boxes' centres as background points"
+                if args.other_slots_as_negatives
+                else ""
+            )
+            + ") + generate_masks in one batched decoder call; top-IoU candidate per box; "
+            "logits > 0 bilinearly resized to source pixels"
+        ),
+        "video_memory": "none; every frame is decoded from its own boxes and identity is the slot",
+        "chunking": "none",
+        "intentional_id_resets": False,
+        "object_score_semantics": (
+            "object_score and iou_prediction are the image decoder's IoU prediction for the "
+            "chosen candidate (0..1); confidence is the same value. There is no tracker "
+            "presence logit in this mode and nothing is measured against ground truth."
+        ),
+        "row_source": BOX_STREAM_SOURCE,
+        "checkpoints": "none; box_stream mode keeps no tracker state",
+        "gpu_guard_mode": getattr(args, "gpu_guard", gpu_guard.DEFAULT_GUARD_MODE),
+    }
+    if getattr(args, "start_frame", 0):
+        settings["start_frame"] = int(args.start_frame)
+    if args.preprocessing == "gray_p01_p99_clahe":
+        settings.update(
+            {
+                "lower_percentile": args.lower_percentile,
+                "upper_percentile": args.upper_percentile,
+                "clahe_clip_limit": args.clahe_clip_limit,
+                "clahe_tile_grid_size": args.clahe_tile_grid_size,
+            }
+        )
+    return settings
+
+
+def _write_blocked(
+    result_path: Path,
+    *,
+    reason: str,
+    start: float,
+    gpu_processes: list[dict[str, str]],
+    runtime_settings: dict[str, Any],
+) -> int:
+    fs_common.write_json(
+        result_path,
+        _result(
+            state="blocked",
+            reason=reason,
+            frames_processed=0,
+            elapsed_seconds=perf_counter() - start,
+            ttfu_seconds=None,
+            gpu_peak_vram_bytes=None,
+            masks_written=0,
+            gpu_processes=gpu_processes,
+            unavailable=["time_to_first_usable_output_seconds", "gpu_peak_vram_bytes"],
+            runtime_settings=runtime_settings,
+        ),
+        sort_keys=True,
+    )
+    return 2
+
+
+def _timing_summary(values_ms: list[float]) -> dict[str, float | int | None]:
+    if not values_ms:
+        return {"n": 0, "median": None, "mean": None, "p90": None, "max": None}
+    ordered = sorted(values_ms)
+    return {
+        "n": len(ordered),
+        "median": ordered[len(ordered) // 2],
+        "mean": sum(ordered) / len(ordered),
+        "p90": ordered[min(len(ordered) - 1, int(round(0.9 * (len(ordered) - 1))))],
+        "max": ordered[-1],
+    }
+
+
+def run_box_stream(args: argparse.Namespace) -> int:
+    """Memory-free per-frame box decode: boxes in, masks out, no tracker state.
+
+    Every frame that has boxes is encoded once with the interactive context and every box is
+    decoded from that encoding in one batched decoder call; a frame without boxes writes an
+    empty row.  Output is the same `observations.jsonl` + mask PNG layout as the tracker,
+    with `prompt_box` and `source: sam3_decode` on every object row.
+    """
+    run_directory = Path(args.run_directory)
+    output_path = run_directory / "observations.jsonl"
+    result_path = run_directory / "worker_result.json"
+    masks_directory = run_directory / "masks"
+    video_path = Path(args.video)
+    model_path = Path(args.model)
+    box_stream_path = Path(args.box_stream)
+    start = perf_counter()
+    gpu_processes = _gpu_processes()
+    guard_refusal, guard_record = gpu_guard_decision(args, gpu_processes)
+
+    stream_frames: dict[int, list[dict[str, Any]]] = {}
+    concepts: tuple[str, ...] = ()
+    box_stream_sha256: str | None = None
+    if box_stream_path.is_file():
+        box_stream_sha256 = fs_common.sha256_file(box_stream_path)
+        stream_frames, stream_labels = parse_box_stream(box_stream_path.read_text())
+        requested = tuple(json.loads(args.concepts_json)) if args.concepts_json else ()
+        if requested and requested != CONCEPTS and requested != stream_labels:
+            raise ValueError(
+                f"--concepts-json {list(requested)} does not match the box stream's slot "
+                f"labels {list(stream_labels)}"
+            )
+        concepts = stream_labels
+    prompted = {frame: boxes for frame, boxes in stream_frames.items() if boxes}
+    runtime_settings = _box_stream_runtime_settings(
+        args,
+        concepts,
+        box_stream_path=box_stream_path,
+        box_stream_sha256=box_stream_sha256,
+        prompted_frames=len([frame for frame in prompted if frame < MAX_FRAMES]),
+        prompted_boxes=sum(len(boxes) for frame, boxes in prompted.items() if frame < MAX_FRAMES),
+    )
+    if guard_record is not None:
+        runtime_settings["gpu_guard"] = guard_record
+    if args.checkpoint_every or args.checkpoint_at:
+        print(
+            "box_stream mode keeps no tracker state; --checkpoint-every/--checkpoint-at are "
+            "ignored (resume by re-running from --start-frame)",
+            flush=True,
+        )
+        runtime_settings["ignored_checkpoint_flags"] = {
+            "checkpoint_every": args.checkpoint_every,
+            "checkpoint_at": list(args.checkpoint_at),
+        }
+
+    blocked = None
+    if not video_path.is_file():
+        blocked = f"approved proxy does not exist: {video_path}"
+    elif not model_path.is_file():
+        blocked = f"SAM3 checkpoint is unavailable at configured path: {model_path}"
+    elif not box_stream_path.is_file():
+        blocked = f"box stream does not exist: {box_stream_path}"
+    elif guard_refusal is not None:
+        blocked = guard_refusal
+    if blocked is not None:
+        return _write_blocked(
+            result_path,
+            reason=blocked,
+            start=start,
+            gpu_processes=gpu_processes,
+            runtime_settings=runtime_settings,
+        )
+
+    runtime_settings["stream_identity"] = stream_identity(args, concepts)
+    try:
+        import torch
+        from muggled_sam.make_sam import make_sam_from_state_dict
+
+        if not torch.cuda.is_available():
+            raise RuntimeError("CUDA is unavailable; smoke policy does not permit CPU inference")
+        torch.cuda.set_device(0)
+        torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats(0)
+        capture = _open_capture(video_path, int(args.start_frame))
+        core = make_sam_from_state_dict(model_path)
+        core.to(device="cuda:0", dtype=torch.bfloat16)
+        interact = core.get_interactive_context()
+        masks_directory.mkdir(exist_ok=True)
+        processed = 0
+        masks_written = 0
+        first_usable: float | None = None
+        encode_ms: list[float] = []
+        decode_ms: list[float] = []
+        frame_ms: list[float] = []
+        box_ms: list[float] = []
+        decoder_ious: list[float] = []
+        with output_path.open("w") as observations:
+            for frame_index in range(MAX_FRAMES):
+                ok, frame = capture.read()
+                if not ok:
+                    break
+                model_frame = _prepare_frame(frame, args)
+                boxes = stream_frames.get(frame_index, [])
+                frame_shape = frame.shape[:2]
+                tracked: list[TrackedMask] = []
+                extras: dict[int, dict[str, Any]] = {}
+                diagnostics: list[dict[str, Any]] = []
+                if boxes:
+                    step_start = perf_counter()
+                    encoded = interact.encode_image(model_frame, MAX_SIDE_LENGTH, True)
+                    torch.cuda.synchronize(0)
+                    encoded_at = perf_counter()
+                    xyxy = [prompt_box_xyxy(box, frame_shape) for box in boxes]
+                    logits, ious, candidates = decode_box_prompts(
+                        interact,
+                        encoded,
+                        xyxy,
+                        other_boxes_as_negatives=bool(args.other_slots_as_negatives),
+                    )
+                    torch.cuda.synchronize(0)
+                    decoded_at = perf_counter()
+                    encode_ms.append((encoded_at - step_start) * 1000.0)
+                    decode_ms.append((decoded_at - encoded_at) * 1000.0)
+                    frame_ms.append((decoded_at - step_start) * 1000.0)
+                    box_ms.append((decoded_at - encoded_at) * 1000.0 / len(boxes))
+                    for position, box in enumerate(boxes):
+                        slot = int(box["slot"])
+                        iou = float(ious[position])
+                        decoder_ious.append(iou)
+                        box_record = normalised_box_record(xyxy[position])
+                        tracked.append(
+                            (slot, box["label"], logits[position : position + 1], iou, iou, iou)
+                        )
+                        extras[slot] = {
+                            "prompt_box": box_record,
+                            "source": BOX_STREAM_SOURCE,
+                            "prompt_source": box["source"],
+                            "prompt_score": box["score"],
+                        }
+                        diagnostics.append(
+                            {
+                                "schema_version": "1.0",
+                                "object_id": f"sam3-{slot:02d}",
+                                "label": box["label"],
+                                "multiplex_slot": slot,
+                                "object_score": iou,
+                                "iou_prediction": iou,
+                                "active": bool((logits[position] > 0).any()),
+                                "corrected": False,
+                                "prompt_box": box_record,
+                                "prompt_source": box["source"],
+                                "prompt_score": box["score"],
+                                "prompt_decoder_iou": iou,
+                                "decoder_candidate_index": int(candidates[position]),
+                            }
+                        )
+                observation, written = _observation(
+                    view_id=args.view_id,
+                    frame_index=frame_index,
+                    source_offset_seconds=args.source_offset_seconds,
+                    masks=tracked,
+                    frame_shape=frame_shape,
+                    masks_directory=masks_directory,
+                    run_directory=run_directory,
+                    diagnostics=diagnostics,
+                    extras=extras,
+                )
+                observations.write(json.dumps(observation, sort_keys=True) + "\n")
+                processed += 1
+                masks_written += written
+                if first_usable is None and observation["objects"]:
+                    first_usable = perf_counter() - start
+        capture.release()
+        torch.cuda.synchronize(0)
+        runtime_settings["box_decode_timing_ms"] = {
+            "per_prompted_frame": _timing_summary(frame_ms),
+            "image_encode": _timing_summary(encode_ms),
+            "decode_all_boxes": _timing_summary(decode_ms),
+            "per_box": _timing_summary(box_ms),
+            "semantics": (
+                "wall-clock per prompted frame after cuda.synchronize: one image encode plus "
+                "one batched decoder call over the frame's boxes; per_box divides the decode "
+                "time by the box count. Frames without boxes are not timed."
+            ),
+        }
+        runtime_settings["decoder_iou_prediction"] = _timing_summary(decoder_ious)
+        fs_common.write_json(
+            result_path,
+            _result(
+                state="succeeded",
+                reason=None,
+                frames_processed=processed,
+                elapsed_seconds=perf_counter() - start,
+                ttfu_seconds=first_usable,
+                gpu_peak_vram_bytes=int(torch.cuda.max_memory_allocated(0)),
+                masks_written=masks_written,
+                gpu_processes=gpu_processes,
+                unavailable=[]
+                if first_usable is not None
+                else ["time_to_first_usable_output_seconds"],
+                runtime_settings=runtime_settings,
+            ),
+            sort_keys=True,
+        )
+        return 0
+    except Exception as error:
+        fs_common.write_json(
+            result_path,
+            _result(
+                state="failed",
+                reason=f"{type(error).__name__}: {error}",
+                frames_processed=0,
+                elapsed_seconds=perf_counter() - start,
+                ttfu_seconds=None,
+                gpu_peak_vram_bytes=None,
+                masks_written=0,
+                gpu_processes=gpu_processes,
+                unavailable=["time_to_first_usable_output_seconds", "gpu_peak_vram_bytes"],
+                runtime_settings=runtime_settings,
+            ),
+            sort_keys=True,
+        )
+        traceback.print_exc()
+        return 1
+
+
 def _positive_frame_count(value: str) -> int:
     frame_count = int(value)
     if frame_count <= 0:
@@ -1567,6 +2443,18 @@ def stream_identity(args: argparse.Namespace, concepts: tuple[str, ...]) -> str:
         payload["memory_settings"] = {
             key: value for key, value in memory.items() if key != "max_frame_memory"
         }
+    # FineBio additions, each present only when used so earlier identities are unchanged.
+    start_frame = int(getattr(args, "start_frame", 0) or 0)
+    if start_frame:
+        payload["start_frame"] = start_frame
+    box_stream = getattr(args, "box_stream", None)
+    if box_stream:
+        stream_path = Path(box_stream)
+        payload["box_stream_sha256"] = (
+            fs_common.sha256_file(stream_path) if stream_path.is_file() else None
+        )
+        if getattr(args, "other_slots_as_negatives", False):
+            payload["other_slots_as_negatives"] = True
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 
@@ -1632,6 +2520,7 @@ def build_parser() -> argparse.ArgumentParser:
             "manual_seed_multiplexed",
             "manual_seed_multiplexed_keyframes",
             "hybrid_text_and_manual_mask",
+            "box_stream",
         ),
         default="text_detection",
     )
@@ -1639,6 +2528,41 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--manual-seeds-json")
     parser.add_argument("--multi-keyframe-schedule-json")
     parser.add_argument("--condition-input-video")
+    box_group = parser.add_argument_group(
+        "box stream (memory-free per-frame decode)",
+        "`--prompt-mode box_stream`: identity comes from outside; every frame's boxes are "
+        "decoded by the image decoder with no video memory.",
+    )
+    box_group.add_argument(
+        "--box-stream",
+        help=(
+            "JSONL of per-frame box prompts: {frame_index, boxes: [{slot, label, box_xyxy_px "
+            "| box_xyxy_norm, score, source}]}; its SHA-256 joins the stream identity."
+        ),
+    )
+    box_group.add_argument(
+        "--other-slots-as-negatives",
+        action="store_true",
+        help="Give every box prompt the other boxes' centres as background points.",
+    )
+    parser.add_argument(
+        "--start-frame",
+        type=int,
+        default=0,
+        help="Source frame that becomes analysis frame 0; earlier frames are decoded and dropped.",
+    )
+    parser.add_argument(
+        "--memory-write-min-score",
+        type=float,
+        default=MEMORY_WRITE_MIN_SCORE,
+        metavar="TAU",
+        help=(
+            "Video-memory mode: a slot whose raw object score is below TAU on a frame is "
+            "memorised as absent for that frame (its mask is still reported). Unset writes "
+            "every present slot, as before. Joins the memory policy record and the stream "
+            "identity."
+        ),
+    )
     parser.add_argument(
         "--max-side-length",
         type=int,
@@ -1806,6 +2730,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         parser.error("--checkpoint-every must not be negative")
     if args.max_frame_memory < 1:
         parser.error("--max-frame-memory must be at least 1")
+    if args.start_frame < 0:
+        parser.error("--start-frame must not be negative")
+    if (args.prompt_mode == "box_stream") != (args.box_stream is not None):
+        parser.error("--prompt-mode box_stream and --box-stream go together")
+    if args.prompt_mode == "box_stream" and args.resume_from_checkpoint:
+        parser.error("box_stream mode keeps no tracker state, so there is nothing to resume")
     try:
         memory_settings_from_args(args)
     except ValueError as error:
@@ -1822,6 +2752,8 @@ def main() -> None:
     MAX_FRAME_MEMORY = args.max_frame_memory
     ANALYSIS_FPS = args.analysis_fps
     MASK_PERIOD_FRAMES = args.mask_period_frames
+    if args.prompt_mode == "box_stream":
+        raise SystemExit(run_box_stream(args))
     raise SystemExit(run(args))
 
 
