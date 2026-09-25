@@ -19,6 +19,9 @@ rerun      One ``.rrd`` with the rig (frusta, table, markers, triangulated point
 Units are the calibration's board units (checkerboard on the bench, read as centimetres:
 marker squares come out 6 cm and the fixed cameras 0.8-0.95 m from the bench centre).
 Board z points into the table, so "height above the bench" is ``-z``.
+
+The camera library (``Camera``, intrinsics, shipped poses, ArUco detection and matching,
+``rig_cameras``) lives in ``battle.finebio_cameras`` since Sep 24; this script imports it.
 """
 
 from __future__ import annotations
@@ -27,19 +30,28 @@ import argparse
 import json
 import sys
 from collections import defaultdict
-from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from battle.finebio_cameras import (  # noqa: E402
+    CAMERA_IDS,
+    FIXED_VIEWS,
+    Camera,
+    days,
+    detect_markers,
+    fixed_camera,
+    fpv_poses,
+    intrinsics,
+    marker_points,
+    match_markers,
+    rig_cameras,
+)
+from battle.finebio_frames import video_path  # noqa: E402
 from battle.multiview_geometry import dlt_triangulate  # noqa: E402
 
-RAW = Path("/home/nick/src/battle/data/raw/finebio")
-POSES = RAW / "misc/finebio_camera_poses"
-FIXED_VIEWS = ("T1", "T2", "T3", "T4", "T5")
-CAMERA_IDS = (1, 2, 3, 4, 6)
 STATIC_CLASSES = (
     "centrifuge",
     "pcr_machine",
@@ -54,134 +66,9 @@ STATIC_CLASSES = (
     "8_channel_tip_rack",
 )
 MOVING_CLASSES = ("left_hand", "right_hand", "cell_culture_plate", "blue_pipette")
-ARUCO_DICT = cv2.aruco.DICT_6X6_50
 
 
-# --------------------------------------------------------------------------- calibration io
-
-
-@dataclass(frozen=True)
-class Camera:
-    name: str
-    K: np.ndarray  # (3, 3) for the shipped video resolution
-    dist: np.ndarray  # (5,)
-    rvec: np.ndarray  # (3,) world -> camera
-    tvec: np.ndarray  # (3,)
-    size: tuple[int, int]  # (w, h)
-
-    @property
-    def R(self) -> np.ndarray:
-        return cv2.Rodrigues(self.rvec.reshape(3, 1))[0]
-
-    @property
-    def centre(self) -> np.ndarray:
-        return (-self.R.T @ self.tvec.reshape(3, 1)).ravel()
-
-    @property
-    def projection(self) -> np.ndarray:
-        return self.K @ np.hstack([self.R, self.tvec.reshape(3, 1)])
-
-    def project(self, points: np.ndarray) -> np.ndarray:
-        pts, _ = cv2.projectPoints(
-            np.asarray(points, dtype=np.float64).reshape(-1, 1, 3),
-            self.rvec.astype(np.float64),
-            self.tvec.astype(np.float64),
-            self.K,
-            self.dist,
-        )
-        return pts.reshape(-1, 2)
-
-    def undistort(self, pixels: np.ndarray) -> np.ndarray:
-        pts = np.asarray(pixels, dtype=np.float64).reshape(-1, 1, 2)
-        return cv2.undistortPoints(pts, self.K, self.dist, P=self.K).reshape(-1, 2)
-
-
-def intrinsics(kind: str) -> tuple[np.ndarray, np.ndarray, tuple[int, int]]:
-    """Shipped chessboard intrinsics rescaled from the calibration resolution to the video."""
-    if kind == "fpv":
-        d = np.load(POSES / "intrinsic_parameters/gopro9_5_wide_4k_43_0.50.npz")
-        sx, sy, size = 1920 / 4000, 1440 / 3000, (1920, 1440)
-    else:
-        d = np.load(POSES / "intrinsic_parameters/gopro9_6_linear_4k_169_0.50.npz")
-        sx, sy, size = 1920 / 3840, 1080 / 2160, (1920, 1080)
-    K = d["intrinsic_matrix"].astype(np.float64).copy()
-    K[0, 0] *= sx
-    K[0, 2] *= sx
-    K[1, 1] *= sy
-    K[1, 2] *= sy
-    return K, d["distCoeff"].astype(np.float64).ravel(), size
-
-
-def days() -> list[str]:
-    return sorted(p.name for p in (POSES / "third_person_camera_poses").iterdir() if p.is_dir())
-
-
-def fixed_camera(day: str, camera_id: int, name: str | None = None) -> Camera:
-    d = np.load(POSES / f"third_person_camera_poses/{day}/extrinsics/{camera_id}_board.npz")
-    K, dist, size = intrinsics("tpv")
-    return Camera(
-        name or f"cam{camera_id}",
-        K,
-        dist,
-        d["r"].astype(np.float64).ravel(),
-        d["t"].astype(np.float64).ravel(),
-        size,
-    )
-
-
-def rig_cameras(
-    mapping: dict, *, pnp_over_px: float = 10.0
-) -> tuple[dict[str, Camera], dict[str, str]]:
-    """Cameras for the five fixed views from a mapping report: the shipped extrinsics where
-    they fit the markers within `pnp_over_px`, otherwise the marker-PnP pose (provenance
-    recorded per view as ``shipped`` or ``marker_pnp``)."""
-    day = mapping["day_decision"]["chosen"]
-    cams, provenance = {}, {}
-    for v in FIXED_VIEWS:
-        info = mapping["views"][v]
-        cam = fixed_camera(day, info["best"]["camera_id"], v)
-        if info["best"]["median_corner_rms_px"] > pnp_over_px and info.get("pnp_pose"):
-            cam = Camera(
-                v,
-                cam.K,
-                cam.dist,
-                np.array(info["pnp_pose"]["rvec"]),
-                np.array(info["pnp_pose"]["tvec"]),
-                cam.size,
-            )
-            provenance[v] = "marker_pnp"
-        else:
-            provenance[v] = "shipped"
-        cams[v] = cam
-    return cams, provenance
-
-
-def marker_points(day: str) -> np.ndarray:
-    pts = np.load(POSES / f"third_person_camera_poses/{day}/params/marker_points.npy")
-    return pts.astype(np.float64).reshape(-1, 4, 3)
-
-
-def fpv_poses(trial: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    d = np.load(POSES / f"first_person_camera_poses/{trial}.npz")
-    return (
-        d["rets"].astype(bool),
-        d["rots"].reshape(-1, 3).astype(np.float64),
-        d["trans"].reshape(-1, 3).astype(np.float64),
-    )
-
-
-def fpv_camera(trial: str, frame: int) -> Camera | None:
-    rets, rots, trans = fpv_poses(trial)
-    if frame >= len(rets) or not rets[frame]:
-        return None
-    K, dist, size = intrinsics("fpv")
-    return Camera("fpv", K, dist, rots[frame], trans[frame], size)
-
-
-def video_path(trial: str, view: str) -> Path:
-    if view == "fpv":
-        return RAW / "finebio_videos_fpv_test/finebio_videos" / f"{trial}.mp4"
-    return RAW / "finebio_videos_tpv_test/finebio_videos" / f"{trial}_{view}.mp4"
+# --------------------------------------------------------------------------- frames
 
 
 def read_frame(trial: str, view: str, frame: int) -> np.ndarray:
@@ -195,37 +82,6 @@ def read_frame(trial: str, view: str, frame: int) -> np.ndarray:
 
 
 # --------------------------------------------------------------------------- markers
-
-
-def detect_markers(img: np.ndarray) -> dict[int, np.ndarray]:
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    detector = cv2.aruco.ArucoDetector(
-        cv2.aruco.getPredefinedDictionary(ARUCO_DICT), cv2.aruco.DetectorParameters()
-    )
-    corners, ids, _ = detector.detectMarkers(gray)
-    if ids is None:
-        return {}
-    return {int(i): c.reshape(4, 2).astype(np.float64) for i, c in zip(ids.ravel(), corners)}
-
-
-def match_markers(
-    detected: dict[int, np.ndarray], projected: np.ndarray
-) -> list[tuple[int, int, float, np.ndarray]]:
-    """For each detected marker: (aruco id, index into projected markers, corner RMS px,
-    projected corners in the matching corner order). Nearest projected centroid wins; the
-    corner order is the cyclic shift with the smallest RMS."""
-    out = []
-    centroids = projected.mean(axis=1)
-    for marker_id, corners in detected.items():
-        j = int(np.argmin(np.linalg.norm(centroids - corners.mean(axis=0), axis=1)))
-        best = None
-        for shift in range(4):
-            rolled = np.roll(projected[j], shift, axis=0)
-            rms = float(np.sqrt(((rolled - corners) ** 2).sum(axis=1).mean()))
-            if best is None or rms < best[0]:
-                best = (rms, rolled)
-        out.append((marker_id, j, best[0], best[1]))
-    return out
 
 
 def draw_markers(
