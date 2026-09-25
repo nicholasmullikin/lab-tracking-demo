@@ -492,12 +492,14 @@ class TrackEvent(VersionedModel):
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
-def write_jsonl(rows: Iterable[VersionedModel], path: Path) -> int:
-    """One compact JSON object per line, None fields omitted; returns the row count."""
+def write_jsonl(rows: Iterable[VersionedModel], path: Path, *, compact: bool = False) -> int:
+    """One JSON object per line, None fields omitted; `compact` also omits fields at their
+    declared default (schema_version, empty provenance), which `read_jsonl` restores.
+    Returns the row count."""
     count = 0
     with path.open("w", encoding="utf-8") as handle:
         for row in rows:
-            handle.write(row.model_dump_json(exclude_none=True))
+            handle.write(row.model_dump_json(exclude_none=True, exclude_defaults=compact))
             handle.write("\n")
             count += 1
     return count
