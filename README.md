@@ -14,7 +14,8 @@ half holds the detailed per-run records with their claim boundaries. The plan th
 project was measured against is preserved unedited in
 [`docs/plan-2026-09-08-assembly-rerun-lab.md`](docs/plan-2026-09-08-assembly-rerun-lab.md),
 and the research brief that preceded it, with the verbatim first request, is
-[`battle_plan.agent.final.md`](battle_plan.agent.final.md). The Assembly101 phase closed on
+`battle_plan.agent.final.md` at the repository root (kept locally, untracked and gitignored
+since Sep 24; it was tracked until then and is in the history). The Assembly101 phase closed on
 Sep 24 (ledger entry "Sep 24: Assembly101 phase closed", tag `assembly101-lab-close`); the
 next phase, a detector-seeded FineBio lab with hands out of scope, is planned and not started in
 [`docs/plan-2026-09-24-finebio-detector-seeded-lab.md`](docs/plan-2026-09-24-finebio-detector-seeded-lab.md).
@@ -893,7 +894,7 @@ Keyboard shortcuts, in addition to the existing `B`/`F`/`N` and `1`–`4`:
 To re-measure any of the timings above:
 
 ```bash
-uv run python scripts/profile_view_route.py \
+uv run python scripts/archive/profile_view_route.py \
   --image runs/<calibration-run>/results/frames/frame-000000.jpg [--divisor 2]
 ```
 
@@ -1072,7 +1073,7 @@ uv run battle-muggled-smoke --config configs/clips/assembly101_nusar_9033_e4_60f
   --view ego-hmc21179183 --max-frames 600 --max-frame-memory 8 --max-side-length 720 --manual-seed-proposal $P
 uv run battle-muggled-smoke --config configs/clips/assembly101_nusar_9033_e4_60fps.json \
   --view ego-hmc21179183 --max-frames 600 --max-frame-memory 4 --max-side-length 720 --manual-seed-proposal $P
-uv run python scripts/compare_frame_rate_arms.py runs/<arm-30fps> runs/<arm-60fps-mem8> runs/<arm-60fps-mem4>
+uv run python scripts/archive/compare_frame_rate_arms.py runs/<arm-30fps> runs/<arm-60fps-mem8> runs/<arm-60fps-mem4>
 ```
 
 The `analysis` clock in a clip config may be 30 or 60 while the source, annotation, and
@@ -1171,7 +1172,7 @@ v3 preserves v2 and replaces only Kineo context with a deterministic fusion stre
 CUDA_VISIBLE_DEVICES=0 uv run battle-kineo-fusion \
   --output-root runs/kineo-nlf-fused-20s-overnight-v3
 uv run battle-build-interaction-review --output-root runs/interaction-review-overnight-v3
-uv run python scripts/render_overnight_v3_audits.py
+uv run python scripts/archive/render_overnight_v3_audits.py
 uv run rerun rrd print runs/interaction-review-overnight-v3/interaction_review.rrd
 ```
 

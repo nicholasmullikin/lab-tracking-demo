@@ -9,8 +9,8 @@ proxy.
 **Server** (this repo, tailscaled running):
 
 ```bash
-scripts/serve_review_over_tailscale.sh            # default: the v5 first-minute package
-scripts/serve_review_over_tailscale.sh runs/<pkg>/<recording>.rrd --server-memory-limit 6GiB
+scripts/serve_review_over_tailscale.sh            # default: v6 interaction_review_combined.rrd + segmentation.rbl
+scripts/serve_review_over_tailscale.sh runs/<pkg>/<recording>.rrd [runs/<pkg>/<preset>.rbl] --server-memory-limit 6GiB
 ```
 
 It binds the Tailscale IPv4 from `tailscale ip -4`, hosts the web viewer on :9090 and the gRPC

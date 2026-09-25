@@ -1,5 +1,13 @@
 # Morning review guide: the Sep 18 overnight multi-camera pass
 
+> **Superseded (Sep 24).** The current review surface is the v6 package,
+> `runs/interaction-review-first-minute-v6/` (`interaction_review_combined.rrd` with the
+> `segmentation.rbl` / `hands.rbl` / `multiview.rbl` presets), described in
+> [`review-guide-2026-09-20-multiview-presets.md`](review-guide-2026-09-20-multiview-presets.md).
+> This guide is kept as the record of the Sep 18 overnight pass; the commands below open the
+> older v4 recording (`runs/interaction-review-first-minute-v4/`) and the Sep 18 comparison
+> recordings, which still exist on disk and were not deleted in the Sep 24 cleanup.
+
 Written for the human who left the plan running overnight. Everything below is pulled from
 the `### Sep 18:` sections of [`method-ledger.md`](method-ledger.md) and from the manifests
 on disk; every path was checked to exist when this guide was committed. `runs/` is

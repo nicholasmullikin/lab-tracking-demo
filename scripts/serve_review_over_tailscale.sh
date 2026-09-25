@@ -9,7 +9,9 @@
 # decoder". For a browser-only client use --https-port (see below).
 #
 # Usage:
-#   scripts/serve_review_over_tailscale.sh [options] [recording.rrd]
+#   scripts/serve_review_over_tailscale.sh [options] [recording.rrd [blueprint.rbl]]
+# With no paths it serves the v6 combined first-minute package with its segmentation preset;
+# with paths it serves exactly what was given (a preset only fits the package it was built for).
 # Options:
 #   --server-memory-limit SIZE  gRPC server buffer (default 4GiB; 100 MB rrd needs > 1GiB default)
 #   --https-port N              bind 127.0.0.1 and allow the https://<magicdns>:N origin so
@@ -20,13 +22,15 @@
 # Requires: tailscale (tailscaled running), python3 (JSON parsing), uv.
 set -euo pipefail
 
-default_rrd="runs/interaction-review-first-minute-v5/interaction_review_first_minute_v4.rrd"
+default_rrd="runs/interaction-review-first-minute-v6/interaction_review_combined.rrd"
+default_rbl="runs/interaction-review-first-minute-v6/segmentation.rbl"
 web_port=9090
 grpc_port=9876
 memory_limit="4GiB"
 https_port=""
 dry_run=0
 rrd=""
+rbl=""
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -37,8 +41,9 @@ die() {
 
 usage() {
   cat <<EOF
-Usage: scripts/serve_review_over_tailscale.sh [options] [recording.rrd]
+Usage: scripts/serve_review_over_tailscale.sh [options] [recording.rrd [blueprint.rbl]]
   default recording: ${default_rrd}
+  default blueprint: ${default_rbl} (only when no paths are given)
 Options:
   --server-memory-limit SIZE  gRPC server buffer (default ${memory_limit})
   --https-port N              bind 127.0.0.1 for 'tailscale serve --bg --https=N http://127.0.0.1:${web_port}'
@@ -73,15 +78,25 @@ while (($# > 0)); do
       die "unknown option: $1"
       ;;
     *)
-      [[ -z ${rrd} ]] || die "only one recording path is accepted (got '${rrd}' and '$1')"
-      rrd=$1
+      if [[ -z ${rrd} ]]; then
+        rrd=$1
+      elif [[ -z ${rbl} ]]; then
+        [[ $1 == *.rbl ]] || die "the second path must be a .rbl blueprint (got '$1')"
+        rbl=$1
+      else
+        die "at most one recording and one blueprint are accepted (got '${rrd}', '${rbl}' and '$1')"
+      fi
       shift
       ;;
   esac
 done
 
-rrd="${rrd:-${repo_root}/${default_rrd}}"
+if [[ -z ${rrd} ]]; then
+  rrd="${repo_root}/${default_rrd}"
+  rbl="${repo_root}/${default_rbl}"
+fi
 [[ -f ${rrd} ]] || die "recording not found: ${rrd}"
+[[ -z ${rbl} || -f ${rbl} ]] || die "blueprint not found: ${rbl}"
 
 command -v tailscale >/dev/null 2>&1 || die "tailscale CLI not found on PATH"
 command -v python3 >/dev/null 2>&1 || die "python3 not found on PATH"
@@ -117,8 +132,10 @@ for origin in "${origins[@]}"; do
   cmd+=(--cors-allow-origin "${origin}")
 done
 cmd+=("${rrd}")
+[[ -z ${rbl} ]] || cmd+=("${rbl}")
 
 echo "Recording:        ${rrd}"
+echo "Blueprint:        ${rbl:-(none)}"
 echo "Tailscale IPv4:   ${ts_ip}"
 echo "MagicDNS name:    ${ts_dns}"
 echo "Bind address:     ${bind_ip}"

@@ -1,5 +1,15 @@
 # Review guide: ensemble reference v2, the candidate (Sep 20)
 
+> **Superseded (Sep 24).** The current review surface is the v6 package,
+> `runs/interaction-review-first-minute-v6/` (`interaction_review_combined.rrd` with the
+> `segmentation.rbl` / `hands.rbl` / `multiview.rbl` presets), described in
+> [`review-guide-2026-09-20-multiview-presets.md`](review-guide-2026-09-20-multiview-presets.md);
+> ensemble v2's disposition is recorded in the ledger's Sep 24 close. This guide is kept as the
+> record of the candidate as it was presented; the commands below open the older v5 recording
+> (`runs/interaction-review-first-minute-v5/`), which still exists on disk and was not deleted in
+> the Sep 24 cleanup. `scripts/serve_review_over_tailscale.sh` now defaults to the v6 package, so
+> pass the v5 path explicitly to serve this one.
+
 Written for the human who labelled the 52 anchors on Sep 19 and left the follow-up plan
 running. Everything here is pulled from the `### Sep 19:` and `### Sep 20:` sections of
 [`method-ledger.md`](method-ledger.md) and from the manifests on disk; every path existed when
@@ -20,8 +30,9 @@ a candidate. Adopting it as the review reference is your disposition, not the ag
 rerun /home/nick/src/battle/runs/interaction-review-first-minute-v5/interaction_review_first_minute_v4.rrd
 ```
 
-From another computer on your tailnet: run `scripts/serve_review_over_tailscale.sh` here (it
-defaults to this recording and prints the connect command), and on the client run
+From another computer on your tailnet: run `scripts/serve_review_over_tailscale.sh
+runs/interaction-review-first-minute-v5/interaction_review_first_minute_v4.rrd` here (since Sep 24
+the script's default is the v6 package; it prints the connect command), and on the client run
 `scripts/rerun_client/install.sh` or `install.ps1` once, then
 `rerun --connect rerun+http://100.64.0.7:9876/proxy`. Use the native viewer, not the browser:
 the web viewer over plain http cannot decode the H.264 video (WebCodecs needs https), the native

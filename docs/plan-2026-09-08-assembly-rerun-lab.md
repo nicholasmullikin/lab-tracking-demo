@@ -4,7 +4,8 @@ Preserved as written on the evening of Sep 8, 2026, after two rounds of review a
 immediately before work began ("Ok begin", 21:56). It is the plan the project was
 measured against; it has not been edited to match what happened. For what happened, see
 [`method-ledger.md`](method-ledger.md). The original one-line ask and the research
-brief this plan replaced are in [`battle_plan.agent.final.md`](../battle_plan.agent.final.md).
+brief this plan replaced are in `battle_plan.agent.final.md` at the repository root (kept
+locally, untracked and gitignored since Sep 24; tracked until then, so it is in the history).
 
 Paths below refer to the repository as it was planned; several were renamed during
 implementation (`src/battle_lab/` became `src/battle/`, `configs/methods.yaml` is

@@ -15,8 +15,9 @@ tracked. States map to the versioned `MethodState` schema: `pending`, `ready`,
 
 ### The original ask (Sep 8, 2026)
 
-The verbatim request is preserved at the top of
-[`battle_plan.agent.final.md`](../battle_plan.agent.final.md). In short: get several
+The verbatim request is preserved at the top of `battle_plan.agent.final.md` at the repository
+root (kept locally, untracked and gitignored since Sep 24; tracked until then, so it is in the
+history). In short: get several
 perception repositories working out of the box on Assembly101, visualize all of their
 outputs in one Rerun recording, skip building a data pipeline, respect a 16 GB card and
 limited time, and do it in a way that demonstrates a properly run ML project. Candidate
@@ -1674,7 +1675,8 @@ this comparison makes no accuracy or cross-method identity claim.
   without a viewer popup. The v3 QA record preserves user feedback as human-authored text and
   leaves human pass/fail pending. Final agent-authored visual review
   (`runs/interaction-review-overnight-v3/final_agent_review.md`, gitignored) fixed a
-  `mediapipe_fallback` audit-sheet labeling bug in `scripts/render_overnight_v3_audits.py`.
+  `mediapipe_fallback` audit-sheet labeling bug in `scripts/render_overnight_v3_audits.py`
+  (since Sep 24 `scripts/archive/render_overnight_v3_audits.py`).
   Full suite after that fix: 245 passing tests.
 
 ### Sep 17: first-minute v4 human review and follow-up rebuild

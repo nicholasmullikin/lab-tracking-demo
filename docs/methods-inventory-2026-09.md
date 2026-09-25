@@ -1,3 +1,9 @@
+# Methods inventory, Sep 2026 (was `configs/methods.yaml`)
+
+Hand-maintained snapshot from Sep 8-16, never loaded by code; moved out of `configs/` on Sep 24.
+[`SOURCES.md`](SOURCES.md) and the ledger's goals table are the maintained records.
+
+```yaml
 schema_version: "1.0"
 hardware_assumption:
   gpu: "NVIDIA RTX 5070 Ti"
@@ -107,3 +113,4 @@ methods:
     - Qwen video VLMs
     - supervised temporal-action models
     - long-video VLMs
+```

@@ -7,7 +7,7 @@ with everything on, and a repeat of an identical request.
 This is a measurement helper, not part of the calibration pipeline. It serves a
 throwaway workspace from a temporary directory and never reads or writes a real run.
 
-    uv run python scripts/profile_view_route.py --image path/to/frame.jpg
+    uv run python scripts/archive/profile_view_route.py --image path/to/frame.jpg
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "tests"))
 

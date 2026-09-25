@@ -12,7 +12,7 @@ from PIL import Image
 from battle.exporter import HAND_CONNECTIONS
 from battle.schemas import FrameObservations
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 OUTPUT = ROOT / "runs/interaction-review-overnight-v3/audits"
 RAW = ROOT / "runs/wilor-hands-static-20s-audited-source-state/observations.jsonl"
 STABILIZED = ROOT / "runs/wilor-hands-stabilized-20s-overnight-v2-r3/observations.jsonl"
