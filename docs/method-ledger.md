@@ -661,6 +661,23 @@ review, the exploratory comparison and the Kineo fusion now read a clip config w
 Assembly101 values as defaults. Record: [Sep 25: finebio_preprocessing and the trial proxies
 (p1-configs)](#sep-25-finebio_preprocessing-and-the-trial-proxies-p1-configs).
 
+#### Sep 25: battle-detector-seed, observation adapters, gate-1 sheets (p2-seeds, p2-gate1)
+
+Which objects get a SAM3 slot in which view, from the detector alone: per-view instances by
+IoU association joined across gaps, singleton classes and rack footprints (T1 1433 fragments
+-> 468 instances), a slot for what **moves** (sustained median displacement > 20 px at 1920;
+40 px against the head's own motion in the fpv, and only for classes a fixed camera saw move)
+or sits **in a hand** (> 10% of frames), the named containers as static volumes, tube groups
+per rack, a cap of 10 ordered landmarks -> movers -> groups -> held -> racks. Each seed is the
+tight detector box through the SAM3 image decoder, accepted by mask-bbox IoU >= 0.6: trial 1
+**60/60 accepted** (0.63-0.99, 24 image encodes, 13 s, 2.4 GiB), per view the three machines,
+the four pipettes in use, the tubes that move, micro-tube groups of 29-54; the plate never
+moves in protocol 03 and stays detector-only. Worker-ready box streams (arm b) and schedules
+(arms c/d) in analysis frames, the two observation adapters, per-view contact sheets and the
+15-minute gate-1 brief ([`labeling-sessions-2026-09-25-finebio.md`](labeling-sessions-2026-09-25-finebio.md);
+soft: the pipeline runs on `provenance: auto`, decisions filter afterwards). Record: [Sep 25:
+battle-detector-seed, observation adapters, gate-1 sheets (p2-seeds, p2-gate1)](#sep-25-battle-detector-seed-observation-adapters-gate-1-sheets-p2-seeds-p2-gate1).
+
 ### Plan versus actual
 
 What the plan said, what happened instead, and why, in one line each.
@@ -7542,3 +7559,213 @@ and the 83 `main()` entry points beyond their shared fragments.
 - **Left for the GPU phase.** `battle-finebio-detect` on the six proxies of each trial window
   (raw `frame_index = proxy + offset`, per the clip config), then the `downstream.rig` command
   above; lane C's tracker takes the resulting `rig.json` through `--gates`.
+
+### Sep 25: battle-detector-seed, observation adapters, gate-1 sheets (p2-seeds, p2-gate1)
+
+- **What this is.** The `p2-seeds` todo of the FineBio 3D-tracking plan
+  ([`docs/plan-2026-09-25-finebio-3d-tracking.md`](plan-2026-09-25-finebio-3d-tracking.md)) and
+  the sheets half of `p2-gate1`: which objects get a SAM3 slot in which view, where each slot
+  starts, whether the SAM3 image decoder accepts the detector box as its seed, the worker-ready
+  files for the arms, and the contact sheets the human decides on
+  ([`docs/labeling-sessions-2026-09-25-finebio.md`](labeling-sessions-2026-09-25-finebio.md)).
+  Plus the two adapters the tracker needed (detector JSONL and SAM3 worker run ->
+  `FineBioObservation` rows). Developed on the preflight detections of `P03_01_01` (78 frames)
+  and the committed fixtures, then run on trial 1 `P03_03_01` (raw frames [600, 4200), the DINO
+  pass `runs/finebio-detect-P03_03_01-600-4200-20260925/dino`, `state: succeeded`, coverage
+  `full`, 47 ms/frame, landed at 23:45). GPU: two seed decodes of 11 and 13 s, peak 2.41 GiB,
+  beside the detector lane's P20 worker (784-1170 MiB, named with `--allow-gpu-neighbour`; the
+  guard's record is in `seeds.json`), no viewer. Five agents committed concurrently in one
+  checkout; only the files named here were staged, by path. Commits: `7124ea1` (adapters),
+  `a07b19a` (the tool), `6e310fd` (identity over the window, the trial-1 slot set), `97e25fb`
+  (the brief), and this entry's commit. Outputs under `runs/finebio-seeds-P03_03_01-20260925/`
+  (gitignored; FineBio licence: sheets, masks and instance files never committed).
+- **Adapters (`src/battle/finebio_observations.py`, commit `7124ea1`).**
+  `detections_to_observations(detections_dir, views, min_score, pose_valid=, frames=)`:
+  `battle-finebio-detect` JSONL (raw `frame_index`, `detections[{class, score,
+  box_xyxy_px}]`, `interpolated` + `source_frames` on filled rows) -> detector rows with
+  `slot = <class>#<rank>` (same-class score rank per frame), boxes rounded to 0.1 px and
+  scores to 4 decimals, the interpolation flag kept in `provenance`; on the preflight
+  detections it reproduces the **15,695 committed fixture rows exactly**. The fpv needs a pose
+  validity lookup (`fpv_pose_validity(trial)` from the shipped pose file,
+  `pose_validity_from_fixture(fpv_poses.json)`; `fill_pose_valid` applies it).
+  `worker_to_observations(run_dir, view, start_frame, slot_labels=, pose_valid=,
+  detector_rows=, match_iou=0.3)`: the SAM3 worker's `observations.jsonl` + mask PNGs -> SAM3
+  rows in raw frames (`start_frame + k`) with the **area centroid** (pixel centres, +0.5; the
+  fixtures carry the bbox centre), mask bbox `[xmin, ymin, xmax+1, ymax+1]`, area,
+  `sam3_object_score` = the row's `object_score` (the decoder's IoU in box-decode, the tracker
+  logit in video memory), `source` `sam3_decode` from the row's own `source` else `sam3_video`,
+  the slot label from the multiplex index (`slot_labels`) or the worker label when it carries
+  `#`, the prompt box + `prompt_score` as the detector box on decode rows, the best same-class
+  detector box by IoU >= 0.3 on video rows (`detector_box_iou`, `detector_slot` in
+  provenance), a normalised-box fallback with `mask: absent` when a PNG is missing. On the Sep
+  24 smoke runs: 80 box-decode rows and 75 video rows, centroids inside their bboxes, the plate's
+  `detector_box_iou` 0.944 at 1798. **For the arms**: `slot_labels` are the seed tool's labels
+  (the worker's concepts are `<class>#<k>` already, so the labels pass through), pass the
+  detector rows of the same view so video rows carry the detector box the tracker confirms
+  against, `write_observations` sorts and writes compactly.
+- **Tool (`src/battle/detector_seed.py`, console script `battle-detector-seed`; commits
+  `a07b19a`, `6e310fd`).** Subcommands `instances`, `select`, `decode` (spawns
+  `decode-worker` under the MuggledSAM interpreter), `sheets`, `apply-decisions`, `run`. One
+  run directory; each step reads the previous one's files and the parameters it recorded.
+- **`instances`: per-view identity over the window.** Same-class boxes at score >= 0.2 on
+  consecutive detected frames associated by IoU >= 0.3 (greedy one-to-one, numpy IoU matrix,
+  a tracklet survives 30 unmatched frames); hands tracked as probes. The first run on the
+  3600-frame window showed why that is not enough: **1,400-11,400 tracklets per view, 13
+  centrifuge and 26 PCR-machine instances in T1** (the lid changes the centrifuge box past IoU
+  0.3, the operator's body hides the PCR machine for seconds, the head camera looks away for
+  minutes), and the slot cap filled with fragments of two objects. Three joins follow: (1)
+  `merge_fragments`, same-class fragments across gaps up to 300 frames whose last and first
+  boxes overlap at IoU >= 0.3 (the earlier box carried by the scene's motion in the fpv), best
+  overlap then smallest gap; (2) `merge_singletons`, every instance of a class the bench holds
+  once is one object (centrifuge, vortex_mixer, pcr_machine, magnetic_rack, trash_can,
+  cell_culture_plate and its lid, blue / yellow / red / 8_channel_pipette; **a bench assumption
+  on the record**, `--singleton-classes`); (3) `merge_footprints` in the fixed views,
+  same-class container instances whose median boxes overlap (IoU >= 0.3 or containment >=
+  0.5) are one rack seen with and without its tubes (identical racks side by side have disjoint
+  footprints and stay apart). Trial 1: T1 1433 fragments -> 468 instances (731 gap joins, 155
+  singleton, 79 footprint), T2 1464 -> 587, T3 1527 -> 633, T4 1982 -> 804, T5 1461 -> 606,
+  fpv 11443 -> 2893 (8058 gap joins, 492 singleton; no footprint merge under head motion).
+  16 s for six views; `instances/<view>.jsonl` + `summary.json` with per-class counts and
+  lifetimes. A known limit: a long-gap join at the same place can chain two different tubes
+  that used the same rack hole in turn; the 3D tracker owns identity, these are per-view SAM3
+  slots.
+- **`select`: the plan's seed rule, and what the data forced.** A slot opens for a persistent
+  instance (>= 15 frames detected at score >= 0.3; start frame = the first detected frame of a
+  dense run) that **moves** or **sits in a hand**; the named containers open once as static
+  volumes; groups; everything else `detector_only` with its reason. *Moves*: the first
+  version (smoothed centre displacement over a 30-frame window) fired on every rack a hand
+  passed over (a box shrinking under an occluder moves its centre); the rule is now
+  **sustained**: the median box centre over `[t-30, t)` differs from the median over
+  `[t, t+30)` by > 20 px at 1920, evaluated at every 5th frame of a grid shared by all
+  instances, boxes cut by the frame border excluded. *The head camera* moves everything: in the
+  fpv the displacement is measured against the **scene's own motion**, an affine map fitted
+  by least squares to the other non-hand, border-free instance centres shared by the two
+  frames (trimmed 25%, one 5 px inlier pass; composed from per-step fits when fewer than six
+  are shared; a translation model left 40-320 px residuals on static bench objects in the
+  preflight window, the affine leaves 2-15 px), with a 40 px threshold, **and only for a class
+  some fixed camera saw move or be held** (fixed views are selected first; `uncorroborated`
+  instances are recorded: 68 in trial 1's fpv, among them the plate at 118 px and the magnetic
+  rack at 330 px of pure head motion). Fixed cameras get the identity map: a 6-instance affine
+  fit on a fixed view was absorbing the movers themselves. *In hand*: centre inside a
+  `left_hand` / `right_hand` box at score >= 0.3 on > 10% of detected frames. *Containers*:
+  centrifuge, vortex_mixer, pcr_machine, magnetic_rack and the eight rack classes,
+  `role: container`; a container that moved keeps `rule: moves` on the record. *Groups*:
+  identical-instance classes (tubes, strips, tips, spin columns) with >= 3 members whose
+  centres sit in one rack box on >= 50% of their frames become one `<class>_group#<k>` slot
+  per rack (union box per frame, `members` listed) unless a member moves, which is its own
+  slot. *Suppression*: nested same-class boxes (the plate and the plate-with-lid box,
+  containment >= 0.7 on >= 50% of shared frames) and the same box under two class names (IoU
+  >= 0.8; the held pipette read as blue and as yellow) are dropped and recorded; tips never
+  open a slot (`excluded_classes`, no attachment observable). *Cap* 10 per view, ordered:
+  the landmark containers (centrifuge, vortex_mixer, pcr_machine, whatever rule opened them),
+  the objects that moved (by persistence, then movement), the tube groups, the objects only
+  held, the racks (in use first); containers never compete with objects for the dynamic
+  slots; `capped` slots are recorded with their numbers. Labels `<class>#<k>`, slots 0..N-1,
+  seed candidates = the start frame and every 15th detected frame after it (3 attempts).
+  20 s for six views on trial 1.
+- **`decode`: the SAM3 image decoder on the seed frames (GPU).** `decode/requests.json` (per
+  slot the attempts in order: for every candidate frame the tight box, then the same box with
+  a 0.15 margin; other slots' centres as negatives with `--other-instances-as-negatives`, off
+  by default as in arm (b)) -> `decode-worker` under
+  `/home/nick/.pyenv/versions/muggled_sam/bin/python` with the same guard as the SAM3 worker
+  (`vram`, profile `sam3_1280`, `--allow-gpu-neighbour`, `CUDA_VISIBLE_DEVICES=0`,
+  `PYTHONPATH=/home/nick/src/muggled_sam`; the file imports only `fs_common`, `gpu_guard` and
+  `finebio_detect.box_iou` by path there): `sam3.1_multiplex.pt`, bfloat16, one
+  `encode_image(frame, 1280, square)` per distinct seed frame per view, per prompt
+  `encode_prompts([box], [], negatives)` -> `generate_masks` -> the top-IoU candidate,
+  logits > 0 at source size; **accepted by mask-bbox IoU vs the detector box >= 0.6** (fill
+  ratio reported, not tested: the plate fills its box to 0.5 when correct); a rejected tight
+  box is retried with the margin, then on the next candidate frames; else `unseeded` with the
+  reason. Per attempt: the four candidate IoUs, the chosen index, the decoder IoU, mask area,
+  bbox, IoU, fill; the accepted mask as a PNG under `decode/masks/<view>/`. Preflight
+  (P03_01_01, six views): 60 slots, **60/60 accepted** (mask-bbox IoU 0.71-0.99; the T1 plate
+  0.76 against the preflight's 0.77), 13 image encodes, 60 decodes, 11 s wall including the
+  4 s model load, 2.41 GiB. Trial 1: 60 slots, **60/60 accepted at 0.63-0.99**, 24 image
+  encodes, 62 decodes (two slots needed the margin box or a second frame:
+  `50ml_tube_group#1` in T1 seeded at 1158 rather than 1142), 13 s, 2.41 GiB (guard headroom
+  13,567 MiB against 3,995 required with the detector's 990 MiB reserved beside it).
+- **Files for the arms (written by `decode`, validated with the worker's own parsers
+  `parse_box_stream`, `_corrections_by_frame`, `slot_start_frames`).** `seeds.json`
+  (`selected_by: detector`, `provenance: auto`, per slot label / class / role / rule /
+  instance / members / start frame / persistence / movement / hand fraction / candidates /
+  attempts / accepted seed / `schedule_slot`, the decode record with the guard, the parameters,
+  the claim boundary) + `seeds.md`. **Mode (i)** `box_streams/<view>.jsonl`: per analysis frame
+  (`frame_index = raw - 600`) the boxes of every selected slot from its tracklet from its start
+  frame on (`{"slot", "label", "box_xyxy_px", "score", "source": finebio_dino |
+  finebio_dino_interpolated | finebio_dino_group}`; a group's box is the union of its members'),
+  3600 frames with boxes per fixed view (fpv 3561), 23,000-31,000 boxes per view;
+  `battle-muggled-arms box-decode --video <raw mp4> --view-id <view> --box-stream
+  box_streams/<view>.jsonl --start-frame 600 --max-frames 3600`. **Mode (ii)**
+  `schedules/<view>.json`: the accepted seeds as `{"target": <label>, "initial_multiplex_slot":
+  0..N-1, "prompt_box_xyxy_px": <seed box>, "start_frame": <seed frame - 600 when > 0>,
+  "selected_by": "detector" at frame 0 | "detector_reseed" later}` (the worker's vocabulary
+  for a mid-stream box prompt; the plan's `selected_by: detector` lives in `seeds.json`),
+  `corrections: []`; 43 of the 60 trial-1 slots start at analysis frame 0, the rest where the
+  object first persists (T2 `50ml_tube#0` at 1443, T5's held `micro_tube#0` at 2217, ...);
+  `battle-muggled-arms video-memory --video <raw mp4> --view-id <view> --schedule
+  schedules/<view>.json --start-frame 600 --max-frames 3600 --prompt-memory-semantics append`.
+  The worker reads a raw video with `--start-frame 600` or a lane-B proxy with `--start-frame
+  0`; the box stream and schedule are in analysis frames either way.
+- **Trial-1 slot set (`seeds.md`; the brief has the per-view table).** Every view: the three
+  machines (`centrifuge` `moves` 53-161 px in every view because its lid opens; the vortex
+  25 px in T2, 74 in the fpv), the pipettes in use (`blue_pipette` moves 400-1000 px, yellow
+  131-650, red 75-142, 8-channel 60-143), the 15 / 50 ml tubes that move (20-410 px), micro-tube
+  groups of 29 (T1), 38 (T3), 54 (T5) tubes plus 15 ml and 50 ml groups of 3-5, one held micro
+  tube in T5 (frames 2817-3004, hand 100%), `trash_can` in T4 and the fpv (20 / 60 px).
+  Rules per view: T1 4 moves / 2 container / 4 group; T2 9 moves / 1 group (the PCR machine is
+  never detected in T2); T3 7 / 2 / 1; T4 8 moves / 1 in_hand / 1 container; T5 5 / 1 / 2 / 2;
+  fpv 9 moves / 1 container. **`detector_only`**: the plate in every fixed view (static in
+  protocol 03: `cell_culture_plate` moves nowhere), pens, 8-tube strips, most micro tubes that
+  are not in the racks' footprint, the 8-tube-strip rack lid; per view 12-27 instances, 111 in
+  the fpv. **Capped** (would be slots beyond 10): the racks (`micro_tube_rack` and
+  `50ml_tube_rack` moved 25-107 px in T1/T3; the tip racks 25-40 px in T1/T5), the
+  `magnetic_rack`, further held micro tubes, further 50 ml tube groups, and in the fpv 310
+  instances, mostly tube fragments. Suppressed 4-19 duplicates per view. Runtime: 16 + 20 +
+  13 + 2 s for the four steps.
+- **`sheets` and the gate (`p2-gate1`).** `sheets/<view>.jpg`: one tile per accepted seed
+  (crop 2.5x the box, >= 320 px, the mask filled in the class family's colour with its
+  contour, the box, `<label> slot <n>` / `<rule> / <role> f<frame>` / `det dec bbox IoU
+  kind`), `<view>_unseeded.jpg` when a slot failed; `decisions.template.json` (one entry per
+  slot, `decision: accept | reject | null`, `note`); `apply-decisions --decisions <file>`
+  removes the rejected slots, renumbers the rest and writes `filtered/box_streams`,
+  `filtered/schedules`, `filtered/seeds.json` (`provenance: human_filtered` with the
+  decisions' SHA-256; per slot `human_accepted` or `auto`). The brief asks for 15 minutes on
+  60 tiles: accept when the mask is on the labelled object, reject the wrong object, a mask on
+  the glove or bench, an occluded seed frame, or two slots on one object; the default when
+  nothing is done is every seed kept with `provenance: auto`. Looked at by the agent (not a
+  human): the T5 sheet shows the four pipettes, the three machines, the micro-tube group as
+  the rack with its tubes, the 50 ml group and the held tube each on the right object; the T3
+  preflight sheet shows the held pipette twice under two colour names, which is what the
+  suppression now removes when the boxes coincide and what the human removes when they do
+  not.
+- **Tests.** `tests/test_finebio_observations.py`: 8 default (ranks and interpolation, the fpv
+  pose requirement and the frame filter, pixel-centre measurements, box-decode rows with the
+  prompt box, video rows matched to detector boxes, the missing-mask fallback, the fixture
+  pose fill, the ordered writer) + 2 `real_data` (preflight detections == fixture detector
+  rows; the smoke runs convert). `tests/test_detector_seed.py`: 13 default (IoU matrix and
+  greedy pairs; association across a gap and by class; the dense start frame and seed
+  candidates; the rules on synthetic tracklets: moves / in_hand / container / group with a
+  member that walks out / detector_only / the cap order; the start frame from the score
+  history; scene motion holding 12 static objects under a 3 px/frame drift + zoom at < 2 px
+  while the mover keeps 60-100 px and border-clipped boxes are excluded; fpv corroboration;
+  the cap; nested and same-box suppression; box stream and schedule through the worker's
+  parsers; decode requests, margins and mask metrics; the CLI end to end on synthetic
+  detections with the decode blocked without the interpreter and `apply-decisions`; the
+  worker command and environment) + 1 `real_data` (the preflight: the plate opens in T1-T4
+  and the held pipette in T1/T2/T3/T5 by `moves` / `in_hand`, the PCR machine is a container
+  in every fixed view and never a moving object, the fpv's plate is corroborated). Default tier
+  **934 passed / 14 skipped** (899 before this lane); `uv run ruff check src tests scripts`
+  and `ruff format --check` clean. No `gpu`-marked test: the two decodes are recorded here.
+- **What the arms phase must know.** (1) Arm (b) takes `box_streams/<view>.jsonl` as is
+  (all selected slots, accepted or not; the worker decodes every frame anyway); arms (c)/(d)
+  take `schedules/<view>.json` (accepted seeds only; a slot that starts late is a seed with
+  `start_frame`). (2) Prefer `filtered/` when the human has run `apply-decisions`. (3) The
+  slot labels are the worker concepts, so `worker_to_observations(run, view, 600)` gives the
+  tracker's rows with no label map; pass the same view's detector rows for confirmation. (4)
+  The per-view tracklets are detector identity: a tube that leaves the window and returns is
+  the same slot only if its box overlapped within 300 frames; the 3D tracker resolves the
+  rest. (5) The plate is not a slot in trial 1 because it does not move there; if the demo
+  needs it, `--container-classes` with the plate added opens it as a static volume. (6) Trial
+  2 runs the same command on `runs/finebio-detect-P20_03_01-600-4200-20260925/dino` once it
+  lands; nothing in the parameters is P03-specific except the bench's singleton list, which
+  holds for room 2 as well (one machine of each kind, one pipette of each colour).
