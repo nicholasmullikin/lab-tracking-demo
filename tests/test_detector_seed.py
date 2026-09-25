@@ -183,11 +183,19 @@ def test_seed_rules_move_in_hand_container_group_and_detector_only():
     assert selected["hand_instances"] == 1
     assert all(s["start_frame"] == 600 for s in selected["slots"])
     assert [s["slot"] for s in selected["slots"]] == list(range(len(selected["slots"])))
-    # Landmarks first, then the moving / held objects, then the rack, then the group.
+    # Landmarks, the movers, the group, the held object, the rack.
     rules = [s["rule"] for s in selected["slots"]]
-    assert rules[:2] == ["container", "container"]
-    assert rules[-1] == "group" and rules[-2] == "container"
-    assert set(rules[2:-2]) == {"moves", "in_hand"}
+    assert rules == [
+        "container",
+        "container",
+        "moves",
+        "moves",
+        "group",
+        "in_hand",
+        "container",
+    ]
+    assert [s["label"] for s in selected["slots"]][:2] == ["centrifuge#0", "pcr_machine#0"]
+    assert [s["label"] for s in selected["slots"]][-1] == "micro_tube_rack#0"
 
 
 def test_start_frame_is_the_first_dense_detected_frame():
@@ -239,7 +247,8 @@ def test_scene_motion_cancels_head_motion_and_keeps_the_mover():
         instances[-1], params=params, hands_by_frame=hands, racks=[], motion=motion
     )
     assert max(static_moves) < 2.0
-    assert 100 < plate.max_move_px < 140  # 4 px x 30 frames against the scene
+    # 4 px/frame against the scene; the medians of the two 20-frame halves sit 20 frames apart.
+    assert 60 < plate.max_move_px < 100
     assert plate.max_move_raw_px > plate.max_move_px
     # A box cut by the frame border never counts as a move.
     clipped = _instance(
@@ -355,8 +364,8 @@ def test_box_stream_and_schedule_pass_the_worker_parsers(tmp_path: Path):
         "centrifuge#0",
         "cell_culture_plate#0",
         "blue_pipette#0",
-        "micro_tube_rack#0",
         "micro_tube_group#0",
+        "micro_tube_rack#0",
     ]
     stream_path = tmp_path / "box_streams" / "T1.jsonl"
     report = ds.write_box_stream(

@@ -16,21 +16,28 @@ Steps (one run directory, each step reads the previous one's files)::
     battle-detector-seed apply-decisions --output runs/<run> --decisions runs/<run>/decisions.json
 
 * ``instances``: per view, same-class boxes on consecutive detected frames are associated by
-  IoU >= 0.3 (greedy one-to-one, a gap of up to ``--max-gap`` frames allowed) into instance
-  tracklets with per-frame boxes and scores; rows the detector's CPU fallback interpolated
-  are carried but flagged. Hands are tracked too, as probes, never as slots.
+  IoU >= 0.3 (greedy one-to-one, a gap of up to ``--max-gap`` frames allowed) into
+  tracklets; fragments of one object are then joined: across gaps up to ``--merge-gap``
+  when the last and first boxes overlap (the earlier one carried by the scene's motion in the
+  head camera), every instance of a class the bench holds once (the machines, one pipette of
+  each colour, the plate; ``--singleton-classes``), and container instances standing on the
+  same spot in a fixed camera (a rack seen with and without its tubes). Rows the detector's
+  CPU fallback interpolated are carried but flagged. Hands are tracked too, as probes.
 * ``select``: the plan's seed rule. A slot opens for a persistent instance (>= N frames
-  detected at score >= 0.3) that **moves** (smoothed box-centre displacement over a window,
-  ego-motion compensated by the median displacement of the other instances, > 20 px at 1920
-  at least once) or **sits inside a hand box** (centre inside `left_hand` / `right_hand` on
-  > 10% of its frames); the **named containers** (centrifuge, vortex mixer, PCR machine, the
-  racks) open once as static volumes (`role: container`); identical-instance classes with
-  >= 3 members in one rack become one **group** slot per rack unless a member moves, in which
-  case that member is its own slot; everything else stays `detector_only`. A per-view cap
-  keeps moving / in-hand objects first (by persistence, then movement), then containers, then
-  groups. Every slot has a start frame (the first detected frame of a dense run) and a label
-  ``<class>#<k>``; the slot set is enumerated over the whole window because the video-memory
-  worker needs the full multiplex set at frame 0.
+  detected at score >= 0.3) that **moves** (the median box centre over one window differs
+  from the median over the next by > 20 px at 1920; in the head camera 40 px, measured
+  against the scene's own motion, an affine map fitted to the other instances' centres, and
+  only for a class some fixed camera saw move or be held) or **sits inside a hand box**
+  (centre inside `left_hand` / `right_hand` on > 10% of its frames); the **named containers**
+  (centrifuge, vortex mixer, PCR machine, the racks) open once as static volumes
+  (`role: container`); identical-instance classes with >= 3 members in one rack become one
+  **group** slot per rack unless a member moves, in which case that member is its own slot;
+  nested same-class boxes and the same box under two class names are suppressed; tips never
+  open a slot; everything else stays `detector_only` with its reason. The per-view cap keeps,
+  in order, the landmark containers, the objects that moved (by persistence, then movement),
+  the groups, the objects only held, the racks. Every slot has a start frame (the first
+  detected frame of a dense run) and a label ``<class>#<k>``; the slot set is enumerated over
+  the whole window because the video-memory worker needs the full multiplex set at frame 0.
 * ``decode``: for each slot's seed frame the tight detector box is the only prompt to the
   SAM3 image decoder (MuggledSAM `sam3.1_multiplex.pt`, encoder side 1280, one image encode
   per distinct seed frame per view; other slots' centres as negatives optional); the
@@ -154,13 +161,14 @@ Box = tuple[float, float, float, float]
 class SeedParams:
     assoc_iou: float = 0.3
     assoc_min_score: float = 0.2
-    max_gap: int = 5
+    max_gap: int = 30
+    merge_gap: int = 300
     min_score: float = 0.3
     min_persistence: int = 15
     move_px: float = 20.0
     move_px_fpv: float = 40.0
     move_window: int = 30
-    smooth_frames: int = 5
+    move_stride: int = 5
     hand_fraction: float = 0.10
     rack_fraction: float = 0.5
     group_min_members: int = 3
@@ -172,6 +180,23 @@ class SeedParams:
     scene_motion_views: tuple[str, ...] = (FPV_VIEW,)
     slot_cap: int = 10
     landmark_classes: tuple[str, ...] = ("centrifuge", "vortex_mixer", "pcr_machine")
+    # Classes the FineBio bench holds exactly once (one machine of each kind, one pipette of
+    # each colour, one plate): every instance of the class in a view is the same object, so
+    # its fragments join whatever the boxes did in between. A bench assumption, on the record.
+    singleton_classes: tuple[str, ...] = (
+        "centrifuge",
+        "vortex_mixer",
+        "pcr_machine",
+        "magnetic_rack",
+        "trash_can",
+        "cell_culture_plate",
+        "cell_culture_plate_lid",
+        "blue_pipette",
+        "yellow_pipette",
+        "red_pipette",
+        "8_channel_pipette",
+    )
+    footprint_containment: float = 0.5
     seed_attempts: int = 3
     accept_iou: float = 0.6
     decode_margin: float = 0.15
@@ -180,6 +205,14 @@ class SeedParams:
     rack_classes: tuple[str, ...] = RACK_CLASSES
     group_classes: tuple[str, ...] = GROUP_CLASSES
     hand_classes: tuple[str, ...] = HAND_CLASSES
+    # Never a slot: hands are probes; pipette tips are consumables under the fixed cameras'
+    # resolution with no attachment observable (plan: no tip events).
+    excluded_classes: tuple[str, ...] = (
+        "blue_tip",
+        "yellow_tip",
+        "red_tip",
+        "8_channel_tip",
+    )
 
     def move_threshold_px(self, view: str, image_width: int) -> float:
         base = self.move_px_fpv if view == FPV_VIEW else self.move_px
@@ -344,6 +377,144 @@ def associate_instances(
     return done
 
 
+def merge_fragments(
+    instances: list[Instance], params: SeedParams, motion: SceneMotion | None = None
+) -> tuple[list[Instance], int]:
+    """Join same-class tracklets separated by a gap of up to `merge_gap` frames whose last and
+    first boxes overlap (IoU >= `assoc_iou`, the earlier box carried by the scene's motion in
+    a moving camera): the PCR machine hidden by the operator's body for seconds, a tip rack
+    the head camera looks away from, are one object, not thirty. Fragments are joined in
+    order of their first frame, the best-overlapping predecessor first; returns the merged
+    instances and the number of joins."""
+    ordered = sorted(instances, key=lambda i: (i.first_frame, i.instance))
+    ended: dict[str, list[Instance]] = defaultdict(list)
+    merged: list[Instance] = []
+    joins = 0
+    for inst in ordered:
+        candidates = ended[inst.object_class]
+        best: Instance | None = None
+        best_key = (0.0, 0)
+        for prev in candidates:
+            gap = inst.first_frame - prev.last_frame
+            if gap <= 0 or gap > params.merge_gap:
+                continue
+            last_box = prev.boxes[-1]
+            if motion is not None:
+                last_box = motion.map_box(prev.last_frame, inst.first_frame, last_box)
+            iou = box_iou(list(last_box), list(inst.boxes[0]))
+            if iou >= params.assoc_iou and (iou, -gap) > best_key:
+                best, best_key = prev, (iou, -gap)
+        if best is None:
+            merged.append(inst)
+            candidates.append(inst)
+        else:
+            best.frames.extend(inst.frames)
+            best.boxes.extend(inst.boxes)
+            best.scores.extend(inst.scores)
+            best.interpolated.extend(inst.interpolated)
+            joins += 1
+        # Predecessors that can no longer be reached are dropped from the candidate list.
+        ended[inst.object_class] = [
+            c for c in candidates if inst.first_frame - c.last_frame <= params.merge_gap
+        ]
+    merged.sort(key=lambda t: (t.first_frame, t.object_class, t.instance))
+    return merged, joins
+
+
+def _union_instances(members: list[Instance]) -> Instance:
+    """One instance from several of the same class: frames interleaved, the higher-scoring
+    box kept where two members report the same frame."""
+    members = sorted(members, key=lambda i: (i.first_frame, i.instance))
+    best: dict[int, tuple[float, Box, bool]] = {}
+    for inst in members:
+        for frame, box, score, interp in zip(
+            inst.frames, inst.boxes, inst.scores, inst.interpolated
+        ):
+            current = best.get(frame)
+            if current is None or score > current[0]:
+                best[frame] = (score, box, interp)
+    frames = sorted(best)
+    return Instance(
+        instance=members[0].instance,
+        view=members[0].view,
+        object_class=members[0].object_class,
+        frames=frames,
+        boxes=[best[f][1] for f in frames],
+        scores=[best[f][0] for f in frames],
+        interpolated=[best[f][2] for f in frames],
+    )
+
+
+def merge_singletons(
+    instances: list[Instance], singleton_classes: tuple[str, ...]
+) -> tuple[list[Instance], int]:
+    """Every instance of a class the bench holds exactly once (centrifuge, vortex mixer, PCR
+    machine, ...) is the same object: the lid opening changes the centrifuge's box beyond
+    the association IoU and the head camera looks away for minutes; one instance per view."""
+    by_class: dict[str, list[Instance]] = defaultdict(list)
+    out: list[Instance] = []
+    joins = 0
+    for inst in instances:
+        if inst.object_class in singleton_classes:
+            by_class[inst.object_class].append(inst)
+        else:
+            out.append(inst)
+    for members in by_class.values():
+        out.append(_union_instances(members))
+        joins += len(members) - 1
+    out.sort(key=lambda t: (t.first_frame, t.object_class, t.instance))
+    return out, joins
+
+
+def median_box(inst: Instance) -> Box:
+    arr = np.asarray(inst.boxes, dtype=float).reshape(-1, 4)
+    med = np.median(arr, axis=0)
+    return (float(med[0]), float(med[1]), float(med[2]), float(med[3]))
+
+
+def merge_footprints(
+    instances: list[Instance], classes: tuple[str, ...], params: SeedParams
+) -> tuple[list[Instance], int]:
+    """In a fixed camera, same-class container instances whose median boxes overlap (IoU >=
+    `assoc_iou` or one mostly inside the other) stand on the same spot and are one rack seen
+    with and without its tubes, or double-detected; identical racks side by side have
+    disjoint footprints and stay apart. Greedy single-link clustering per class."""
+    out: list[Instance] = []
+    joins = 0
+    by_class: dict[str, list[Instance]] = defaultdict(list)
+    for inst in instances:
+        if inst.object_class in classes:
+            by_class[inst.object_class].append(inst)
+        else:
+            out.append(inst)
+    for members in by_class.values():
+        footprints = [median_box(i) for i in members]
+        cluster = list(range(len(members)))
+
+        def root(i: int) -> int:
+            while cluster[i] != i:
+                cluster[i] = cluster[cluster[i]]
+                i = cluster[i]
+            return i
+
+        for a in range(len(members)):
+            for b in range(a + 1, len(members)):
+                fa, fb = footprints[a], footprints[b]
+                same_spot = box_iou(list(fa), list(fb)) >= params.assoc_iou or (
+                    max(containment(fa, fb), containment(fb, fa)) >= params.footprint_containment
+                )
+                if same_spot:
+                    cluster[root(a)] = root(b)
+        groups: dict[int, list[Instance]] = defaultdict(list)
+        for i, inst in enumerate(members):
+            groups[root(i)].append(inst)
+        for group in groups.values():
+            out.append(_union_instances(group) if len(group) > 1 else group[0])
+            joins += len(group) - 1
+    out.sort(key=lambda t: (t.first_frame, t.object_class, t.instance))
+    return out, joins
+
+
 def lifetimes_summary(instances: list[Instance]) -> dict[str, dict[str, Any]]:
     per_class: dict[str, list[int]] = defaultdict(list)
     for inst in instances:
@@ -438,9 +609,18 @@ def run_instances(args: argparse.Namespace) -> dict[str, Any]:
         )
         if not records:
             raise ValueError(f"{view}: no detection rows in the window")
-        instances = associate_instances(view, records, params)
+        fragments = associate_instances(view, records, params)
         frames = [int(r["frame_index"]) for r in records]
-        image_hw = tuple(int(v) for v in records[0]["image_hw"])
+        image_hw = (int(records[0]["image_hw"][0]), int(records[0]["image_hw"][1]))
+        motion = SceneMotion(fragments, params, image_hw, enabled=view in params.scene_motion_views)
+        instances, joins = merge_fragments(fragments, params, motion)
+        instances, singleton_joins = merge_singletons(instances, params.singleton_classes)
+        footprint_joins = 0
+        if not motion.enabled:
+            footprint_classes = tuple(
+                c for c in params.container_classes if c not in params.singleton_classes
+            )
+            instances, footprint_joins = merge_footprints(instances, footprint_classes, params)
         write_instances(output, view, instances, image_hw=image_hw, frames=frames)
         summary["views"][view] = {
             "image_hw": list(image_hw),
@@ -448,10 +628,19 @@ def run_instances(args: argparse.Namespace) -> dict[str, Any]:
             "frame_first": frames[0],
             "frame_last": frames[-1],
             "interpolated_frames": sum(bool(r.get("interpolated")) for r in records),
+            "fragments": len(fragments),
+            "fragment_joins": joins,
+            "singleton_joins": singleton_joins,
+            "footprint_joins": footprint_joins,
             "instances": len(instances),
             "per_class": lifetimes_summary(instances),
         }
-        print(f"{view}: {len(frames)} frames, {len(instances)} instances", flush=True)
+        print(
+            f"{view}: {len(frames)} frames, {len(fragments)} fragments -> "
+            f"{len(instances)} instances ({joins} gap joins, {singleton_joins} singleton, "
+            f"{footprint_joins} footprint)",
+            flush=True,
+        )
     summary["elapsed_seconds"] = time.perf_counter() - started
     fs_common.write_json(output / "instances" / "summary.json", summary)
     return summary
@@ -489,15 +678,13 @@ class SceneMotion:
     translation, rotation and zoom; parallax of tall objects remains and sets the fpv
     threshold), with one trimming pass that drops the worst quarter of the residuals so the
     moving objects do not pull the fit; fewer than six usable centres fall back to the median
-    translation, fewer than three to the identity. The map between two frames a window apart
-    is fitted directly when at least ten centres are shared, else composed from the
-    per-step maps (many points and a small motion per step). In a fixed view every map is the
-    identity to a fraction of a pixel.
+    translation, fewer than three to the identity. The map between two frames further apart is
+    composed from the per-step maps (many points and a small motion per step). Fixed cameras
+    do not need it and get the identity (`SeedParams.scene_motion_views`).
     """
 
     MIN_AFFINE_POINTS = 6
     MIN_TRANSLATION_POINTS = 3
-    MIN_DIRECT_POINTS = 10
     TRIM_FRACTION = 0.25
     INLIER_PX = 5.0
     BORDER_MARGIN_PX = 4.0
@@ -522,7 +709,7 @@ class SceneMotion:
                 self.centres[frame][inst.instance] = np.array(centre(box), dtype=float)
         self.frames = sorted(self.centres)
         self._index = {frame: i for i, frame in enumerate(self.frames)}
-        self._cumulative: list[np.ndarray] | None = None
+        self._cumulative: tuple[list[np.ndarray], list[np.ndarray]] | None = None
         self._cache: dict[tuple[int, int], np.ndarray] = {}
 
     @staticmethod
@@ -565,32 +752,60 @@ class SceneMotion:
         target = np.array([self.centres[frame_j][k] for k in shared]).reshape(-1, 2)
         return source, target
 
-    def _cumulative_maps(self) -> list[np.ndarray]:
+    def _cumulative_maps(self) -> tuple[list[np.ndarray], list[np.ndarray]]:
+        """Per chain frame the map from the first frame, and its inverse."""
         if self._cumulative is None:
             maps = [np.eye(3)]
             for previous, frame in zip(self.frames, self.frames[1:]):
                 step = self._fit(*self._shared(previous, frame))
                 maps.append(step @ maps[-1])
-            self._cumulative = maps
+            self._cumulative = (maps, [np.linalg.inv(m) for m in maps])
         return self._cumulative
 
+    def _chain_index(self, frame: int) -> int:
+        """The chain frame at or before `frame` (a frame without usable centres borrows its
+        predecessor's map)."""
+        index = self._index.get(frame)
+        if index is None:
+            index = max(0, int(np.searchsorted(self.frames, frame, side="right")) - 1)
+        return index
+
     def matrix(self, frame_i: int, frame_j: int) -> np.ndarray:
-        """The 3x3 homogeneous map carrying frame_i scene points onto frame_j."""
-        if not self.enabled:
+        """The 3x3 homogeneous map carrying frame_i scene points onto frame_j: fitted directly
+        on the centres shared by the two frames (a mover a window apart is a clear outlier),
+        else composed from the per-step fits when too few are shared (a long gap)."""
+        if not self.enabled or not self.frames:
+            return np.eye(3)
+        if frame_i == frame_j:
             return np.eye(3)
         key = (frame_i, frame_j)
-        if key in self._cache:
-            return self._cache[key]
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
         source, target = self._shared(frame_i, frame_j)
-        if source.shape[0] >= self.MIN_DIRECT_POINTS:
+        if source.shape[0] >= self.MIN_AFFINE_POINTS:
             matrix = self._fit(source, target)
-        elif frame_i in self._index and frame_j in self._index:
-            maps = self._cumulative_maps()
-            matrix = maps[self._index[frame_j]] @ np.linalg.inv(maps[self._index[frame_i]])
         else:
-            matrix = self._fit(source, target)
+            maps, inverses = self._cumulative_maps()
+            matrix = maps[self._chain_index(frame_j)] @ inverses[self._chain_index(frame_i)]
         self._cache[key] = matrix
         return matrix
+
+    def map_point(self, frame_i: int, frame_j: int, point: np.ndarray) -> np.ndarray:
+        return (self.matrix(frame_i, frame_j) @ np.append(point, 1.0))[:2]
+
+    def map_box(self, frame_i: int, frame_j: int, box: Box) -> Box:
+        """A box carried by the scene's motion (its two corners mapped)."""
+        if not self.enabled:
+            return box
+        p0 = self.map_point(frame_i, frame_j, np.array(box[:2]))
+        p1 = self.map_point(frame_i, frame_j, np.array(box[2:]))
+        return (
+            float(min(p0[0], p1[0])),
+            float(min(p0[1], p1[1])),
+            float(max(p0[0], p1[0])),
+            float(max(p0[1], p1[1])),
+        )
 
     def residual(
         self, frame_i: int, frame_j: int, point_i: np.ndarray, point_j: np.ndarray
@@ -600,17 +815,57 @@ class SceneMotion:
         return float(np.linalg.norm(point_j - predicted[:2]))
 
 
-def smoothed_centres(boxes: list[Box], smooth_frames: int) -> np.ndarray:
-    raw = np.array([centre(b) for b in boxes], dtype=float).reshape(-1, 2)
-    if raw.shape[0] <= 2 or smooth_frames <= 1:
-        return raw
-    half = smooth_frames // 2
-    out = np.empty_like(raw)
-    for i in range(raw.shape[0]):
-        # Symmetric window, shrunk at the ends so a moving centre is not biased there.
-        reach = min(half, i, raw.shape[0] - 1 - i)
-        out[i] = np.median(raw[i - reach : i + reach + 1], axis=0)
-    return out
+def sustained_displacement(
+    frames: list[int],
+    boxes: list[Box],
+    *,
+    motion: SceneMotion,
+    window: int,
+    stride: int,
+    min_points: int,
+) -> tuple[float, float, int | None]:
+    """The largest jump of the object's median position between two consecutive windows.
+
+    For every `stride`-th detected frame ``t`` the centres of the detected boxes in
+    ``[t - window, t)`` and ``[t, t + window)`` are carried into frame ``t`` by the scene's
+    motion and their medians compared; a hand passing over the box for a few frames shifts
+    neither median, a relocation shifts the second. Boxes cut by the frame border are left
+    out. Returns (max compensated jump, max raw jump, the frame ``t`` of the max).
+    """
+    arr = np.asarray(frames)
+    centres = np.array([centre(b) for b in boxes], dtype=float).reshape(-1, 2)
+    usable = np.array(
+        [not box_clipped(b, motion.image_hw, SceneMotion.BORDER_MARGIN_PX) for b in boxes]
+    )
+    best = best_raw = 0.0
+    best_frame: int | None = None
+    for k in range(len(frames)):
+        t = frames[k]
+        # Window boundaries on a frame grid shared by every instance, so the scene-motion
+        # maps of one boundary frame serve all of them.
+        if t % max(1, stride):
+            continue
+        lo = int(np.searchsorted(arr, t - window, side="left"))
+        hi = int(np.searchsorted(arr, t + window, side="left"))
+        left = [i for i in range(lo, k) if usable[i]]
+        right = [i for i in range(k, hi) if usable[i]]
+        if len(left) < min_points or len(right) < min_points:
+            continue
+        raw_jump = float(
+            np.linalg.norm(np.median(centres[right], axis=0) - np.median(centres[left], axis=0))
+        )
+        if motion.enabled:
+            mapped_left = np.array([motion.map_point(frames[i], t, centres[i]) for i in left])
+            mapped_right = np.array([motion.map_point(frames[i], t, centres[i]) for i in right])
+            jump = float(
+                np.linalg.norm(np.median(mapped_right, axis=0) - np.median(mapped_left, axis=0))
+            )
+        else:
+            jump = raw_jump
+        best_raw = max(best_raw, raw_jump)
+        if jump > best:
+            best, best_frame = jump, int(t)
+    return best, best_raw, best_frame
 
 
 @dataclass
@@ -662,21 +917,14 @@ def instance_stats(
     keep = [i for i, f in enumerate(inst.frames) if f in det_set]
     frames = [inst.frames[i] for i in keep]
     boxes = [inst.boxes[i] for i in keep]
-    max_move = max_raw = 0.0
-    move_frame: int | None = None
-    if len(frames) >= 2:
-        smooth = smoothed_centres(boxes, params.smooth_frames)
-        raw = np.array([centre(b) for b in boxes])
-        arr = np.asarray(frames)
-        clipped = [box_clipped(b, motion.image_hw, SceneMotion.BORDER_MARGIN_PX) for b in boxes]
-        for i in range(len(frames)):
-            j = int(np.searchsorted(arr, frames[i] + params.move_window, side="right") - 1)
-            if j <= i or clipped[i] or clipped[j]:
-                continue
-            move = motion.residual(frames[i], frames[j], smooth[i], smooth[j])
-            max_raw = max(max_raw, float(np.linalg.norm(raw[j] - raw[i])))
-            if move > max_move:
-                max_move, move_frame = move, frames[i]
+    max_move, max_raw, move_frame = sustained_displacement(
+        frames,
+        boxes,
+        motion=motion,
+        window=params.move_window,
+        stride=params.move_stride,
+        min_points=max(3, params.move_window // 3),
+    )
     in_hand = 0
     for frame, box in zip(frames, boxes):
         c = centre(box)
@@ -931,6 +1179,7 @@ def select_view_slots(
             "reason": reason,
         }
 
+    excluded = 0
     for inst in instances:
         st = stats.get(inst.instance)
         if st is None:
@@ -939,6 +1188,9 @@ def select_view_slots(
             not_persistent += 1
             continue
         if inst.instance in suppressed:
+            continue
+        if inst.object_class in params.excluded_classes:
+            excluded += 1
             continue
         moves = st.max_move_px > threshold
         in_hand = st.in_hand_fraction > params.hand_fraction
@@ -983,26 +1235,39 @@ def select_view_slots(
                             f"{params.group_min_members} members, static",
                         )
                     )
-    dynamic.sort(key=lambda t: (-len(t[1].detected_frames), -t[1].max_move_px, t[0].instance))
-    containers.sort(
-        key=lambda t: (
+
+    # Ranking under the cap. Objects: what moved (tier 0) before what only sat under a hand
+    # (tier 1), by persistence then movement. Containers are volumes whatever opened them: a
+    # landmark keeps its place (a centrifuge whose lid is worked "moves"; the rule stays on
+    # the record, the role is container), the racks follow the objects, the ones in use
+    # (moved or handled) first.
+    def object_key(t: tuple[Instance, InstanceStats, str]) -> tuple:
+        return (0 if t[2] == "moves" else 1, -len(t[1].detected_frames), -t[1].max_move_px)
+
+    def container_key(t: tuple[Instance, InstanceStats, str]) -> tuple:
+        return (
             container_priority(t[0].object_class, params),
+            0 if t[2] in ("moves", "in_hand") else 1,
             -len(t[1].detected_frames),
             t[0].instance,
         )
+
+    every_container = [(i, s, "container") for i, s in containers] + [
+        t for t in dynamic if t[0].object_class in params.container_classes
+    ]
+    landmarks = sorted(
+        (t for t in every_container if t[0].object_class in params.landmark_classes),
+        key=container_key,
+    )
+    racks_only = sorted(
+        (t for t in every_container if t[0].object_class not in params.landmark_classes),
+        key=container_key,
+    )
+    dynamic = sorted(
+        (t for t in dynamic if t[0].object_class not in params.container_classes),
+        key=object_key,
     )
     groups.sort(key=lambda g: (-sum(len(st.detected_frames) for _, st in g[1]), g[0]))
-    # A landmark keeps its place under the cap whatever rule opened it (a centrifuge whose
-    # lid is worked "moves"; the rule stays on the record, the role is container).
-    landmarks = [
-        (inst, st, "container")
-        for inst, st in containers
-        if inst.object_class in params.landmark_classes
-    ]
-    landmarks += [t for t in dynamic if t[0].object_class in params.landmark_classes]
-    landmarks.sort(key=lambda t: (container_priority(t[0].object_class, params), t[0].instance))
-    dynamic = [t for t in dynamic if t[0].object_class not in params.landmark_classes]
-    racks_only = [t for t in containers if t[0].object_class not in params.landmark_classes]
 
     ordered: list[Slot] = []
     class_counter: dict[str, int] = defaultdict(int)
@@ -1038,39 +1303,44 @@ def select_view_slots(
 
     # Order under the cap: the landmark containers (the plan's centrifuge, vortex, PCR
     # machine), the moving / held objects by persistence then movement, the racks, the groups.
-    for inst, st, rule in landmarks:
-        ordered.append(instance_slot(inst, st, rule))
-    for inst, st, rule in dynamic:
-        ordered.append(instance_slot(inst, st, rule))
-    for inst, st in racks_only:
-        ordered.append(instance_slot(inst, st, "container"))
-    for rack_id, members in groups:
+    def group_slot(rack_id: str, members: list[tuple[Instance, InstanceStats]]) -> Slot:
         cls = members[0][0].object_class
         g_frames, g_boxes, g_scores = group_boxes([m for m, _ in members])
         detected = sorted({f for _, st in members for f in st.detected_frames})
         start = min(int(st.start_frame) for _, st in members)  # type: ignore[arg-type]
-        ordered.append(
-            Slot(
-                view=view,
-                slot=len(ordered),
-                label=label_for(f"{cls}_group"),
-                object_class=f"{cls}_group",
-                role="group",
-                rule="group",
-                instance=rack_id,
-                members=[m.instance for m, _ in members],
-                start_frame=start,
-                first_frame=g_frames[0],
-                last_frame=g_frames[-1],
-                detected_frames=len(detected),
-                max_move_px=max(st.max_move_px for _, st in members),
-                move_frame=None,
-                in_hand_fraction=max(st.in_hand_fraction for _, st in members),
-                seed_candidates=seed_candidates(
-                    g_frames, g_boxes, g_scores, detected, start, params
-                ),
-            )
+        return Slot(
+            view=view,
+            slot=len(ordered),
+            label=label_for(f"{cls}_group"),
+            object_class=f"{cls}_group",
+            role="group",
+            rule="group",
+            instance=rack_id,
+            members=[m.instance for m, _ in members],
+            start_frame=start,
+            first_frame=g_frames[0],
+            last_frame=g_frames[-1],
+            detected_frames=len(detected),
+            max_move_px=max(st.max_move_px for _, st in members),
+            move_frame=None,
+            in_hand_fraction=max(st.in_hand_fraction for _, st in members),
+            seed_candidates=seed_candidates(g_frames, g_boxes, g_scores, detected, start, params),
         )
+
+    # Order under the cap: landmarks, the objects that moved, the tube groups (the plan's one
+    # track per rack), the objects that only sat under a hand, the racks.
+    for inst, st, rule in landmarks:
+        ordered.append(instance_slot(inst, st, rule))
+    for inst, st, rule in dynamic:
+        if rule == "moves":
+            ordered.append(instance_slot(inst, st, rule))
+    for rack_id, members in groups:
+        ordered.append(group_slot(rack_id, members))
+    for inst, st, rule in dynamic:
+        if rule != "moves":
+            ordered.append(instance_slot(inst, st, rule))
+    for inst, st, rule in racks_only:
+        ordered.append(instance_slot(inst, st, rule))
     kept, capped = ordered[: params.slot_cap], ordered[params.slot_cap :]
     for i, slot in enumerate(kept):
         slot.slot = i
@@ -1089,6 +1359,7 @@ def select_view_slots(
         ),
         "detector_only": {cls: rows for cls, rows in sorted(detector_only.items())},
         "not_persistent_instances": not_persistent,
+        "excluded_class_instances": excluded,
         "hand_instances": sum(1 for i in instances if i.object_class in params.hand_classes),
         "slots_by_rule": {rule: sum(1 for s in kept if s.rule == rule) for rule in RULES},
         "_instances": by_id,
@@ -2095,12 +2366,13 @@ def _add_param_arguments(parser: argparse.ArgumentParser, names: tuple[str, ...]
         "assoc_iou": "IoU for same-class association across frames",
         "assoc_min_score": "detections below this score are not associated at all",
         "max_gap": "frames a tracklet may be unmatched before it closes",
+        "merge_gap": "frames across which two same-class fragments with overlapping boxes join",
         "min_score": "a frame counts as detected at this score (the plan's 0.3)",
         "min_persistence": "detected frames (score >= min-score) a slot needs",
         "move_px": "box-centre displacement over the window that opens a slot, px at 1920",
         "move_px_fpv": "the same for the head camera (ego-compensated displacement)",
         "move_window": "frames of the displacement window",
-        "smooth_frames": "median filter over detected frames before measuring displacement",
+        "move_stride": "every n-th detected frame is a window boundary for the displacement test",
         "hand_fraction": "fraction of frames with the centre inside a hand box that opens a slot",
         "rack_fraction": "fraction of frames inside one rack box that makes an instance a member",
         "group_min_members": "members in one rack that form a group slot",
@@ -2114,6 +2386,9 @@ def _add_param_arguments(parser: argparse.ArgumentParser, names: tuple[str, ...]
         "decode_margin": "box margin (fraction) of the second prompt when the tight box fails",
         "container_classes": "comma-separated container classes (static volumes)",
         "landmark_classes": "comma-separated containers ranked before the moving objects",
+        "singleton_classes": "comma-separated classes with one instance per view (all merged)",
+        "footprint_containment": "median-box containment that merges two container instances",
+        "excluded_classes": "comma-separated classes that never open a slot (tips)",
         "rack_classes": "comma-separated rack classes (group hosts)",
         "group_classes": "comma-separated identical-instance classes",
     }
@@ -2160,7 +2435,18 @@ def build_parser() -> argparse.ArgumentParser:
     inst.add_argument("--start", type=int, default=None, help="first raw frame (inclusive)")
     inst.add_argument("--end", type=int, default=None, help="last raw frame (exclusive)")
     inst.add_argument("--output", type=Path, required=True)
-    _add_param_arguments(inst, ("assoc_iou", "assoc_min_score", "max_gap"))
+    _add_param_arguments(
+        inst,
+        (
+            "assoc_iou",
+            "assoc_min_score",
+            "max_gap",
+            "merge_gap",
+            "singleton_classes",
+            "container_classes",
+            "footprint_containment",
+        ),
+    )
 
     sel = sub.add_parser("select", help="The seed rule over the instances.")
     sel.add_argument("--output", type=Path, required=True)
@@ -2175,7 +2461,7 @@ def build_parser() -> argparse.ArgumentParser:
             "move_px",
             "move_px_fpv",
             "move_window",
-            "smooth_frames",
+            "move_stride",
             "hand_fraction",
             "rack_fraction",
             "group_min_members",
@@ -2188,6 +2474,7 @@ def build_parser() -> argparse.ArgumentParser:
             "landmark_classes",
             "rack_classes",
             "group_classes",
+            "excluded_classes",
         ),
     )
 
