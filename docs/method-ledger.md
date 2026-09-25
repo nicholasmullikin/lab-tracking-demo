@@ -497,6 +497,26 @@ pointed at the v6 package with its segmentation preset, superseded banners on th
 ensemble-v2 review guides, `battle_plan.agent.final.md` untracked. No GPU, no run re-scored.
 Record: [Sep 24: cleanup pass](#sep-24-cleanup-pass).
 
+#### Sep 24, night: FineBio preflight, the plan's assumptions checked before it starts
+
+The user asked for every assumption behind the FineBio 3D-tracking plan to be challenged
+first. Checked on the data, CPU plus about five GPU minutes: `T1..T5` are cameras `1,2,3,4,6`
+in order and P03 is day 221013 (ArUco markers vs the shipped extrinsics, 2-7 px on cameras 1-4);
+the top-down camera 6 is 6.4 cm / 94 px off its shipped pose and is re-solved from the markers;
+the shipped fpv pose is a marker PnP good to 0.9 px on 97-99% of frames; the six videos are
+synchronised to +/-1 frame; five-view triangulation of static objects returns their half
+heights in centimetres with a leave-one-out residual of 10 px median / 25 px p90; the plate
+triangulated from the fixed cameras lands inside the fpv detector box on 45/45 frames. SAM3
+given the FineBio detector's box as its only prompt segments the transparent plate in all six
+views (bbox IoU 0.77-0.94) and holds it, the pipette, the centrifuge and a tube for 300 frames
+in four views with one hand occlusion re-acquired; encoder side 1920 adds nothing; objects under
+~30 px (single micro tubes) are marginal. The in-hand object is the weakest detection in every
+fixed view (0.44-0.57), so seeding by score persistence picks the bench, not the hand; protocol
+01 barely moves anything and protocol 03 (`P03_03_01`, same rig, six centrifuge cycles,
+six-view annotated frame 916) is the trial to use. Eleven plan modifications proposed, none
+applied. Record: [`docs/preflight-2026-09-24-finebio.md`](preflight-2026-09-24-finebio.md);
+outputs `runs/preflight-finebio-20260924/` (gitignored) including `preflight.rrd`.
+
 ### Plan versus actual
 
 What the plan said, what happened instead, and why, in one line each.
