@@ -648,6 +648,202 @@ def _clock_scan_text(rig_reference: dict[str, Any] | None) -> str:
     return "\n".join(lines)
 
 
+HAND_COLOURS: tuple[tuple[str, list[int]], ...] = (
+    ("left_hand", [255, 128, 0]),
+    ("right_hand", [0, 128, 255]),
+)
+
+
+def log_world_static(cams: dict[str, Camera], markers: np.ndarray | None) -> None:
+    """The world frame (z down), bench outline, board origin, the day's markers, one static
+    frustum per fixed camera, and cross-check 1 for the fixed views: the markers projected
+    through each camera's pose (`world/<view>/markers_projected`)."""
+    import rerun as rr
+
+    rr.log("world", rr.ViewCoordinates.RIGHT_HAND_Z_DOWN, static=True)
+    rr.log(
+        "world/bench",
+        rr.LineStrips3D([BENCH_OUTLINE_CM], colors=[[120, 120, 120]], radii=0.3),
+        static=True,
+    )
+    rr.log(
+        "world/board_origin",
+        rr.Points3D([[0, 0, 0]], colors=[[255, 255, 255]], radii=0.8, labels=["board origin"]),
+        static=True,
+    )
+    if markers is not None:
+        rr.log(
+            "world/markers",
+            rr.LineStrips3D(
+                [np.vstack([m, m[:1]]) for m in markers],
+                colors=[[255, 60, 60]],
+                radii=0.25,
+                labels=[f"marker {i}" for i in range(len(markers))],
+            ),
+            static=True,
+        )
+    for v, cam in cams.items():
+        log_camera_frustum(f"world/{v}", cam, image_plane_distance=15.0, static=True)
+        if markers is not None:
+            log_markers_projected(f"world/{v}/markers_projected", cam, markers, static=True)
+
+
+def log_camera_frustum(
+    entity: str, cam: Camera, *, image_plane_distance: float, static: bool = False
+) -> None:
+    """`Transform3D` + `Pinhole` of one camera at `entity` (a fixed view static, the fpv per
+    frame)."""
+    import rerun as rr
+
+    rr.log(entity, rr.Transform3D(translation=cam.centre, mat3x3=cam.R.T), static=static)
+    rr.log(
+        entity,
+        rr.Pinhole(
+            image_from_camera=cam.K,
+            resolution=list(cam.size),
+            camera_xyz=rr.ViewCoordinates.RDF,
+            image_plane_distance=image_plane_distance,
+        ),
+        static=static,
+    )
+
+
+def log_markers_projected(
+    entity: str,
+    cam: Camera,
+    markers: np.ndarray,
+    *,
+    colour: list[int] | None = None,
+    static: bool = False,
+) -> None:
+    """Cross-check 1: the day's marker corners projected through a camera pose."""
+    import rerun as rr
+
+    proj = cam.project(markers.reshape(-1, 3)).reshape(-1, 4, 2)
+    rr.log(
+        entity,
+        rr.LineStrips2D(
+            [np.vstack([m, m[:1]]) for m in proj],
+            colors=[colour or [60, 255, 60]],
+            radii=1.5,
+            labels=[f"m{i}" for i in range(len(proj))],
+        ),
+        static=static,
+    )
+
+
+def log_static_objects(
+    points: Sequence[np.ndarray],
+    labels: Sequence[str],
+    cams: dict[str, Camera],
+    reference: dict[str, Any] | None = None,
+) -> None:
+    """Cross-check 3: the static objects' triangulated points (`world/static_objects`) and
+    their reprojection into every fixed view, beside the preflight's reference points."""
+    import rerun as rr
+
+    if points:
+        rr.log(
+            "world/static_objects",
+            rr.Points3D(np.array(points), colors=[[80, 220, 80]], radii=1.0, labels=list(labels)),
+            static=True,
+        )
+        for v, cam in cams.items():
+            rr.log(
+                f"world/{v}/static_reprojected",
+                rr.Points2D(
+                    cam.project(np.array(points)),
+                    colors=[[80, 220, 80]],
+                    radii=4,
+                    labels=list(labels),
+                ),
+                static=True,
+            )
+    if reference and "static" in reference:
+        ref = reference["static"]
+        rr.log(
+            "world/static_reference",
+            rr.Points3D(
+                np.array([r["point_cm"] for r in ref]),
+                colors=[[220, 80, 220]],
+                radii=0.7,
+                labels=[f"{r['class']} (preflight)" for r in ref],
+            ),
+            static=True,
+        )
+
+
+def log_clock_scan(text: str) -> None:
+    """Cross-check 5: the clock scan as a markdown document at `checks/clock_scan`."""
+    import rerun as rr
+
+    rr.log(
+        "checks/clock_scan", rr.TextDocument(text, media_type=rr.MediaType.MARKDOWN), static=True
+    )
+
+
+def log_fpv_frame(
+    fpv_cam: Camera,
+    cams: dict[str, Camera],
+    markers: np.ndarray | None,
+    trail: list[np.ndarray],
+) -> None:
+    """Per frame: the fpv frustum, its trail (appended in place), the markers through its
+    pose (cross-check 1) and its camera centre in every fixed view (cross-check 2)."""
+    import rerun as rr
+
+    log_camera_frustum("world/fpv", fpv_cam, image_plane_distance=10.0)
+    trail.append(fpv_cam.centre)
+    rr.log(
+        "world/fpv_trail",
+        rr.LineStrips3D([np.array(trail)], colors=[[255, 200, 0]], radii=0.2),
+    )
+    if markers is not None:
+        log_markers_projected("world/fpv/markers_projected", fpv_cam, markers)
+    for v, cam in cams.items():
+        rr.log(
+            f"world/{v}/fpv_camera_centre",
+            rr.Points2D(
+                cam.project(fpv_cam.centre),
+                colors=[[255, 255, 0]],
+                radii=8,
+                labels=["fpv camera"],
+            ),
+        )
+
+
+def clear_fpv_frame(cams: dict[str, Camera]) -> None:
+    """A frame without a valid fpv pose clears the per-frame fpv entities."""
+    import rerun as rr
+
+    rr.log("world/fpv", rr.Clear(recursive=False))
+    rr.log("world/fpv/markers_projected", rr.Clear(recursive=False))
+    for v in cams:
+        rr.log(f"world/{v}/fpv_camera_centre", rr.Clear(recursive=False))
+
+
+def log_hand_probe(
+    cls: str, point: Sequence[float], colour: list[int], cams: dict[str, Camera]
+) -> None:
+    """Cross-check 4: a hand triangulated as a probe, in 3D and reprojected into every view."""
+    import rerun as rr
+
+    rr.log(f"world/{cls}", rr.Points3D([point], colors=[colour], radii=1.5, labels=[cls]))
+    for v, cam in cams.items():
+        rr.log(
+            f"world/{v}/{cls}_triangulated",
+            rr.Points2D(cam.project(np.array(point)), colors=[colour], radii=6, labels=[cls]),
+        )
+
+
+def clear_hand_probe(cls: str, cams: dict[str, Camera]) -> None:
+    import rerun as rr
+
+    rr.log(f"world/{cls}", rr.Clear(recursive=False))
+    for v in cams:
+        rr.log(f"world/{v}/{cls}_triangulated", rr.Clear(recursive=False))
+
+
 def log_recording(inputs: RerunInputs, path: Path) -> Path:
     """One `.rrd`: the world (bench, markers, frusta, fpv trail, per-frame points, static
     reference), the seven cross-checks as entities, six camera tiles, time series. No viewer."""
@@ -685,52 +881,7 @@ def log_recording(inputs: RerunInputs, path: Path) -> Path:
         collapse_panels=True,
     )
     init_and_save(f"finebio-slice-{inputs.trial}", path, default_blueprint=blueprint)
-    rr.log("world", rr.ViewCoordinates.RIGHT_HAND_Z_DOWN, static=True)
-    rr.log(
-        "world/bench",
-        rr.LineStrips3D([BENCH_OUTLINE_CM], colors=[[120, 120, 120]], radii=0.3),
-        static=True,
-    )
-    rr.log(
-        "world/board_origin",
-        rr.Points3D([[0, 0, 0]], colors=[[255, 255, 255]], radii=0.8, labels=["board origin"]),
-        static=True,
-    )
-    if inputs.markers is not None:
-        rr.log(
-            "world/markers",
-            rr.LineStrips3D(
-                [np.vstack([m, m[:1]]) for m in inputs.markers],
-                colors=[[255, 60, 60]],
-                radii=0.25,
-                labels=[f"marker {i}" for i in range(len(inputs.markers))],
-            ),
-            static=True,
-        )
-    for v, cam in inputs.cams.items():
-        rr.log(f"world/{v}", rr.Transform3D(translation=cam.centre, mat3x3=cam.R.T), static=True)
-        rr.log(
-            f"world/{v}",
-            rr.Pinhole(
-                image_from_camera=cam.K,
-                resolution=list(cam.size),
-                camera_xyz=rr.ViewCoordinates.RDF,
-                image_plane_distance=15.0,
-            ),
-            static=True,
-        )
-        if inputs.markers is not None:
-            proj = cam.project(inputs.markers.reshape(-1, 3)).reshape(-1, 4, 2)
-            rr.log(
-                f"world/{v}/markers_projected",
-                rr.LineStrips2D(
-                    [np.vstack([m, m[:1]]) for m in proj],
-                    colors=[[60, 255, 60]],
-                    radii=1.5,
-                    labels=[f"m{i}" for i in range(len(proj))],
-                ),
-                static=True,
-            )
+    log_world_static(inputs.cams, inputs.markers)
     # Cross-check 3: static objects, the slice's window medians beside the preflight's points.
     static_pts, static_labels = [], []
     for cls in STATIC_CLASSES:
@@ -738,42 +889,8 @@ def log_recording(inputs: RerunInputs, path: Path) -> Path:
         if point is not None:
             static_pts.append(point)
             static_labels.append(cls)
-    if static_pts:
-        rr.log(
-            "world/static_objects",
-            rr.Points3D(
-                np.array(static_pts), colors=[[80, 220, 80]], radii=1.0, labels=static_labels
-            ),
-            static=True,
-        )
-        for v, cam in inputs.cams.items():
-            rr.log(
-                f"world/{v}/static_reprojected",
-                rr.Points2D(
-                    cam.project(np.array(static_pts)),
-                    colors=[[80, 220, 80]],
-                    radii=4,
-                    labels=static_labels,
-                ),
-                static=True,
-            )
-    if inputs.rig_reference and "static" in inputs.rig_reference:
-        ref = inputs.rig_reference["static"]
-        rr.log(
-            "world/static_reference",
-            rr.Points3D(
-                np.array([r["point_cm"] for r in ref]),
-                colors=[[220, 80, 220]],
-                radii=0.7,
-                labels=[f"{r['class']} (preflight)" for r in ref],
-            ),
-            static=True,
-        )
-    rr.log(
-        "checks/clock_scan",
-        rr.TextDocument(_clock_scan_text(inputs.rig_reference), media_type=rr.MediaType.MARKDOWN),
-        static=True,
-    )
+    log_static_objects(static_pts, static_labels, inputs.cams, inputs.rig_reference)
+    log_clock_scan(_clock_scan_text(inputs.rig_reference))
     rr.log(
         "checks/summary",
         rr.TextDocument(
@@ -801,48 +918,9 @@ def log_recording(inputs: RerunInputs, path: Path) -> Path:
         all_cams = dict(inputs.cams)
         if fpv_cam is not None:
             all_cams[FINEBIO_FPV_VIEW] = fpv_cam
-            rr.log("world/fpv", rr.Transform3D(translation=fpv_cam.centre, mat3x3=fpv_cam.R.T))
-            rr.log(
-                "world/fpv",
-                rr.Pinhole(
-                    image_from_camera=fpv_cam.K,
-                    resolution=list(fpv_cam.size),
-                    camera_xyz=rr.ViewCoordinates.RDF,
-                    image_plane_distance=10.0,
-                ),
-            )
-            fpv_trail.append(fpv_cam.centre)
-            rr.log(
-                "world/fpv_trail",
-                rr.LineStrips3D([np.array(fpv_trail)], colors=[[255, 200, 0]], radii=0.2),
-            )
-            if inputs.markers is not None:
-                proj = fpv_cam.project(inputs.markers.reshape(-1, 3)).reshape(-1, 4, 2)
-                rr.log(
-                    "world/fpv/markers_projected",
-                    rr.LineStrips2D(
-                        [np.vstack([m, m[:1]]) for m in proj],
-                        colors=[[60, 255, 60]],
-                        radii=1.5,
-                        labels=[f"m{i}" for i in range(len(proj))],
-                    ),
-                )
-            # Cross-check 2: the fpv camera centre in every fixed view.
-            for v, cam in inputs.cams.items():
-                rr.log(
-                    f"world/{v}/fpv_camera_centre",
-                    rr.Points2D(
-                        cam.project(fpv_cam.centre),
-                        colors=[[255, 255, 0]],
-                        radii=8,
-                        labels=["fpv camera"],
-                    ),
-                )
+            log_fpv_frame(fpv_cam, inputs.cams, inputs.markers, fpv_trail)
         else:
-            rr.log("world/fpv", rr.Clear(recursive=False))
-            rr.log("world/fpv/markers_projected", rr.Clear(recursive=False))
-            for v in inputs.cams:
-                rr.log(f"world/{v}/fpv_camera_centre", rr.Clear(recursive=False))
+            clear_fpv_frame(inputs.cams)
         if caps and index % inputs.image_every == 0:
             for v, cap in caps.items():
                 cap.set(cv2.CAP_PROP_POS_FRAMES, frame)
@@ -918,27 +996,16 @@ def log_recording(inputs: RerunInputs, path: Path) -> Path:
                     ),
                 )
         # Cross-check 4: hands as probes (detector set).
-        for cls, col in (("left_hand", [255, 128, 0]), ("right_hand", [0, 128, 255])):
+        for cls, col in HAND_COLOURS:
             hand = next(
                 (p for p in points if p.object_class == cls and p.source_set == "detector"), None
             )
             if hand is None:
                 if (cls, "3d") in hands_seen:
-                    rr.log(f"world/{cls}", rr.Clear(recursive=False))
-                    for v in inputs.cams:
-                        rr.log(f"world/{v}/{cls}_triangulated", rr.Clear(recursive=False))
+                    clear_hand_probe(cls, inputs.cams)
                 continue
             hands_seen.add((cls, "3d"))
-            rr.log(
-                f"world/{cls}", rr.Points3D([hand.point_cm], colors=[col], radii=1.5, labels=[cls])
-            )
-            for v, cam in inputs.cams.items():
-                rr.log(
-                    f"world/{v}/{cls}_triangulated",
-                    rr.Points2D(
-                        cam.project(np.array(hand.point_cm)), colors=[col], radii=6, labels=[cls]
-                    ),
-                )
+            log_hand_probe(cls, hand.point_cm, col, inputs.cams)
         # Cross-checks 6 and 7: LOO series per class and view, hand-off residual for the plate.
         for p in points:
             if p.source_set != "detector":
