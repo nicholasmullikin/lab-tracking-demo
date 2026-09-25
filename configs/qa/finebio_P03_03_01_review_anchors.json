@@ -1,0 +1,1044 @@
+{
+  "schema": "battle-finebio-anchors/1",
+  "config_kind": "finebio_review_anchor_config",
+  "config_id": "finebio-P03_03_01-review-anchors",
+  "anchor_kind": "human_review_anchor",
+  "clip_config": "configs/clips/finebio_P03_03_01_600-4200.json",
+  "trial": "P03_03_01",
+  "window": {
+    "start": 600,
+    "end": 4200,
+    "frame_index_offset": 600
+  },
+  "frame_convention": "raw = shipped video frame index; proxy frame = raw - frame_index_offset (the arms' analysis frame); masks under a worker run are named by the proxy frame",
+  "views": {
+    "six_view": [
+      "T1",
+      "T2",
+      "T3",
+      "T4",
+      "T5",
+      "fpv"
+    ],
+    "pair": [
+      "fpv",
+      "T4"
+    ]
+  },
+  "fixed_view": "T4",
+  "fixed_view_reason": "T4 has the most individually tracked slots (11 non-group, 0 group; others: T1 7+4 group, T2 10+1 group, T3 10+1 group, T5 9+2 group) and its plate slot has a mask on 97.1% of the window (det-box IoU median 0.9063); group slots have no single detector box and are outside the disagreement pool",
+  "fixed_view_candidates": {
+    "T1": {
+      "non_group_slots": 7,
+      "group_slots": 4,
+      "plate_slot": true,
+      "plate_frames_with_mask": 3600,
+      "plate_visible_fraction": 1.0,
+      "plate_detector_box_iou_median": 0.9436,
+      "detector_box_iou_median": 0.9177
+    },
+    "T2": {
+      "non_group_slots": 10,
+      "group_slots": 1,
+      "plate_slot": true,
+      "plate_frames_with_mask": 3523,
+      "plate_visible_fraction": 0.9786,
+      "plate_detector_box_iou_median": 0.9343,
+      "detector_box_iou_median": 0.9183
+    },
+    "T3": {
+      "non_group_slots": 10,
+      "group_slots": 1,
+      "plate_slot": true,
+      "plate_frames_with_mask": 3600,
+      "plate_visible_fraction": 1.0,
+      "plate_detector_box_iou_median": 0.9491,
+      "detector_box_iou_median": 0.9184
+    },
+    "T4": {
+      "non_group_slots": 11,
+      "group_slots": 0,
+      "plate_slot": true,
+      "plate_frames_with_mask": 3496,
+      "plate_visible_fraction": 0.9711,
+      "plate_detector_box_iou_median": 0.9063,
+      "detector_box_iou_median": 0.9255
+    },
+    "T5": {
+      "non_group_slots": 9,
+      "group_slots": 2,
+      "plate_slot": true,
+      "plate_frames_with_mask": 3600,
+      "plate_visible_fraction": 1.0,
+      "plate_detector_box_iou_median": 0.9319,
+      "detector_box_iou_median": 0.9308
+    }
+  },
+  "selection": {
+    "arm_b": {
+      "uri": "runs/finebio-arms-P03_03_01-20260925/b-box-decode-arm",
+      "observations_sha256": "8d596a095a504146a2c85fb73b0cc26272d39e8deb0a0c91b3faf6d799bc93e1"
+    },
+    "seeds": {
+      "uri": "runs/finebio-seeds-P03_03_01-20260925/with-plate/seeds.json",
+      "sha256": "d00dfcc1e761843e3c05805a7085a493e562db848be59c8c80dde49223a61661"
+    },
+    "six_view_annotated_frames": [
+      916
+    ],
+    "disagreement": {
+      "count": 12,
+      "rule": "per frame, the minimum of arm (b)'s provenance.detector_box_iou over the non-group SAM3 rows of the pair views; frames ranked lowest first; a frame is taken when it is >= spacing_frames from every frame already chosen (the six-view frame included); the centrifuge-cycle neighbourhoods are served first until min_in_cycles is met",
+      "spacing_frames": 90,
+      "min_in_cycles": 3,
+      "centrifuge_cycles": [
+        [
+          1176,
+          1228
+        ],
+        [
+          3224,
+          3311
+        ]
+      ],
+      "cycle_pad_frames": 90,
+      "cycle_neighbourhoods": [
+        [
+          1086,
+          1318
+        ],
+        [
+          3134,
+          3401
+        ]
+      ]
+    },
+    "random": {
+      "count": 5,
+      "seed": 20260925,
+      "rule": "numpy default_rng(seed) uniform over the eligible frames, rejection on spacing"
+    },
+    "eligible_frames": 3587,
+    "eligibility": "a frame inside the window with at least one SAM3 row in each pair view in arm (b) and a valid fpv pose"
+  },
+  "slots": {
+    "T1": [
+      {
+        "slot": 0,
+        "label": "centrifuge#0",
+        "class": "centrifuge",
+        "role": "container",
+        "rule": "moves",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 1,
+        "label": "vortex_mixer#0",
+        "class": "vortex_mixer",
+        "role": "container",
+        "rule": "container",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 2,
+        "label": "pcr_machine#0",
+        "class": "pcr_machine",
+        "role": "container",
+        "rule": "container",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 3,
+        "label": "cell_culture_plate#0",
+        "class": "cell_culture_plate",
+        "role": "container",
+        "rule": "landmark_plan_shortlist",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 4,
+        "label": "8_channel_pipette#0",
+        "class": "8_channel_pipette",
+        "role": "object",
+        "rule": "moves",
+        "start_frame": 681,
+        "status": "accepted"
+      },
+      {
+        "slot": 5,
+        "label": "blue_pipette#0",
+        "class": "blue_pipette",
+        "role": "object",
+        "rule": "moves",
+        "start_frame": 861,
+        "status": "accepted"
+      },
+      {
+        "slot": 6,
+        "label": "50ml_tube#0",
+        "class": "50ml_tube",
+        "role": "object",
+        "rule": "moves",
+        "start_frame": 1118,
+        "status": "accepted"
+      },
+      {
+        "slot": 7,
+        "label": "micro_tube_group#0",
+        "class": "micro_tube_group",
+        "role": "group",
+        "rule": "group",
+        "start_frame": 733,
+        "status": "accepted"
+      },
+      {
+        "slot": 8,
+        "label": "15ml_tube_group#0",
+        "class": "15ml_tube_group",
+        "role": "group",
+        "rule": "group",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 9,
+        "label": "50ml_tube_group#0",
+        "class": "50ml_tube_group",
+        "role": "group",
+        "rule": "group",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 10,
+        "label": "50ml_tube_group#1",
+        "class": "50ml_tube_group",
+        "role": "group",
+        "rule": "group",
+        "start_frame": 1142,
+        "status": "accepted"
+      }
+    ],
+    "T2": [
+      {
+        "slot": 0,
+        "label": "centrifuge#0",
+        "class": "centrifuge",
+        "role": "container",
+        "rule": "moves",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 1,
+        "label": "vortex_mixer#0",
+        "class": "vortex_mixer",
+        "role": "container",
+        "rule": "moves",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 2,
+        "label": "cell_culture_plate#0",
+        "class": "cell_culture_plate",
+        "role": "container",
+        "rule": "landmark_plan_shortlist",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 3,
+        "label": "blue_pipette#0",
+        "class": "blue_pipette",
+        "role": "object",
+        "rule": "moves",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 4,
+        "label": "yellow_pipette#0",
+        "class": "yellow_pipette",
+        "role": "object",
+        "rule": "moves",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 5,
+        "label": "15ml_tube#0",
+        "class": "15ml_tube",
+        "role": "object",
+        "rule": "moves",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 6,
+        "label": "50ml_tube#0",
+        "class": "50ml_tube",
+        "role": "object",
+        "rule": "moves",
+        "start_frame": 2043,
+        "status": "accepted"
+      },
+      {
+        "slot": 7,
+        "label": "50ml_tube#1",
+        "class": "50ml_tube",
+        "role": "object",
+        "rule": "moves",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 8,
+        "label": "micro_tube#0",
+        "class": "micro_tube",
+        "role": "object",
+        "rule": "moves",
+        "start_frame": 1100,
+        "status": "accepted"
+      },
+      {
+        "slot": 9,
+        "label": "50ml_tube#2",
+        "class": "50ml_tube",
+        "role": "object",
+        "rule": "moves",
+        "start_frame": 1970,
+        "status": "accepted"
+      },
+      {
+        "slot": 10,
+        "label": "micro_tube_group#0",
+        "class": "micro_tube_group",
+        "role": "group",
+        "rule": "group",
+        "start_frame": 600,
+        "status": "accepted"
+      }
+    ],
+    "T3": [
+      {
+        "slot": 0,
+        "label": "centrifuge#0",
+        "class": "centrifuge",
+        "role": "container",
+        "rule": "moves",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 1,
+        "label": "vortex_mixer#0",
+        "class": "vortex_mixer",
+        "role": "container",
+        "rule": "container",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 2,
+        "label": "pcr_machine#0",
+        "class": "pcr_machine",
+        "role": "container",
+        "rule": "container",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 3,
+        "label": "cell_culture_plate#0",
+        "class": "cell_culture_plate",
+        "role": "container",
+        "rule": "landmark_plan_shortlist",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 4,
+        "label": "yellow_pipette#0",
+        "class": "yellow_pipette",
+        "role": "object",
+        "rule": "moves",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 5,
+        "label": "8_channel_pipette#0",
+        "class": "8_channel_pipette",
+        "role": "object",
+        "rule": "moves",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 6,
+        "label": "blue_pipette#0",
+        "class": "blue_pipette",
+        "role": "object",
+        "rule": "moves",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 7,
+        "label": "50ml_tube#0",
+        "class": "50ml_tube",
+        "role": "object",
+        "rule": "moves",
+        "start_frame": 1114,
+        "status": "accepted"
+      },
+      {
+        "slot": 8,
+        "label": "micro_tube#0",
+        "class": "micro_tube",
+        "role": "object",
+        "rule": "moves",
+        "start_frame": 895,
+        "status": "accepted"
+      },
+      {
+        "slot": 9,
+        "label": "50ml_tube#1",
+        "class": "50ml_tube",
+        "role": "object",
+        "rule": "moves",
+        "start_frame": 1898,
+        "status": "accepted"
+      },
+      {
+        "slot": 10,
+        "label": "micro_tube_group#0",
+        "class": "micro_tube_group",
+        "role": "group",
+        "rule": "group",
+        "start_frame": 600,
+        "status": "accepted"
+      }
+    ],
+    "T4": [
+      {
+        "slot": 0,
+        "label": "centrifuge#0",
+        "class": "centrifuge",
+        "role": "container",
+        "rule": "moves",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 1,
+        "label": "vortex_mixer#0",
+        "class": "vortex_mixer",
+        "role": "container",
+        "rule": "in_hand",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 2,
+        "label": "pcr_machine#0",
+        "class": "pcr_machine",
+        "role": "container",
+        "rule": "container",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 3,
+        "label": "cell_culture_plate#0",
+        "class": "cell_culture_plate",
+        "role": "container",
+        "rule": "landmark_plan_shortlist",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 4,
+        "label": "trash_can#0",
+        "class": "trash_can",
+        "role": "object",
+        "rule": "moves",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 5,
+        "label": "yellow_pipette#0",
+        "class": "yellow_pipette",
+        "role": "object",
+        "rule": "moves",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 6,
+        "label": "red_pipette#0",
+        "class": "red_pipette",
+        "role": "object",
+        "rule": "moves",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 7,
+        "label": "blue_pipette#0",
+        "class": "blue_pipette",
+        "role": "object",
+        "rule": "moves",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 8,
+        "label": "8_tube_stripes#0",
+        "class": "8_tube_stripes",
+        "role": "object",
+        "rule": "moves",
+        "start_frame": 652,
+        "status": "accepted"
+      },
+      {
+        "slot": 9,
+        "label": "50ml_tube#0",
+        "class": "50ml_tube",
+        "role": "object",
+        "rule": "moves",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 10,
+        "label": "50ml_tube#1",
+        "class": "50ml_tube",
+        "role": "object",
+        "rule": "moves",
+        "start_frame": 2564,
+        "status": "accepted"
+      }
+    ],
+    "T5": [
+      {
+        "slot": 0,
+        "label": "centrifuge#0",
+        "class": "centrifuge",
+        "role": "container",
+        "rule": "moves",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 1,
+        "label": "vortex_mixer#0",
+        "class": "vortex_mixer",
+        "role": "container",
+        "rule": "container",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 2,
+        "label": "pcr_machine#0",
+        "class": "pcr_machine",
+        "role": "container",
+        "rule": "container",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 3,
+        "label": "cell_culture_plate#0",
+        "class": "cell_culture_plate",
+        "role": "container",
+        "rule": "landmark_plan_shortlist",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 4,
+        "label": "yellow_pipette#0",
+        "class": "yellow_pipette",
+        "role": "object",
+        "rule": "moves",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 5,
+        "label": "red_pipette#0",
+        "class": "red_pipette",
+        "role": "object",
+        "rule": "moves",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 6,
+        "label": "8_channel_pipette#0",
+        "class": "8_channel_pipette",
+        "role": "object",
+        "rule": "moves",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 7,
+        "label": "blue_pipette#0",
+        "class": "blue_pipette",
+        "role": "object",
+        "rule": "moves",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 8,
+        "label": "micro_tube_group#0",
+        "class": "micro_tube_group",
+        "role": "group",
+        "rule": "group",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 9,
+        "label": "50ml_tube_group#0",
+        "class": "50ml_tube_group",
+        "role": "group",
+        "rule": "group",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 10,
+        "label": "micro_tube#0",
+        "class": "micro_tube",
+        "role": "object",
+        "rule": "in_hand",
+        "start_frame": 2817,
+        "status": "accepted"
+      }
+    ],
+    "fpv": [
+      {
+        "slot": 0,
+        "label": "centrifuge#0",
+        "class": "centrifuge",
+        "role": "container",
+        "rule": "moves",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 1,
+        "label": "vortex_mixer#0",
+        "class": "vortex_mixer",
+        "role": "container",
+        "rule": "moves",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 2,
+        "label": "pcr_machine#0",
+        "class": "pcr_machine",
+        "role": "container",
+        "rule": "container",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 3,
+        "label": "cell_culture_plate#0",
+        "class": "cell_culture_plate",
+        "role": "container",
+        "rule": "landmark_plan_shortlist",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 4,
+        "label": "yellow_pipette#0",
+        "class": "yellow_pipette",
+        "role": "object",
+        "rule": "moves",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 5,
+        "label": "red_pipette#0",
+        "class": "red_pipette",
+        "role": "object",
+        "rule": "moves",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 6,
+        "label": "trash_can#0",
+        "class": "trash_can",
+        "role": "object",
+        "rule": "moves",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 7,
+        "label": "8_channel_pipette#0",
+        "class": "8_channel_pipette",
+        "role": "object",
+        "rule": "moves",
+        "start_frame": 624,
+        "status": "accepted"
+      },
+      {
+        "slot": 8,
+        "label": "blue_pipette#0",
+        "class": "blue_pipette",
+        "role": "object",
+        "rule": "moves",
+        "start_frame": 600,
+        "status": "accepted"
+      },
+      {
+        "slot": 9,
+        "label": "15ml_tube#0",
+        "class": "15ml_tube",
+        "role": "object",
+        "rule": "moves",
+        "start_frame": 903,
+        "status": "accepted"
+      },
+      {
+        "slot": 10,
+        "label": "15ml_tube#1",
+        "class": "15ml_tube",
+        "role": "object",
+        "rule": "moves",
+        "start_frame": 2045,
+        "status": "accepted"
+      }
+    ]
+  },
+  "frames": [
+    {
+      "raw_frame": 637,
+      "proxy_frame": 37,
+      "views": [
+        "fpv",
+        "T4"
+      ],
+      "origin": "random",
+      "reason": "uniform over the eligible frames, seed 20260925, draw 20",
+      "in_cycle_neighbourhood": false,
+      "arm_b_min_detector_box_iou": {
+        "min_iou": 0.6386,
+        "slot": "fpv/red_pipette#0",
+        "rows": 18
+      }
+    },
+    {
+      "raw_frame": 916,
+      "proxy_frame": 316,
+      "views": [
+        "T1",
+        "T2",
+        "T3",
+        "T4",
+        "T5",
+        "fpv"
+      ],
+      "origin": "six_view_annotated",
+      "reason": "the frame the FineBio authors annotated in every camera",
+      "in_cycle_neighbourhood": false,
+      "arm_b_min_detector_box_iou": {
+        "min_iou": 0.7033,
+        "slot": "T4/blue_pipette#0",
+        "rows": 18
+      }
+    },
+    {
+      "raw_frame": 1120,
+      "proxy_frame": 520,
+      "views": [
+        "fpv",
+        "T4"
+      ],
+      "origin": "disagreement",
+      "reason": "arm (b) lowest detector_box_iou 0.192 at T4/centrifuge#0 (19 slot rows pooled; centrifuge-cycle neighbourhood first)",
+      "in_cycle_neighbourhood": true,
+      "arm_b_min_detector_box_iou": {
+        "min_iou": 0.1922,
+        "slot": "T4/centrifuge#0",
+        "rows": 19
+      }
+    },
+    {
+      "raw_frame": 1294,
+      "proxy_frame": 694,
+      "views": [
+        "fpv",
+        "T4"
+      ],
+      "origin": "disagreement",
+      "reason": "arm (b) lowest detector_box_iou 0.205 at T4/yellow_pipette#0 (17 slot rows pooled; centrifuge-cycle neighbourhood first)",
+      "in_cycle_neighbourhood": true,
+      "arm_b_min_detector_box_iou": {
+        "min_iou": 0.2046,
+        "slot": "T4/yellow_pipette#0",
+        "rows": 17
+      }
+    },
+    {
+      "raw_frame": 1521,
+      "proxy_frame": 921,
+      "views": [
+        "fpv",
+        "T4"
+      ],
+      "origin": "disagreement",
+      "reason": "arm (b) lowest detector_box_iou 0.170 at fpv/blue_pipette#0 (14 slot rows pooled; window-wide)",
+      "in_cycle_neighbourhood": false,
+      "arm_b_min_detector_box_iou": {
+        "min_iou": 0.17,
+        "slot": "fpv/blue_pipette#0",
+        "rows": 14
+      }
+    },
+    {
+      "raw_frame": 1635,
+      "proxy_frame": 1035,
+      "views": [
+        "fpv",
+        "T4"
+      ],
+      "origin": "random",
+      "reason": "uniform over the eligible frames, seed 20260925, draw 9",
+      "in_cycle_neighbourhood": false,
+      "arm_b_min_detector_box_iou": {
+        "min_iou": 0.3067,
+        "slot": "fpv/blue_pipette#0",
+        "rows": 20
+      }
+    },
+    {
+      "raw_frame": 1739,
+      "proxy_frame": 1139,
+      "views": [
+        "fpv",
+        "T4"
+      ],
+      "origin": "disagreement",
+      "reason": "arm (b) lowest detector_box_iou 0.128 at fpv/8_channel_pipette#0 (16 slot rows pooled; window-wide)",
+      "in_cycle_neighbourhood": false,
+      "arm_b_min_detector_box_iou": {
+        "min_iou": 0.1282,
+        "slot": "fpv/8_channel_pipette#0",
+        "rows": 16
+      }
+    },
+    {
+      "raw_frame": 1966,
+      "proxy_frame": 1366,
+      "views": [
+        "fpv",
+        "T4"
+      ],
+      "origin": "disagreement",
+      "reason": "arm (b) lowest detector_box_iou 0.215 at fpv/red_pipette#0 (18 slot rows pooled; window-wide)",
+      "in_cycle_neighbourhood": false,
+      "arm_b_min_detector_box_iou": {
+        "min_iou": 0.2155,
+        "slot": "fpv/red_pipette#0",
+        "rows": 18
+      }
+    },
+    {
+      "raw_frame": 2132,
+      "proxy_frame": 1532,
+      "views": [
+        "fpv",
+        "T4"
+      ],
+      "origin": "random",
+      "reason": "uniform over the eligible frames, seed 20260925, draw 8",
+      "in_cycle_neighbourhood": false,
+      "arm_b_min_detector_box_iou": {
+        "min_iou": 0.8195,
+        "slot": "fpv/yellow_pipette#0",
+        "rows": 14
+      }
+    },
+    {
+      "raw_frame": 2240,
+      "proxy_frame": 1640,
+      "views": [
+        "fpv",
+        "T4"
+      ],
+      "origin": "random",
+      "reason": "uniform over the eligible frames, seed 20260925, draw 18",
+      "in_cycle_neighbourhood": false,
+      "arm_b_min_detector_box_iou": {
+        "min_iou": 0.8722,
+        "slot": "T4/pcr_machine#0",
+        "rows": 14
+      }
+    },
+    {
+      "raw_frame": 2380,
+      "proxy_frame": 1780,
+      "views": [
+        "fpv",
+        "T4"
+      ],
+      "origin": "disagreement",
+      "reason": "arm (b) lowest detector_box_iou 0.133 at fpv/blue_pipette#0 (17 slot rows pooled; window-wide)",
+      "in_cycle_neighbourhood": false,
+      "arm_b_min_detector_box_iou": {
+        "min_iou": 0.1332,
+        "slot": "fpv/blue_pipette#0",
+        "rows": 17
+      }
+    },
+    {
+      "raw_frame": 2748,
+      "proxy_frame": 2148,
+      "views": [
+        "fpv",
+        "T4"
+      ],
+      "origin": "disagreement",
+      "reason": "arm (b) lowest detector_box_iou 0.206 at T4/blue_pipette#0 (18 slot rows pooled; window-wide)",
+      "in_cycle_neighbourhood": false,
+      "arm_b_min_detector_box_iou": {
+        "min_iou": 0.2058,
+        "slot": "T4/blue_pipette#0",
+        "rows": 18
+      }
+    },
+    {
+      "raw_frame": 3054,
+      "proxy_frame": 2454,
+      "views": [
+        "fpv",
+        "T4"
+      ],
+      "origin": "disagreement",
+      "reason": "arm (b) lowest detector_box_iou 0.140 at fpv/blue_pipette#0 (17 slot rows pooled; window-wide)",
+      "in_cycle_neighbourhood": false,
+      "arm_b_min_detector_box_iou": {
+        "min_iou": 0.1403,
+        "slot": "fpv/blue_pipette#0",
+        "rows": 17
+      }
+    },
+    {
+      "raw_frame": 3372,
+      "proxy_frame": 2772,
+      "views": [
+        "fpv",
+        "T4"
+      ],
+      "origin": "disagreement",
+      "reason": "arm (b) lowest detector_box_iou 0.216 at T4/vortex_mixer#0 (17 slot rows pooled; centrifuge-cycle neighbourhood first)",
+      "in_cycle_neighbourhood": true,
+      "arm_b_min_detector_box_iou": {
+        "min_iou": 0.2161,
+        "slot": "T4/vortex_mixer#0",
+        "rows": 17
+      }
+    },
+    {
+      "raw_frame": 3481,
+      "proxy_frame": 2881,
+      "views": [
+        "fpv",
+        "T4"
+      ],
+      "origin": "disagreement",
+      "reason": "arm (b) lowest detector_box_iou 0.223 at fpv/blue_pipette#0 (17 slot rows pooled; window-wide)",
+      "in_cycle_neighbourhood": false,
+      "arm_b_min_detector_box_iou": {
+        "min_iou": 0.2229,
+        "slot": "fpv/blue_pipette#0",
+        "rows": 17
+      }
+    },
+    {
+      "raw_frame": 3571,
+      "proxy_frame": 2971,
+      "views": [
+        "fpv",
+        "T4"
+      ],
+      "origin": "disagreement",
+      "reason": "arm (b) lowest detector_box_iou 0.234 at T4/blue_pipette#0 (17 slot rows pooled; window-wide)",
+      "in_cycle_neighbourhood": false,
+      "arm_b_min_detector_box_iou": {
+        "min_iou": 0.2337,
+        "slot": "T4/blue_pipette#0",
+        "rows": 17
+      }
+    },
+    {
+      "raw_frame": 4032,
+      "proxy_frame": 3432,
+      "views": [
+        "fpv",
+        "T4"
+      ],
+      "origin": "disagreement",
+      "reason": "arm (b) lowest detector_box_iou 0.055 at T4/blue_pipette#0 (15 slot rows pooled; window-wide)",
+      "in_cycle_neighbourhood": false,
+      "arm_b_min_detector_box_iou": {
+        "min_iou": 0.0547,
+        "slot": "T4/blue_pipette#0",
+        "rows": 15
+      }
+    },
+    {
+      "raw_frame": 4122,
+      "proxy_frame": 3522,
+      "views": [
+        "fpv",
+        "T4"
+      ],
+      "origin": "random",
+      "reason": "uniform over the eligible frames, seed 20260925, draw 19",
+      "in_cycle_neighbourhood": false,
+      "arm_b_min_detector_box_iou": {
+        "min_iou": 0.6291,
+        "slot": "fpv/blue_pipette#0",
+        "rows": 16
+      }
+    }
+  ],
+  "counts": {
+    "frames": 18,
+    "by_origin": {
+      "random": 5,
+      "six_view_annotated": 1,
+      "disagreement": 12
+    },
+    "in_cycle_neighbourhood": 3,
+    "frame_views": 40,
+    "cells": 440
+  },
+  "provenance": {
+    "author": null,
+    "reviewed_at": null,
+    "tool": "battle-finebio-anchors"
+  },
+  "claim_boundary": "Anchors are one person's choice among SAM3 image-decoder candidate masks (or a hidden or box-level mark) on a handful of frames of one trial: the mask boundary is the decoder's, the choice is the human's. They are review evidence for ranking tracking arms against each other, not a dataset, not ground truth, and support no accuracy claim. The FineBio detector that proposed every box was trained on this lab's objects and cameras.",
+  "licence": "FineBio is licensed for non-commercial research; frames, masks and sheets derived from it stay under runs/ and are never committed or redistributed. The anchor config (frame numbers, slot labels) and the human record (states, hashes, identities) carry no pixels."
+}
