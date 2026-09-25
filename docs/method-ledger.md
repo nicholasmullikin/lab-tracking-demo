@@ -606,6 +606,22 @@ tube slots turn out to track different tubes: the identity problem the tracker i
 on real rows. Record: [Sep 25: thin slice on the preflight window
 (p0-slice)](#sep-25-thin-slice-on-the-preflight-window-p0-slice).
 
+#### Sep 25: battle-multiview-tracks core (p3-tracker)
+
+The 3D tracker's core, built against the fixtures only: observations (mask centroid or box
+centre, class, scores, per-view slot, fpv only with a valid pose), a stationary prior,
+predict-project-gate update with weighted re-triangulation, states observed / single_view /
+coasting / lost, birth by pairwise same-class triangulation + Hungarian + cliques with >= 3
+fixed views or 2 fixed + fpv, re-acquisition only when detector-confirmed in >= 2 views and
+unambiguous (two candidates -> nobody resumes, `possibly_same_as`), hand-off re-seed events
+with the reprojected box for the worker's `track_reproject` correction, `tracks.jsonl` /
+`events.jsonl` / `residuals.jsonl` / `identity_metrics.json`. Gates from lane B's rig
+output or the CLI, P03 defaults 30 / 55 px. 12 synthetic-rig tests plus the preflight
+fixtures: static classes within 1 cm of the slice, one plate id over 60/60 and 300/300
+frames, the two 50 ml tubes the slice collapsed separated at 1.5-4 px; the in-hand pipette
+fragments and the identical micro tubes are ambiguous, as the plan expects. Record: [Sep 25:
+battle-multiview-tracks core (p3-tracker)](#sep-25-battle-multiview-tracks-core-p3-tracker).
+
 ### Plan versus actual
 
 What the plan said, what happened instead, and why, in one line each.
@@ -7100,3 +7116,129 @@ and the 83 `main()` entry points beyond their shared fragments.
   onto one box); detections on every frame of the trial-1 window, lane B's per-trial camera
   solve and rig gates. The tool already runs on real window outputs through `--observations`
   and `--cameras`.
+### Sep 25: battle-multiview-tracks core (p3-tracker)
+
+- **What this is.** The core of the `p3-tracker` todo of the FineBio 3D-tracking plan
+  ([`docs/plan-2026-09-25-finebio-3d-tracking.md`](plan-2026-09-25-finebio-3d-tracking.md)):
+  a 3D object with a persistent id as the tracked entity, every camera's box or mask an
+  observation of it. Developed against the `p0-contracts` fixtures only, CPU, 1 s for the
+  60-frame window and 3 s for 300 frames, no GPU, no viewer. The plan's Phase 3 "Core" list
+  and nothing more: the `held` / `contained` / group extensions (`p3-tracker-ext`) wait for
+  the occlusion inventory from arms (a)/(b). Other lanes committed concurrently (camera solve,
+  worker modes); only the files named here were staged, by path. Commit `77d40f4` and this
+  entry's commit. Time: about 2.5 h of the ~4 h box.
+- **Tool (`src/battle/multiview_tracks.py`, console script `battle-multiview-tracks`).**
+  `--fixtures <dir>` or `--observations <jsonl> --cameras <config.json> [--fpv-poses]`;
+  `--gates <rig.json>` reads lane B's `gates` block (`association_px`, `handoff_px`,
+  `birth_min_fixed_views`, `birth_fixed_views_with_fpv`), the four CLI flags of the same names
+  override it, and without either the P03 preflight values apply (30 px association, 55 px
+  hand-off at 1920, 3 fixed views, 2 fixed + fpv). Parameters: `--coast-timeout 30` frames,
+  `--handoff-after 5` (K), `--reacquire-min-views 2`, `--min-score 0.3`,
+  `--process-noise-cm 2`, `--coast-growth-cm 1`, `--fpv-weight 0.5`, `--source auto |
+  detector | sam3`, `--frames`, `--reference-labels`; in code also `handoff_repeat_frames`
+  30, `duplicate_distance_cm` 3, `base_uncertainty_cm` 1, `max_uncertainty_cm` 30. Outputs
+  under `--output`: `tracks.jsonl` (`Track3D` rows per live track and frame, plus one row at
+  the lost frame), `events.jsonl` (`TrackEvent`), `residuals.jsonl` (per track, view and
+  frame: residual, gate, slot, source, confirmed), `identity_metrics.json`.
+- **What the core does, per frame.** *Observations:* `point_px` (mask centroid, else box
+  centre), class, detector and SAM3 scores, per-view slot; the fpv observes only with a
+  valid pose. Source rule `auto`: per view, frame and class the SAM3 rows when present, else
+  the detector rows (what arms (c)/(d) produce: masks for the seeded slots, boxes for the
+  rest); `detector` and `sam3` force one. An observation is *class-confirmed* when it is a
+  detector row, carries a detector score, or a same-class detector box lies within the
+  association gate in that view and frame. *Predict:* stationary prior, the scalar
+  uncertainty grows by `process_noise_cm` per frame (constant-position Kalman; velocity not
+  modelled, no test asked for it). *Update:* every localised track is projected into every
+  view with a valid pose; the gate is the association gate (hand-off gate for the fpv) plus
+  the uncertainty projected at the track's depth (`f / depth` px per cm, ~10 px/cm on the
+  fixed cameras); nearest same-class observation, conflicts between tracks by distance;
+  with >= 2 views a weighted DLT (fixed 1, fpv 0.5; `finebio_slice.triangulate_pixels`),
+  one prune pass over the gate, scalar Kalman blend with the prior. A view whose SAM3 slot
+  differs from the slot the track had there before is a **slot disagreement**, written to
+  the row (`slot_disagreement_views`), halving the confidence and setting `abstain`, never
+  resolved. *Occlusion:* support 0 -> `coasting` (event), uncertainty + `coast_growth_cm` per
+  frame, > timeout -> `lost` (event; the class is free for new births). *Birth:* per class,
+  every fixed-view pair triangulated, pair cost = the larger of the two residuals, gated by
+  the association gate, Hungarian per view pair (a numpy Kuhn-Munkres; `scipy` is not in the
+  battle env), accepted pairs merged into cliques (one observation per view, every pair
+  accepted), clique re-triangulated with the worst member dropped while over the gate, the
+  fpv attached when its nearest unassigned same-class observation is within the hand-off
+  gate; born with >= 3 fixed views or 2 fixed + fpv (`fpv_rule` in the payload).
+  *Re-acquisition:* a candidate inside a coasting track's inflated gate in >= 2 of its views;
+  exactly one candidate for exactly one track and confirmed in >= 2 views -> the id resumes
+  (`reacquired`, latency); unconfirmed -> a new id with `possibly_same_as` and
+  `unconfirmed_reacquisition_of` in the birth payload; two candidates for a track or two
+  tracks for a candidate -> nobody resumes, every candidate born with `possibly_same_as` and
+  an `ambiguous` event, one ambiguity counted per coasting track. *Hand-off re-seed:* for an
+  `observed` track, a view with a valid pose and no associated observation for K frames
+  (repeat every 30) whose projection lies inside the image emits `handoff_reseed` with the
+  reprojected box (the view's last extent, else 120x80, centred on the projection;
+  `provenance: track_reproject`, `box_from`, `frames_missing`, `uncertainty_cm`, `gate_px`),
+  or `detector_reseed` with the detector box when a same-class box sits within the hand-off
+  gate + uncertainty there. A view that never had the object is offered it the same way (the
+  cross-camera case). *Duplicates:* live same-class tracks within 3 cm are marked
+  `possibly_same_as` on both rows and abstain, counted, never merged.
+- **Schema (`multiview_schemas.py`).** `Track3D` gains four optional fields with defaults, so
+  the `p0-contracts` rows still validate: `residual_px` per view, `support_slots` per view,
+  `slot_disagreement_views`, `frames_unobserved`. `confidence` is a heuristic (support
+  fraction x residual term x slot term; coasting decays to 0; `abstain` on anything but a
+  clean `observed`) to be replaced by `p5-confidence`.
+- **Identity metrics (`identity_metrics.json`).** Tracks born / lost / live, re-acquisitions
+  with latency median and max, ambiguities, duplicate pair frames, fragmentation per class
+  (tracks born beyond the maximum simultaneously live; a lower bound), slot disagreements,
+  **id switches** against `--reference-labels` (`{"view/slot": identity}`) when given, else
+  against the SAM3 per-view slots as a proxy labelled `sam3_slots_proxy` (detector slots are
+  score ranks and are excluded), event counts, the parameters, residual medians per class
+  and view.
+- **Tests (`tests/test_multiview_tracks.py`, 12, default tier; synthetic rig = the P03
+  cameras of `cameras.json` plus the fixture fpv pose of frame 1798).** Hungarian equals
+  brute force on 3x3, 2x4, 4x2, 5x5; gates from a rig block with defaults; birth from three
+  fixed views (position within 0.3 cm); birth from two fixed + a valid fpv (refused with no
+  pose, with `pose_valid: false`, or without the fpv); a false pair (A in T1/T3, B in T2/T4)
+  rejected and two objects in four views assigned apart; coasting keeps the position, grows
+  the uncertainty, abstains, is lost at 4 + timeout + 1 and a fresh id is born afterwards
+  (fragmentation 1); re-acquisition resumes with detector confirmation (latency 5) and refuses
+  SAM3 rows without a detector box (new id, `possibly_same_as`, the old track keeps
+  coasting), a detector box within the gate confirming them; two candidates 1.5 cm apart ->
+  nobody resumes, one ambiguity, both flagged and abstaining; hand-off re-seed with the
+  last-extent 90x60 box centred on the reprojection in the view that lost the object and a
+  default box in the view that never had it, `detector_reseed` at 48 px with a tighter prior;
+  the source rule and confirmation; **the preflight fixtures** (detector source, 1798..1857):
+  every static class's track median within 1 cm of the slice's point (all eleven under
+  1 cm), one plate id `observed` on all 60 frames with >= 5 views and per-view LOO of its own
+  support at or under the preflight's medians (T1 35 / T2 8 / T3 44 / T4 17 / T5 34 px vs
+  34.8 / 17.2 / 43.7 / 17.1 / 33.5: in T2 the tracker's nearest-in-gate box is not the
+  preflight's top-scoring one and fits better); CLI end to end with a gates file and an
+  override. Default tier **899 passed / 14 skipped** (other lanes' tests included), `uv run
+  ruff check src tests scripts` clean.
+- **Runs on the fixtures (`runs/finebio-tracks-20260925/`, gitignored).** *`window`*
+  (1798..1857, `auto`): 45 tracks born, 0 lost, 0 ambiguities, 2 re-acquisitions (the
+  right hand coasting 2 and 3 frames), 2 id switches (a second pipette id born at 1857).
+  Plate and centrifuge one id each on 60/60 frames, plate residuals T1..T5 24 / 3 / 11 / 12
+  / 23 px and 41 px in the fpv (the preflight's hand-off 37); **the two 50 ml tubes the
+  slice collapsed at 154 px are two tracks at 1.5-4 px** (T1/T2/T3/fpv and T1/T3/T5); 13
+  micro tubes born, all flagged as near duplicates of their rack neighbours (3 cm) and
+  abstaining; 96 `handoff_reseed` + 60 `detector_reseed` events, mostly bench objects
+  offered to views that do not detect them. *`sam3-300`* (1798..2097, `auto`; after 1858 the
+  detector rows exist every 30th frame only): plate and centrifuge still one id each on
+  300/300 frames (plate 24 / 5 / 11 / 6 / 3 px, fpv 20); 172 born / 133 lost, 116
+  re-acquisitions all at latency 30 (bench objects coast between detector frames and resume
+  at each, timeout 30 being exactly the gap), 124 ambiguities of which 85 are micro tubes
+  (identical instances, out of scope by the plan), the in-hand pipette fragmented into 5
+  ids (it moves, and its SAM3 mask-bbox centre differs from the detector box centre; the
+  centroid approximation the fixture README warned about), the T4/T5 50 ml tube emitting a
+  `handoff_reseed` box for T2 every 30 frames because the preflight seeded T2's tube slot on
+  a different tube: the event the worker's `track_reproject` correction is meant to consume.
+  Slot disagreements 0 in both runs.
+- **For the arms (what the tracker expects from the worker and the detector).**
+  `FineBioObservation` JSONL in raw pixels and raw frame indices: detector rows with
+  `box_xyxy_px`, `detector_score`, `slot = <class>#<rank>`; SAM3 rows with `mask_bbox_px`,
+  the **area centroid** as `mask_centroid_px` (the fixtures carry the bbox centre), `slot`
+  = the seeded slot id, `sam3_object_score`, and the detector box and score on the row when
+  the mask came from one (arm b) or matched one; fpv rows with `pose_valid` from the config's
+  gate. No converter was written here: `battle-finebio-detect` output and the worker's
+  `observations.jsonl` each need a short adapter to these rows (a `scripts/` job for the arms
+  phase; the fixture builder `scripts/finebio_preflight_fixtures.py` shows the mapping for
+  the preflight's formats). Gates: pass lane B's `rig.json` through `--gates`. Open, to be
+  read off the arms: K and the repeat cadence, the timeout (30 equals the detector stride
+  here), the process noise for the in-hand object, whether the pipette needs velocity.
