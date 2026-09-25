@@ -697,6 +697,31 @@ independently. Trial 2 with nothing changed: the yellow pipette and its tip rack
 plate is static again, no 15 ml tube on that bench. Record: [Sep 25: detector runs on the trial
 windows (p2-detect, runs)](#sep-25-detector-runs-on-the-trial-windows-p2-detect-runs).
 
+#### Sep 25: tracking arms on trial 1 (p4-arms; p1-rig run)
+
+The rig on trial 1's window (association **30.1 px**, hand-off **27.0 px**: the plate does not
+move in protocol 03, so the moving-object p90 halves against the preflight's 51.9), the plate
+added to the seeds as a plan-driven landmark (66/66 seeds accepted), and four arms through the
+3D tracker on six views at 1280 in about 4 h of GPU: (a) boxes only, (b) per-frame box decode
+(150 ms/frame, 2.2 GiB), (c) SAM3.1 video memory seeded once (195-217 ms/step for 11 slots,
+3.6-4.2 GiB), (d) (c) + 986 tracker-emitted re-seed boxes (250-320 ms/step). Against the same
+reference, the best same-class DINO box of the frame, **(b) reads 0.926 median with 99.1% of
+masks >= 0.5 IoU, (c) 0.914 with 79.3%, (d) 0.911 with 75.7%**: video memory drifts on the
+tubes that leave, the in-hand pipette and the centrifuge whose lid opens (0.45 in T1/T2), and
+the re-seeds under `append` injected wrong prompts more often than they repaired (one box took a
+97%-clean slot to 0.1%). (c) wins only on identity through appearance change (the centrifuge one
+id across the lid cycles, 8-9 ids in (a)/(b)) and on the tracker's proxy metrics (264 vs 629 id
+switches), which is why (d) ran under the pre-registered rule and came out negative. **The
+memory-free per-frame decode is the mask source for the floor.** The occlusion inventory
+(284 / 317 / 247 / 218 support-0 episodes per arm, hand tracks apart) says `contained` would
+serve 125-144 episodes, four fifths of them micro tubes under a hand in the micro-tube rack;
+`held` 89-166 by the loose test but 5-19 by the strict one, the in-hand pipette's real failure
+being the stationary prior at a 30 px gate (22-80 ids before any occlusion); group tracks
+145-171 episodes of identical instances, half ending ambiguous. One adapter fix on the way:
+video-memory masks carry stray single pixels that set the bbox; the worker's own component rule
+is now applied before a mask is measured. Record: [Sep 25: tracking arms on trial 1 (p4-arms;
+p1-rig run)](#sep-25-tracking-arms-on-trial-1-p4-arms-p1-rig-run).
+
 ### Plan versus actual
 
 What the plan said, what happened instead, and why, in one line each.
@@ -8126,3 +8151,259 @@ and the 83 `main()` entry points beyond their shared fragments.
   plate in T2/T4 is the first concrete case where the two detectors disagree on a tracked
   target's existence in a view; the tracker's birth rule (>= 3 fixed views) does not need those
   views under either detector.
+
+### Sep 25: tracking arms on trial 1 (p4-arms; p1-rig run)
+
+- **What this is.** The `p4-arms` todo of the FineBio 3D-tracking plan
+  ([`docs/plan-2026-09-25-finebio-3d-tracking.md`](plan-2026-09-25-finebio-3d-tracking.md)) and
+  the "run on trial 1's window" half of `p1-rig`: the rig check on `P03_03_01` [600, 4200), the
+  plate added to the seed slots, then arms (a) boxes only, (b) per-frame box decode, (c) SAM3.1
+  video memory seeded once and (d) (c) + re-seeds on the six views at encoder side 1280, each
+  through the 3D tracker with the rig's gates, with the label-free measures, identity metrics,
+  cross-view residuals and the occlusion inventory per arm. Inputs: the DINO pass
+  `runs/finebio-detect-P03_03_01-600-4200-20260925/dino` (every frame, six views), the lane-B
+  proxies `data/derived/finebio/P03_03_01/600-4200/` (proxy frame k == raw 600 + k, so every
+  worker ran with `--start-frame 0` on a proxy and the seeds' analysis frames matched), the
+  window camera config and the seeds run. GPU: **about 4.0 h ((b) 3635 s, (c) 4466 s, (d) 6354 s,
+  the two smokes 91 s, the seed decode 12 s)** in four queues (never beside
+  another model process: `nvidia-smi` showed only `kwin_wayland`, 144 MiB, before every worker;
+  the P20 detector lane had finished), no viewer opened. Outputs under
+  `runs/finebio-arms-P03_03_01-20260925/` (README with the scoreboard and the layout;
+  gitignored, FineBio licence) and `runs/finebio-rig-P03_03_01-600-4200/`. Commits: `e0bbe1c`
+  (the orchestration module and tests), `fa2dacc` (the adapter's speckle rule), `fbc3037`
+  (scoreboard columns), and this entry's commit. Other lanes committed concurrently; only the
+  files named here were staged, by path. **Claim boundary:** the FineBio detector was trained on
+  FineBio's own objects and on frames from these cameras; detector-vs-mask agreement is
+  model-vs-model, not accuracy; identity metrics against the SAM3 per-view slots are a proxy; no
+  human anchor exists yet.
+- **Step 0, the plate slot (plan-driven, not a rule outcome).** The seed rule had left
+  `cell_culture_plate` `detector_only` in every view (it never moves in protocol 03); the plan's
+  shortlist and storyboard include it. `battle-detector-seed select / decode / sheets` were
+  re-run into `runs/finebio-seeds-P03_03_01-20260925/with-plate/` (the `instances/` step copied)
+  with the plate appended to `--container-classes` and `--landmark-classes` and `--slot-cap 11`:
+  the plate opens as a landmark container in all six views and the previous ten slots per view
+  are unchanged (the old slot set is a subset of the new in every view; the plate takes slot 3,
+  slot 2 in T2 where the PCR machine is never detected). Decode: 66 slots, **66/66 accepted**,
+  24 encodes, 68 decodes, 10 s, 2.41 GiB; the plate's seed mask-bbox IoU vs the box 0.941 /
+  0.929 / 0.945 / 0.915 / 0.922 / 0.933 (T1..T5, fpv). `battle-finebio-arms mark-plan-slots` set
+  the six plate slots' `rule` to **`landmark_plan_shortlist`** in `seeds.json`, `slots.json` and
+  `seeds.md` (the tool's `container` kept as `rule_from_seed_tool`, the note recorded), so the
+  record says the plate is there because the plan asked, not because the data did. 51 of the
+  66 schedule seeds start at analysis frame 0.
+- **Step 1, the rig on the window (`battle-finebio-rig`, 15 s CPU).** The clip config's
+  `downstream.rig` command with `--detections` pointed at the DINO sub-directory. Gates:
+  static LOO median **10.0 px** over 42 cells (preflight 10.4 over 49) -> `association_px` **30.1
+  px** (preflight 31.1); moving-object LOO p90 per view T1 14.1, T2 11.9, T3 4.5, T4 11.7, T5 8.1,
+  **fpv 27.0** -> `handoff_px` **27.0 px** (preflight 51.9). The hand-off gate is half the
+  preflight's because the objects that define it, the plate and the blue pipette, behave
+  differently here: the plate does not move in protocol 03 (LOO 3.7-13.3 px median, inside the
+  held-out box on 100% of 3400-3588 frames per view; fixed -> fpv hand-off 9 px median / 27 p90,
+  inside the fpv box on 97% of 3556 frames), and the raised blue pipette has >= 3 other views on
+  only 108-217 frames per view with residuals of 41-132 px median, too few to move the p90. The
+  formulas were applied as written; what the tighter gate does to the in-hand object is in the
+  identity metrics below. Clock offsets 0 in every view (T5 the only informative scan, right
+  hand), none significant. Static heights (cm above the bench): PCR 1.6, vortex 1.9, 8-tube-strip
+  rack 1.9, micro-tube rack 0.0, magnetic rack 1.0, blue tip rack 3.8, yellow tip rack 2.8,
+  trash can 10.1, **centrifuge 8.4** (4.1 in the preflight: the lid is open for most of this
+  window, so its box centre sits higher and its LOO cells, 35-129 px, are the static column's
+  p90 of 40.8). Hands as probes: left 2546/3600 frames from >= 3 fixed views at 10.9 px median,
+  2.2 cm; right 1904/3600 at 51.7 px, 22.8 cm (raised). fpv pose valid 3587/3600. Negative
+  control T5: markers 93.7 vs 0.72 px, static LOO 97.7 vs 4.8 px, left hand 54.4 vs 9.5 px. One
+  degenerate cell on the record: `left_hand` held out of T2 (282 frames, 843 px median).
+- **The orchestration (`src/battle/finebio_arms.py`, console script `battle-finebio-arms`,
+  commit `e0bbe1c`).** `run --arm a|b|c|d` builds the arm's observation set (every view's
+  detector rows at score >= 0.3 through `detections_to_observations` with the fpv pose validity
+  from the shipped pose file; for the SAM3 arms the worker run per view under
+  `--worker-root/<view>` through `worker_to_observations`, area centroids, the same view's
+  detector rows attached for confirmation, six views in a process pool), writes
+  `observations.jsonl`, runs `battle-multiview-tracks` in-process with the window camera config
+  and `--gates rig.json`, and derives `measures.json` / `.md` and the inventory. Measures, per
+  view and slot for the SAM3 arms: frames with a mask against the frames from the slot's start,
+  **mask-bbox IoU against the best same-class DINO box (score >= 0.3) of the same view and
+  frame** (median, p10, fraction >= 0.5; one reference for every arm, so (b), whose prompt is a
+  DINO box of the same tracklet, and (c), whose mask is free, are read on one footing; the 8
+  group slots have no single detector box and are outside the IoU pool; rows with no same-class
+  detection in the view are counted, not scored), the SAM3 object score (the decoder's IoU in
+  (b), the presence logit in (c)/(d): not comparable across arms), mask-area step stability
+  (median relative step between consecutive frames, fraction of jumps > 0.5), the fraction of
+  the slot's rows the tracker associated; per view pooled and overall pooled IoU; cross-view
+  residuals from `residuals.jsonl` per view and per source; the identity metrics plus an
+  `objects_only` line (the tracker also tracks the hands, which this plan treats as probes).
+  **Occlusion inventory** (`occlusion_inventory.jsonl` / `.md`): every maximal run of `coasting`
+  rows of one track, with start, last observed frame, length (a lost episode's length is the
+  30-frame coast timeout, not the occlusion's duration), outcome (`reacquired` with latency,
+  `lost`, `open_at_window_end`), the last 3D position and support, that position projected into
+  every view with a valid pose at the first coasting frame and tested against the hand boxes
+  (`held` when inside one in >= 2 views; hand boxes are large in the fixed views, so this is an
+  upper bound and `held_in_all_projected_views` is the stricter count), the container classes'
+  boxes (`contained`, >= 2 views, the container named) and the same-class detector boxes within
+  the association gate (`detector_visible_association_miss`: the detector still saw the object
+  there and the tracker did not associate it, usually because another track took the box),
+  the successor ids born with `possibly_same_as` and the `ambiguous` events; hand-track episodes
+  counted apart; the summary counts the episodes each `p3-tracker-ext` extension would serve.
+  `sanity` (first-view check: ms per frame or step within 2x of the preflight's 152 / 220 and
+  mask-bbox IoU vs the prompt or detector box on the first N frames >= 0.8), `reseed-schedule`
+  (arm (d)'s per-view payload from (c)'s `detector_reseed` / `handoff_reseed` events: the slot
+  is the SAM3 slot the track last had in that view per `residuals.jsonl`, one box correction per
+  slot per K = 30 frames, `selected_by` `detector_reseed` / `track_reproject`, events for tracks
+  the view never masked skipped and counted), `decide` (the (c)-vs-(b) rule), `mark-plan-slots`,
+  `scoreboard`; `--fpv-poses` takes the fixtures' pose file so the pipeline runs without
+  `data/`, `--reuse-observations` re-runs tracker and measures from a written
+  `observations.jsonl`. Tests (`tests/test_finebio_arms.py`, 10, default tier): episodes with
+  the three outcomes; held / contained / association-miss inference on the fixture cameras with
+  probes apart; slot measures against the detector reference with a group slot and a mask-less
+  row; area stability; the reseed schedule with every skip reason, accepted by the worker's own
+  `_corrections_by_frame`; the sanity check passing and failing on timing and on IoU; the plan-slot
+  annotation (idempotent); the decision rule; the committed clip config; arm (a) end to end on
+  the preflight fixtures with observation reuse.
+- **One adapter fix on the way (`finebio_observations.py`, commit `fa2dacc`).** The arm (c)
+  first-view sanity (fpv, 300 frames) read mask-bbox IoU medians of **0.035 / 0.154 / 0.023**
+  for the plate, centrifuge and vortex while the masks were right: SAM3.1 video-memory masks
+  carry 1-15 isolated single positive pixels far from the object (the worker's own box already
+  ignores them: components under 20% of the largest, `BOX_COMPONENT_KEEP_FRACTION`), and
+  `worker_to_observations` measured the bbox over every nonzero pixel. `filter_mask_components`
+  now applies the worker's rule before the bbox, area centroid and area are measured; rows that
+  lost pixels record `mask_speckle_pixels_dropped` and `mask_components` in their provenance;
+  single-component masks are untouched and `mask_measurements` is unchanged. Speckles were
+  dropped on **54.5%** of (c)'s rows and **36.2%** of (b)'s; after the fix the same 300 frames
+  read median 0.941 (plate 0.937, centrifuge 0.978, vortex 0.951). Test: a mask with three
+  stray pixels measures as the object alone with 3 pixels and 3 components on the record; a
+  component at >= 20% of the largest is kept. Arm (b)'s observations were rebuilt after the fix
+  (its first build had not finished); nothing else re-ran.
+- **Arms: what ran and what it cost.** Queue order fpv, T1..T5, one worker at a time
+  (`battle-muggled-arms`, MuggledSAM interpreter, `sam3.1_multiplex.pt`, bfloat16, 1280 square).
+  **(a)** boxes only: no GPU; observations + tracker + measures 53 s CPU. **(b)** `box-decode`
+  on `with-plate/box_streams/<view>.jsonl`, 3600 frames per view: **593-614 s per view**
+  (149-151 ms per prompted frame median, of which the image encode 145; 164-171 ms end to end
+  with video decode and PNG writes), **2.15-2.22 GiB**, 26,582-34,851 masks per view (181,984 in
+  all), adapter + tracker + measures 6.5 min CPU. **(c)** `video-memory` on
+  `with-plate/schedules/<view>.json` (11 slots per view), `--prompt-memory-semantics append`, no
+  tau, `--checkpoint-every 600`: **708-793 s per view** (195-217 ms/step steady; the preflight's
+  220 for 4 slots: 11 slots cost nothing more, the encoder dominates), **3.61-3.64 GiB on the
+  fixed views, 4.15 on the fpv** (2.6 for 4 slots), 36,222-37,799 masks per view (222,520: a
+  memory slot answers on every frame from its start), pipeline 7.9 min. **(d)** `video-memory` on
+  the schedules built from (c)'s events (986 box corrections in all: fpv 426, T1 149, T2 23, T3 177,
+  T4 78, T5 133; `track_reproject` 636, `detector_reseed` 350; 8,978 events skipped, 8,917 of them
+  for tracks the view never masked), same flags: **895-1162 s per view** (247-322 ms/step: every
+  correction is a decoder pass plus a prompt-memory encode, and `append` keeps every prompt in the
+  bank), **3.81-4.07 GiB fixed, 4.39 fpv**, 222,740 masks, pipeline 7.7 min.
+  Sanity checks before each queue continued: (b) fpv 100 frames **149.6 ms per prompted frame**,
+  mask-bbox IoU vs the prompt box **0.936 median, p10 0.879, 100% >= 0.5** on 873 masks, masks on
+  the boxes from frame 0; (c) fpv 300 frames **204 ms/step**, **4.13 GiB**, IoU vs the best
+  same-class detector box **0.941 median, p10 0.715, 98.7% >= 0.5** on 2428 masks (plate 0.937,
+  centrifuge 0.978, vortex 0.951, PCR 0.900, blue pipette 0.731; the preflight's tracks 0.70-0.98)
+  after the adapter fix; (d) fpv, first 300 frames of the full run, **321.5 ms/step**, 0.941
+  median, 98.2% >= 0.5, 4.39 GiB.
+- **Scoreboard (per view and pooled; `scoreboard/scoreboard.md`).** Det-box IoU pooled
+  median / p10 / fraction >= 0.5 / n: **(b) 0.926 / 0.842 / 0.991 / 148,362**; **(c) 0.914 /
+  0.060 / 0.793 / 175,827**; **(d) 0.911 / 0.000 / 0.757 / 175,997**. Per view (b) 0.921 / 0.920 /
+  0.920 / 0.926 / 0.931 /
+  0.936 (T1..T5, fpv) with 98.2-99.9% >= 0.5 everywhere; (c) 0.846 / 0.815 / 0.913 / 0.921 /
+  0.930 / 0.932 with **65.8 / 61.9 / 68.8 / 97.4 / 93.3 / 82.7%** >= 0.5; (d) 0.843 / 0.799 / 0.912
+  / 0.920 / 0.926 / 0.929 with 65.9 / 62.3 / 68.9 / 92.6 / 87.2 / 72.9%. Where
+  (c) loses is legible per slot: the landmark and static slots hold in every view at (b)'s level
+  (plate 0.917-0.954, vortex 0.918-0.943, PCR 0.846-0.928, trash can 0.941-0.952, yellow and red
+  pipettes 0.885-0.960), while **the centrifuge in T1 and T2 reads 0.475 / 0.447 with 22 / 19%
+  >= 0.5** (the memory holds the base while the detector box grows to include the open lid; in
+  T3-T5 and the fpv 0.965-0.973), **the 50 ml and micro tube slots drift to nothing** (T2
+  `50ml_tube#0` 0.000 on 2157 masks after the tube leaves at frame 2043; T1/T3 `50ml_tube#0`
+  0.24; `micro_tube#0` 0.00-0.44 in T2/T3/T5; fpv `15ml_tube#1` 0.000), and **the in-hand blue
+  pipette drifts** (T1 0.067, T3 0.420, fpv 0.562 vs (b)'s 0.83-0.89). (b) cannot drift by
+  construction: its weak cells are the same in-hand objects at p10 0.52-0.63 and the 27-frame
+  held micro tube in T5 (0.000 on 92 masks: the box-prompted decode lands on the glove).
+  Identity (tracker; (a) / (b) / (c) / (d)): tracks born **285 / 308 / 270 / 264**, objects only
+  226 / 249 / 211 / 205; lost 243 / 264 / 234 / 227; re-acquired 129 / 141 / 101 / 79 at latency
+  median 10 / 9 / 9 / 11; **ambiguities 126 / 158 / 133 / 173**; **fragmentation 220 / 242 / 207 /
+  201** (objects only 168 / 190 / 155 / 149); id switches against the SAM3-slot proxy - / 629 / 264
+  /
+  358 ((a) has no SAM3 slots); slot disagreements 0 / 64 / 28 / 17; duplicate-pair frames 41,090 /
+  40,982 / 24,468 / 24,146. Per class, the arms agree on the objects that do not move (plate,
+  vortex,
+  PCR, trash can, yellow pipette, 15 ml tube, the micro-tube group: one id each over 3600
+  frames in every arm) and differ on the rest: **the centrifuge is one id in (c) and 8-9 ids in
+  (a)/(b)** (the box centre jumps when the lid opens and the stationary prior loses it; the mask
+  centroid stays on the body), the blue pipette **47 / 80 / 30 / 22** ids, the 8-channel pipette 19
+  /
+  8 / 15 / 10, the red pipette 9 / 5 / 4 / 4, the 50 ml tubes **5 / 6 / 19 / 8** (the drifted (c)
+  slots breed false tracks), micro tubes 96 / 100 / 101 / 118 (identical instances, out of
+  scope). Cross-view residual pooled median 5.4 / 5.4 / 6.0 / 6.0 px (SAM3 rows alone 6.4 in (b),
+  6.8 in (c), 6.7 in (d); detector rows 5.2-5.8), fpv 8.8-9.0 px.
+- **The (c)-vs-(b) decision and arm (d).** The rule written into `decide` before the numbers
+  existed: (d) runs if (c) beats (b) by >= 0.02 on the pooled det-box IoU median, or is better on
+  all of id switches, fragmentation and ambiguities and worse on none. (c) **loses on IoU** (-0.012
+  on the median; 79.3 vs 99.1% >= 0.5) and **wins on all three identity metrics** (264 vs 629,
+  207 vs 242, 133 vs 158), so (d) ran (`decision_c_vs_b.json`), with the caveat on the record
+  that the id-switch proxy treats a drifted slot that stays on the wrong object as one identity.
+  **(d) did not pay for itself**: pooled IoU 0.911 (below (c) and (b)), 75.7% >= 0.5 (below
+  (c)'s 79.3%), **ambiguities 173** (worse than both), fragmentation 201 (best by 6), proxy id
+  switches 358 (worse than (c), better than (b)), re-acquisitions 79 (fewest), slot disagreements
+  17 (fewest). Per slot the corrections cut mostly down: T4 `50ml_tube#1` took **one**
+  `track_reproject` box and fell from 97.4% to 0.1% >= 0.5 (the box decoded another object and
+  `append` kept it in the prompt bank), T5 `8_channel_pipette#0` (52 corrections) 95.7 -> 48.0%,
+  fpv `15ml_tube#0` (59) 52.4 -> 3.3%, fpv `blue_pipette#0` (23) 57.5 -> 31.5%, the fpv trash can
+  / centrifuge / PCR machine (49 / 60 / 13) lost 9-14 points; the gains are T1 `blue_pipette#0`
+  17.9 -> 34.0% and T3 `micro_tube#0` 10.1 -> 16.4%; per class the 50 ml tubes (19 -> 8 ids), the
+  blue pipette (30 -> 22) and the 8-channel (15 -> 10) fragment less, the micro tubes more (101
+  -> 118). The mechanism as run (tracker-emitted boxes, one per slot per 30 frames, installed
+  under `append` with no acceptance test on the decoded mask) injects a wrong prompt whenever the
+  projection lands where the object is not visible; a correction would need the seed tool's
+  acceptance rule (decoded mask-bbox IoU vs a same-class detector box >= 0.6) before it is
+  installed, a change to the worker's correction path that was not made here. **Verdict for the
+  plan's stop rule** ("(b) within 0.02 of (c)/(d): video memory and re-seeding are not
+  adopted"): (b) is not within 0.02, it is ahead (0.926 vs 0.914 / 0.911 on the median, 99.1 vs
+  79.3 / 75.7% on the fraction >= 0.5), so **the memory-free per-frame decode is the mask source
+  for the floor and for `p5-*`**; video memory's one legible advantage is identity through
+  appearance change (the centrifuge one id across the lid cycles in (c)/(d), 8-9 ids in (a)/(b))
+  and masks on the frames the detector misses (222k vs 182k), its cost is drift on objects that
+  leave or are held.
+- **Occlusion inventory (object tracks; hand-track episodes counted apart, 86 in every arm).**
+  (a) / (b) / (c) / (d): **284 / 317 / 247 / 218 episodes** on 194 / 215 / 180 / 173 tracks; lost at
+  the 30-frame timeout 187 / 208 / 178 / 171, re-acquired 97 / 109 / 69 / 47 (the re-acquired ones
+  last 9-11 frames median, 24-26 p90). Inferred state: `held` (inside a hand box in >= 2 views)
+  **142 / 166 / 102 / 89**, of which inside a hand box in every projecting view 16 / 19 / 6 / 5;
+  `contained` **125 / 135 / 138 / 144**, by container **micro-tube rack 89 / 100 / 109 / 118**,
+  centrifuge 16 / 13 / 12 / 9, magnetic rack 15 / 13 / 12 / 10, vortex 4 / 4 / 1 / 2, 50 ml rack
+  1 / 5 / 2 / 5; identical-instance classes or group slots (group-track candidates) **145 / 156 /
+  171 / 161**, of which ending in an ambiguity or a `possibly_same_as` successor 74 / 80 / 88 /
+  80; association misses (detector still within the gate in >= 2 views) 21 / 16 / 21 / 13;
+  unexplained 66 / 68 / 42 / 32.
+  By class: micro tubes 123-136 episodes in every arm (the racks' tubes coasting when a hand
+  passes over the rack: `contained` in the micro-tube rack is the dominant state), the blue
+  pipette 74 / 116 / 30 / 24, the 8-channel pipette 27 / 17 / 26 / 12, blue tips 16 (they open no
+  slot and are tracked from detector rows only), the red pipette 14 / 10 / 10 / 10, the
+  centrifuge 8 / 7 / 0 / 0.
+  Reading for `p3-tracker-ext`: **`contained` would serve 125-144 episodes per arm, four fifths
+  of them tubes in the micro-tube rack** (the rack is one static volume; the plan's group track
+  for the rack's tubes and the `contained` state are the same fix from two sides), the
+  centrifuge's own containment 12-16; **`held` 89-166 by the loose test but only 5-19 by the
+  strict one**, and the in-hand pipette's real problem is not the hand box but the stationary
+  prior at a 27-30 px gate (it fragments into 22-80 ids before any occlusion); **group tracks**
+  145-171 episodes, half of them ending ambiguous, which is the per-tube identity the plan already
+  rules out. The 3 zero-length episodes per arm (a track re-acquired on the frame its support
+  dropped) are coasting events without a coasting row and are not counted.
+- **Deviations.** (1) The plate slot is plan-driven (above). (2) The adapter speckle rule
+  (above). (3) The hand-off gate came out at 27 px, half the preflight's, for the reason above;
+  it was used as computed. (4) (d) ran on the identity clause of the pre-registered rule, not the
+  IoU clause, and came out negative. (5) (e)
+  DAM4SAM was not run (optional; the GPU went to (d)). (6) The tracker also tracks the hands;
+  they are in the observation files as the rig treats them (probes) and are excluded from the
+  inventory's object counts and the `objects_only` identity line, not from the tracker's totals.
+  (7) The `sanity` subcommand reads every mask of a run before keeping the first N frames, so a
+  full-run check takes the adapter's 3-5 minutes; the 300-frame smoke runs are quicker.
+- **Tests and lint.** Default tier **945 passed / 14 skipped** (934 before this lane; +10 arms
+  tests, +1 observation test); `uv run ruff check src tests scripts` and `ruff format --check` clean on the
+  files touched. No `gpu`-marked test added (the arms' GPU numbers are recorded here and in the
+  run README).
+- **For the confidence / events / viewer phase.** Every arm directory has the same shape:
+  `observations.jsonl` (`FineBioObservation` rows in raw pixels and raw frames: every DINO box at
+  >= 0.3 plus, in (b)-(d), the SAM3 rows with mask bbox, area centroid, area, `sam3_object_score`
+  and the detector box when one matches, `provenance.detector_box_iou`, `object_id` `sam3-NN`
+  for the mask file), `tracks/tracks.jsonl` (`Track3D`), `tracks/events.jsonl` (`TrackEvent`;
+  `handoff_reseed` / `detector_reseed` carry `view` and `box_xyxy_px`), `tracks/residuals.jsonl`,
+  `tracks/identity_metrics.json`, `measures.json`, `occlusion_inventory.jsonl` (schema in the
+  README). The worker runs' `masks/<frame:06d>_<slot:02d>.png` are in analysis frames (raw - 600)
+  under `b-box-decode/<view>/`, `c-video-memory/<view>/`, `d-video-memory/<view>/`. The (d)
+  schedules with the corrections the tracker emitted are `d-reseed-schedules/<view>.json`. Open,
+  read off these runs for `p5-confidence`: `sam3_object_score` means different things per arm;
+  the per-slot `frac >= 0.5` and the area jumps flag the drifted slots in (c) without a label; the
+  tracker's `slot_disagreement_views` fired 28-64 times.
