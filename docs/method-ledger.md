@@ -806,6 +806,30 @@ the fpv off the plate over [2863, 2983), the plate in six views at the six-view 
 [Sep 25: confidence, events and the review recording (p5-confidence, p5-events,
 p5-viewer)](#sep-25-confidence-events-and-the-review-recording-p5-confidence-p5-events-p5-viewer).
 
+#### Sep 25: second trial P20_03_01 with zero tuning (p6-trial2)
+
+Trial 2 (`P20_03_01`, room 2, raw [600, 4200)) through the trial-1 pipeline with the trial id
+swapped and nothing else changed: its own rig (association **27.5 px**, within 10% of room 1's
+30.1; hand-off **80 px, the cap**, because the rig's moving-object witness is the `blue_pipette`
+of the preflight while room 2 uses the yellow one: **the one thing named as overfit**, a witness
+class list inside a formula that otherwise transfers), the negative control catching the shipped
+error on four re-solved cameras (static LOO 7-12 vs 19-32 px), fpv pose gone for 2.6-3.1 s at
+every centrifuge spin (3352/3600 valid), seeds **66/66 accepted** with the same rule picking the
+yellow pipette and its tip rack, the plate recorded as **`detector_unseeded` in T2** (DINO never
+sees it there; DDETR not substituted), and arms (a), (b), (c) plus the `tracks-ext` pass in
+about 2.3 h of GPU at the same costs (150 ms per prompted frame, 202-213 ms/step, 2.2 / 3.6-4.1
+GiB). **(b) reads 0.919 median with 98.5% of masks >= 0.5 IoU against the detector (trial 1
+0.926 / 99.1%), (c) 0.883 with 65.3% (0.914 / 79.3%)**: video memory drifts more in room 2 (24
+dead slots against 9: the tubes that leave, the in-hand pipette in four views, two T4 landmarks
+DINO barely sees, the pipettes in the head camera), the identity clause of the (c)-vs-(b) rule
+fires again and (d) is not run; the memory-free per-frame decode stays the mask source by a
+wider margin. **The in-hand pipette fragments the same way in both rooms and it is a different
+pipette** (yellow 32 / 58 / 25 ids here, blue 47 / 80 / 30 there), the static objects are one id
+each everywhere, and the extensions move every count in the same direction by a similar amount
+(born -27..-43%, micro tubes -78..-83%, ambiguities 70 / 97 / 25 -> 8 / 35 / 7, eight container
+volumes incl. the magnetic rack room 1 could not build). Record: [Sep 25: second trial P20_03_01
+with zero tuning (p6-trial2)](#sep-25-second-trial-p20_03_01-with-zero-tuning-p6-trial2).
+
 ### Plan versus actual
 
 What the plan said, what happened instead, and why, in one line each.
@@ -9100,3 +9124,235 @@ and the 83 `main()` entry points beyond their shared fragments.
   score. Trial 2 runs the same three commands on `runs/finebio-arms-P20_03_01-*` with its clip
   config, rig and seeds; nothing in the parameters is trial-specific except the per-class
   container heights, which are bench furniture, not a trial.
+
+### Sep 25: second trial P20_03_01 with zero tuning (p6-trial2)
+
+- **What this is.** The `p6-trial2` todo of the FineBio 3D-tracking plan
+  ([`docs/plan-2026-09-25-finebio-3d-tracking.md`](plan-2026-09-25-finebio-3d-tracking.md)):
+  trial 2 `P20_03_01` (room 2, protocol 03, six-view annotated frame 1442), raw frames
+  **[600, 4200)**, run through the trial-1 pipeline **with the trial id swapped and no other
+  change**: its own camera solve (the p0-cameras entry: day 221124, T1..T5 = cameras 1,2,3,4,6,
+  cameras 1-4 `marker_pnp` at 0.97 / 1.80 / 0.71 / 2.09 px because no shipped pose of the day
+  fits them, camera 6 `shipped` at 7.47 px, no view dropped), its own rig check and gates
+  (formulas), the same seed tool and parameters (with the plan-driven plate landmark and
+  `--slot-cap 11` of the p4-arms step 0), arms **(a) boxes only, (b) per-frame box decode, (c)
+  SAM3.1 video memory seeded once** at 1280 on the lane-B proxies, the same tracker and gates,
+  measures, identity metrics, occlusion inventory, scoreboard and the `tracks-ext/` pass with
+  the p3-tracker-ext flags (landed while the (b) queue ran; checked before the tracker step).
+  Arm (d) was negative on trial 1 and (e) was not run there, so neither ran here. Inputs: the
+  DINO pass `runs/finebio-detect-P20_03_01-600-4200-20260925/dino` (the symlink
+  `runs/finebio-detect-P20_03_01-600-4200`), the proxies `data/derived/finebio/P20_03_01/600-4200/`
+  (proxy frame k == raw 600 + k, every worker with `--start-frame 0`), the window camera config
+  and clip config. GPU: **about 2.3 h** ((b) 3634 s, (c) 4516 s, the two smokes 88 s, the two
+  seed decodes 23 s), one worker at a time, the card holding only `kwin_wayland` (144 MiB) before
+  every worker (the queue logs record the `nvidia-smi` check), nothing killed, no viewer. CPU:
+  rig 19 s, seeds 58 + 31 s, (a) 56 s, (b) 6.3 min, (c) 7.4 min, the ext passes 1-2 min each.
+  Outputs under `runs/finebio-arms-P20_03_01-20260925/` (README with the trial-1 vs trial-2
+  tables and the differences list), `runs/finebio-rig-P20_03_01-600-4200/`,
+  `runs/finebio-seeds-P20_03_01-20260925/` (all gitignored, FineBio licence). **No source file
+  was changed**; this entry and its Part 1 pointer are the only commit. Claim boundary as for
+  trial 1: detector-vs-mask agreement is model-vs-model, identity metrics against the SAM3
+  per-view slots are a proxy, no human anchor exists for this trial.
+- **Step 1, the rig (`battle-finebio-rig`, the clip config's `downstream.rig` command as written,
+  `--negative-control` covering T1-T4, the four cameras the solve replaced).** Static LOO median
+  **9.2 px** over 46 cells (trial 1 10.0 over 42; p90 48.2 vs 40.8) -> `association_px` **27.5
+  px** (30.1). Moving-object LOO p90 per view **T1 167.7, T2 196.8, T3 93.6, T4 111.5, T5 101.4,
+  fpv 8.4** (trial 1: 14.1 / 11.9 / 4.5 / 11.7 / 8.1 / 27.0) -> `handoff_px` **80.0 px, the cap**
+  (trial 1 27.0). The reason is on the record and is the one overfit this trial names: the rig's
+  moving-object witness list is `cell_culture_plate` + `blue_pipette` (`TRACKED_MOVING_CLASSES`,
+  set on the preflight where the blue pipette was in use); in room 2 the pipette in use is the
+  yellow one and the blue pipette rests on the bench as a weak, flickering detection in T1/T2
+  (30% / 90% of frames at 0.3, 3% / 0% at 0.5), so its per-frame triangulation is poor (LOO
+  medians 50-166 px, inside the held-out box on 11-61%) and its p90 sets the gate at the cap in
+  every fixed view, while the plate (3-10 px, inside the box on 100%) and the fpv column (8.4 px)
+  are as tight as in room 1. **The witness class list is a trial-1 constant inside a formula
+  that otherwise transfers**; applied as written, its consequence is visible in the fpv
+  residuals below. Clock offsets 0 in every view (T2 the only informative scan, right hand),
+  none significant. Static heights (cm): centrifuge 9.0, PCR 2.9, vortex 3.2, trash can 9.0,
+  tube-strip rack 3.0, micro-tube rack 2.1, magnetic rack 1.9, blue tip rack 4.8, yellow 3.3,
+  red 3.1 (room 2 only), 8-channel tip rack 6.2 (its LOO cells 33-97 px: two instances per frame
+  under one class); 0.7-2.1 cm above room 1's for most shared classes (trash can 1.1 below), with
+  T5's kept shipped pose (7.5 px; its PnP 2.9 cm away) the one named candidate for a common
+  offset, not corrected. Hands as probes: **left 491/3600 frames** from >= 3 fixed views at 29.8
+  px, 18.0 cm (trial 1 2546 at 10.9 px, 2.2 cm), right 1415/3600 at 26.3 px, 14.6 cm (1904 at
+  51.7 px, 22.8 cm): the asymmetric rig sees the hands from three cameras far less often. fpv
+  pose valid **3352/3600**; the 248 invalid frames are six runs, two around each centrifuge spin:
+  [892, 908] + [915, 991], [2503, 2511] + [2523, 2588], [3800, 3806] + [3812, 3882] (2.6-3.1 s per
+  spin around the cycles at [895, 937), [2500, 2539), [3798, 3834); the head camera loses the
+  bench markers over the centrifuge, as `trials.json` said), plus one isolated frame; the fixed
+  cameras carry the spins. Plate fixed -> fpv hand-off **4.4 px median / 8.4 p90, inside the fpv
+  box on 100% of 3352 frames** (trial 1 8.6 / 27.0, 96.5%). Negative control, marker-PnP vs
+  shipped: **T1 markers 0.97 vs 29.4 px, static LOO 7.9 vs 23.7, left hand 9.9 vs 36.6 (centres
+  4.8 cm apart); T2 1.80 vs 16.2, 11.8 vs 29.9, right hand 13.3 vs 20.3 (3.0 cm); T3 0.71 vs
+  14.7, 8.0 vs 19.0, 26.2 vs 28.5 (2.8 cm); T4 2.09 vs 32.2, 7.0 vs 31.6, 34.3 vs 42.3 (3.9 cm)**:
+  the PnP pose wins on the static column in all four views by 2.4-4.5x, so the checks catch the
+  shipped error on four cameras where trial 1 had one (camera 6, 0.72 vs 93.7 / 4.8 vs 97.7).
+- **Step 2, seeds (`battle-detector-seed`, trial 1's invocations verbatim).** `run --trial
+  P20_03_01 --detections .../dino --start 600 --end 4200 --output
+  runs/finebio-seeds-P20_03_01-20260925` (defaults; 60 slots, 60/60 accepted, 11 s GPU), then
+  `instances/` copied into `with-plate/` and `select --container-classes <12 defaults>,
+  cell_culture_plate --landmark-classes centrifuge,vortex_mixer,pcr_machine,cell_culture_plate
+  --slot-cap 11`, `decode`, `sheets`, `battle-finebio-arms mark-plan-slots --classes
+  cell_culture_plate` (rule `landmark_plan_shortlist`, note on the record). **66 slots, 66/66
+  accepted** at mask-bbox IoU 0.60-0.98, 32 image encodes, 68 decodes, 11.6 s, 2.41 GiB; the base
+  set is a subset of the with-plate set in every view; 40 of 66 schedule seeds start at analysis
+  frame 0 (trial 1 51). Per view (rule counts): T1 7 moves / 3 container / 1 group; T2 6 / 2 / 3
+  groups; T3 8 / 3; T4 5 moves / 3 in_hand / 2 container / 1 group; T5 8 / 3; fpv 8 / 3. What
+  the unchanged rule picked in room 2: the **yellow pipette** as the pipette in use (moves 166-908
+  px, in a hand on 19-60% of frames in T2-T5 and the fpv), `tube_with_spin_column` instances and a
+  T2 group (a class the room-1 window never showed), the trash can as a mover in T2/T3/fpv (31-42
+  px), three held micro tubes in T4, four 50 ml tube slots in T1 and three individual micro-tube
+  slots in T5. Plate seed IoU T1 0.944, T3 0.953, T4 0.905 (slot opens at frame 1250, where
+  DINO's low-score box first persists; 56% of T4 frames at 0.3), T5 0.925, fpv 0.966. **T2 /
+  plate = `detector_unseeded`** (`with-plate/detector_unseeded.json`, appended to `seeds.md`):
+  DINO has no plate box at score >= 0.3 on any of the 3600 T2 frames (3211 frames with a plate
+  box at >= 0.05, one at >= 0.2, best-score median 0.074, max 0.218), so no instance and no slot
+  exists and the rule has nothing to open; Deformable DETR's 97x84 px plate box on 3247 T2
+  frames (the p2-detect entry) was **not substituted**, per the plan's stop rule. The plate keeps
+  T1 / T3 / T5 throughout, T4 from 1250, and the fpv: above the birth rule's three fixed views. A
+  second-order effect of the trial-1 setting: `--slot-cap 11` was chosen to make room for the
+  plate, so in T2 the eleventh slot went to the next-ranked capped container (`magnetic_rack#0`,
+  54 detected frames, seeded at 0.87). Sheets written, not looked at by a human (`provenance:
+  auto` throughout).
+- **Sanity checks, first view (fpv) before each queue.** (b), 100 frames: **151.0 ms per
+  prompted frame** (trial 1 149.6; encoder 145), mask-bbox IoU vs the prompt box **0.925 median,
+  p10 0.612, 90.8% >= 0.5** on 881 masks (trial 1 0.936 / 0.879 / 100%), 2.15 GiB; passed. The
+  p10 is one slot, **`yellow_pipette#0` at 0.263**: the in-hand pipette's box-prompted decode
+  lands on the glove (trial 1's analogue: the held micro tube in T5 at 0.000); every other slot
+  0.80-0.97. (c), 300 frames: **194.6 ms/step** (trial 1 204; the preflight's 220), **3.93 GiB**
+  (4.13), IoU vs the best same-class detector box **0.942 median, p10 0.558, 91.0% >= 0.5** on
+  2201 masks (0.941 / 0.715 / 98.7%); plate 0.955, centrifuge 0.975, trash can 0.957, vortex
+  0.940, PCR 0.930, red 0.900, blue 0.872, 8-channel 0.767, yellow pipette 0.260; passed.
+- **Arms: what ran and what it cost** (queue order fpv, T1..T5; the trial-1 flags). **(a)** 56 s
+  CPU. **(b)** `box-decode` on `with-plate/box_streams/<view>.jsonl`: **588-635 s per view**
+  (trial 1 593-614), 149-152 ms per prompted frame median (encode 145-146), 162-176 end to end,
+  **2.15-2.22 GiB**, 22,008-31,651 masks per view (**162,676**; trial 1 181,984: fewer slot-frames
+  in room 2, 40 of 66 slots starting at frame 0 against 51), pipeline 6.3 min. **(c)**
+  `video-memory` on `with-plate/schedules/<view>.json`, `append`, `--checkpoint-every 600`:
+  **732-774 s per view** (708-793; worker elapsed 731-772), **202-213 ms/step** steady (195-217), **3.61-3.66 GiB fixed,
+  4.14 fpv** (3.61-3.64 / 4.15), 29,946-38,794 masks per view (**209,279**; 222,520), pipeline
+  7.4 min. Ext passes (`run --ext --reuse-observations`, `--motion-model --containers <the
+  clip's containers> --group-tracks --held`) on all three arms into `tracks-ext/`.
+- **Scoreboard (`scoreboard/scoreboard.md`; trial 2 / trial 1).** Det-box IoU pooled median /
+  p10 / fraction >= 0.5 / n: **(b) 0.919 / 0.700 / 0.985 / 141,159** against 0.926 / 0.842 /
+  0.991 / 148,362; **(c) 0.883 / 0.000 / 0.653 / 168,992** against 0.914 / 0.060 / 0.793 /
+  175,827. Per view (b) 0.919 / 0.913 / 0.919 / 0.907 / 0.918 / 0.934 (T1..T5, fpv) with
+  97.9-99.6% >= 0.5 everywhere (trial 1 0.920-0.936, 98.2-99.9%); (c) 0.888 / 0.896 / 0.879 /
+  **0.085** / 0.901 / 0.910 with **65.1 / 66.2 / 74.6 / 44.3 / 72.9 / 63.9%** >= 0.5 (trial 1
+  0.815-0.932, 61.9-97.4%). Identity (core; (a) / (b) / (c), trial 1 in brackets): born **290 /
+  321 / 208** (285 / 308 / 270), objects only 231 / 262 / 149 (226 / 249 / 211); lost 255 / 284 /
+  179; re-acquired 103 / 109 / 64 at latency 12 / 12 / 11.5 (129 / 141 / 101 at 9-10);
+  **ambiguities 70 / 97 / 25** (126 / 158 / 133); fragmentation 224 / 254 / 149 (220 / 242 /
+  207), objects 173 / 203 / 98; proxy id switches - / 761 / 317 (- / 629 / 264); slot
+  disagreements 0 / **392** / 28 (0 / 64 / 28); duplicate-pair frames 15,255 / 10,471 / 2,062
+  (41,090 / 40,982 / 24,468). Cross-view residual pooled 6.3 / 6.6 / 6.5 px (5.4 / 5.4 / 6.0),
+  fixed views 4.5-7.7 px in both rooms, **fpv 15.9 / 15.0 / 15.6 against 9.0 / 8.8 / 9.0**: the
+  fpv gate is the hand-off gate, 80 px here. Per class: the objects that do not move are one id
+  in every arm of both rooms (plate, vortex, PCR, trash can, blue and red tip racks, tube-strip
+  rack, micro-tube rack; the yellow tip rack, relocated 39-57 px in room 2, is 2 ids there);
+  **the pipette in use fragments in both rooms and it is a different pipette**: yellow **32 /
+  58 / 25** ids here against 3 / 1 / 1 on trial 1, blue **8 / 17 / 16** against 47 / 80 / 30;
+  the centrifuge **7 / 2 / 1** against 8 / 9 / 1 (room 2's lid is open except for the 1.1-1.4 s
+  spins, so its box centre jumps less); 8-channel 12 / 10 / 6 (19 / 8 / 15); 50 ml tubes 11 / 3 /
+  2 (5 / 6 / 19); micro tubes 100 / 100 / 41 (96 / 100 / 101); `8_channel_tip_rack` 15 (two
+  instances under one class in room 2; absent in room 1); `tube_with_spin_column` 6 (room 2
+  only); hands 16 / 43 (18 / 41).
+- **The (c)-vs-(b) rule, evaluated for the record (`decision_c_vs_b.json`).** (c) **loses on
+  IoU by 0.036** (three times trial 1's 0.012; 65.3% vs 98.5% of masks >= 0.5 against 79.3 vs
+  99.1) and **wins on all three identity proxies** (317 vs 761, 149 vs 254, 25 vs 97), so the
+  pre-registered identity clause returns `run_arm_d: true` exactly as on trial 1. **(d) was not
+  run**: negative on trial 1, and the second-trial step is the (a)/(b)/(c) set with zero tuning,
+  not a re-decision; the output is kept so the record shows the clause would have fired again.
+  The verdict holds in room 2 by a wider margin: (b) is ahead, the memory-free per-frame decode
+  stays the mask source; (c)'s advantage is again identity through appearance change (the
+  centrifuge one id against 7 / 2; the 50 ml tubes 2 against 11 / 3) and its cost is drift.
+  **Where (c) drifts in room 2: 24 of the 61 scored slots read a median IoU under 0.35** (trial 1
+  9 of 58), most at 0.000 for their whole life: the 50 ml tubes that leave (8 slots across
+  T1/T2/T4/fpv), the held or relocated micro tubes (T3, T4 x 2, T5) and the spin-column tube
+  (T3), **the in-use yellow pipette in T2 / T3 / T4 / fpv (0.02 / 0.09 / 0.31 / 0.07; T5 holds it
+  at 0.85)**, the blue and red pipettes in the fpv (0.14 / 0.02) and the blue in T1 (0.00), two
+  T4 landmarks DINO barely sees (**the plate, seeded at 1250 from a 0.44 box: 2897 masks at
+  0.000**; the PCR machine 0.08) and the T1 vortex (seeded at 905 from a 0.34 box at the frame
+  edge: 0.12). The static landmarks hold as in room 1 (plate 0.94-0.96 in T1/T3/T5/fpv,
+  centrifuge 0.89-0.98, PCR 0.86-0.92 outside T4, vortex 0.91-0.95 outside T1, trash can
+  0.88-0.96). (b) on the same slots: 0.70-0.92 on the 50 ml tubes, 0.88-0.92 on the yellow
+  pipette in the fixed views and 0.875 in the fpv (p10 0.43, 87% >= 0.5: the in-hand cell is the
+  weak one in (b) too, as trial 1's blue was at p10 0.52-0.63), 0.912 on the T4 plate; (b)'s own
+  worst cells are the held micro tubes in T4 (0.39 / 0.44) and T5 (0.56), the decode landing on
+  the glove as trial 1's T5 held tube did.
+- **Occlusion inventory (object tracks, core; hand episodes apart: 90 per arm, trial 1 86).**
+  (a) / (b) / (c): **268 / 303 / 153 episodes** on 203 / 230 / 123 tracks (trial 1 284 / 317 /
+  247); lost at the 30-frame timeout 196 / 225 / 120, re-acquired 71 / 77 / 32; `held` loose
+  **118 / 142 / 54**, strict 6 / 9 / 3 (142 / 166 / 102, 16 / 19 / 6); `contained` **113 / 113 /
+  45** (125 / 135 / 138), by container micro-tube rack 76 / 87 / 33, centrifuge 13 / 13 / 11,
+  50 ml rack 11 / 3 / 0, magnetic rack 9 / 8 / 0; group candidates 136 / 136 / 58, ending
+  ambiguous 35 / 41 / 6 (145-171, 74-88); association misses 4 / 17 / 9; unexplained 81 / 79 /
+  62. By class: micro tubes 113 / 117 / 45, **the yellow pipette 44 / 74 / 27** (trial 1's blue
+  74 / 116 / 30), blue pipette 17 / 23 / 23, 8-channel tip rack 17 in every arm, red pipette
+  16 / 17 / 9. Same shape as room 1: tubes under a hand in the rack, the in-hand pipette, then
+  the rest.
+- **Tracker extensions (`tracks-ext/`; before -> after, (a) / (b) / (c)).** Tracks born 290 /
+  321 / 208 -> **166 / 202 / 152** (trial 1 285 / 308 / 270 -> 191 / 186 / 147); ambiguities 70 /
+  97 / 25 -> **8 / 35 / 7** (126 / 158 / 133 -> 33 / 54 / 22); fragmentation 224 / 254 / 149 ->
+  116 / 146 / 105; proxy id switches (b) 761 -> 911, (c) 317 -> 265 ((b) 629 -> 544, (c) 264 ->
+  202; (b)'s rise here sits on the T5 micro-tube and T1 50 ml slots, see below); the yellow
+  pipette **32 / 58 / 25 -> 24 / 48 / 21** (trial 1's blue 47 / 80 / 30 -> 41 / 59 / 20); micro
+  tubes **100 / 100 / 41 -> 18 / 17 / 9** (96 / 100 / 101 -> 32 / 26 / 17); hands 16 / 43 -> 10 /
+  23 (18 / 41 -> 6 / 31); movers 108 / 134 / 108; contained episodes 14 / 10 / 12, re-acquired
+  14 / 8 / 10, **centrifuge 8 / 6 / 9** (trial 1 19 / 20 / 15), magnetic rack 6 / 4 / 0,
+  micro-tube rack 0 / 0 / 3; footprint groups 2 in every arm (the rack's micro tubes at frame
+  600, size 10-12, and a `yellow_tip` group of up to 5; room 1 had blue tips), splits 14 / 12 /
+  4 (25 / 19 / 13), joined 4 / 3 / 0; held episodes 124 / 139 / 88, re-acquired 39 / 42 / 21,
+  fell back 38 / 42 / 32; pooled residual 6.3 / 6.6 / 6.5 -> 6.8 / 6.7 / 6.3. **Eight container
+  volumes** built from the arm's own detector rows (centrifuge 20 x 19 cm from T2/T3/T4/T5 with
+  the rig point inside; vortex 10 x 9; PCR 7 x 6; micro-tube rack 21 x 8; 50 ml rack 6 x 4; tube-
+  strip rack 11 x 14; **magnetic rack 14 x 4**, skipped in room 1 for want of a stable view;
+  trash can 10 x 11); trial 1 built seven. The extensions' direction and size of effect transfer
+  (born -43 / -37 / -27%, micro tubes -82 / -83 / -78%, the in-use pipette -25 / -17 / -16%;
+  trial 1 -33 / -40 / -46%, -67 / -74 / -83%, -13 / -26 / -33%).
+- **What behaved differently in room 2** (the README's list; the overfit is named in 2). (1)
+  Asymmetric rig, four re-solved cameras; the association gate within 10% of room 1's. (2) **The
+  hand-off gate at the cap, 80 px, from the rig's trial-1 witness class (`blue_pipette`): named
+  as overfit**; fpv residuals 15-16 px against 9. (3) fpv drop-outs of 2.6-3.1 s at every spin
+  (248 frames against 13); the fixed cameras carry the centrifuge. (4) The plate unseen by DINO
+  in T2, recorded as `detector_unseeded`, four fixed views remain, one id on 3600/3600 frames in
+  every arm of both trials; T4's slot opens at 1250. (5) Different movers: the yellow pipette and
+  its tip rack; **the in-hand pipette fragments the same way whichever colour it is** (32 / 58
+  here, 47 / 80 there), the trial-1 finding is not a room-1 artefact; `tube_with_spin_column`
+  and a two-instance `8_channel_tip_rack` appear. (6) (b)'s weak cells are the same kind
+  (in-hand object, held tubes) and its pooled agreement is within 0.01 of room 1. (7) The
+  centrifuge's T1/T2 mask centroids are rarely associated in (b) (its static LOO 47 / 49 px in
+  those views, over the 27.5 px gate; support on 200 / 284 of 3649 rows against 1758 / 1886 of
+  5158), at no cost to its identity (7 / 2 / 1 ids). (8) (b)'s slot disagreements 392 against
+  64, all on identical-instance tubes (`micro_tube` in T5, 251 rows, three individual slots
+  where room 1 had a group; `50ml_tube` in T1, 130 rows, four slots): per-tube identity
+  surfacing as the tracker's disagreement signal, not a gate effect (no fpv row among them).
+  (9) Ambiguities and duplicate-pair frames far lower (70 vs 126; 15k vs 41k): fewer tubes seen
+  individually from >= 3 fixed views. (10) **Video memory drifts more** (24 dead slots against 9,
+  65.3% against 79.3%), the same classes plus two new: landmarks seeded in a view that barely
+  sees them (T4 plate and PCR) and the moving pipettes in the head camera (0.02-0.14, where room
+  1's fpv held them at 0.56-0.96) with the pose lost at every spin; same verdict, wider margin.
+  (11) Transferred unchanged: the camera stop rule, the association formula, the seed rule
+  (66/66, the right pipette, the plate where seen), (b)'s agreement, the worker costs to within
+  4%, the extensions' effect, the (c)-vs-(b) verdict.
+- **Deviations.** (1) Nothing was tuned; the two things that would have been tuned (the rig's
+  witness class, the T2 plate) are recorded instead. (2) (d) not run although the identity clause
+  fired (above). (3) `--slot-cap 11` gave T2 a `magnetic_rack` slot trial 1 did not have (the
+  plate's place). (4) The `detector_unseeded` record is a file beside the seeds
+  (`detector_unseeded.json`) and a section in `seeds.md`, not a slot in `seeds.json`: the seed
+  tool has no record type for an object the detector never produced, and adding one was code
+  the step did not need. (5) The ext passes reuse the core's observations (`--reuse-observations`);
+  nothing of the core's was rewritten.
+- **Tests and lint.** No source file changed; the default tier at the p5 commit (982 passed / 14
+  skipped) stands. The temporary analysis scripts (per-class id counts, per-slot tables, the
+  queue drivers) lived under `/tmp` and are not committed.
+- **For the viewer and the anchors.** Trial 2 has the same layout as trial 1 under
+  `runs/finebio-arms-P20_03_01-20260925/` (arms a / b / c with `tracks/` and `tracks-ext/`,
+  `observations.jsonl`, measures, inventories; no `d-*`), its rig at
+  `runs/finebio-rig-P20_03_01-600-4200/rig.json` and its seeds under
+  `runs/finebio-seeds-P20_03_01-20260925/with-plate/`; `battle-finebio-confidence`,
+  `battle-finebio-events` and `battle-finebio-viewer` take them with the trial-2 clip config
+  (`configs/clips/finebio_P20_03_01_600-4200.json`). The six-view annotated frame for a trial-2
+  anchor set is raw 1442 (proxy 842). Two things to carry: the fpv has no pose on 248 frames
+  (the viewer's fpv frustum and hand-off series will have gaps at the spins), and T2 has no
+  plate slot (a Cameras tile without a plate mask by design, `detector_unseeded`).
