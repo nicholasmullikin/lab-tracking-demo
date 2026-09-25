@@ -763,6 +763,49 @@ box centre is not one 3D point), and the core reproduces byte for byte with the 
 (tested by hash). Record: [Sep 25: tracker extensions on the inventory's evidence
 (p3-tracker-ext)](#sep-25-tracker-extensions-on-the-inventorys-evidence-p3-tracker-ext).
 
+#### Sep 25: confidence, events and the review recording (p5-confidence, p5-events, p5-viewer)
+
+The three Phase-5 tools on trial 1 (`P03_03_01`, raw [600, 4200)), CPU, about 9 min for the
+recording, no viewer opened. **Confidence** (`battle-finebio-confidence`): per `Track3D` row
+five label-free signals aggregated over the support views (detector-vs-mask bbox IoU, cross-view
+residual, SAM3 object score, detector score, support), each mapped to its percentile *within
+the arm* (the SAM3 score is a decoder IoU in (b) and a presence logit in (c)/(d)) and averaged,
+the Assembly101 scorecard's rank combination; abstain when support < 2, any signal is
+undefined, or the row is in the arm's bottom decile; DINO-vs-DDETR agreement kept as a column
+and shown to be near-redundant (agreement 0.73-0.87 in the lowest confidence quartile, 0.96-0.97
+in the highest). Arms (a) / (b) / (c) / (d): abstain **1.000 / 0.723 / 0.698 / 0.716** over all
+rows (tracks supported only by detector rows carry no mask signal, so the boxes-only arm
+abstains everywhere by construction) and **- / 0.070 / 0.038 / 0.024** on the 42-47k rows that
+carry all five signals; medians 0.535 / 0.521 / 0.504 / 0.501. **Events**
+(`battle-finebio-events`): `contained` (position inside a container volume: a square footprint
+around the rig's static point, half-extent from the detector-box widths in cm at depth,
+extruded to a per-class height), `held` (within 12 cm of a hand track once the object has moved
+>= 2 cm) and `proximity` (a pipette tip, triangulated from mask bottoms in the side views, in
+the plate volume), all through one hysteresis (enter <= 0 cm, exit >= 3 cm, dwell 5 frames), the
+centrifuge lid state from `trials.json` as a second series, everything labelled model output.
+(b): contained **145** (micro-tube rack 81, magnetic rack 50, centrifuge 9, vortex 5), held
+**64** (blue pipette 34), proximity **0** (no pipette comes within 30 cm of the plate in this
+protocol); both cycles read the same: a tube `contained` in the centrifuge before the closure
+is lost 27-28 frames into the spin (the core's 30-frame coast timeout) and a successor id is
+born 2 frames after the lid opens; on `tracks-ext/` the same tube (`micro_tube-032`) is
+`contained` from 887 to the window end through both closures. **Viewer**
+(`battle-finebio-viewer`): one recording, `runs/finebio-review-P03_03_01-20260925/review.rrd`,
+**915.6 MB, 508 entity paths, 44,448 mask cut-outs, `rerun rrd verify` clean**, with three
+validated presets (`world.rbl`, `cameras.rbl`, `evidence.rbl`; copies under `configs/rerun/`):
+the seven cross-checks logged through `finebio_slice`'s functions plus the camera-6 negative
+control as a second frustum and a red marker set, every arm's tracks under
+`world/tracks/<arm>/<state>` (arm (b) shown, the others hidden by override; the extensions'
+`held` / `contained` render without a code change), the proxies as `AssetVideo`, masks every
+6th frame for (b), every 30th for (c) and on the storyboard frames for all, a ten-item
+storyboard chosen from the data (the centrifuge cycle at raw 1099 / 1176 / 1189 / 1228 / 1230,
+the fpv off the plate over [2863, 2983), the plate in six views at the six-view annotated frame
+916, arm (c)'s 8-channel pipette memory mask staying on the rack at 3031 with the IoU 0.97 ->
+0.32 as the confidence falls 0.64 -> 0.08). A second recording on `tracks-ext/` (arms a/b/c,
+887.6 MB) shows the same id through both lid closures. Guide:
+[`docs/review-guide-2026-09-25-finebio-3d.md`](review-guide-2026-09-25-finebio-3d.md). Record:
+[Sep 25: confidence, events and the review recording (p5-confidence, p5-events,
+p5-viewer)](#sep-25-confidence-events-and-the-review-recording-p5-confidence-p5-events-p5-viewer).
+
 ### Plan versus actual
 
 What the plan said, what happened instead, and why, in one line each.
@@ -8829,3 +8872,231 @@ and the 83 `main()` entry points beyond their shared fragments.
   50-56 episodes per arm and costs nothing when the hand track is absent (it falls back). (6)
   Arm (d) was not re-run with the extensions (the p4-arms verdict left it aside). Runs are
   gitignored (FineBio licence); the numbers are copied here and into the scoreboard.
+
+### Sep 25: confidence, events and the review recording (p5-confidence, p5-events, p5-viewer)
+
+- **What this is.** The three Phase-5 todos of the FineBio 3D-tracking plan
+  ([`docs/plan-2026-09-25-finebio-3d-tracking.md`](plan-2026-09-25-finebio-3d-tracking.md)) on
+  trial 1 (`P03_03_01`, raw frames [600, 4200), six views): a per-track, per-frame confidence
+  with abstention read off the arms' own files, object-object events from the 3D tracks with
+  hysteresis, and the review recording with its three presets, the seven preflight cross-checks
+  and the negative control standing on every build. Inputs: the four arms under
+  `runs/finebio-arms-P03_03_01-20260925/` (entry "Sep 25: tracking arms on trial 1"), the rig
+  (`runs/finebio-rig-P03_03_01-600-4200/rig.json`), the seeds run `with-plate/`, the DINO and
+  Deformable DETR passes, `configs/clips/finebio_P03_03_01_600-4200.json` and
+  `configs/finebio/trials.json`. CPU only: 15 s / 7 s per arm for confidence / events, 503 s for
+  the recording; no GPU, no viewer opened (the checks are `rerun rrd verify` / `stats`, the
+  entity list and the presets' query resolution). Other lanes committed concurrently (tracker
+  extensions, trial 2, the anchor workspace); only the files named here were staged, by path.
+  Commits `4ecf332` (confidence), `0f06d25` (events), `1e7e9d8` (slice logging split),
+  `3e4232c` (viewer), and this entry's commit (presets, guide, ledger). **Claim boundary:**
+  every signal, event and mask is model output; the FineBio detector was trained on FineBio's
+  own bench and cameras, so detector-vs-mask agreement is model against model; confidence ranks
+  rows within an arm and is not a probability of being right; no human anchor exists yet.
+- **Confidence (`src/battle/finebio_confidence.py`, console script `battle-finebio-confidence
+  --arm-dir <arm> --detections <dino dir> [--ddetr] [--tracks-dir] --output <arm>/confidence/`).**
+  Per `Track3D` row, five signals aggregated over the row's support views: `detector_box_iou`
+  (the mask's bbox against the detector box that prompted or matched it,
+  `provenance.detector_box_iou`, mean over views), `residual_px` (the tracker's cross-view
+  residual from `residuals.jsonl`, median, negated before ranking), `sam3_object_score` (mean;
+  the decoder's IoU prediction in (b), the tracker's presence logit in (c)/(d), which is why
+  every signal is compared by rank *within* one arm), `detector_score` (mean), `support` (views).
+  Each is mapped to its percentile within the arm with `detector_scorecard.normalized_ranks`
+  and the percentiles averaged with `rank_average`, the Assembly101 scorecard's combination;
+  `confidence` in [0, 1]. **Abstain rule, stated on every report:** support < 2, or any of the
+  five signals undefined for the row (no support view carries it), or the combined rank in the
+  arm's bottom decile; reasons on the row. DINO-vs-Deformable-DETR agreement (a same-class DDETR
+  box at IoU >= 0.5 and score >= 0.3 for the row's DINO box, fraction over support views) is a
+  per-row column marked **near-redundant** and never folded in. Observations are streamed with
+  `json.loads` and only the (view, frame, slot) keys the tracks used are kept (877k rows in
+  15 s). Outputs `confidence.jsonl` (`TrackConfidence`: signals, per-signal view counts, ranks,
+  confidence, abstain + reasons, `ddetr_agreement`, the tracker's own confidence and abstain),
+  `confidence_summary.json`, `confidence.md`. **Trial 1:** (a) 153,944 rows on 285 tracks,
+  median 0.535, abstain **1.000** (no mask signal exists in a boxes-only arm: by construction,
+  on the record); (b) 158,290 / 308, **0.521**, abstain **0.723** over all rows, 0.700 on
+  observed rows, **0.070 on the 47,196 rows that carry all five signals**; (c) 145,966 / 270,
+  0.504, 0.698 (0.038 on 45,867); (d) 142,974 / 264, 0.501, 0.716 (0.024 on 41,549). The abstain
+  fraction is dominated by `missing:detector_box_iou` / `missing:sam3_object_score` (100-111k
+  rows per SAM3 arm: racks, individual micro tubes, hands, pens, i.e. tracks the seeder gave no
+  slot), then `bottom_decile` (10% by definition), `support_lt_2` (10-12k), the coasting rows
+  (`missing:residual_px`, 8-10k). Per class in (b): plate 0.781 median and abstain 0.000, vortex
+  0.748 / 0.000, PCR 0.611 / 0.000, trash can 0.714 / 0.001, centrifuge 0.701 / 0.104, blue pipette
+  **0.114 / 0.745** (bottom decile 4729 rows, support < 2 on 3386: the in-hand object), micro
+  tubes 0.522 / 0.988 (no mask). **DDETR near-redundant:** disagreement on 1.7 / 5.4 / 6.2 /
+  6.2% of rows with a check, of which 100 / 42 / 83 / 81% already abstain; agreement by
+  confidence quartile (b) 0.759 / 0.879 / 0.949 / 0.970, (c) 0.767 / 0.853 / 0.928 / 0.972;
+  confidence median 0.25-0.34 when disagreeing vs 0.53-0.55 when agreeing. A finding for the
+  design: a video-memory slot that drifts onto nothing and is never associated (arm (c)'s T2
+  `50ml_tube#0`, IoU 0.000 on 2157 masks after frame 2043) lowers no track's confidence; it
+  shows as an orphan slot in the measures (`associated_fraction`), not here.
+- **Events (`src/battle/finebio_events.py`, console script `battle-finebio-events --arm-dir
+  --config <clip> --rig <rig.json> [--trials] [--tracks-dir] --output <arm>/events/` plus the
+  parameters as flags).** *Volumes:* a container's footprint is a square around the rig's
+  static point for its class, half-extent = the median over the fixed views of half the class's
+  detector-box width converted to cm at the point's depth (from the arm's own detector rows),
+  extruded from 2 cm below the bench to a per-class height (`CONTAINER_HEIGHT_CM`: centrifuge
+  22, trash can 22, PCR 14, vortex 12, 50 / 15 ml racks 12, micro-tube and magnetic racks 8,
+  tube-strip rack 6; else twice the rig's half-height + 3): centrifuge centre (19.7, -19.9),
+  half-extent **10.3 cm**, micro-tube rack 9.5, magnetic rack 6.9, vortex 5.7, PCR 4.4, trash
+  7.8, strip rack 7.6; the plate volume from its track's median position, footprint 7.5 cm,
+  6 cm above the plate. *Relations:* `contained` = a track's position inside a container volume,
+  judged for the containable classes (micro / 50 ml / 15 ml tubes, tube strips, the plate, and
+  their `_group` slots; a pipette over the centrifuge is the hand's business); `held` = within
+  12 cm of a hand track of the arm (per hand class; the rig's per-frame hands as fallback) and
+  **only once the object has moved >= 2 cm over the dwell window** (the inventory's finding that
+  "inside a hand box" is mostly "under a hand": without the motion gate (b) reads 247 held
+  episodes, with it 64), exit at +5 cm; `proximity` = a pipette's tip inside the plate volume,
+  the tip triangulated from (mask centroid x, mask bbox bottom) over >= 2 side views (T1-T4;
+  the top-down and head cameras see no bottom) and accepted within the association gate, else
+  the track point with an 8 cm wider margin, the source recorded per frame. *Hysteresis:* one
+  for all three: the signed distance stays <= 0 cm for 5 consecutive frames to start (the
+  episode is dated from the first of them), >= 3 cm for 5 frames to end (before the exit run);
+  a lost track ends its episodes at its last live frame (`track_lost`). The lid state from
+  `trials.json`'s closed intervals is a per-frame series and every episode counts its frames
+  while closed. Outputs `events.jsonl` (`ObjectEvent` start / end rows: a `TrackEvent` whose
+  kind set adds `proximity`, one line for the schema owner; every payload `model_output: true`),
+  `episodes.jsonl`, `events_strip.jsonl` (active relations per frame + `lid_closed`),
+  `events_summary.json`, `events.md` (volumes, counts, durations, end reasons, by class and
+  target, the cycles cross-table). **Trial 1 (a / b / c / d):** contained **140 / 145 / 158 /
+  192** episodes (b: micro-tube rack 81, magnetic rack 50, centrifuge 9, vortex 5; durations
+  median 304 frames, p90 1529; ends `track_lost` 101, `exit` 24, window end 20), held **53 / 64 /
+  56 / 33** (b: blue pipette 34, micro tube 17, 50 ml tube 11; median 34 frames), proximity **0
+  in every arm**: no pipette comes within 30 cm (xy) of the plate in this window (the plate is a
+  bench object in protocol 03; `--proximity-targets` accepts other volumes). Lid closed on 638 of
+  3600 frames; contained track-frames while closed 11-12k. **Cycles vs contained** (b): cycle
+  [1176, 1228) has 6 centrifuge episodes within +/-90 frames, 3 entered before the closure, 1
+  ended while closed (`micro_tube-059`, contained 1099..1203, 28 frames inside while closed,
+  lost 25 frames before the lid re-opened), 0 kept their id through, 3 started after the
+  opening, the first (`micro_tube-073`) 2 frames after it at the same place; cycle [3224, 3311)
+  has 4, 2 ended while closed (`micro_tube-078`, contained since 1272, lost at 3250;
+  `micro_tube-223`), successors `micro_tube-230` / `-231` at 3312 / 3313. The same shape in (a)
+  and (c); in (d) one tube (`micro_tube-050`) keeps its id through the first closure because the
+  video-memory slot kept emitting a mask on the closed centrifuge (the memory holding an
+  appearance, not a sighting) and is lost in the second. **On `tracks-ext/`** (the extensions
+  landed at 06:36 for arms a/b/c; re-run with `--tracks-dir tracks-ext` into `confidence-ext/`,
+  `events-ext/`): contained **43 / 45 / 36** (the rack's tubes are one group track), held 55 /
+  61 / 58, and the centrifuge has one episode per arm, `micro_tube-032/-033` `contained` from
+  887 to the window end **through both closures** (52 and 87 frames inside while closed, no
+  successor); confidence (b) median 0.520, abstain 0.668 (0.058 on 47,271 complete rows), (c)
+  0.485 / 0.638 (0.009 on 45,058), (a) 1.000.
+- **Slice logging split (`finebio_slice.py`, commit `1e7e9d8`).** `log_recording` unchanged in
+  what it logs (the fixture slice rebuilt after the change has the identical 222 entity paths),
+  but the world frame, bench, markers and frusta (`log_world_static`, `log_camera_frustum`,
+  `log_markers_projected`), the static objects (`log_static_objects`), the clock document
+  (`log_clock_scan`), the per-frame fpv frustum, trail, markers and centre (`log_fpv_frame`,
+  `clear_fpv_frame`) and the hand probes (`log_hand_probe`, `clear_hand_probe`) are functions
+  the review builder calls on the trial window.
+- **Viewer (`src/battle/finebio_viewer.py`, console script `battle-finebio-viewer --clip-config
+  --arm-dirs a=..,b=..,c=..,d=.. --rig --seeds --output [--mask-arm b] [--secondary-mask-arm c]
+  [--mask-every 6] [--secondary-mask-every 30] [--tracks-dir] [--preset-dir configs/rerun]`).**
+  Reads everything from disk (tracks under `tracks<tag>/`, confidence and events from
+  `confidence<tag>/` and `events<tag>/`, worker runs from `observations_summary.json`, the rig,
+  seeds, scoreboard, proxies); recomputes only the per-frame leave-one-view-out check with
+  `run_slice` on the default arm's detector rows of the plate, the blue pipette and the hands.
+  *Entities.* `world` (`RIGHT_HAND_Z_DOWN`): bench, board origin, the day's markers, the five
+  fixed frusta, `world/fpv` + `world/fpv_trail` per frame; the seven cross-checks as standing
+  entities: (1) `world/<view>/markers_projected` (fpv per frame), (2)
+  `world/<view>/fpv_camera_centre`, (3) `world/static_objects` (the rig's nine static points
+  with heights) + `world/<view>/static_reprojected`, (4) `world/left_hand` / `right_hand` +
+  `world/<view>/<hand>_triangulated` from the rig's per-frame hand triangulations, (5)
+  `checks/clock_scan` from `rig.json`, (6) `checks/loo/<class>/<view>` per frame (23 series),
+  (7) `checks/handoff/cell_culture_plate` and `_inside` from the rig's fpv block; the
+  **negative control** `world/T5_shipped` (camera 6's shipped pose, `fixed_camera(221013, 6)`)
+  and `world/T5/markers_projected_shipped` in red beside the green marker-PnP set, with the
+  rig's numbers as `checks/negative_control`. Tracks: `world/tracks/<arm>/<state>` per frame
+  (`Points3D`, class colour, dimmed for any state but `observed`, radius from the uncertainty,
+  label `id [state] in <container_id> by <held_by> x<group_size> !` with `!` = abstain from the
+  confidence pass), so the extensions' `held` / `contained` rows render without a code change
+  (checked on the `tracks-ext` recording: `world/tracks/b/contained`, `world/tracks/b/held`
+  exist); `world/tracks/b/trails` (30-frame tails, every 3rd point); arms (a)/(c)/(d) logged and
+  hidden by `EntityBehavior(visible=False)` overrides in the presets. `world/containers/<name>`
+  as `Boxes3D` from the events module's volumes, `world/containers/centrifuge_lid` a red solid
+  slab when closed, green wireframe when open. Tiles: `world/<view>/video_asset` (`AssetVideo`,
+  the lane-B proxy, H.264) + `world/<view>/video` (one `VideoFrameReference` per frame at the
+  asset's own frame timestamps, so proxy frame k shows at raw 600 + k), `world/<view>/detector`
+  (DINO boxes at >= 0.3 with `class score`), `world/<view>/masks/<arm>/<slot>` (RGBA cut-outs via
+  `mask_cache.encode_rgba_mask_png` and `rerun_logging.log_rgba_mask`, `#` in slot labels
+  written as `-`), `world/<view>/tracks/<arm>` for the mask arms (ids, `!` abstain),
+  `world/<view>/seeds` (accepted seed boxes at their frames). Series through `send_columns`:
+  `confidence/<arm>/<class>`, `/abstain_fraction`, `/tracks/<id>` for the storyboard tracks,
+  `events/<arm>/contained|held|proximity` (active counts), `events/lid_closed`,
+  `checks/residuals/<arm>/<view>`, `checks/occlusion/<arm>/coasting_tracks`; documents under
+  `checks/` (gates, rig, scoreboard, per-arm measures / inventory / identity / confidence /
+  events, seeds, claim boundary), `events/<arm>/log` (`TextLog` at starts and ends),
+  `events/b/active` per frame. *Size.* Six proxies about 490 MB are the floor; RGBA cut-outs cost
+  ~9 KB each (a palette PNG would be 1.2 KB but its decode path in the viewer is untested here,
+  so the repo's proven RGBA idiom stays), so masks are logged **every 6th frame for (b), every
+  30th for (c), and on every storyboard frame plus 15 frames either side of the confidence-drop
+  frame for every arm with masks** (44,448 cut-outs); 2D track projections for the two mask arms
+  only and trails for the default arm. **Result:** `runs/finebio-review-P03_03_01-20260925/review.rrd`
+  **915.6 MB**, **508 entity paths** (526 with the blueprint and properties), 97,711 chunks,
+  836,888 rows, `rerun rrd verify`: "1 file verified without error"; 503 s to build. Entity
+  counts: masks 66 per arm x 3 arms across the six views (11 slots per view), tracks 3-4 state
+  entities per arm, `checks/loo` 23, `checks/residuals` 24, `confidence/<arm>` 26-28 series.
+  *Presets* (`world.rbl` 8 views / 50 queries, `cameras.rbl` 8 / 44, `evidence.rbl` 33 / 71; every
+  query resolved against the entity tree with `review_presets.check_preset`, all ok; copies in
+  `configs/rerun/finebio_{world,cameras,evidence}.rbl`, committed): **World** = the 3D view with
+  arm (b) visible and the others hidden, the events strip, arm (b)'s confidence series, the
+  storyboard and active-relations documents, the event log; **Cameras** = six tiles (video,
+  detector boxes, masks of (b) visible and (c) hidden, track ids, seeds) over the two series;
+  **Evidence** = the rig with both T5 frusta, the T5 tile with both marker sets, the document
+  tabs, the LOO / hand-off / residual / coasting series. Timeline `frame` (raw) with
+  `source_time`. *Storyboard* (`storyboard/marks` `TextLog`, `storyboard/index`,
+  `storyboard/current`, `storyboard.md`), chosen from the data: the cycle whose centrifuge
+  `contained` episode spent the most frames inside while closed, the longest fpv look-away from
+  the plate, the six-view annotated frame when the plate is masked in all six views there, the
+  largest confidence drop that a supporting slot's mask-vs-box IoU confirms (all mask arms
+  searched; the arms' known failures preferred within their own arm):
+
+  | # | story | raw | proxy | s | what |
+  |---|---|---|---|---|---|
+  | 1 | centrifuge | 1099 | 499 | 36.7 | `micro_tube-059` (b) enters the centrifuge volume, `contained` starts |
+  | 2 | centrifuge | 1176 | 576 | 39.2 | the lid closes (cycle [1176, 1228)) |
+  | 3 | centrifuge | 1189 | 589 | 39.7 | inside while closed: every tile empty, the dimmed `[coasting]` point inside the box |
+  | 4 | centrifuge | 1228 | 628 | 41.0 | the lid opens; `-059` was lost at 1203 (30-frame coast timeout < 52-frame closure) |
+  | 5 | centrifuge | 1230 | 630 | 41.0 | `micro_tube-073` born where `-059` was lost: a successor, not the same id |
+  | 6 | fpv | 2862 | 2262 | 95.5 | the plate (`cell_culture_plate-019`, one id over the window) inside the fpv image |
+  | 7 | fpv | 2923 | 2323 | 97.5 | raw [2863, 2983): the plate projects outside the head camera, the fixed views hold the id |
+  | 8 | fpv | 2983 | 2383 | 99.5 | back inside the fpv image, same id |
+  | 9 | plate | 916 | 316 | 30.6 | the six-view annotated frame: the plate masked in all six tiles (3402 / 3600 frames have six masks in (b)) |
+  | 10 | confidence | 3031 | 2431 | 101.1 | (c) `8_channel_pipette-153` confidence 0.64 -> 0.08; its T5 `8_channel_pipette#0` mask-vs-box IoU 0.97 -> 0.32 as the pipette is picked up and the memory mask stays on the rack |
+
+  The runner-up for item 10 was (d)'s `yellow_pipette-128` at 3854 (0.48 -> 0.22, T3 IoU 0.93 ->
+  0.00, a `track_reproject` re-seed at 3869). **On `tracks-ext/`** the same build
+  (`runs/finebio-review-P03_03_01-20260925-ext/`, arms a/b/c, 887.6 MB, 402 entities, 41,835
+  masks, presets ok) gives the plan's storyboard as written: `micro_tube-032` `contained` from
+  887, the lid closes at 3224, inside at 3267 with state `contained`, opens at 3311, **the same
+  id back at 3313**.
+- **Tests and lint.** `tests/test_finebio_confidence.py` (6): per-view aggregation and the
+  `residuals.jsonl` precedence, the rank combination with the bottom-decile / support /
+  missing-signal reasons, boxes-only rows abstaining by construction, the DDETR streamer, the
+  observation loader keeping only wanted keys, the CLI preferring `tracks-ext`.
+  `tests/test_finebio_events.py` (7): hysteresis dwell and flicker (and a frame-0 start, which
+  caught an `or` on a zero frame), signed distances and lid helpers, a `contained` episode
+  ending `track_lost` with the lid-closed count and the cross-table's phase and successor,
+  `held` needing proximity and co-motion, the tip from two side views on the fixture cameras vs
+  the fallback and the gate, volumes from a rig point and box sizes, the CLI end to end.
+  `tests/test_finebio_viewer.py` (4): helpers, arm loading, the confidence-drop picker (no story
+  without IoU evidence), the build end to end on a synthetic arm with the confidence and events
+  passes run first (cross-check entities, states as paths, masks per slot, volumes, series,
+  presets ok and copied, the centrifuge storyboard). Default tier **982 passed / 14 skipped**
+  (945 at the arms entry; the other lanes' tests included); `uv run ruff check src tests
+  scripts` clean, `ruff format --check` clean on the files touched. No `real_data` or `gpu` test
+  added (the trial-1 numbers are recorded here and in the guide).
+- **Deviations and findings.** (1) `proximity` is empty on trial 1: no pipette approaches the
+  plate in this protocol's window; the mechanism is tested on synthetic tracks and the target
+  is a flag. (2) The abstain rule as stated abstains on every row without a mask signal, so the
+  boxes-only arm abstains everywhere and the SAM3 arms on 70%; the 2-7% on complete rows is the
+  number that compares arms. (3) A drifted, never-associated slot is invisible to per-track
+  confidence (above). (4) `held` needed the co-motion gate to mean carrying rather than
+  occlusion. (5) The storyboard's "same id back" is a successor id on the core tracks and the
+  same id on `tracks-ext/`; both recordings exist and the guide says which is which. (6) Masks
+  are subsampled to keep the recording under a gigabyte; the strides are in
+  `review_index.json` and the guide. (7) `ObjectEvent` adds `proximity` to the event kinds
+  locally; adding it to `TrackEventKind` is one line for the schema's owner. (8) Nothing under
+  `runs/` or `data/` is committed; the `.rbl` presets (entity paths only) are.
+- **For the next phase (`p6-anchors`, `p6-trial2`).** The anchors' frame is storyboard item 9
+  (raw 916, proxy 316); `world/<view>/masks/b/<slot>` at that frame are the masks the anchors
+  score. Trial 2 runs the same three commands on `runs/finebio-arms-P20_03_01-*` with its clip
+  config, rig and seeds; nothing in the parameters is trial-specific except the per-class
+  container heights, which are bench furniture, not a trial.
