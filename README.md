@@ -14,7 +14,10 @@ half holds the detailed per-run records with their claim boundaries. The plan th
 project was measured against is preserved unedited in
 [`docs/plan-2026-09-08-assembly-rerun-lab.md`](docs/plan-2026-09-08-assembly-rerun-lab.md),
 and the research brief that preceded it, with the verbatim first request, is
-[`battle_plan.agent.final.md`](battle_plan.agent.final.md).
+[`battle_plan.agent.final.md`](battle_plan.agent.final.md). The Assembly101 phase closed on
+Sep 24 (ledger entry "Sep 24: Assembly101 phase closed", tag `assembly101-lab-close`); the
+next phase, a detector-seeded FineBio lab with hands out of scope, is planned and not started in
+[`docs/plan-2026-09-24-finebio-detector-seeded-lab.md`](docs/plan-2026-09-24-finebio-detector-seeded-lab.md).
 
 In one paragraph, as of Sep 18: the repository has typed Pydantic manifests for clips,
 runs, timing, coverage, and observations; an inference-free Rerun exporter; and nine
