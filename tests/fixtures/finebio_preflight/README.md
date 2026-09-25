@@ -18,7 +18,7 @@ contact sheet or Rerun recording is committed here or anywhere else in the repos
 | file | bytes | content |
 |---|---|---|
 | `observations.jsonl` | ~4.4 MB | 20,209 `FineBioObservation` rows (compact JSONL: `schema_version` and empty `provenance` omitted, restored on load) |
-| `cameras.json` | 5.2 kB | the `FineBioCameraConfig` of P03_01_01, byte-identical to `configs/finebio/cameras/P03_01_01.json` |
+| `cameras.json` | 8.1 kB | the `FineBioCameraConfig` of P03_01_01, byte-identical to `configs/finebio/cameras/P03_01_01.json` (re-written Sep 25 by `battle-finebio-cameras`: T4's shipped residual is now the chosen day's 4.78 px, not the best day's 2.23 px; poses unchanged) |
 | `fpv_poses.json` | ~40 kB | the shipped per-frame fpv pose (`rvec`, `tvec`, validity) for the 310 raw frames that carry an observation |
 | `rig_reference.json` | ~20 kB | the preflight numbers a regression test reproduces (below) |
 

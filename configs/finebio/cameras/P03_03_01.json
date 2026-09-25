@@ -1,7 +1,7 @@
 {
  "schema_version": "1.0",
  "config_kind": "finebio_camera_config",
- "trial": "P03_01_01",
+ "trial": "P03_03_01",
  "recording_day": "221013",
  "fixed": {
   "T1": {
@@ -93,8 +93,8 @@
     1920,
     1080
    ],
-   "marker_fit_residual_px": 6.936933012594971,
-   "shipped_marker_residual_px": 6.936933012594971
+   "marker_fit_residual_px": 6.140421388992953,
+   "shipped_marker_residual_px": 6.140421388992953
   },
   "T3": {
    "schema_version": "1.0",
@@ -139,8 +139,8 @@
     1920,
     1080
    ],
-   "marker_fit_residual_px": 5.082131599356827,
-   "shipped_marker_residual_px": 5.082131599356827
+   "marker_fit_residual_px": 6.710239817486228,
+   "shipped_marker_residual_px": 6.710239817486228
   },
   "T4": {
    "schema_version": "1.0",
@@ -218,20 +218,20 @@
     0.008145048227939083
    ],
    "rvec": [
-    -0.005972493678917233,
-    0.02581915709711874,
-    0.013613623500883899
+    -0.004606016391342854,
+    0.02563723974667838,
+    0.01351099411053472
    ],
    "tvec": [
-    5.2736547130832925,
-    -4.671944492264925,
-    90.50185241425679
+    5.274051600628609,
+    -4.6615491586164115,
+    90.48401922559773
    ],
    "image_size": [
     1920,
     1080
    ],
-   "marker_fit_residual_px": 0.7148250905777371,
+   "marker_fit_residual_px": 0.7233316742815706,
    "shipped_marker_residual_px": 93.70714685081349
   }
  },
@@ -265,25 +265,25 @@
    1920,
    1440
   ],
-  "pose_source": "misc/finebio_camera_poses/first_person_camera_poses/P03_01_01.npz",
-  "pose_frame_count": 5032,
-  "valid_pose_fraction": 0.9717806041335453,
+  "pose_source": "misc/finebio_camera_poses/first_person_camera_poses/P03_03_01.npz",
+  "pose_frame_count": 8492,
+  "valid_pose_fraction": 0.9899905793688177,
   "marker_residual_gate_px": 20.0,
   "velocity_gate_cm_per_frame": 5.0
  },
  "units": "board centimetres, z into the bench",
  "frame_index_offset": 0,
  "provenance": {
-  "mapping_trial": "P03_01_01",
+  "mapping_trial": "P03_03_01",
   "mapping_seconds": [
    30.0,
-   60.0,
-   90.0
+   120.0,
+   240.0
   ],
   "mapping_frames": [
    899,
-   1798,
-   2697
+   3596,
+   7193
   ],
   "shipped_pose_max_rms_px": 10.0,
   "pnp_drop_over_px": 10.0,
@@ -296,35 +296,35 @@
     "best_day": "221013",
     "best_day_median_corner_rms_px": 6.315402159341875,
     "chosen_day_median_corner_rms_px": 6.315402159341875,
-    "pnp_corner_rms_px": 0.783887353245538,
-    "pnp_vs_shipped_cm": 0.284684509423756,
+    "pnp_corner_rms_px": 0.8667881570070717,
+    "pnp_vs_shipped_cm": 0.21139482422053082,
     "markers_detected_per_frame": [
-     2,
      3,
-     3
+     3,
+     2
     ]
    },
    "T2": {
     "best_day": "221013",
-    "best_day_median_corner_rms_px": 6.936933012594971,
-    "chosen_day_median_corner_rms_px": 6.936933012594971,
-    "pnp_corner_rms_px": 1.0965344919533058,
-    "pnp_vs_shipped_cm": 0.6200810034349805,
+    "best_day_median_corner_rms_px": 6.140421388992953,
+    "chosen_day_median_corner_rms_px": 6.140421388992953,
+    "pnp_corner_rms_px": 1.208448622020175,
+    "pnp_vs_shipped_cm": 0.566286465979875,
     "markers_detected_per_frame": [
      2,
-     3,
-     3
+     2,
+     2
     ]
    },
    "T3": {
-    "best_day": "221013",
-    "best_day_median_corner_rms_px": 5.082131599356827,
-    "chosen_day_median_corner_rms_px": 5.082131599356827,
-    "pnp_corner_rms_px": 0.39624232481363597,
-    "pnp_vs_shipped_cm": 0.8788022070339654,
+    "best_day": "221109",
+    "best_day_median_corner_rms_px": 6.547711301377897,
+    "chosen_day_median_corner_rms_px": 6.710239817486228,
+    "pnp_corner_rms_px": 0.6283175978867014,
+    "pnp_vs_shipped_cm": 0.8726430806912552,
     "markers_detected_per_frame": [
-     2,
      1,
+     2,
      2
     ]
    },
@@ -332,11 +332,11 @@
     "best_day": "221109",
     "best_day_median_corner_rms_px": 2.2341285151337646,
     "chosen_day_median_corner_rms_px": 4.782609926880004,
-    "pnp_corner_rms_px": 0.8034278599668745,
-    "pnp_vs_shipped_cm": 0.3651249068653664,
+    "pnp_corner_rms_px": 0.8085339245464604,
+    "pnp_vs_shipped_cm": 0.34504945846855334,
     "markers_detected_per_frame": [
      2,
-     2,
+     3,
      3
     ]
    },
@@ -344,8 +344,8 @@
     "best_day": "221013",
     "best_day_median_corner_rms_px": 93.70714685081349,
     "chosen_day_median_corner_rms_px": 93.70714685081349,
-    "pnp_corner_rms_px": 0.7148250905777371,
-    "pnp_vs_shipped_cm": 6.430374806631148,
+    "pnp_corner_rms_px": 0.7233316742815706,
+    "pnp_vs_shipped_cm": 6.4396111816326576,
     "markers_detected_per_frame": [
      3,
      3,
@@ -354,50 +354,50 @@
    }
   },
   "dropped_views": {},
-  "source": "runs/finebio-cameras-P03_01_01-20260925/mapping.json (battle-finebio-cameras, 2026-09-25)",
-  "command": "/home/nick/src/battle/src/battle/finebio_cameras_cli.py solve --trial P03_01_01 --seconds 30,60,90 --output configs/finebio/cameras/P03_01_01.json --evidence runs/finebio-cameras-P03_01_01-20260925 --fpv-step 25",
+  "source": "runs/finebio-cameras-P03_03_01-20260925/mapping.json (battle-finebio-cameras, 2026-09-25)",
+  "command": "/home/nick/src/battle/src/battle/finebio_cameras_cli.py solve --trial P03_03_01 --seconds 30,120,240 --output configs/finebio/cameras/P03_03_01.json --evidence runs/finebio-cameras-P03_03_01-20260925 --fpv-step 50",
   "fpv_pose_check": {
-   "trial": "P03_01_01",
+   "trial": "P03_03_01",
    "day": "221013",
-   "step": 25,
-   "frames_checked": 196,
-   "frames_with_markers": 196,
+   "step": 50,
+   "frames_checked": 169,
+   "frames_with_markers": 169,
    "corner_rms_px": {
-    "median": 0.9290324667840012,
-    "p90": 1.9632867087714128,
-    "max": 130.9243164750084
+    "median": 0.9664881754306612,
+    "p90": 1.93128640052983,
+    "max": 22.248130881408898
    },
-   "frames_over_gate": 3,
+   "frames_over_gate": 1,
    "residual_gate_px": 20.0,
    "pnp_vs_shipped_cm": {
-    "median": 0.32772836163046687,
-    "p90": 2.0382639423372195,
-    "max": 59.18354553441204,
-    "n": 95
+    "median": 0.28851425809708287,
+    "p90": 1.226905542223915,
+    "max": 47.451054204403924,
+    "n": 116
    },
    "velocity_gate": {
-    "consecutive_valid_pairs": 4877,
+    "consecutive_valid_pairs": 8400,
     "pairs_over_gate": 16,
-    "fraction_over_gate": 0.003280705351650605,
-    "step_cm_p99": 3.1931445648262424,
-    "step_cm_max": 13.078924575350062
+    "fraction_over_gate": 0.0019047619047619048,
+    "step_cm_p99": 2.8558204505904445,
+    "step_cm_max": 67.86719537783856
    }
   },
   "fpv_day_crosscheck": {
    "221013": {
-    "median": 0.8981525426807555,
-    "p90": 1.89152858111881,
-    "max": 4.267861018311118
+    "median": 1.0317226919356959,
+    "p90": 1.7519162906265542,
+    "max": 2.2282614275283987
    },
    "221021": {
-    "median": 21.990367122934757,
-    "p90": 26.6639927180356,
-    "max": 29.523412864798082
+    "median": 22.173152082975825,
+    "p90": 24.735443853582986,
+    "max": 29.853060151619598
    },
    "221110": {
-    "median": 14.630806225499107,
-    "p90": 15.694800443912284,
-    "max": 19.353181328607935
+    "median": 13.95930259470126,
+    "p90": 15.91035550442407,
+    "max": 17.253330227661966
    }
   }
  }
