@@ -622,6 +622,45 @@ frames, the two 50 ml tubes the slice collapsed separated at 1.5-4 px; the in-ha
 fragments and the identical micro tubes are ambiguous, as the plan expects. Record: [Sep 25:
 battle-multiview-tracks core (p3-tracker)](#sep-25-battle-multiview-tracks-core-p3-tracker).
 
+#### Sep 25: battle-finebio-cameras, the per-trial camera solve (p0-cameras)
+
+The preflight's camera mapping as a standing step with a committed config per trial: ArUco on
+N frames per fixed view, every (day, camera) shipped pose ranked, the day by summed residual
+and a second witness (the shipped fpv pose fits only the marker layout of its own day), one
+PnP per camera against the chosen day's markers, shipped pose kept only where it fits within
+10 px, else marker PnP, else the camera is dropped. P03_01_01 reproduces the preflight (one
+recorded residual corrected: T4 4.78 px on the chosen day, not 2.23 px on another day's best
+fit); P03_03_01 is day 221013 with the same rig (camera 6 within 0.14 cm of the smoke's
+solve); **P20_03_01 is day 221124 with all four side cameras 15-32 px off their shipped poses
+and re-solved to 0.7-2.1 px**, the top-down camera kept shipped at 7.5 px; no camera dropped.
+Record: [Sep 25: battle-finebio-cameras, the per-trial camera solve
+(p0-cameras)](#sep-25-battle-finebio-cameras-the-per-trial-camera-solve-p0-cameras).
+
+#### Sep 25: battle-finebio-rig and the gate formulas (p1-rig)
+
+The preflight's rig check generalised to any camera config and detector pass, with the
+tracker's gates as formulas written into `rig.json`: association = 3x the static
+leave-one-out median, hand-off = the widest view's p90 of the tracked objects' held-out
+residuals (fixed LOO and the fixed -> fpv hand-off), floor 15 / cap 80 px at 1920, clock offsets
+with +/-1 uncertainty, birth from 3 fixed views or 2 + fpv. P03_01_01 gives **31.1 / 51.9 px**
+(the preflight's 30 / 50-60) and reproduces every preflight number; the negative control puts
+camera 6's shipped pose beside the marker PnP (markers 93.7 vs 0.7 px, static LOO 94 vs 7 px,
+left hand 48 vs 8 px). Record: [Sep 25: battle-finebio-rig and the gate formulas
+(p1-rig)](#sep-25-battle-finebio-rig-and-the-gate-formulas-p1-rig).
+
+#### Sep 25: finebio_preprocessing and the trial proxies (p1-configs)
+
+Six native-resolution, native-rate proxies per trial window with the p0-contracts recipe
+unchanged, a manifest that records the command verbatim, the frame-index contract on three
+frames per view and the fpv markers, a per-window camera config with `frame_index_offset =
+start`, and a clip config (views, targets, window, proxies, the GPU-phase rig command). Cut:
+the smoke window `P03_01_01` 1798-2398, trial 1 `P03_03_01` 600-4200 and trial 2 `P20_03_01`
+600-4200 (3600 frames each, about 2 min per trial), every sample's minimum at offset 0, fpv
+markers 0.8-1.0 px. The Assembly101 `static-c10379` / four-part asserts in the interaction
+review, the exploratory comparison and the Kineo fusion now read a clip config with the
+Assembly101 values as defaults. Record: [Sep 25: finebio_preprocessing and the trial proxies
+(p1-configs)](#sep-25-finebio_preprocessing-and-the-trial-proxies-p1-configs).
+
 ### Plan versus actual
 
 What the plan said, what happened instead, and why, in one line each.
@@ -7242,3 +7281,264 @@ and the 83 `main()` entry points beyond their shared fragments.
   the preflight's formats). Gates: pass lane B's `rig.json` through `--gates`. Open, to be
   read off the arms: K and the repeat cadence, the timeout (30 equals the detector stride
   here), the process noise for the in-hand object, whether the pipette needs velocity.
+
+### Sep 25: battle-finebio-cameras, the per-trial camera solve (p0-cameras)
+
+- **What this is.** The `p0-cameras` todo of the FineBio 3D-tracking plan
+  ([`docs/plan-2026-09-25-finebio-3d-tracking.md`](plan-2026-09-25-finebio-3d-tracking.md)):
+  the preflight's `mapping` subcommand as a standing step with a committed config per trial,
+  its regression on `P03_01_01`, and the first two new trials. Evidence base:
+  [`docs/preflight-2026-09-24-finebio.md`](preflight-2026-09-24-finebio.md) section A. CPU
+  only (25-60 s per trial), no viewer; frames are read from the raw videos, nothing under
+  `data/` or `runs/` is committed. Other lanes committed concurrently (slice, tracker, worker,
+  detector, trials); only the files named here were staged, by path. Commit `45abe78`.
+- **Library (`src/battle/finebio_cameras.py`).** `solve_mapping(trial, frames, read)` is the
+  preflight's per-view logic as library calls: ArUco `DICT_6X6_50` on the N frames of every
+  fixed view, `solve_view` ranks every (recording day, camera id) shipped pose by the median
+  corner RMS against the detected corners (`_residual_table`, nearest projected centroid,
+  best cyclic corner order), keeps the best, the best other camera and the same camera on
+  other days, and runs one PnP over all corners against the best day's markers
+  (`marker_pnp`; this block is the regression reference, unchanged); `decide_day` picks the
+  day that minimises the summed residual over the five chosen cameras (the residual-weighted
+  vote recorded beside it); then a **`chosen_day` block per view** records the chosen day's
+  shipped residual and a PnP against the chosen day's markers, which is the pose a
+  `marker_pnp` view actually uses (the preflight PnP'd against each view's *best* day, and on
+  P03 T4's best day is 221109, not 221013). `fpv_pose_check(trial, day, read, step)` is the
+  `fpv-pose` subcommand: shipped pose vs markers every `step`-th valid frame, the marker-PnP
+  centre distance where >= 2 markers are seen, plus `fpv_velocity_gate_fraction` (consecutive
+  valid frames whose centre steps more than 5 cm). `camera_config_from_mapping` now **gates on
+  the residual of the pose in use**: the chosen day's shipped residual (from the block, or
+  from the report's `table` for the preflight's `mapping.json`), shipped if <= 10 px, else
+  the chosen-day PnP if its RMS <= 10 px, else the view is **dropped** (absent from `fixed`,
+  listed with its numbers under `provenance.dropped_views`: the plan's stop rule, never a
+  faked camera); per-view numbers under `provenance.views`. `rig_cameras` is unchanged for
+  the preflight script, which still runs.
+- **CLI (`src/battle/finebio_cameras_cli.py`, console script `battle-finebio-cameras`).**
+  `solve --trial T --seconds a,b,c | --frames N,A-B,A:B:S [--output configs/finebio/cameras/T.json]
+  [--evidence runs/finebio-cameras-T-<date>] [--fpv-step 250] [--max-rms-px 10] [--no-overlays]`
+  writes the `FineBioCameraConfig` (numbers only, committed) and, under the gitignored
+  evidence dir, `mapping.json` / `mapping.md`, `fpv_pose.json` / `fpv_pose.md`, one marker
+  overlay per fixed view (ArUco red, chosen-day shipped pose green, the PnP pose cyan where
+  it is the one in use) and a copy of the config. The day gets a **second witness**: the
+  shipped fpv pose is the authors' own marker PnP, so it fits only the marker layout of the
+  day it was computed against; the CLI measures the fpv corner RMS against the top-3 candidate
+  days' `marker_points` (every 300th frame) and records it in `provenance.fpv_day_crosscheck`.
+  `show --config` prints the decisions.
+- **P03_01_01, the regression (`--seconds 30,60,90`, raw 899 / 1798 / 2697).** Ids 1,2,3,4,6,
+  day 221013 (summed residual 116.8 vs 374.8 for 221021 and 474.4 for 221110), residuals
+  identical to the preflight `mapping.json` (T1 6.32, T2 6.94, T3 5.08, T4 2.23 on its best
+  day 221109, T5 93.71 px; PnP 0.78 / 1.10 / 0.40 / 0.76 / 0.71 px; PnP-vs-shipped 0.28 /
+  0.62 / 0.88 / 0.96 / 6.43 cm; PnP centres equal to 0.01 cm). Chosen-day block: T4 fits day
+  221013's shipped pose at **4.78 px** (PnP 0.80 px, 0.36 cm); T5's chosen-day PnP is the
+  preflight's pose (centre -2.87, 5.27, -90.58). fpv: 0.93 px median / 1.96 p90 on 196/196
+  frames, 3 over 20 px; PnP-vs-shipped 0.33 cm median; velocity gate trips on 16/4877 pairs
+  (p99 step 3.19 cm). Cross-check: 221013 0.9 px vs 221021 22.0 / 221110 14.6. **The committed
+  config changes in one number**: T4's `shipped_marker_residual_px` / `marker_fit_residual_px`
+  2.234 -> 4.783 (the fit of the pose in the config, day 221013's, rather than day 221109's
+  best fit; rvec / tvec unchanged), and `tests/fixtures/finebio_preflight/cameras.json` was
+  refreshed to stay byte-identical (its README line updated). Everything else outside
+  `provenance` is identical to the p0-contracts config.
+- **P03_03_01 (trial 1; `--seconds 30,120,240`, raw 899 / 3596 / 7193).** Day 221013 (117.7
+  vs 389.2 / 472.2 / 549.9; fpv cross-check 1.0 px vs 22.2 / 14.0). T1..T5 = cameras 1,2,3,4,6;
+  T1-T4 `shipped` at **6.32 / 6.14 / 6.71 / 4.78 px** (best other camera 69.5 / 62.5 / 38.3 /
+  105.2 px), PnP-vs-shipped 0.21 / 0.57 / 0.87 / 0.35 cm; T5 `marker_pnp` at **0.72 px** over
+  36 corners, shipped 93.71 px, 6.44 cm apart. Camera 6's solved pose differs from
+  P03_01_01's by 0.14 cm, 0.08 degrees and 0.16 px on the bench (same day, same mount:
+  consistent). fpv 99.0% valid, 0.97 px median / 1.93 p90 on 169/169 frames, 1 over the
+  gate, PnP-vs-shipped 0.29 cm median; velocity gate 16/8400 pairs. No view dropped.
+- **P20_03_01 (trial 2, room 2; `--seconds 30,60,90`).** Room-2 days carry **four markers**
+  (16 points) whose layouts differ by 2.5-7 cm between days. Day **221124** by summed residual
+  (100.0 vs 155.2 for 221125, 213.8 for 221207, 316.1 for 221118); the fpv cross-check settles
+  it: **1.1 px on 221124's markers vs 34.9 on 221125 and 46.6 on 221207**. T1..T5 = cameras
+  1,2,3,4,6 again (best other camera 87-147 px). **No shipped fixed pose of the day fits
+  cameras 1-4**: 29.4 / 16.2 / 14.7 / 32.2 px (T4's best day is 221125 at 17.8 px, still over
+  the gate), so all four are **`marker_pnp` at 0.97 / 1.80 / 0.71 / 2.09 px** over 28-32
+  corners, 4.77 / 2.97 / 2.81 / 3.89 cm from the shipped centres (the whole rig shifted a few
+  centimetres between the calibration day and this recording, or the trial was recorded on an
+  uncalibrated day close to 221124). T5 (camera 6) fits its shipped pose at **7.47 px** and is
+  kept `shipped` by the rule; its PnP is 1.21 px and 2.92 cm away, so the rig check will say
+  whether the rule was right for it. Camera heights 57-63 cm (T1-T4) and 90 cm (T5), the
+  asymmetric room-2 layout. fpv 94.6% valid (invalid runs around the centrifuge spins, per
+  `trials.json`), 1.15 px median on 114/115 frames but p90 6.2 px and **6 frames over the
+  20 px gate** (max 352 px), PnP-vs-shipped p90 14.9 cm, velocity gate 50/5704 pairs (p99
+  4.63 cm): the fpv validity gate matters more on this trial. **No view dropped**; the stop
+  rule did not fire.
+- **Tests.** `tests/test_finebio_cameras_cli.py`: 8 default-tier (the pose decision incl. the
+  table fallback and the drop rule, the day vote, parsers, the three committed configs, camera
+  6 across the two P03 trials) + 1 `real_data` (`solve_mapping` on P03_01_01 reproduces
+  `rig_reference.json` ids, day, residuals within 0.1 px, PnP distances within 0.05 cm and the
+  preflight PnP centres, and `camera_config_from_mapping` equals the committed config outside
+  `provenance`). The p0-contracts test that rebuilds the config from the preflight
+  `mapping.json` still passes (the table fallback gives T4 the same 4.78 px). Default tier
+  887 passed / 14 skipped at commit time, `ruff check` clean.
+
+### Sep 25: battle-finebio-rig and the gate formulas (p1-rig)
+
+- **What this is.** The `p1-rig` todo: the preflight's `rig` subcommand generalised into
+  `src/battle/finebio_rig.py` (console script `battle-finebio-rig`), run on any camera config
+  and detector pass, with the tracker's gates as **formulas** evaluated per trial and written
+  into the output. Regression on the preflight detections; the negative control the Evidence
+  preset needs. CPU, 0.7 s on the 78-frame preflight set. Commit `15e5257`.
+- **Inputs and the seven checks.** `--config <FineBioCameraConfig.json> --detections <dir>
+  [--frames N,A-B,A:B:S] [--output runs/finebio-rig-<trial>-<date>] [--clock-max-frames 600]
+  [--negative-control]`; the detections directory holds one `<view>.jsonl` per view with
+  `frame_index` (raw) and `detections[{class, score, box_xyxy_px}]`, the shape of
+  `runs/preflight-finebio-20260924/detections` and of `battle-finebio-detect`; frames come from
+  `--frames`, else `frames.json`, else the frames detected in >= 3 fixed views; "consecutive"
+  frames are those with a neighbour. Every triangulation is `Camera.undistort` ->
+  `dlt_triangulate` on the projection matrices; reprojection uses the distortion. The checks,
+  as in the preflight: (1) static objects, per-view median box centre over the frames (score
+  >= 0.5), >= 3-view triangulation, all-view and leave-one-view-out residuals, height above
+  the bench; (2) hands as probes, per frame from >= 3 fixed views; (3) the clock scan per view
+  and moving class over -15..+15 frames, the other views' per-frame triangulation computed once
+  and reprojected into the shifted view, >= 10 frames per offset, with an **informative** flag
+  when the best offset beats both +/-3 neighbours by 20% (the preflight's "flat for the plate
+  and left hand" made a rule; on long windows the consecutive frames are subsampled evenly to
+  `--clock-max-frames`); (4) leave-one-view-out on the moving classes per frame with the
+  inside-held-out-box fraction; (5) the fixed -> fpv hand-off of the plate and the hands
+  through the shipped fpv pose; (6) the fpv camera centre in every fixed view; (7) the marker
+  fits, read from the config. `rig.json` (everything, plus `gates` and `negative_control`) and
+  `rig.md`.
+- **Gates (`rig.json["gates"]`, the keys lane C's `battle-multiview-tracks --gates` reads).**
+  `association_px = clamp(3 * static_loo_median_px, floor, cap)`;
+  `handoff_px = clamp(moving_loo_p90_px, floor, cap)` where `moving_loo_p90_px` is the **max
+  over views of the p90 of the per-frame held-out residuals of the tracked moving objects**
+  (plate and pipette; hands are probes and stay out) reprojected into that view, the
+  fixed-view LOO cells and the fixed -> fpv hand-off alike, views with fewer than 10 residuals
+  skipped. One gate is applied to every view, so the widest view sets it; the *pooled* p90
+  (45.5 px on P03) would refuse about a fifth of the correct hand-offs into the head camera,
+  whose residuals are the widest (52 px p90). `floor = 15 px` at 1920: 1.5x the static LOO
+  median, which is box-centre parallax on true matches, so a tighter gate would reject them;
+  `cap = 80 px`: about 4% of the width, under the spacing of neighbouring same-class bench
+  objects (tip racks 80-150 px apart in the fixed views) and inside an fpv plate box
+  (250-360 px), so a wider gate would start merging identities; both scale with the image
+  width. `clock_offset_frames` per view = the median best offset over the informative scans,
+  uncertainty +/-1 frame, with a `significant` flag (|offset| > 1) so an offset inside the
+  uncertainty is reported and not applied; `birth_min_fixed_views` 3,
+  `birth_fixed_views_with_fpv` 2. **P03_01_01 comes out at association 31.1 px (3 x 10.37)
+  and hand-off 51.9 px** (per-view p90 T1 35.6, T2 38.1, T3 45.7, T4 34.1, T5 34.4, fpv 51.9;
+  94-100 residuals per fixed view, 45 in the fpv), the preflight's 30 / 50-60; clock offsets
+  T1 0 (no informative scan), T2 0, T3 0 (left hand -1, right hand +1), T4 +1, T5 -1, none
+  significant: no per-view offset is applied.
+- **Regression on the preflight.** On `runs/preflight-finebio-20260924/detections` with the
+  committed P03_01_01 config the rig reproduces `rig_reference.json`: the eleven static points
+  within 0.05 cm (centrifuge 4.1 cm, trash can 9.7 cm, racks 0.2-0.9 cm: half heights), every
+  LOO and all-view residual within 0.5 px (49 cells, median 10.4, p90 25.3), hands 61/61 at
+  7.7 px and 3.3 cm / 14/61 at 14.0 px and 26.6 cm, every clock best offset, the moving LOO
+  cells (plate inside the held-out box on 98-100%), the plate hand-off 45 frames at 36.5 px
+  median / 51.9 p90 inside 100%, left hand 31.6 px. The same run on the committed fixture
+  observations (boxes rounded to 0.1 px) reproduces it in the default tier, association
+  31.2 px there.
+- **Negative control (`--negative-control`).** Every `marker_pnp` view re-evaluated with its
+  **shipped** pose, other views unchanged. T5 (camera 6, centres 6.4 cm apart): markers
+  **0.71 vs 93.7 px**; static LOO median **6.7 vs 94.3 px** (every object 83-113 px under the
+  shipped pose: centrifuge 2.4 vs 97.9, vortex 1.4 vs 94.8, micro-tube rack 1.5 vs 91.7);
+  left hand **7.6 vs 47.8 px**, right hand 20.3 vs 67.7; heights move by up to 6 cm (red tip
+  rack 5.9 -> 11.7 cm, 8-channel rack 3.6 -> 9.6). These are the side-by-side numbers for the
+  Evidence preset's control.
+- **For the GPU phase.** The trial windows need the detections `battle-finebio-detect` will
+  produce on the proxies; the exact commands are recorded in each clip config's
+  `downstream.rig`:
+  `uv run battle-finebio-rig --config configs/finebio/cameras/P03_03_01_600-4200.json
+  --detections runs/finebio-detect-P03_03_01-600-4200 --frames 600-4199
+  --output runs/finebio-rig-P03_03_01-600-4200 --negative-control` and the same with
+  `P20_03_01_600-4200` (`--frames 600-4199`). On P20 the negative control covers T1-T4 (all
+  four are `marker_pnp`, so each is reported against its shipped pose), and T5, kept
+  `shipped` at 7.47 px, is the camera to watch in the static LOO column. On 3600 frames the
+  clock scan runs on 600 subsampled frames (~30 s); the rest takes seconds.
+- **Tests.** `tests/test_finebio_rig.py`: 4 default-tier (frame helpers; the formulas with
+  floor, cap, width scaling, the per-view minimum and the significance flag on synthetic
+  inputs; the rig on the committed fixtures reproduces the reference; P03's gates at 30-32 /
+  50-60 px with the fpv the widest view) + 1 `real_data` (the preflight detections with the
+  shipped fpv poses and the negative control). Default tier green, `ruff check` clean.
+
+### Sep 25: finebio_preprocessing and the trial proxies (p1-configs)
+
+- **What this is.** The `p1-configs` todo: the `finebio_preprocessing` manifest and the
+  `battle-finebio-preprocess` step that cuts a trial window into six proxies with the
+  p0-contracts recipe unchanged and proves the frame-index contract on each; the smoke window
+  and both trial windows cut; the Assembly101 `clip.views == ("static-c10379",)` asserts made
+  config-driven. CPU; 26 s for the 600-frame smoke window, about 2 min per 3600-frame trial
+  window (six libx264 encodes in parallel). Commit `426bd00`.
+- **Manifest (`src/battle/finebio_preprocessing.py`, `FineBioPreprocessingManifest`, kind
+  `finebio_preprocessing`; kept in the module, `schemas.py` untouched).** Trial, recording
+  day, `window_start_frame` / `window_end_frame_exclusive` / `frame_count`,
+  **`frame_index_offset = start`** (raw frame = proxy frame + offset, every view), `fps`
+  `30000/1001`; `views[view]` = `FineBioProxyRecord`: raw uri + sha256 + container frame
+  count, proxy uri + sha256, width / height, `r_frame_rate` / `avg_frame_rate`, counted
+  frames, the `media_probe` fps (and its `.probe.json` sidecar beside the proxy), the
+  **`proxy_ffmpeg_args` command verbatim**, encode seconds, the `frame_index_contract` report
+  on three sample offsets (first, middle, last frame: proxy frame k vs raw start+k-1 / +k /
+  +k+1) and on the fpv the `proxy_marker_check` against the shipped pose; `proxy_recipe`
+  (function, resolution, rate, trim, codec, template); `camera_config` and
+  `window_camera_config` refs with sha256; `intrinsics_rescale` 0.5 / 0.48;
+  `pose_length_check`; `window_source` (trials.json ref + its entry window + the requested
+  window); `clip_config_uri`; `checks_passed`; a licence line; `created`; `command`.
+- **CLI.** `battle-finebio-preprocess --trial T [--window-from configs/finebio/trials.json |
+  --start S --end E] [--output data/derived/finebio/T/S-E] [--camera-config] [--jobs 6]
+  [--skip-existing] [--dry-run] [--no-configs]`. Cuts the six proxies
+  (`<trial>_<view>_<start>-<end>.mp4`) with `finebio_frames.build_proxy` (which verifies the
+  counted frame count), probes them, hashes proxy and raw, runs the contract per view (the
+  minimum must sit at offset 0 on every sample, the rate must be the native one, the fpv
+  markers under 10 px) and `pose_length_check` on all six videos, then writes the manifest,
+  **a per-window copy of the camera config at
+  `configs/finebio/cameras/<trial>_<start>-<end>.json` with `frame_index_offset = start`**
+  (the choice: one committed file per window, poses unchanged, provenance names the trial
+  config and the window) and the clip config
+  `configs/clips/finebio_<trial>_<start>-<end>.json` (JSON, matching `configs/clips`):
+  `config_kind: finebio_clip_config`, `clip_id`, source and licence lines, trial / role /
+  room / day from `trials.json`, `fps`, `window` (frames and seconds), `frame_index_offset`,
+  `views` (`T1..T5, fpv`), `fixed_views`, `fpv_view`, `view_sizes`, **`targets`** (the
+  tracked classes: plate, the four pipettes, 50 ml / 15 ml / micro tubes, tube strips, the
+  four tip racks), `containers` (centrifuge, vortex, PCR machine, the racks, the trash can),
+  `probes` (hands), `camera_config`, `window_camera_config`, `preprocessing_manifest`,
+  `proxies` and `proxy_sha256` per view, annotated frames and centrifuge cycles inside the
+  window, `trials_source` (uri + sha256), and `downstream` with the detections directory the
+  GPU phase should write and the exact `battle-finebio-rig` command. A failed check exits 1
+  and writes no clip config.
+- **Proxies cut (`data/derived/finebio/`, gitignored).** *Smoke* `P03_01_01/1798-2398`
+  (600 frames per view, 13-19 s each, 73 MB): contract at offset 0 = 0.60 / 0.59 / 0.77 (T1),
+  0.64 / 0.68 / 0.86 (T2), 0.63 / 0.69 / 0.84 (T3), 0.66 / 0.72 / 0.87 (T4), 0.61 / 0.69 /
+  0.79 (T5), 0.70 / 0.79 / 0.81 (fpv) grey levels with the minimum at 0 on every sample (the
+  fixed cameras hardly move, so a one-frame offset is only 1.1-1.3x worse there; on the fpv
+  sample at 2098 it is 22.5 vs 0.79); fpv markers on 3/3 samples at 1.03 px. *Trial 1*
+  `P03_03_01/600-4200` (3600 frames per view, 68-97 s each, 489 MB): at 0 = 0.63-1.01 on the
+  fixed views and 0.85 / 0.89 / 1.10 on the fpv, off-zero minimum 15.2 on the fpv; markers
+  0.76 px; pose length 8492 == every raw frame count. *Trial 2* `P20_03_01/600-4200` (3600
+  frames, 69-98 s, 459 MB; its camera solve dropped nothing): at 0 = 0.54-0.82 fixed, 0.75 /
+  0.75 / 1.01 fpv, off-zero minimum 1.84; markers 0.97 px on day 221124; pose length 6045 ==
+  raw, 94.6% valid. Six manifests' worth of `checks_passed: true`. The smoke window is the
+  user's 1798..2398 (600 frames), wider than `trials.json`'s 60-frame preflight window; the
+  manifest records both.
+- **Committed configs.** `configs/finebio/cameras/P03_01_01_1798-2398.json`,
+  `P03_03_01_600-4200.json`, `P20_03_01_600-4200.json` (offset 1798 / 600 / 600) and
+  `configs/clips/finebio_P03_01_01_1798-2398.json`, `finebio_P03_03_01_600-4200.json`,
+  `finebio_P20_03_01_600-4200.json` (`trials_source` sha256 `63ef49e1…`, the committed
+  `trials.json`).
+- **Config-driven asserts.** `four_part_contract.py` gains `DEFAULT_TARGETS`,
+  `DEFAULT_APPROVED_VIEWS = ("static-c10379",)`, a `ReviewScope(views, targets, source)` and
+  `review_scope(clip_config)` that reads `clip.views` from an Assembly101 preprocessing
+  manifest (targets stay the four parts) or `views` + `targets` from a FineBio clip config,
+  and returns the Assembly101 defaults when no config is given. `interaction_review._validate_run`
+  takes `approved_views`, `build_interaction_review` takes `clip_config` (CLI `--clip-config`)
+  and checks the reference's target order against the scope; `exploratory_comparison._load_method`
+  / `build_exploratory_comparison` likewise, with `view_id = approved_views[0]`;
+  `kineo_fusion.verify_source_alignment(approved_views=...)` reads the scope from its existing
+  `--config` clip config. The literal `"static-c10379"` remains only in Kineo's pkl payload
+  field and as the default; the per-part loops inside `interaction_review` keep the four-part
+  `TARGETS` default (the plan asked for the asserts, not a refactor). Every existing test passes
+  unchanged.
+- **Tests.** `tests/test_finebio_preprocessing.py`: 5 default-tier (manifest round trip with
+  the recipe verbatim and the kind rejected when wrong; `checks_pass` on a shifted proxy, a bad
+  marker fit and a wrong rate; the window helpers on `trials.json`; the clip config contents
+  and its `downstream.rig` command; the committed smoke window config and clip config agree)
+  + 1 `real_data` (the 60-frame smoke window built into `tmp_path` passes the contract in six
+  views, offsets 0 / 30 / 59, fpv markers under 10 px). `tests/test_review_scope.py`: 5
+  (defaults, the Assembly101 configs incl. the eight-view one, the FineBio config, rejections,
+  `verify_source_alignment` with and without a scope). **Default tier 913 passed / 14 skipped**
+  (other lanes' tests included), `uv run pytest -q -m real_data -k finebio` **11 passed**
+  (2 cameras, 1 cameras CLI, 5 frames, 1 rig, 1 preprocessing, 1 detector), `uv run ruff check
+  src tests scripts` and `ruff format --check` clean.
+- **Left for the GPU phase.** `battle-finebio-detect` on the six proxies of each trial window
+  (raw `frame_index = proxy + offset`, per the clip config), then the `downstream.rig` command
+  above; lane C's tracker takes the resulting `rig.json` through `--gates`.
