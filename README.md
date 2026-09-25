@@ -17,8 +17,11 @@ and the research brief that preceded it, with the verbatim first request, is
 `battle_plan.agent.final.md` at the repository root (kept locally, untracked and gitignored
 since Sep 24; it was tracked until then and is in the history). The Assembly101 phase closed on
 Sep 24 (ledger entry "Sep 24: Assembly101 phase closed", tag `assembly101-lab-close`); the
-next phase, a detector-seeded FineBio lab with hands out of scope, is planned and not started in
-[`docs/plan-2026-09-24-finebio-detector-seeded-lab.md`](docs/plan-2026-09-24-finebio-detector-seeded-lab.md).
+FineBio 3D object-tracking phase was planned, preflighted, run and closed on Sep 24-25 (plan copy
+with its Outcome [`docs/plan-2026-09-25-finebio-3d-tracking.md`](docs/plan-2026-09-25-finebio-3d-tracking.md),
+ledger entry "Sep 25: FineBio 3D tracking phase, close-out"; the Sep 24 draft it superseded is
+[`docs/plan-2026-09-24-finebio-detector-seeded-lab.md`](docs/plan-2026-09-24-finebio-detector-seeded-lab.md));
+see "FineBio 3D object tracking" below.
 
 In one paragraph, as of Sep 18: the repository has typed Pydantic manifests for clips,
 runs, timing, coverage, and observations; an inference-free Rerun exporter; and nine
@@ -83,6 +86,65 @@ The rest of this file is the how-to: each section below gives the exact commands
 reproduce a stage. No recordings, annotations, or model weights are included. The SAM3
 adapter executes only against the user-approved G2 proxies. `data/`, `runs/`, caches, and
 Rerun outputs are ignored by Git.
+
+## FineBio 3D object tracking (Sep 24-25, closed)
+
+The second phase, on FineBio (a biochemistry bench, six cameras: five fixed and one head-mounted;
+non-commercial research licence). One idea: **the tracked entity is a 3D object with a
+persistent identity, and every camera's SAM3.1 mask is an observation of it**; the FineBio
+shipped detector's box is SAM3's only prompt. Preflighted before it started
+([`docs/preflight-2026-09-24-finebio.md`](docs/preflight-2026-09-24-finebio.md)), planned as
+[`docs/plan-2026-09-25-finebio-3d-tracking.md`](docs/plan-2026-09-25-finebio-3d-tracking.md)
+(the approved text verbatim, with an Outcome section at the foot), built and closed in a day
+(ledger Part 2 from "Sep 24, night: FineBio contracts and fixtures" to "Sep 25: FineBio 3D
+tracking phase, close-out"). Trial 1 is `P03_03_01` (room 1), trial 2 `P20_03_01` (room 2, run
+with the trial id swapped and nothing tuned); both on raw frames [600, 4200), 120 s, six views.
+
+The pipeline, one command per stage (every tool has `--help`; the exact invocations and the
+numbers are in the ledger entry named for the stage):
+
+```bash
+uv run battle-finebio-cameras solve --trial P03_03_01 --seconds 30,120,240      # per-trial camera solve: shipped pose kept within 10 px, else marker PnP (p0-cameras)
+uv run battle-finebio-preprocess --trial P03_03_01 --window-from configs/finebio/trials.json   # six native-rate proxies + clip config, frame-index contract (p1-configs)
+uv run battle-finebio-detect run --trial P03_03_01 --views fpv,T1,T2,T3,T4,T5 --start 600 --count 3600 --model dino --device cuda --output runs/<run>/dino   # every frame (p2-detect)
+uv run battle-finebio-rig --config configs/finebio/cameras/P03_03_01_600-4200.json --detections runs/<run>/dino --frames 600-4199 --output runs/<rig> --negative-control   # gates as formulas (p1-rig)
+uv run battle-detector-seed run --trial P03_03_01 --detections runs/<run>/dino --start 600 --end 4200 --output runs/<seeds>   # per-view SAM3 slots from what moves or sits in a hand (p2-seeds)
+uv run battle-finebio-arms run --arm b --clip-config configs/clips/finebio_P03_03_01_600-4200.json --detections runs/<run>/dino --gates runs/<rig>/rig.json --seeds runs/<seeds>/with-plate --output runs/<arms>/b-box-decode-arm   # arms a/b/c/d through battle-multiview-tracks; --ext for the extensions (p4-arms, p3-*)
+uv run battle-finebio-confidence ... && uv run battle-finebio-events ... && uv run battle-finebio-viewer ...   # confidence + abstain, events, the recording (p5-*)
+```
+
+Two recordings to open (never committed; each with `world.rbl` / `cameras.rbl` / `evidence.rbl`
+beside it; the committed `configs/rerun/finebio_*.rbl` are trial 1's):
+
+```bash
+uv run rerun runs/finebio-review-P03_03_01-20260925/review.rrd runs/finebio-review-P03_03_01-20260925/world.rbl        # trial 1, core tracker (915.6 MB)
+uv run rerun runs/finebio-review-P20_03_01-20260925-ext/review.rrd runs/finebio-review-P20_03_01-20260925-ext/world.rbl  # trial 2, tracker extensions (817.2 MB)
+```
+
+The guide, with what each preset shows, the storyboard per trial, the two-trial scoreboard and a
+20-minute route through both, is
+[`docs/review-guide-2026-09-25-finebio-3d.md`](docs/review-guide-2026-09-25-finebio-3d.md). The
+two soft human gates (a 15-minute seed shortlist and a 1.5-hour anchor sitting) are prepared and
+not held: [`docs/labeling-sessions-2026-09-25-finebio.md`](docs/labeling-sessions-2026-09-25-finebio.md).
+
+What the data decided: the memory-free per-frame box decode is the mask source on both trials
+(mask-vs-detector-box IoU median 0.926 / 99.1% of masks >= 0.5 in room 1, 0.919 / 98.5% in room
+2) against SAM3.1 video memory (0.914 / 79.3%, 0.883 / 65.3%), whose one win is identity through
+appearance change; the static objects are one 3D id each in both rooms, a tube keeps its id
+`contained` through the closed centrifuge, and the in-hand pipette fragments in both rooms.
+
+**Claim boundaries.** The FineBio DINO detector was trained on FineBio's own objects and on frames
+from these cameras, so every "IoU vs detector box" is agreement between two models, not
+accuracy; identity metrics against the SAM3 per-view slots are a proxy; confidence ranks rows
+within an arm and is not a probability; events are geometry on model output; **no human anchor
+was labelled on either trial, so no number in this phase is human-anchored**; the FineBio
+annotation archives were treated as unavailable. Three things are named as trial-1 overfit in
+the ledger (a witness class list in the rig's hand-off formula, a slot cap, the viewer's
+camera-6-only drawn negative control).
+
+**Licence.** FineBio is non-commercial research data. Nothing under `data/` or `runs/` is
+committed; no frame, mask, video or `.rrd` is in the repository (the fixtures under
+`tests/fixtures/finebio_preflight/` are numbers only); no sharing determination is made here.
 
 ## Hardware and claims policy
 
