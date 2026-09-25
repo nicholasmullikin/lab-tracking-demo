@@ -128,3 +128,151 @@ The default when you do nothing: every seed stays, `provenance: auto`, and the l
 - Start frames: 43 of the 60 slots start at the window start (frame 600, analysis frame 0);
   the rest start when the object first persists (`50ml_tube#0` in T2 at 2043, the held micro
   tube in T5 at 2817, ...), which is the frame the video-memory worker seeds them at.
+
+# Gate 2 (soft), Sep 25: review anchors on trial 1, about 1.5 hours, no GPU
+
+The `p6-anchors` todo of the FineBio 3D-tracking plan
+([`plan-2026-09-25-finebio-3d-tracking.md`](plan-2026-09-25-finebio-3d-tracking.md)). **Nothing
+waits for this sitting either.** The frames were chosen and the candidate masks decoded as soon
+as arm (b) existed (`battle-finebio-anchors select` / `workspace`); the scoreboard
+(`battle-finebio-anchors score`) runs on an empty record today, says how many cells are
+labelled, and re-runs as more land. Labelling is optional: without it the arms are ranked on the
+label-free measures only, and the ledger says so. Nothing is drawn: you pick one SAM3
+image-decoder mask per cell (or say the object is hidden), the mask boundary is the decoder's,
+the choice is yours. FineBio is non-commercial research data: sheets and masks stay under
+`runs/`, never in the repository; the anchor config (frame numbers, slot labels) and your record
+(states, hashes, identities) carry no pixels.
+
+Standing claim boundary: the anchors are one person's choice among decoder masks on 18 frames of
+two views plus one six-view frame of one trial. They rank arms (a)-(d) against each other and are
+not ground truth, not a dataset, and support no accuracy claim; the detector that proposed every
+box was trained on this lab's objects and cameras.
+
+## What was chosen, and why (`configs/qa/finebio_P03_03_01_review_anchors.json`)
+
+- **Views.** The head camera `fpv` and one fixed view, **`T4`**: it has the most individually
+  tracked slots (11 non-group; T1 7 + 4 group slots, T2 10 + 1, T3 10 + 1, T5 9 + 2) and its
+  plate slot has a mask on 97.1% of the window (det-box IoU median 0.906). Group slots (racks of
+  tubes) have no single detector box and sit outside the disagreement pool, which is why T5, the
+  top-down camera with two group slots, was not taken. Frame **916**, the one frame the FineBio
+  authors annotated in every camera, is labelled in **all six views**.
+- **18 frames** (raw frame; proxy frame = raw - 600):
+  - `916` (proxy 316): six-view annotated, all six views.
+  - **12 disagreement frames**, fpv + T4: the frames where arm (b)'s mask disagrees most with the
+    detector box that prompted it (lowest `detector_box_iou` per frame, pooled over the non-group
+    slots of both views), lowest first, at least 90 frames (3 s) apart from every other chosen
+    frame, with the two centrifuge cycles' neighbourhoods ([1176, 1228) and [3224, 3311), padded
+    by 90 frames on each side) served first until three were inside them:
+    `1120` (T4 centrifuge 0.19, lid opening before the first spin), `1294` (T4 yellow pipette
+    0.21, after the first spin), `3372` (T4 vortex 0.22, after the second spin) in the
+    neighbourhoods; `1521` (fpv blue pipette 0.17), `1739` (fpv 8-channel pipette 0.13), `1966`
+    (fpv red pipette 0.22), `2380` (fpv blue pipette 0.13), `2748` (T4 blue pipette 0.21), `3054`
+    (fpv blue pipette 0.14), `3481` (fpv blue pipette 0.22), `3571` (T4 blue pipette 0.23), `4032`
+    (T4 blue pipette 0.06) window-wide. The held blue pipette is the object the two models
+    disagree on most, as the arms scoreboard already said.
+  - **5 random frames**, fpv + T4, `numpy.default_rng(20260925)` uniform over the eligible frames
+    (a SAM3 row in both views, valid fpv pose), same spacing: `637`, `1635`, `2132`, `2240`, `4122`.
+- **Cells.** 40 frame-views x 11 slots = **440 cells**, of which **337 have candidates** (the slot
+  had a detector box on that frame in arm (b)) and 103 have none (no box: the tube had not
+  arrived or had left, the pipette was out of frame): those 103 take only `hidden` or
+  `none_fits`.
+
+## The workspace (`runs/finebio-anchors-P03_03_01-20260925/`)
+
+Built by `battle-finebio-anchors workspace` (40 image encodes, 1011 decodes, 33 s on the GPU at
+2.57 GiB peak, guard record in `results.json`). The Assembly101 calibration web workspace was
+**not** generalised: it is bound to the Assembly101 clip configs and the four-part target policy,
+and gate 2 follows the gate-1 pattern instead, static sheets plus a decisions JSON.
+
+- `sheets/f<raw>_<view>.jpg`, one per frame-view (40 files, 1280 px wide): **one row per slot**,
+  columns = the context crop with the reference box (arm (b)'s prompt, the detector box), then
+  the candidates: **c0** = arm (b)'s own mask (tight box), **c1** = the 0.15-margin box, **c2** =
+  the box plus a positive point (arm (b)'s mask centroid, else the box centre), **c3** = the tight
+  box's second-ranked decoder output. A greyed tile captioned `= cK` is a duplicate (IoU >= 0.97)
+  of an earlier candidate and needs no look; 556 of the 1011 alternates are duplicates, so a
+  typical row has two or three distinct masks (67 rows have one, 144 two, 67 three, 59 four).
+  Under each tile: `dec` = the decoder's own IoU prediction, `bbox IoU` = the mask's bounding box
+  against the reference box, the area.
+- `sheets/f<raw>_<view>_overview.jpg`: the whole frame with every slot's box and number, to see
+  where a slot sits and which tube is which.
+- `decisions.template.json`: one entry per cell (`raw_frame`, `proxy_frame`, `view`, `slot`,
+  `label`, `class`, `candidates` = the indices that exist, `sheet`, `decision: null`,
+  `instance_identity`, `note`). Copy it to `decisions.json`, fill it in, put your name in
+  `author`.
+- `workspace.json`, `requests.json`, `results.json`: the record of what was asked and decoded.
+
+Viewing: the sheets are plain JPEGs. If you want them over the tailnet the way the Assembly101
+workspaces were served, a read-only static server on this machine's Tailscale address is enough
+(not started; nothing here needs a GPU or a POST):
+
+```bash
+cd /home/nick/src/battle/runs/finebio-anchors-P03_03_01-20260925
+python3 -m http.server 8766 --bind "$(tailscale ip -4)" --directory sheets
+# then http://<tailscale ip>:8766/ from any device on the tailnet; Ctrl-C when done
+```
+
+## What to do per frame (about 1.5 h for 440 cells, most of them one glance)
+
+Open the frame's sheet and its overview side by side. Per row (slot):
+
+1. **Pick the candidate whose mask is the object the label names**: write its index (`0`-`3`)
+   into `decision`. `0` is arm (b)'s mask; if it is right, `0` is the answer and takes a second.
+   Prefer the mask that covers the whole visible object and nothing else: for the transparent
+   plate the mask should be the plate's footprint (its fill is about half the box when right);
+   for a held pipette the pipette, not the glove; for a tube in a rack the tube, not its
+   neighbours. Ignore the colour word in a pipette label (the detector confuses blue / yellow /
+   red); the question is whether the mask is on the object the box is on.
+2. **`"hidden"`** when the object is not visible in this view on this frame (fully occluded, out
+   of frame, inside the closed centrifuge). Any arm mask there counts as a false positive. This
+   is the only answer besides `none_fits` for the 103 rows without a box.
+3. **`"box"`** when the reference box is the object but no candidate mask is acceptable (the
+   arms are then scored by the overlap of their mask's bounding box with that box).
+4. **`"none_fits"`** when the object is visible, no candidate fits, and the box is wrong too. The
+   cell is excluded and counted.
+5. Leave `null` when you do not want to decide; it is skipped and counted as unlabelled.
+6. **`instance_identity`**: a short name for the physical object, the same string wherever that
+   object appears, across views on frame 916 and across frames (`tube_A`, `tube_B`,
+   `pipette_blue`, ...). It is pre-filled for the bench's singletons (centrifuge, vortex, PCR
+   machine, plate, trash can); fill it for the tubes and pipettes where you can tell, leave it
+   null where you cannot (a tube in the rack you cannot tell from its neighbours). Group slots
+   (`micro_tube_group#0`, a rack of tubes as one object) can carry the rack's name.
+7. `note`: a word when useful ("mask on glove", "lid half open").
+
+Order that pays: frame 916 first in all six views (the six-view identity is what cross-camera
+IDF1 needs), then the three centrifuge-neighbourhood frames, then the rest. Stopping early is
+fine: the scoreboard reports on whatever exists.
+
+## What the scoreboard computes (`battle-finebio-anchors score`)
+
+```bash
+cd /home/nick/src/battle
+uv run battle-finebio-anchors score \
+  --workspace runs/finebio-anchors-P03_03_01-20260925 \
+  --record runs/finebio-anchors-P03_03_01-20260925/decisions.json \
+  --arms a=runs/finebio-arms-P03_03_01-20260925/a-boxes-only,b=runs/finebio-arms-P03_03_01-20260925/b-box-decode-arm,c=runs/finebio-arms-P03_03_01-20260925/c-video-memory-arm,d=runs/finebio-arms-P03_03_01-20260925/d-video-memory-arm \
+  --output runs/finebio-anchors-P03_03_01-20260925/scoreboard
+# the committed skeleton of your record (states, hashes, identities; no pixels):
+uv run battle-finebio-anchors export \
+  --workspace runs/finebio-anchors-P03_03_01-20260925 \
+  --record runs/finebio-anchors-P03_03_01-20260925/decisions.json \
+  --output docs/qa/finebio-P03_03_01-review-anchors.human-record.json
+```
+
+Per arm and labelled cell: **mask IoU** between the arm's mask (the same speckle rule as the
+arms' measures) and the accepted candidate; **box IoU** between the arm's mask bounding box, or
+its detector box for the boxes-only arm (a), and the candidate's bbox (the reference box for
+`box` accepts); `missing` when the arm has no row for the cell; `hidden FP` when an arm has a mask
+on a cell you marked hidden; per class, per view, per origin (six-view / disagreement / random)
+and inside the centrifuge neighbourhoods. **Identity**: on every labelled cell with an
+`instance_identity`, the tracker's 3D track id behind the arm's row is looked up
+(`tracks.jsonl`, `support_slots`), and identity F1 is computed between your names and the track
+ids (maximum one-to-one matching; IDF1 = 2 IDTP / (cells with a name + cells with a track)), on
+frame 916 across the six cameras and pooled over every labelled frame, with the number of names
+split across several ids, ids covering several names, and named cells the tracker has no track
+for. The table's first line says how many of the 440 cells are labelled. Arm (b) scoring 1.0 on
+every cell where you chose `0` is the built-in check that the scorer read the right masks.
+
+Where the numbers on the tiles come from: the reference box is the FineBio DINO box arm (b) was
+prompted with on that frame (its score under `det`); `dec` is SAM3's own IoU prediction for the
+candidate; `bbox IoU` is the candidate's bounding box against the reference box, the same measure
+the seeds were accepted on (>= 0.6) and the arms were compared on.
