@@ -38,7 +38,15 @@ no-annotation, no-accuracy-claims rule.
 
 Final statuses as of the Sep 24 close (the Sep 18 wording each row replaced is in the git
 history of this file; the closing record is
-[Sep 24: Assembly101 phase closed](#sep-24-assembly101-phase-closed)).
+[Sep 24: Assembly101 phase closed](#sep-24-assembly101-phase-closed)). The FineBio block at
+the foot of the table was added at the Sep 25 close of the FineBio 3D-tracking phase (record:
+[Sep 25: FineBio 3D tracking phase, close-out (p-docs)](#sep-25-finebio-3d-tracking-phase-close-out-p-docs));
+its rows are the user's FineBio ask in the user's words: "SAM3.1 + multi cam + detector,
+segmentation from multiple angles to keep track, compelling demo". The FineBio rows at the
+bottom were added at the Sep 25 close of the FineBio 3D-tracking phase, against the user's ask
+for that phase ("SAM3.1 + multi cam + detector, segmentation from multiple angles to keep
+track, compelling demo"); its closing record is
+[Sep 25: FineBio 3D tracking phase, close-out (p-docs)](#sep-25-finebio-3d-tracking-phase-close-out-p-docs).
 
 | Goal (from the Sep 8 ask and plan) | Status at close (Sep 24) | Evidence |
 | --- | --- | --- |
@@ -60,7 +68,12 @@ history of this file; the closing record is
 | No training, no annotation project, no accuracy claims | Held. Two gates crossed on request and labelled: dataset poses and fine-grained labels acquired Sep 17 as review context; human review anchors (52 cells C10379, 64 C10119, 75 e4) labelled Sep 19-21 as review evidence for ranking arms, one person's choice of decoder masks, not ground truth. No metric against ground truth anywhere; every table says so | [Sep 17 acquisition](#sep-17-assembly101-poses-extrinsics-and-fine-grained-annotations-selective-acquisition); [anchors](#sep-18-human-review-anchors-labeling-run-prepared-not-labelled-sep-18-labelled-sep-19) |
 | Four physical components through reassembly | First minute closed at **0.743** (`pm-append`, human seeds + four corrections, C10379). On C10119 the chassis reaches 0.740 with five exemplar corrections at agent onsets (4-part seeds alone 0.339; 3-part `r1280` 0.758); the interior is the part that stays human on every camera (0.585 human, 0.288-0.363 agent). The late reassembly beyond the first minute (target loss at 1946, 2381, 2578, 2684) was never dispositioned | [Sep 17 human review](#sep-17-first-minute-v4-human-review-and-follow-up-rebuild); [exemplar Track B](#sep-22-exemplar-detections-as-correction-candidates-track-b-of-the-exemplar-plan-the-c10119-chassis-arm); [close](#sep-24-assembly101-phase-closed) |
 | Git history from the start | Missed, then repaired; first commit Sep 13 after five days of uncommitted work. The phase closes at the annotated tag `assembly101-lab-close` | `git tag -n9 assembly101-lab-close` |
-| FineBio | Started Sep 21 (SAM3 smoke, shipped detector run); next phase planned, see [`docs/plan-2026-09-24-finebio-detector-seeded-lab.md`](plan-2026-09-24-finebio-detector-seeded-lab.md) | [FineBio first look](#sep-21-finebio-first-look-sam3-zero-shot-text-prompts-on-one-first-person-clip); [shipped detector](#sep-21-finebio-shipped-detector-first-run-mmdetection-dino-and-deformable-detr-on-the-cpu-beside-the-sam3-smoke) |
+| FineBio (as of Sep 24) | Started Sep 21 (SAM3 smoke, shipped detector run); the 3D-tracking phase planned Sep 24, preflighted the same night, run Sep 24-25 and closed Sep 25: the four rows below | [FineBio first look](#sep-21-finebio-first-look-sam3-zero-shot-text-prompts-on-one-first-person-clip); [shipped detector](#sep-21-finebio-shipped-detector-first-run-mmdetection-dino-and-deformable-detr-on-the-cpu-beside-the-sam3-smoke); [preflight](preflight-2026-09-24-finebio.md); [plan copy with Outcome](plan-2026-09-25-finebio-3d-tracking.md) |
+| FineBio: SAM3.1 + the shipped detector (the detector's box as SAM3's only prompt) | Done. FineBio DINO on every frame of two 120 s windows in six views (86,400 frames, 65 min GPU); 66/66 seeds accepted per trial; the memory-free per-frame box decode (b) is the mask source on both trials at **0.926 / 99.1%** and **0.919 / 98.5%** (median mask-vs-box IoU / fraction >= 0.5) against SAM3.1 video memory (c) 0.914 / 79.3% and 0.883 / 65.3%; (d) re-seeds negative; (e) not run. Model-vs-model agreement, not accuracy: the detector was trained on this lab's objects and cameras, and no anchor was labelled | [p2-detect runs](#sep-25-detector-runs-on-the-trial-windows-p2-detect-runs); [p2-seeds](#sep-25-battle-detector-seed-observation-adapters-gate-1-sheets-p2-seeds-p2-gate1); [p4-arms](#sep-25-tracking-arms-on-trial-1-p4-arms-p1-rig-run); `runs/finebio-arms-<trial>-20260925/scoreboard/scoreboard.md` |
+| FineBio: multi-camera, one world frame, segmentation from multiple angles to keep track (a 3D object with a persistent id) | Done with its limits named. Per-trial camera solve (camera 6 re-solved in room 1, cameras 1-4 in room 2, 0.7-2.1 px; no view dropped), rig gates as formulas (association 30.1 / 27.5 px), the seven cross-checks and a negative control on every build; a new 3D tracker (birth by triangulation, predict-project-gate, coasting / lost, confirmed re-acquisition, hand-off re-seed) plus four extensions on inventory evidence: tracks born 285 / 308 / 270 -> 191 / 186 / 147 and ambiguities 126 / 158 / 133 -> 33 / 54 / 22 on trial 1, 290 / 321 / 208 -> 166 / 202 / 152 and 70 / 97 / 25 -> 8 / 35 / 7 on trial 2. The static objects are one id each in both rooms; a tube keeps its id `contained` through the closed-lid spins; **the in-hand pipette fragments in both rooms** (41 / 59 / 20 and 24 / 48 / 21 ids with the motion model) and per-tube identity in racks is out of scope by evidence. Identity metrics are the tracker's own against the SAM3 slots as a proxy; gate 2 unlabelled | [p0-cameras](#sep-25-battle-finebio-cameras-the-per-trial-camera-solve-p0-cameras); [p1-rig](#sep-25-battle-finebio-rig-and-the-gate-formulas-p1-rig); [p3-tracker](#sep-25-battle-multiview-tracks-core-p3-tracker); [p3-tracker-ext](#sep-25-tracker-extensions-on-the-inventorys-evidence-p3-tracker-ext) |
+| FineBio: compelling demo | Done as a review surface, not judged by a viewer. Three Rerun recordings (trial 1 core 915.6 MB / 508 entity paths, trial 1 extensions 887.6 MB, trial 2 extensions 817.2 MB / 399), each with World / Cameras / Evidence presets, the seven cross-checks, a negative control, confidence with abstention, an events strip and a storyboard marked on the timeline (ten items on trial 1: the centrifuge cycle, the fpv off the plate and back, the transparent plate in six views, a confidence drop that is a real failure; six on trial 2). Every recording `rerun rrd verify` clean; none opened in a viewer by an agent | [p5](#sep-25-confidence-events-and-the-review-recording-p5-confidence-p5-events-p5-viewer); [close-out](#sep-25-finebio-3d-tracking-phase-close-out-p-docs); [`docs/review-guide-2026-09-25-finebio-3d.md`](review-guide-2026-09-25-finebio-3d.md) |
+| FineBio: generalises to a second room with zero tuning | Done. `P20_03_01` through the trial-1 pipeline with the trial id swapped: (b) 0.919 / 98.5%, the same verdicts, the extensions' effect the same size; **three things named as overfit** (the rig's moving-object witness class list that put the hand-off gate at the 80 px cap; the trial-1 slot cap's `magnetic_rack` side effect in T2; the viewer's camera-6-only drawn negative control) and one stop rule fired (the plate `detector_unseeded` in T2, DDETR not substituted) | [p6-trial2](#sep-25-second-trial-p20_03_01-with-zero-tuning-p6-trial2); [close-out](#sep-25-finebio-3d-tracking-phase-close-out-p-docs); `runs/finebio-arms-P20_03_01-20260925/README.md` |
+| FineBio: the two soft human gates | **Prepared, awaiting the human.** Gate 1 (seed shortlist, ~15 min): 66 + 66 tiles, no decision recorded, every seed `provenance: auto`. Gate 2 (review anchors, ~1.5 h): 440 cells on 18 frames of trial 1, 0 labelled; the scoreboard runs on the empty record. Until they are held, no number in the FineBio phase is human-anchored | [p2-gate1](#sep-25-battle-detector-seed-observation-adapters-gate-1-sheets-p2-seeds-p2-gate1); [p6-anchors](#sep-25-anchor-frames-and-workspace-for-gate-2-p6-anchors-prepared); [`docs/labeling-sessions-2026-09-25-finebio.md`](labeling-sessions-2026-09-25-finebio.md) |
 | Audio | Deferred by plan; never revisited; closed with the phase | [close](#sep-24-assembly101-phase-closed) |
 
 The honest summary, as of the morning of Sep 18: nine-plus methods attempted, one clip,
@@ -95,6 +108,22 @@ exemplar detector then cleared the correction bar on one camera for one part (C1
 0.740). Recording 2 ran with zero human input and was never scored. The phase closes there;
 the numbers, dispositions and open items are in
 [Sep 24: Assembly101 phase closed](#sep-24-assembly101-phase-closed).
+
+The FineBio closing summary, Sep 25: one plan, preflighted before it started and rewritten on
+what the preflight found, then run in a day by parallel lanes against fixed contracts. The
+tracked entity became a 3D object with a persistent id and every camera's SAM3.1 mask an
+observation of it; the FineBio detector's box was SAM3's only prompt. The data decided the
+plan's central question the plain way: a memory-free per-frame box decode agrees with the
+detector on 99.1% / 98.5% of its masks in the two rooms, SAM3.1 video memory on 79.3% / 65.3%,
+and the re-seed loop made memory worse, so the floor is the result. The rig's gates came out
+of formulas on each trial's own data, the seven cross-checks and a negative control stand on
+every recording, and a tube keeps one id `contained` through the closed centrifuge in both
+rooms once the extensions the occlusion inventory asked for are on. What did not transfer is
+named (a witness class list, a slot cap, a camera-6 constant in the viewer), what did not work
+is named (the in-hand pipette fragments in both rooms), and what was never measured is named
+loudest: no human anchor was labelled on either trial, so every number in the phase is
+agreement between two models trained on this lab's own bench. Record:
+[Sep 25: FineBio 3D tracking phase, close-out (p-docs)](#sep-25-finebio-3d-tracking-phase-close-out-p-docs).
 
 ### Timeline
 
@@ -830,6 +859,23 @@ each everywhere, and the extensions move every count in the same direction by a 
 volumes incl. the magnetic rack room 1 could not build). Record: [Sep 25: second trial P20_03_01
 with zero tuning (p6-trial2)](#sep-25-second-trial-p20_03_01-with-zero-tuning-p6-trial2).
 
+#### Sep 25: FineBio 3D tracking phase closed
+
+Trial 2 put into the viewer (confidence, events and the recording on its `tracks-ext/` with
+nothing changed: 817.2 MB, 399 entity paths, 37,058 masks, `rerun rrd verify` clean; a six-item
+storyboard because room 2 has no fpv look-away and no six-view plate frame; two tubes keep one
+id each `contained` through all three spins; the negative control present as the four re-solved
+cameras' numbers but drawn for camera 6 only, named as a trial-1 constant in the viewer), then
+the phase closed: dispositions as they stand (both soft gates unlabelled, so **no human-anchored
+number exists**; (d) negative, (e) not run; three overfit items and one fired stop rule named),
+one final-numbers table with what each is measured against and where it is, the two-trial
+comparison, tests at close (**982 passed / 14 skipped**, `real_data -k finebio` 14, ruff and
+format clean), the phase's run directories (272G apparent, of which **252 GiB are arm (d)'s
+985 per-correction checkpoints**, a disk finding for the user's decision, nothing deleted),
+GPU about **7.6 h** against the plan's 5, the plan copy's Outcome section, the review guide
+over both trials with a 20-minute route, and the README section. No tag placed. Record:
+[Sep 25: FineBio 3D tracking phase, close-out (p-docs)](#sep-25-finebio-3d-tracking-phase-close-out-p-docs).
+
 ### Plan versus actual
 
 What the plan said, what happened instead, and why, in one line each.
@@ -886,6 +932,49 @@ What the plan said, what happened instead, and why, in one line each.
 - 24 GB assumptions in the brief. Retired on day one; peak VRAM never exceeded 2.2 GiB
   in any run, so the 16 GB card was never the constraint.
 
+**The FineBio 3D-tracking phase (Sep 24-25).** What the Sep 24 plan said, what ran, and where
+they part, in one paragraph per turn.
+
+- *The plan was rewritten once before it started, on evidence.* The Sep 24 daytime draft
+  ([`plan-2026-09-24-finebio-detector-seeded-lab.md`](plan-2026-09-24-finebio-detector-seeded-lab.md))
+  had a camera-mapping step, a plate-presence detector, PVS prompt search and exemplar arms for
+  the transparent plate, a 1920 encoder arm, seeds by "score >= 0.5 with persistence", and the
+  protocol-01 trial. The user asked for every assumption to be challenged first; the preflight
+  ([`preflight-2026-09-24-finebio.md`](preflight-2026-09-24-finebio.md), CPU plus five GPU
+  minutes) found the top-down camera 6.4 cm off its shipped pose, the plate segmented in every
+  view from the detector's box alone, 1920 adding nothing, the in-hand object the weakest
+  detection in every fixed view, and protocol 01 barely moving anything. The rewritten plan
+  ([`plan-2026-09-25-finebio-3d-tracking.md`](plan-2026-09-25-finebio-3d-tracking.md)) dropped
+  the plate arms and the 1920 encoder, made the camera solve and rig check standing steps with
+  gates as formulas, changed the seed rule to "what moves or sits in a hand", added the
+  memory-free per-frame decode arm the draft lacked, chose protocol 03, and put a thin slice
+  and a shipping floor in front of everything. That is the plan the phase was measured against.
+- *Structure held.* Contracts first, the 60-frame slice before any scale-up, gates as formulas,
+  soft human gates off the critical path, arms in cancelling order, the preflight as a
+  regression, one negative control on every build, extensions only on inventory evidence: each
+  happened as written, and the ledger has an entry per todo. The floor (arm (b) + the tracker
+  + the cross-check viewer) shipped and is also the result: video memory did not beat it.
+- *What the data decided differently from the plan's expectation.* The plan expected video
+  memory to be worth deciding about; per-frame box decode won outright on both trials (0.926 /
+  99.1% vs 0.914 / 79.3%; 0.919 / 98.5% vs 0.883 / 65.3%), and the re-seed loop (d) made things
+  worse. The plan expected the plate to be seeded by the rule; protocol 03 never moves it and
+  it was opened as a plan-driven landmark. The plan's `contained` names the lid state; the
+  tracker's is geometric and the lid is the events lane's, read from a top-down pixel
+  heuristic. The hand-off gate came out at 27 px on trial 1 (half the preflight's) and at the 80
+  px cap on trial 2, both by the formula, the second because of a witness class list the plan
+  did not know it had fixed. The in-hand pipette's fragmentation was expected to be an occlusion
+  (`held`) problem and turned out to be a motion and observation problem (the motion model
+  helps by a fifth; a long object's box centre is not one 3D point).
+- *Costs.* GPU about 7.6 h against the plan's 5 (both detectors on both trials, 1.1 h; (d) 1.8
+  h; trial 2 2.3 h against 1.5); human 0 h of the plan's 2 (both gates soft, neither held);
+  the CPU budget of 12 h was not separately timed. Peak VRAM 4.4 GiB (arm (d) on the fpv); the
+  16 GB card was again never the constraint.
+- *What was not built.* Arm (e) DAM4SAM; a per-trial anchor set for trial 2; the generalised
+  drawn negative control; an acceptance test on re-seed boxes before they are installed (the
+  change (d) would need); a tip or handle keypoint for the pipette; the Assembly101 web
+  workspace for gate 2 (static sheets and a decisions JSON instead). Each is named where it
+  arose.
+
 ### Open items
 
 Human gates (nothing below can be claimed until these are recorded):
@@ -917,6 +1006,17 @@ Human gates (nothing below can be claimed until these are recorded):
   name alone; the other checkpoint is one `--checkpoint` swap away in `pairs.json`.
 - Whether to seed e1 (HMC_21176875) mid-minute: every part is outside its frame at frame 0,
   so a run needs a profile that starts at the first frame the cabin is in view.
+- **FineBio gate 1, soft (~15 min):** accept / reject the 66 with-plate seeds per trial from
+  `runs/finebio-seeds-<trial>-20260925/with-plate/sheets/<view>.jpg` into a `decisions.json`
+  (`battle-detector-seed apply-decisions`); brief in
+  [`docs/labeling-sessions-2026-09-25-finebio.md`](labeling-sessions-2026-09-25-finebio.md).
+  Nothing waited for it; every seed ran `provenance: auto` and the record says so.
+- **FineBio gate 2, soft (~1.5 h):** the 440 anchor cells of trial 1 (frame 916 in six views,
+  12 disagreement and 5 random frames on the fpv and T4) in
+  `runs/finebio-anchors-P03_03_01-20260925/` (`decisions.template.json` -> `decisions.json`,
+  then `battle-finebio-anchors score` / `export`). Until it is held **no FineBio number is
+  human-anchored**: the arms are ranked on model-vs-model agreement only. A trial-2 anchor set
+  (six-view frame 1442) was never chosen.
 
 Technical:
 
@@ -946,9 +1046,36 @@ Technical:
   the script now counts them as cited.
 - `yellow_toy_top` leaves the frame at ~216.2 s in every 180 s arm; its coverage numbers
   describe the scene, not the tracker.
-- FineBio: entered Sep 21 (SAM3 smoke, shipped detector); the next phase is planned in
-  [`docs/plan-2026-09-24-finebio-detector-seeded-lab.md`](plan-2026-09-24-finebio-detector-seeded-lab.md).
-  Audio: never entered, closed with the phase (Sep 24).
+- FineBio, open findings at the Sep 25 close (record:
+  [close-out](#sep-25-finebio-3d-tracking-phase-close-out-p-docs)):
+  - **Proximity events are zero by protocol** in both windows (no pipette within 30 cm of the
+    plate in protocol 03); the mechanism is tested on synthetic tracks only.
+  - **The in-hand pipette fragments in both rooms** (blue 41 / 59 / 20 ids on trial 1, yellow 24
+    / 48 / 21 on trial 2 with the motion model): seen in 1-2 views, a long object's box centre
+    is not one 3D point; the named next step is a tip or handle keypoint or a hand-relative
+    prior in the observation, not the tracker.
+  - **Video memory's only win is identity through appearance change** (the centrifuge one id
+    across the lid cycles; masks on frames the detector misses); its cost is drift (9 of 58
+    slots dead on trial 1, 24 of 61 on trial 2). The re-seed loop (d) needs an acceptance test
+    on the decoded mask before a box is installed; not built.
+  - **Named as overfit, not fixed:** the rig's moving-object witness class list
+    (`TRACKED_MOVING_CLASSES` in `finebio_rig.py`: plate + `blue_pipette`) that put trial 2's
+    hand-off gate at the 80 px cap and its fpv residuals at 15-16 px; the viewer's drawn negative
+    control keyed to T5 being `marker_pnp` (on trial 2 the control is a numbers document); the
+    `--slot-cap 11` set for the plate.
+  - The plate `detector_unseeded` in trial 2's T2 (DINO never sees it there; Deformable DETR
+    does, at ~100 px); recorded, not substituted.
+  - Parameters left open by the plan and never revisited: K = 5 / repeat 30 before a re-seed,
+    tau for memory writes (unset), the hysteresis 0 / 3 cm / 5 frames, the per-class container
+    heights, the window.
+  - **Disk:** `runs/finebio-arms-P03_03_01-20260925/d-video-memory/` holds 985 checkpoints of
+    ~305 MB (252 GiB) written at every one of arm (d)'s 986 correction frames by the worker's
+    per-correction checkpoint rule; the arm's verdict is negative and its numbers rest on its
+    `observations.jsonl`, masks and manifests, not the checkpoints. Nothing deleted; the user
+    decides. `--no-checkpoints` exists on the worker for a re-run.
+  - Nothing under `runs/` or `data/` is committed (FineBio licence, non-commercial research); no
+    sharing determination was made. No tag was placed on the close; the user decides.
+  - Audio: never entered, closed with the Assembly101 phase (Sep 24).
 
 ### Sep 13: fixed two-timestamp QA infrastructure
 
@@ -9356,3 +9483,226 @@ and the 83 `main()` entry points beyond their shared fragments.
   anchor set is raw 1442 (proxy 842). Two things to carry: the fpv has no pose on 248 frames
   (the viewer's fpv frustum and hand-off series will have gaps at the spins), and T2 has no
   plate slot (a Cameras tile without a plate mask by design, `detector_unseeded`).
+
+### Sep 25: FineBio 3D tracking phase, close-out (p-docs)
+
+- **What this is.** The closing todo of the FineBio 3D-tracking plan
+  ([`docs/plan-2026-09-25-finebio-3d-tracking.md`](plan-2026-09-25-finebio-3d-tracking.md),
+  approved Sep 24 night after the preflight, built Sep 24-25 by parallel lanes in one checkout,
+  seventeen Part 2 entries from [contracts](#sep-24-night-finebio-contracts-and-fixtures-p0-contracts)
+  to this one). Every other todo has run; this entry puts trial 2 into the viewer (the one piece
+  of `p6-trial2` the trial-2 lane left, "both trials in the viewer"), records the dispositions
+  as they stand, puts the final numbers in one table with what each is measured against and
+  where it is on disk, compares the two trials, records the test tier, lint, run directories
+  and GPU hours at close, and writes the plan's Outcome section, the review guide's trial-2 half
+  and the README section. CPU only today (confidence 12-16 s and events 5-8 s per arm, the
+  recording 356 s); no GPU job, no viewer opened (checks are `rerun rrd verify`, the entity list
+  and the presets' query resolution); nothing deleted; no tag placed (the user's decision).
+  **Claim boundary, standing for the whole phase:** the FineBio DINO detector was trained on
+  FineBio's own objects and on frames from these cameras, so every "IoU vs detector box" is
+  agreement between two models, not accuracy; identity metrics against the SAM3 per-view slots
+  are a proxy; confidence ranks rows within an arm; events are geometry on model output; **no
+  anchor was labelled on either trial, so no human-anchored number exists in this phase**; the
+  FineBio annotation archives were treated as unavailable. FineBio licence: non-commercial
+  research; nothing under `runs/` or `data/` is committed; no frame, mask, video or `.rrd` in the
+  repository; no sharing determination is made here.
+- **Trial 2 in the viewer.** `battle-finebio-confidence`, `battle-finebio-events` and
+  `battle-finebio-viewer` on `runs/finebio-arms-P20_03_01-20260925/` with `--tracks-dir
+  tracks-ext` (arms (a), (b), (c); the commands are in the review guide's trial-2 section), the
+  trial-2 clip config, rig, seeds and DINO pass, nothing else changed; the lid intervals and the
+  three cycles in the window ([895, 937), [2500, 2539), [3798, 3834)) came from
+  `configs/finebio/trials.json` through the clip's trial id, as on trial 1. Every step ran on the
+  room-2 data without a fix. *Confidence* (`<arm>/confidence-ext/`; (a) / (b) / (c)): 119,321 /
+  120,066 / 112,821 rows on 166 / 202 / 152 tracks, median **0.516 / 0.484 / 0.505**, abstain
+  **1.000 / 0.623 / 0.640** over all rows and **- / 0.013 / 0.015 on the 45,791 / 41,264 rows
+  that carry all five signals** (trial 1 on `tracks-ext/`: 0.531 / 0.520 / 0.485; 1.000 / 0.668
+  / 0.638; - / 0.058 / 0.009); per class in (b) the plate 0.756 and abstain 0.000, trash can
+  0.803 / 0.000, centrifuge 0.715 / 0.020, vortex 0.621 / 0.000, PCR 0.628 / 0.000, the in-hand
+  **yellow pipette 0.229 / 0.452** (48 tracks), micro tubes 0.242 / 0.772; DDETR disagreement
+  3.4 / 3.7 / 6.4% of rows with a check, agreement by confidence quartile (b) 0.735 / 0.826 /
+  0.908 / 0.960, near-redundant as in room 1. *Events* (`<arm>/events-ext/`): **contained 21 /
+  20 / 11** ((b): micro-tube rack 8, centrifuge 4, vortex 4, magnetic rack 4), **held 60 / 76 /
+  25** ((b): yellow pipette 50, micro tube 18, yellow tip rack 4, blue pipette 3), **proximity 0
+  in every arm** (as in room 1: no pipette near the plate in protocol 03); lid closed on **117
+  of 3600 frames** (three spins of 36-42 frames; trial 1 638 over two closures of 52 and 87);
+  contained track-frames while closed 341 / 429 / 520. *Cycles vs contained*, (b): [895, 937)
+  3 episodes, 2 entered before the closure, **0 ended while closed, 2 kept their id through**
+  (`micro_tube-013`, contained from raw 600; `micro_tube-033`, from 838), 1 started after the
+  opening (`-037`, which then holds through the next two); [2500, 2539) 3 / 3 / 0 / 3 / 0;
+  [3798, 3834) 4 / 4 / 1 (`-171`, 3 frames inside) / 3 / 0; no successor id anywhere. (a) has
+  one tube (`micro_tube-039`) through all three and one episode ending while closed per spin;
+  (c) two tubes (`-013`, `-032`) through all three. *Recording*
+  `runs/finebio-review-P20_03_01-20260925-ext/review.rrd`: **817.2 MB, 399 entity paths
+  (application id `finebio-review-P20_03_01`), 37,058 mask cut-outs** (every 6th frame for (b),
+  every 30th for (c), every storyboard frame for both), 89,285 chunks, 698,620 rows, **`rerun
+  rrd verify`: "1 file verified without error"**, 356 s to build; presets `world.rbl` 8 views /
+  47 queries, `cameras.rbl` 8 / 41, `evidence.rbl` 28 / 65, every query resolved against the
+  entity tree; built with `--preset-dir ""` so the committed `configs/rerun/finebio_*.rbl`
+  (trial 1's, bound to `finebio-review-P03_03_01`) are untouched and trial 2's presets live
+  beside its recording. Eight container volumes (the magnetic rack included; room 1 built
+  seven); `world/tracks/b/{observed,single_view,coasting,contained,held,trails}` present; 11
+  mask entities per view for (b) including T2, whose eleventh slot is the `magnetic_rack`, and
+  **no `world/T2/masks/b/cell_culture_plate-0`** (the plate is `detector_unseeded` there, by
+  design). **Storyboard: six items, not ten.** `pick_fpv_story` requires a run of valid-pose
+  frames on which the plate projects outside the head camera; in room 2 the plate is inside the
+  fpv image on 100% of its 3352 valid-pose frames (the rig's hand-off check), so there is no
+  look-away and the three fpv items are absent. `pick_plate_story` requires a frame with a
+  plate mask in all six views, impossible without T2, so the plate item is absent. Both are the
+  picker's rules meeting the data, not failures. What remains: the centrifuge story as the plan
+  wrote it (raw 600 / 895 / 915 / 937 / 939: `micro_tube-013` `contained` from the window
+  start, the lid closes, inside while closed under `world/tracks/b/contained`, the lid opens,
+  **the same id back**) and a confidence drop that is a real failure (raw 1188: arm (c)'s
+  `50ml_tube-008` falls 0.58 -> 0.30 as its T4 slot `50ml_tube#0` mask-vs-box IoU falls 0.925
+  -> 0.000, the video-memory mask leaving the detector's tube; the runner-up in trial 1 was
+  the same class in the same view, `50ml_tube-060` at 1919). **One trial-1 constant in the
+  review surface, named as overfit:** the drawn negative control (`world/T5_shipped` and the
+  red `world/T5/markers_projected_shipped`) is logged only when **T5** is `marker_pnp`
+  (`finebio_viewer.py`, the `shipped_t5` block), and the `checks/negative_control` document
+  opens with "Camera 6 (T5, top-down) does not fit its shipped extrinsics". On trial 2 the
+  re-solved cameras are T1-T4 and T5 kept its shipped pose, so the recording carries the
+  control as the four cameras' numbers (markers 0.97 / 1.80 / 0.71 / 2.09 vs 29.4 / 16.2 /
+  14.7 / 32.2 px; static LOO 7.9 / 11.8 / 8.0 / 7.0 vs 23.7 / 29.9 / 19.0 / 31.6 px) and draws
+  no shipped frustum. The fix is to iterate the drawn control over every `marker_pnp` view of
+  the config; recorded here, not made (beyond the brief's one-line rule). The fpv frustum,
+  markers, camera centre and the hand-off series are empty on the 248 invalid-pose frames
+  around the spins, as the trial-2 entry said they would be. Build log
+  `runs/finebio-review-P20_03_01-20260925-ext.build.log`.
+- **Dispositions as they stand (nothing inferred, nothing labelled, no run re-scored).**
+  *Gate 1 (`p2-gate1`, soft): not held.* No `decisions.json` exists under either seeds run;
+  every one of the 66 + 66 with-plate seeds (and the 60 + 60 base seeds) ran with `provenance:
+  auto`; the sheets and the 15-minute brief stand. *Gate 2 (`p6-anchors`, soft): not held.*
+  0 of 440 cells labelled on trial 1, no trial-2 anchor set chosen (its six-view frame would be
+  raw 1442); the workspace, candidates and scoreboard stand and re-run when labels land. *Arm
+  (d): negative* on trial 1 under the pre-registered rule (ran on the identity clause; 0.911 /
+  75.7%, ambiguities 173 against 133 / 158), not run on trial 2 although the clause fired again
+  (`decision_c_vs_b.json` on both). *Arm (e) DAM4SAM: not run* on either trial. *Named as
+  overfit:* the rig's moving-object witness list (`TRACKED_MOVING_CLASSES` = plate +
+  `blue_pipette`) that put trial 2's hand-off gate at the 80 px cap (fpv residuals 15-16 vs 9
+  px); the trial-1 `--slot-cap 11` that gave trial 2's T2 a `magnetic_rack` slot in the plate's
+  place; the viewer's camera-6-only drawn negative control (above). *Plan-driven, not a rule
+  outcome:* the plate as a seed slot (`rule: landmark_plan_shortlist` on the record in both
+  trials). *Stop rules that fired:* `detector_unseeded` for the trial-2 T2 plate (DINO has no
+  box at >= 0.3 on any of 3600 frames; Deformable DETR's ~97x84 px box not substituted); the
+  (c)-vs-(b) identity clause on both trials. *Never fired:* the camera drop rule (no view over
+  10 px after PnP), the first-view sanity checks (all passed; (c)'s first reading failed before
+  the adapter's speckle rule and passed after). *Parameters the plan left open and never
+  revisited:* K = 5 frames before a re-seed (repeat 30), tau unset (every present slot written
+  to memory), hysteresis enter <= 0 / exit >= 3 cm / dwell 5, the window [600, 4200) for both
+  trials, the container heights per class.
+- **Final numbers.** One table; each row names what the value is measured against and where
+  it is on disk. Every number was re-read from the named artifact on Sep 25 for this entry, or
+  is copied from the Part 2 entry it names; none differed from the ledger. "T1" / "T2" in the
+  value column are trial 1 (`P03_03_01`, room 1) and trial 2 (`P20_03_01`, room 2), both raw
+  frames [600, 4200); (a) / (b) / (c) / (d) are the arms.
+
+  | Measure | Value | Truth set / measured against | Where |
+  | --- | --- | --- | --- |
+  | Camera solve, T1 | T1-T4 shipped at 6.32 / 6.14 / 6.71 / 4.78 px; T5 marker PnP **0.72 px** (shipped 93.71 px, 6.44 cm off) | ArUco `DICT_6X6_50` corners on three frames per view vs the day's `marker_points` projected through the pose | `configs/finebio/cameras/P03_03_01.json`; `runs/finebio-cameras-P03_03_01-20260925/mapping.md` |
+  | Camera solve, T2 | T1-T4 marker PnP **0.97 / 1.80 / 0.71 / 2.09 px** (shipped 29.4 / 16.2 / 14.7 / 32.2, 2.8-4.8 cm off); T5 shipped 7.47 px (its PnP 2.92 cm away); day 221124 | same | `configs/finebio/cameras/P20_03_01.json`; `runs/finebio-cameras-P20_03_01-20260925/mapping.md` |
+  | Rig gates (formulas) | T1: static LOO median 10.0 px (42 cells) -> association **30.1 px**, hand-off **27.0 px**; T2: 9.2 px (46) -> **27.5 px**, hand-off **80.0 px (the cap)**; preflight regression 31.1 / 51.9 | five-view triangulation of median detector box centres, held-out view residual; per-frame plate + pipette LOO and fixed -> fpv hand-off | `runs/finebio-rig-<trial>-600-4200/rig.json` (`gates`); `runs/finebio-rig-P03_01_01-20260925/` |
+  | Negative control | T1 (camera 6): markers 93.7 vs 0.72 px, static LOO 97.7 vs 4.8 px, left hand 54.4 vs 9.5 px; T2 (cameras 1-4): static LOO 23.7 / 29.9 / 19.0 / 31.6 vs 7.9 / 11.8 / 8.0 / 7.0 px | the same rig checks with the shipped pose swapped in for each `marker_pnp` view | `runs/finebio-rig-<trial>-600-4200/rig.json` (`negative_control`) |
+  | fpv pose and hand-off | T1: pose valid 3587 / 3600, plate fixed -> fpv 8.6 px median, inside the fpv box 96.5% of 3556; T2: 3352 / 3600 (six drop-outs of 2.6-3.1 s at the spins), 4.4 px, 100% of 3352 | the plate triangulated from the fixed views projected through the shipped per-frame fpv pose vs the fpv DINO box | same (`fpv` block) |
+  | Detector agreement | DINO boxes at >= 0.5 with a same-class DDETR box at IoU >= 0.5: **95.4%** (T1, 560,357 boxes), **90.4%** (T2, 484,663); the fpv 0.99 in both | model vs model | `runs/finebio-detect-<trial>-600-4200-20260925/analysis.json` |
+  | Seeds | T1 60/60 base, **66/66** with the plate (mask-bbox IoU 0.63-0.99); T2 60/60, **66/66** (0.60-0.98); T2 plate `detector_unseeded` in T2 | SAM3 image-decoder mask bbox vs the detector box, accepted at >= 0.6 | `runs/finebio-seeds-<trial>-20260925/with-plate/seeds.json`, `detector_unseeded.json` |
+  | Arm (b), per-frame box decode | T1 **0.926** median / p10 0.842 / **99.1%** >= 0.5 / n 148,362; T2 **0.919** / 0.700 / **98.5%** / 141,159; per view 0.907-0.936, >= 0.5 on 97.9-99.9% | mask bbox (speckle rule) vs the best same-class DINO box (>= 0.3) of the same view and frame; model vs model; (b)'s prompt is a DINO box of the same tracklet | `runs/finebio-arms-<trial>-20260925/scoreboard/scoreboard.md` |
+  | Arm (c), video memory seeded once | T1 **0.914** / 0.060 / **79.3%** / 175,827; T2 **0.883** / 0.000 / **65.3%** / 168,992; slots with median IoU < 0.35: 9 of 58 (T1), 24 of 61 (T2) | same | same; `c-video-memory-arm/measures.md` |
+  | Arm (d), (c) + 986 re-seeds (T1 only) | **0.911** / 0.000 / **75.7%** / 175,997; ambiguities 173; one `track_reproject` box took T4 `50ml_tube#1` from 97.4% to 0.1% >= 0.5 | same; the (c)-vs-(b) rule | `runs/finebio-arms-P03_03_01-20260925/decision_c_vs_b.json`, `d-video-memory-arm/measures.md` |
+  | Identity, core tracker | T1 (a/b/c/d): born 285 / 308 / 270 / 264, ambiguities 126 / 158 / 133 / 173, fragmentation 220 / 242 / 207 / 201, proxy id switches - / 629 / 264 / 358; T2 (a/b/c): 290 / 321 / 208, 70 / 97 / 25, 224 / 254 / 149, - / 761 / 317 | the tracker's own metrics; id switches against the SAM3 per-view slots as a labelled proxy (a drifted slot counts as one identity) | `<arm>/tracks/identity_metrics.json` |
+  | Identity, tracker extensions | T1 (a/b/c): born **191 / 186 / 147**, ambiguities **33 / 54 / 22**, fragmentation 134 / 129 / 93, pipette 41 / 59 / 20, micro tubes 32 / 26 / 17; T2: **166 / 202 / 152**, **8 / 35 / 7**, 116 / 146 / 105, yellow pipette 24 / 48 / 21, micro tubes 18 / 17 / 9; static objects one id each, both rooms, every arm | same, on the same observations and gates | `<arm>/tracks-ext/identity_metrics.json` |
+  | Confidence (`tracks-ext/`) | T1: (b) median 0.520, abstain 0.668 all rows / 0.058 on 47,271 complete rows; (c) 0.485 / 0.638 / 0.009 on 45,058; T2: (b) 0.484 / 0.623 / 0.013 on 45,791; (c) 0.505 / 0.640 / 0.015 on 41,264; (a) abstain 1.000 both | five label-free signals ranked within the arm (detector-vs-mask bbox IoU, cross-view residual, SAM3 score, detector score, support); no truth; the boxes-only arm abstains by construction | `<arm>/confidence-ext/confidence_summary.json` |
+  | Events (`tracks-ext/`) | T1 (a/b/c): contained 43 / 45 / 36, held 55 / 61 / 58, proximity 0; T2: 21 / 20 / 11, 60 / 76 / 25, 0; lid closed 638 / 117 frames; (b) tubes `contained` in the centrifuge with the same id through every closure **1 (T1) / 2 (T2)**, successor ids 0 / 0 (core tracks on T1: 0 through, 3 + 2 successors) | geometry on 3D tracks vs volumes from the rig's static points and box widths; the lid from the T5 rotor pixel heuristic; hysteresis 0 / 3 cm / 5 frames | `<arm>/events-ext/events_summary.json`; `configs/finebio/trials.json` |
+  | Review recordings | T1 core 915.6 MB / 508 entity paths / 44,448 masks / 10 storyboard items; T1 ext 887.6 / 402 / 41,835 / 10; T2 ext **817.2 / 399 / 37,058 / 6**; `rerun rrd verify` clean on all three; presets resolved on all three | the Rerun CLI; `review_presets.check_preset` | `runs/finebio-review-<trial>-20260925[-ext]/review_index.json`, `rrd_verify.txt`, `presets_check.json` |
+  | Gate 1 | **0 decisions** on 66 + 66 slots (sheets exist; no `decisions.json`) | human | `runs/finebio-seeds-<trial>-20260925/with-plate/sheets/`, `decisions.template.json` |
+  | Gate 2 | **0 / 440 cells labelled** (337 with candidates; 1348 candidate masks decoded, 556 duplicates) | human | `runs/finebio-anchors-P03_03_01-20260925/decisions.template.json`; `configs/qa/finebio_P03_03_01_review_anchors.json` |
+  | Worker cost | (b) 149-152 ms per prompted frame (encoder 145), 2.15-2.22 GiB; (c) 195-217 ms/step (T1), 202-213 (T2), 3.6-4.2 GiB; (d) 247-322 ms/step, 3.8-4.4 GiB; detector 46-47 ms/frame, 882 MiB | wall clock on the RTX 5070 Ti, one worker at a time | `runs/finebio-arms-<trial>-20260925/README.md`; `runs/finebio-detect-*/manifest.json` |
+  | Tests and lint at close (Sep 25, morning) | `uv run pytest -q`: **982 passed, 14 skipped, 72 deselected, 23.8 s**; `-m real_data -k finebio`: **14 passed** (1054 deselected, 29.7 s); `-m gpu`: 2 collected, not run; `uv run ruff check src tests scripts`: **all checks passed**; `uv run ruff format --check src tests scripts`: **242 files already formatted** | repository | this entry |
+  | GPU hours, whole phase | **about 7.6 h** (27,228 s): preflight ~300 s, detector CUDA build checks ~120 s, worker smokes ~20 s, detector runs 3,912 s (four runs), seed decodes 24 s (preflight and trial-1 base), arms on trial 1 14,558 s ((b) 3,635, (c) 4,466, (d) 6,354, smokes 91, with-plate seed decode 12), anchors 33 s, trial 2 8,261 s ((b) 3,634, (c) 4,516, smokes 88, seed decodes 23); the plan said about 5 h | sums of the wall-clock figures in the Part 2 entries | the entries named in the Outcome table |
+
+- **The two trials, compared.** The full table is in the review guide's
+  [two-trial scoreboard](review-guide-2026-09-25-finebio-3d.md#two-trial-scoreboard); what it
+  says in one paragraph. With the trial id the only change, room 2 reproduced the room-1
+  verdicts: the association gate within 10% (27.5 vs 30.1 px), the seed rule accepting 66/66
+  and picking the pipette in use (yellow there, blue here), the per-frame decode's agreement
+  with the detector within 0.01 (0.919 vs 0.926, 98.5 vs 99.1%), the worker costs within 4%, the
+  extensions moving every identity count in the same direction by a similar amount (born -27 to
+  -43%, micro-tube ids -78 to -83%, the in-use pipette -16 to -25%), the (c)-vs-(b) verdict
+  (video memory behind, by a wider margin: -0.036 vs -0.012 on the median, 24 vs 9 dead slots),
+  the static objects one id each, and the in-hand pipette fragmenting the same way under a
+  different colour (yellow 32 / 58 / 25 vs blue 47 / 80 / 30 core; 24 / 48 / 21 vs 41 / 59 / 20
+  with the motion model). What differed is on the record and traced to its cause: four re-solved
+  cameras instead of one (the shipped room-2 poses fit none of the side cameras), the hand-off
+  gate at the cap (the witness class), the head camera's pose gone for 2.6-3.1 s at every spin
+  (the fixed cameras carried the centrifuge), the plate unseen by DINO in T2, fewer hands and
+  tubes seen from three cameras in the asymmetric rig (ambiguities 70 vs 126 before the
+  extensions), and in the review surface a six-item storyboard and a numbers-only negative
+  control. The storyboard's centrifuge story reads better in room 2 (two tubes with one id each
+  through three spins) because the spins are short (36-42 frames) and the extensions' `contained`
+  state never times out; on the core tracks of trial 1 the 30-frame timeout lost every tube
+  behind a 52- or 87-frame closure.
+- **Tests and lint at close.** Default tier `uv run pytest -q`: **982 passed, 14 skipped, 72
+  deselected in 23.83 s** (the fourteen skips are `test_worker_policy` and
+  `test_worker_finebio_modes` torch-absent cases in the battle venv; 762 / 9 at the Assembly101
+  close, so this phase added 220 default-tier tests). `uv run pytest -q -m real_data -k finebio`:
+  **14 passed** (cameras 2, cameras CLI 1, frames 5, rig 1, preprocessing 1, detector 1,
+  observations 2, anchors 1; the seed tool's `real_data` test is not selected by `-k finebio`;
+  1054 deselected; 29.71 s). `-m gpu`: 2 collected, not run
+  today (CPU day; both ran on Sep 24 in the p3-worker entry). `uv run ruff check src tests
+  scripts`: all checks passed. `uv run ruff format --check src tests scripts`: 242 files already
+  formatted. No source file changed in this entry.
+- **Run directories this phase created (`du -sh --apparent-size`, Sep 25; all gitignored, FineBio licence).**
+  `runs/finebio-anchors-P03_03_01-20260925` 49M; `runs/finebio-arms-P03_03_01-20260925`
+  **260G**; `runs/finebio-arms-P20_03_01-20260925` 7.0G; `runs/finebio-cameras-P03_01_01-20260925`
+  1.7M, `-P03_03_01-` 1.7M, `-P20_03_01-` 1.4M; `runs/finebio-detect-P03_03_01-600-4200-20260925`
+  783M and `runs/finebio-detect-P20_03_01-600-4200-20260925` 730M (each with a relative symlink
+  `runs/finebio-detect-<trial>-600-4200 -> .../dino` for the clip configs' `downstream` paths);
+  `runs/finebio-detect-validation-20260925` 17M; `runs/finebio-review-P03_03_01-20260925` 874M,
+  `-ext` 848M, `runs/finebio-review-P20_03_01-20260925-ext` 780M (plus three `.build.log` files
+  beside them); `runs/finebio-rig-P03_01_01-20260925` 101K, `runs/finebio-rig-P03_03_01-600-4200`
+  3.6M, `runs/finebio-rig-P20_03_01-600-4200` 2.6M; `runs/finebio-seeds-P03_03_01-20260925` 115M,
+  `-P20_03_01-` 104M; `runs/finebio-slice-20260925` 13M; `runs/finebio-tracks-20260925` 15M;
+  `runs/p3-worker-gpu-smoke-20260924` 1.3M; `runs/preflight-finebio-20260924` 236M. **Total 272G
+  apparent (262G on disk for the trial-1 arms alone).** Proxies under
+  `data/derived/finebio/` 1.1G. The two Sep 21 directories (`finebio-dino-20260921` 55M,
+  `finebio-sam3-smoke-20260921` 30M) predate the phase. **Disk finding, for the user's decision
+  (nothing deleted):** 252.3 GiB of the 260G are arm (d)'s six video-memory worker runs,
+  `runs/finebio-arms-P03_03_01-20260925/d-video-memory/<view>/*/native/checkpoints/` holding
+  **985 checkpoint files of ~305 MB each (269.7 GB decimal)**: the worker's `checkpoint_frames`
+  adds every correction frame to the `--checkpoint-every 600` cadence by design (a checkpoint
+  before each correction, the Sep 13 human-correction behaviour), and arm (d)'s schedules carried
+  986 tracker-emitted box corrections (fpv 426, T1 149, T2 23, T3 177, T4 78, T5 133; 107G of
+  checkpoints under the fpv run alone). Arm (c)'s runs hold 47 checkpoints (2.8 GB) on trial 1
+  and 56 (3.6 GB) on trial 2, the 600-frame cadence. The (d) checkpoints are resume state for a
+  run that completed and whose verdict is negative; the `observations.jsonl`, masks and
+  manifests of (d) (483M for the arm, the worker runs' masks beside the checkpoints) are what
+  the ledger's numbers rest on. A `--no-checkpoints` flag exists on the worker and would have
+  avoided it; the arms driver passed `--checkpoint-every 600` as for (c). `scripts/prune_runs.py`
+  lists and never deletes.
+- **The user's working tree.** The uncommitted `README.md` hunk (the Tailscale review-serving
+  subsection removed) and the untracked `test.sh` are the user's; neither was staged, reverted
+  or committed in this pass. The README FineBio section of this close-out was staged through the
+  index alone (`git show HEAD:README.md` + the section -> `git hash-object -w` -> `git
+  update-index --cacheinfo`), leaving the working tree with both hunks and the user's hunk
+  unstaged; `git diff --cached README.md` showed only the section and `git diff README.md` only
+  the user's hunk before the commit.
+- **Pointers.** Recordings: `runs/finebio-review-P03_03_01-20260925/review.rrd` (trial 1, core
+  tracks, ten storyboard items), `runs/finebio-review-P03_03_01-20260925-ext/` (trial 1 on the
+  extensions), `runs/finebio-review-P20_03_01-20260925-ext/` (trial 2), each with `world.rbl`,
+  `cameras.rbl`, `evidence.rbl`, `storyboard.md`, `review_index.json`; the committed presets
+  `configs/rerun/finebio_{world,cameras,evidence}.rbl` are trial 1's. Guide:
+  [`docs/review-guide-2026-09-25-finebio-3d.md`](review-guide-2026-09-25-finebio-3d.md) (both
+  trials, the two-trial scoreboard, a 20-minute route). Plan copy with its Outcome:
+  [`docs/plan-2026-09-25-finebio-3d-tracking.md`](plan-2026-09-25-finebio-3d-tracking.md);
+  the plan file itself `/home/nick/.cursor/plans/finebio_3d_object_tracking_demo_5b2e9c17.plan.md`
+  (todo states are the record: every todo `completed` except `p2-gate1`, `p6-anchors`
+  `in_progress` as soft gates awaiting the human, and `p-docs` closed by this entry). Human
+  briefs: [`docs/labeling-sessions-2026-09-25-finebio.md`](labeling-sessions-2026-09-25-finebio.md)
+  (gate 1 and gate 2). Preflight: [`docs/preflight-2026-09-24-finebio.md`](preflight-2026-09-24-finebio.md).
+  Trials QA: [`docs/qa/finebio-trials-2026-09-25.md`](qa/finebio-trials-2026-09-25.md). Run
+  READMEs: `runs/finebio-arms-P03_03_01-20260925/README.md`,
+  `runs/finebio-arms-P20_03_01-20260925/README.md`, `runs/finebio-detect-*/README.md`. Configs:
+  `configs/finebio/trials.json`, `configs/finebio/cameras/*.json`, `configs/clips/finebio_*.json`,
+  `configs/qa/finebio_P03_03_01_review_anchors.json`.
+- **Commits.** `476dcef` (trial 2 in the viewer, the review guide's trial-2 half), `92d8d6a`
+  (the plan's Outcome section), this entry's commit (Part 2 and Part 1), and the README
+  section's commit after it. No tag placed; the user decides whether the phase gets one as
+  `assembly101-lab-close` did.
