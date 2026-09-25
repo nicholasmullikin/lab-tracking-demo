@@ -1,0 +1,88 @@
+{
+  "$comment": "FineBio trials for the 3D object tracking plan (docs/plan-2026-09-25-finebio-3d-tracking.md, p0-trials). Windows are raw frame indices into the shipped videos, end exclusive; all six views of a trial share one frame count and are synchronised to +/-1 frame (preflight), so one window applies to every view and proxy frame k == raw frame start+k. Centrifuge cycles are the frames where the T5 lid-state heuristic reads closed (teal fraction of the rotor region >= 0.24 at every frame; docs/qa/finebio-trials-2026-09-25.md). Evidence under runs/preflight-finebio-20260924/trials/ (gitignored). Nothing under data/ is committed.",
+  "fps": "30000/1001",
+  "views": {
+    "fpv": {"video": "finebio_videos_fpv_test/finebio_videos/{trial}.mp4", "size": [1920, 1440]},
+    "T1": {"video": "finebio_videos_tpv_test/finebio_videos/{trial}_T1.mp4", "size": [1920, 1080], "camera_id_room1": 1},
+    "T2": {"video": "finebio_videos_tpv_test/finebio_videos/{trial}_T2.mp4", "size": [1920, 1080], "camera_id_room1": 2},
+    "T3": {"video": "finebio_videos_tpv_test/finebio_videos/{trial}_T3.mp4", "size": [1920, 1080], "camera_id_room1": 3},
+    "T4": {"video": "finebio_videos_tpv_test/finebio_videos/{trial}_T4.mp4", "size": [1920, 1080], "camera_id_room1": 4},
+    "T5": {"video": "finebio_videos_tpv_test/finebio_videos/{trial}_T5.mp4", "size": [1920, 1080], "camera_id_room1": 6}
+  },
+  "trials": [
+    {
+      "trial": "P03_03_01",
+      "role": "trial1",
+      "protocol": "03",
+      "room": 1,
+      "day": "221013",
+      "day_provenance": "preflight marker PnP (docs/preflight-2026-09-24-finebio.md, section A)",
+      "frame_count": 8492,
+      "frame_count_per_view": {"fpv": 8492, "T1": 8492, "T2": 8492, "T3": 8492, "T4": 8492, "T5": 8492},
+      "fpv_pose_file": "misc/finebio_camera_poses/first_person_camera_poses/P03_03_01.npz",
+      "fpv_pose_length": 8492,
+      "fpv_pose_valid_fraction": 0.990,
+      "fpv_pose_invalid_runs_ge_10_frames": [[4851, 4907], [8287, 8300]],
+      "window": {"start": 600, "end": 4200, "frames": 3600, "seconds": [20.02, 140.14]},
+      "window_fpv_pose_valid_fraction": 0.996,
+      "annotated_frames_shipped": {"six_view": [916], "fpv_only": [210, 1544, 3970, 7197, 8206]},
+      "annotated_frames_in_window": {"six_view": [916], "fpv_only": [1544, 3970]},
+      "centrifuge": {
+        "t5_box_closed_xyxy_px": [1110, 271, 1294, 461],
+        "t5_box_open_xyxy_px": [1128, 162, 1341, 462],
+        "t5_rotor_region_xyxy_px": [1135, 300, 1270, 445],
+        "lid_closed_intervals_all": [[0, 1099], [1176, 1228], [3224, 3311], [5020, 5111], [7458, 7545]],
+        "cycles_all": [[1176, 1228], [3224, 3311], [5020, 5111], [7458, 7545]],
+        "cycles_in_window": [[1176, 1228], [3224, 3311]],
+        "initial_state": "closed until frame 1099 (36.7 s); the lid opens once and every later closure is a spin of 52-91 frames with a hand on the lid"
+      },
+      "notes": "Window chosen so that frame 916 sits 316 frames (10.5 s) after the start (tracks born before the anchor frame), both centrifuge cycles are inside with their loading and unloading, three of the shipped annotated frames fall inside, bench motion energy is the highest of the candidates (0.68 vs 0.63-0.66) and the fpv pose is valid on 99.6% of frames. Rejected: [0, 3600) (starts at the trial start, 10-30 s is the quietest stretch of the trial, only 9 s after cycle 2, frame 3970 outside); [900, 4500) (frame 916 only 16 frames after the start). Trial has four spins in total; the preflight's 'at least six' from a 12-frame contact sheet counted openings loosely."
+    },
+    {
+      "trial": "P20_03_01",
+      "role": "trial2",
+      "protocol": "03",
+      "room": 2,
+      "day": null,
+      "day_provenance": "unknown until the p0-cameras marker solve; room-2 days per the shipped extrinsics directories",
+      "frame_count": 6045,
+      "frame_count_per_view": {"fpv": 6045, "T1": 6045, "T2": 6045, "T3": 6045, "T4": 6045, "T5": 6045},
+      "fpv_pose_file": "misc/finebio_camera_poses/first_person_camera_poses/P20_03_01.npz",
+      "fpv_pose_length": 6045,
+      "fpv_pose_valid_fraction": 0.946,
+      "fpv_pose_invalid_runs_ge_10_frames": [[892, 909], [915, 992], [2523, 2589], [3812, 3883], [5209, 5280]],
+      "window": {"start": 600, "end": 4200, "frames": 3600, "seconds": [20.02, 140.14]},
+      "window_fpv_pose_valid_fraction": 0.931,
+      "annotated_frames_shipped": {"six_view": [1442], "fpv_only": [695, 1112, 2368, 2769, 4196, 4749]},
+      "annotated_frames_in_window": {"six_view": [1442], "fpv_only": [695, 1112, 2368, 2769, 4196]},
+      "centrifuge": {
+        "t5_box_closed_xyxy_px": [765, 129, 930, 332],
+        "t5_box_open_xyxy_px": [728, 0, 952, 332],
+        "t5_rotor_region_xyxy_px": [800, 180, 900, 285],
+        "lid_closed_intervals_all": [[895, 937], [2500, 2539], [3798, 3834], [5190, 5224]],
+        "cycles_all": [[895, 937], [2500, 2539], [3798, 3834], [5190, 5224]],
+        "cycles_in_window": [[895, 937], [2500, 2539], [3798, 3834]],
+        "initial_state": "open from frame 0; four spins of 34-42 frames, each with both hands on the lid"
+      },
+      "notes": "Proposed window, same length and offset as trial 1 (zero per-trial tuning): frame 1442 sits 842 frames (28.1 s) after the start, three full cycles inside, six of the seven shipped annotated frames inside, bench motion energy 0.99 (the busiest candidate). The fpv pose is invalid for 2-3 s around every spin (each invalid run above starts between 3 frames before and 23 frames after the lid closes and ends 49-56 frames after it re-opens), so the fixed cameras alone carry the centrifuge episodes in this trial; [0, 3600) would raise window validity to 95.3% at the cost of one cycle and frame 4196. All six views and the pose file were checked: 6045 frames each."
+    },
+    {
+      "trial": "P03_01_01",
+      "role": "smoke",
+      "protocol": "01",
+      "room": 1,
+      "day": "221013",
+      "day_provenance": "preflight marker PnP",
+      "frame_count": 5032,
+      "frame_count_per_view": {"fpv": 5032, "T1": 5032, "T2": 5032, "T3": 5032, "T4": 5032, "T5": 5032},
+      "fpv_pose_file": "misc/finebio_camera_poses/first_person_camera_poses/P03_01_01.npz",
+      "fpv_pose_length": 5032,
+      "fpv_pose_valid_fraction": 0.972,
+      "window": {"start": 1798, "end": 1858, "frames": 60, "seconds": [59.99, 61.99]},
+      "annotated_frames_shipped": {"six_view": [], "fpv_only": [390, 941, 3485, 4793]},
+      "annotated_frames_in_window": {"six_view": [], "fpv_only": []},
+      "centrifuge": {"cycles_in_window": [], "initial_state": "not measured; the preflight contact sheet shows one opening near the end of the trial"},
+      "notes": "The preflight window (60 consecutive frames from 60 s, six views, detections and SAM3 masks on disk under runs/preflight-finebio-20260924/) and the regression reference for battle-finebio-cameras and -rig; the Sep 21 20 s proxy covered 60-80 s of the fpv."
+    }
+  ]
+}
