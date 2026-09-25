@@ -531,6 +531,23 @@ frame off, pose length == raw frame count on two trials, markers on the proxy at
 only, no GPU, no viewer. Record: [Sep 24, night: FineBio contracts and fixtures
 (p0-contracts)](#sep-24-night-finebio-contracts-and-fixtures-p0-contracts).
 
+#### Sep 24, night: FineBio detector, CUDA build and `battle-finebio-detect` (p2-detect tooling)
+
+The plan's first GPU-lane item, time-boxed to an hour: the detector venv got a CUDA build in
+nine minutes of wall clock (`/home/nick/src/finebio-detector/.venv-cuda`: torch 2.13.0+cu130,
+mmcv 2.1.0 compiled from the PyPI sdist for sm_120, mmdet 3.3.0; no mmcv source patch, the one
+fix is `CC=gcc-15 CXX=g++-15` because CUDA 13.2's nvcc refuses GCC 16), so every frame of the
+trial window can be detected: FineBio DINO at **51-59 ms/frame** on the RTX 5070 Ti, peak
+reserved **925 MB**, Deformable DETR 42 ms. GPU boxes agree with the CPU preflight to 0.2 px /
+0.009 in score once cuDNN's TF32 is off (the driver's default; with it, scores move by up to
+0.03). `battle-finebio-detect` (`src/battle/finebio_detect.py`) replaces the two Sep 21/24
+scripts: raw frames by raw index, six views, CPU or CUDA venv chosen by `--device`, strides
+with IoU-associated linear interpolation as the flagged CPU fallback, one manifest with the
+GPU-guard decision. It reproduces the preflight's T5 rows exactly on the CPU venv and ran the
+78-frame preflight set on six views in 32 s on the GPU. A 3600-frame window on six views is
+about 25 minutes of GPU. Record: [Sep 24, night: FineBio detector, CUDA build and
+battle-finebio-detect (p2-detect tooling)](#sep-24-night-finebio-detector-cuda-build-and-battle-finebio-detect-p2-detect-tooling).
+
 ### Plan versus actual
 
 What the plan said, what happened instead, and why, in one line each.
@@ -6478,3 +6495,156 @@ and the 83 `main()` entry points beyond their shared fragments.
   identities; SAM3 centroids are bbox centres; missing SAM3 masks are missing rows; every
   triangulation goes through `Camera.undistort` then `dlt_triangulate` on the `projection`
   matrices, as in `tests/test_finebio_fixtures.py`.
+
+### Sep 24, night: FineBio detector, CUDA build and battle-finebio-detect (p2-detect tooling)
+
+- **What this is.** The tooling half of `p2-detect` in the FineBio 3D-tracking plan
+  ([`docs/plan-2026-09-25-finebio-3d-tracking.md`](plan-2026-09-25-finebio-3d-tracking.md)):
+  a CUDA build of the FineBio detector environment, time-boxed to one hour, and the
+  `battle-finebio-detect` driver that will detect every frame of the trial window once the
+  window is chosen (`p0-trials`, another lane). Evidence base:
+  [`docs/preflight-2026-09-24-finebio.md`](preflight-2026-09-24-finebio.md); its
+  `runs/preflight-finebio-20260924/detections/*.jsonl` (CPU DINO, 6 views x 78 raw frames) is
+  the regression reference for everything below. GPU use: about two minutes in total (blank
+  image smokes, six views at one frame, the 78-frame set, a 60-frame strided run, Deformable
+  DETR at one frame), never beside another model process (`nvidia-smi` showed only
+  `kwin_wayland`, 144 MiB, before every GPU command; the Steam game named in the brief was not
+  running). Other lanes committed concurrently in the same checkout; only the files named here
+  were staged, by path. Commits: `beec0ae` (venv script, driver, tests, superseded-script
+  notes, one `pyproject.toml` line) and this entry's commit. Outputs under
+  `runs/finebio-detect-validation-20260925/` (gitignored; FineBio licence) and the venv under
+  `/home/nick/src/finebio-detector/.venv-cuda` (outside the repository).
+- **CUDA build: option (a) worked, nine minutes of the sixty.** Timeline (UTC): 02:56:38 venv
+  created; 02:57:52 torch installed; a first mmcv build failed after 3.5 min on
+  `crt/host_config.h:137: unsupported GNU version! gcc versions later than 15 are not
+  supported` (Fedora 44's default compiler is GCC 16.2.1; CUDA 13.2 accepts up to 15); the
+  second build with `CC=gcc-15 CXX=g++-15` (installed on this machine; `torch.utils.cpp_extension`
+  turns `$CC` into `nvcc -ccbin`) ran 03:01:24-03:03:51 (**2 min 27 s**, `MAX_JOBS=16` on 32
+  cores); mmdetection installed editable by 03:05. **No mmcv source patch was needed**: the
+  two legacy APIs mmcv 2.1.0's ops use, `THC/THCAtomics.cuh` and `c10::optional`, are still
+  shipped by torch 2.13 (`c10::optional` as an alias of `std::optional`). Exact versions in
+  `.venv-cuda`: Python 3.10.20 (`uv venv --python 3.10`), **torch 2.13.0+cu130** and
+  **torchvision 0.28.0+cu130** from `download.pytorch.org/whl/cu130` (the torch line the
+  MuggledSAM env runs; `torch.cuda.get_arch_list()` = sm_75, 80, 86, 90, 100, **120**),
+  mmengine 0.10.7, numpy 1.26.4 (`numpy<2` as in the CPU venv), setuptools 78.1.0
+  (`setuptools<80`, mmcv's `setup.py` imports `pkg_resources`), ninja 1.13.2, **mmcv 2.1.0**
+  built from the PyPI sdist `mmcv-2.1.0.tar.gz` (sha256
+  `d387bcab66b467479b6660310e23746cfc79c6e57acf04094680adb499a5cd3f`, kept with its `build/`
+  tree under `/home/nick/src/finebio-detector/mmcv-2.1.0/`) with `MMCV_WITH_OPS=1 FORCE_CUDA=1
+  TORCH_CUDA_ARCH_LIST="12.0" CUDA_HOME=/usr/local/cuda` (nvcc 13.2.86, driver 610.57.04;
+  `mmcv.ops.get_compiling_cuda_version()` = 13.2, compiler GCC 15.3), **mmdet 3.3.0**
+  editable from the shared `mmdetection` checkout `44ebd17b` (v3.3.0), the same configs and
+  checkpoints as the CPU venv. `mmcv.ops.nms` on CUDA tensors and DINO's
+  `MultiScaleDeformableAttention` CUDA kernel both run. Two runtime accommodations, both in
+  the driver, neither in the environment: (1) torch >= 2.6 loads checkpoints weights-only by
+  default and the authors' `.pth` files carry mmengine `HistoryBuffer`s (numpy arrays pickled
+  through `getattr`) in their message hub, which the safe unpickler refuses even after
+  allow-listing `HistoryBuffer`, `numpy.core.multiarray._reconstruct`, `ndarray`, `dtype`,
+  `Float64DType` (it then asks for `getattr` itself); the worker sets
+  `TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1` for its own process only, and the manifest records the
+  checkpoint's sha256 and `torch_load_weights_only: false`. (2) cuDNN's default TF32
+  convolutions move DINO's scores by up to 0.03 against the CPU reference (T5 frame 1798,
+  top 20: 0.29 px / 0.031 with TF32, **0.010 px / 0.0004** with `allow_tf32 = False`, at
+  48.3 vs 52.7 ms/frame; TF32 on both conv and matmul 39.6 ms); the worker turns TF32 off by
+  default and `--tf32` allows it. `scripts/install_finebio_detector.sh --cuda` (or
+  `FINEBIO_CUDA=1`) is the idempotent recipe with these pins and the host-compiler override
+  (`FINEBIO_HOST_CC` / `FINEBIO_HOST_CXX`); re-running it on the built venv skips every step
+  and runs the GPU verification (`load=0.5s infer=52ms peak_reserved=696MiB` on a blank
+  1333x800 image; skipped automatically while a Battle worker is on the card). The CPU target
+  is unchanged and still passes `--skip-verify`. Blank-image smoke before the driver existed:
+  load 0.6 s, 43-48 ms/frame at 1920x1080, peak reserved 678 MiB.
+- **Driver (`src/battle/finebio_detect.py`, console script `battle-finebio-detect`).** Folds
+  `scripts/finebio_dino_detect.py` (Sep 21) and `scripts/finebio_preflight_detect.py`
+  (Sep 24) into one CLI; both stay in place with a one-line superseded note because records
+  cite them. Reads the **raw** FineBio videos by raw frame index (fixed 1920x1080, fpv
+  1920x1440, 30000/1001 fps), one `cv2` seek to the first wanted frame then sequential
+  `grab`/`read`, the preflight's access pattern, so pixels and boxes are the same. `run
+  --trial --views fpv,T1..T5 --start S --count N` (or `--frames N,A-B,A:B:S` for an explicit
+  set such as the preflight's `1798-1857,1798:2398:30`) `--stride-fpv --stride-fixed --model
+  dino|deformable-detr --device cpu|cuda --output runs/<run>/detections`; `--device` picks
+  `.venv/bin/python` or `.venv-cuda/bin/python` under `/home/nick/src/finebio-detector` and the
+  CLI (Battle venv) spawns that interpreter on this file's `worker` subcommand, which imports
+  only the standard library plus `fs_common` and `gpu_guard` by path (tested: the file runs
+  `--help` under `python -S` with no `battle` package). Outputs: `<view>.jsonl` (per raw frame
+  `view`, `frame_index`, `image_hw`, `detections` with `class`, `class_id`, `score`,
+  `box_xyxy_px` at score >= 0.05 in raw pixels, sorted by score, `interpolated`), `frames.json`
+  (`frames_per_view` plus the flat union), `worker_result.json` (the detector interpreter's own
+  record), `worker.log`, `manifest.json` (`battle-finebio-detect/1`: `state`, `model` with
+  config and weights sha256 and the 35 classes, `settings` with device / interpreter / tf32 /
+  threads / guard options, `frames` per view with stride and first/last, `detection_coverage`
+  in {`full`, `strided`, `strided_interpolated`, `explicit`}, `versions`, `timing` and
+  `per_frame_seconds` per view, `gpu` with peak reserved and allocated bytes and the full
+  `gpu_guard` provenance, `inputs` with each video's sha256, `battle` and `mmdetection` git
+  revisions, `claim_boundary`). **Strides and interpolation** (the plan's CPU fallback): with a
+  stride the detected frames are `start, start+s, ...` plus always the window's last frame, so
+  the fill can reach the end; `interpolate --directory` (or `run --interpolate`) fills every
+  skipped frame by linear interpolation of box coordinates and score between detections on the
+  two neighbouring detected frames that share a class and are associated greedily one-to-one by
+  IoU >= 0.3 (`--interpolation-iou`); a class absent on either side, or whose boxes moved past
+  the threshold, is never invented; filled rows carry `interpolated: true` and `source_frames:
+  [a, b]`; the operation drops earlier filled rows first (idempotent) and flips the manifest to
+  `strided_interpolated` with the fill counts. **GPU coordination** is `battle.gpu_guard` in the
+  worker process (the one that holds the card), `vram` mode with the existing `unknown` profile
+  (4 GiB expected peak x 1.5 = **6 GiB headroom required**, the plan's rule) unless
+  `--gpu-guard-profile` / `--expected-peak-vram-bytes` say otherwise; a benign neighbour (the
+  compositor, a browser, a Wine game such as `SYNTHETIK.exe`) never blocks, another Battle worker
+  does unless its PID is named with `--allow-gpu-neighbour`; the decision is the manifest's
+  `gpu.guard`. A refusal, a missing interpreter (`blocked`, with the install command in the
+  reason) or a worker exception (`failed`, traceback in `worker.log`) all leave a manifest. No
+  Rerun export: the viewer lane logs boxes from the JSONL.
+- **Regression against the preflight (CPU).** `run --trial P03_01_01 --views T5 --start 1798
+  --count 5 --device cpu` reproduces `runs/preflight-finebio-20260924/detections/T5.jsonl` rows
+  1798..1802 **exactly**: 106 / 109 / 109 / 107 / 103 detections per frame, same classes in the
+  same score order, worst box delta 0.0 px, worst score delta 0.0, `image_hw` [1080, 1920]. This
+  is the `real_data` test `test_cpu_reproduces_preflight_t5_rows` (11 s; skips when the preflight
+  JSONL, the raw video or the CPU venv is absent). CPU speed today 3.5 s/frame with 32 threads
+  while a GPU job ran beside it (the preflight measured 1.95 s/frame on an idle machine).
+- **GPU against CPU.** Six views at raw 1798 with the driver's first (TF32) build: all 120 top-20
+  detections matched by class and IoU (min 0.992), 119/120 boxes within 1 px (worst 1.71 px on a
+  pair of overlapping `right_hand` boxes in the fpv whose near-equal scores swapped), 115/120
+  scores within 0.02 (worst 0.043). With TF32 off, the **78-frame preflight set on six views**
+  (468 frames): elapsed **31.6 s** including model load 0.8 s and video decode, mean inference
+  **54.7 ms/frame** (min 40, median 53, max 454 on the first frame's kernel warm-up), steady
+  51-59 ms; peak reserved **924,844,032 bytes (925 MB)**, peak allocated 542 MB; **9360/9360**
+  top-20 detections matched the preflight's class (min IoU 0.996), **all within 1 px (worst
+  0.22 px)** and **all within 0.02 in score (worst 0.0087)**. Deformable DETR on the six views:
+  42 ms/frame steady (294 ms on the first frame), peak reserved 736 MB; its CPU run on T5 1798
+  matches the GPU top 20 to 0.0004 px / 5e-6. `torch.cuda.is_available()` true in the worker,
+  recorded as `versions.cuda_available`; guard headroom at run time 15,033 MiB.
+- **The fallback measured.** A strided GPU run over the preflight's 60 consecutive frames
+  (`--start 1798 --count 60 --stride-fpv 3 --stride-fixed 5 --interpolate`): 21 fpv + 13 per
+  fixed view detected in 8.5 s, 39 + 5 x 47 rows filled, coverage `strided_interpolated`.
+  Filled rows against the preflight's real detections at score >= 0.3 on the same frames,
+  matched by class and IoU: fixed views IoU **median 0.992-0.995, p10 0.93-0.97**, real
+  detections with no interpolated counterpart 3-6% (T1 33/1120, T2 36/1446, T3 85/1726, T4
+  101/1762, T5 49/1781; flicker and the moving hands), 19-63 extra interpolated boxes per view;
+  the **fpv** at stride 3 is worse, median 0.979, p10 0.884, **21% missed** (287/1377): head
+  motion breaks the IoU association. The fallback is therefore adequate for the fixed cameras and
+  poor for the moving one, which is one more reason to run the GPU at full coverage.
+- **Tests.** `tests/test_finebio_detect.py`: 21 default-tier tests (view and frame-spec
+  parsing, strides keep the last window frame, coverage labels, video path layout, IoU,
+  same-class one-to-one association by descending IoU, linear fill values and `source_frames`,
+  refusal to invent a class absent on one side, idempotence and verbatim detected rows,
+  manifest round trip and every validation branch, `interpolate` on a synthetic run directory
+  and refusal on a failed manifest, worker command per device and the worker parsing what the
+  driver produced, `CUDA_VISIBLE_DEVICES` per device, a blocked run without the interpreter
+  writes a manifest, non-empty output refused without `--overwrite`, `run` without a window,
+  the worker file importing without `battle`, and the detector's guard settings tolerating a
+  1.4 GB `SYNTHETIK.exe` under Wine while refusing another Battle worker unless allowed) plus
+  the `real_data` T5 reproduction. Default tier **810 passed / 9 skipped** (the nine
+  `test_worker_policy` torch-absent skips as before); `uv run ruff check src tests scripts`
+  and `ruff format --check` clean. `-m gpu` not run (no gpu-marked test added: the GPU checks
+  above are recorded here, not in the suite, so the suite never holds the card).
+- **For the detection phase and the seeding/arms lanes.** Full coverage of a 3600-frame
+  window on six views (21,600 frames) is about **25 minutes** of GPU with DINO (67 ms/frame
+  end to end, 55 ms inference) and about 20 with Deformable DETR; the CPU fallback at stride
+  3 / 5 (4,800 frames) is 2.7-4.7 hours and loses a fifth of the fpv's real detections to
+  interpolation, so it is a fallback only. The commands, once the window is fixed:
+  `uv run battle-finebio-detect run --trial P03_03_01 --views fpv,T1,T2,T3,T4,T5 --start <S>
+  --count 3600 --model dino --device cuda --output runs/<run>/detections` and the same with
+  `--model deformable-detr --output runs/<run>/detections-ddetr` for the agreement check;
+  `--allow-gpu-neighbour <pid>` only if a SAM3 worker must share the card. Rows are in raw
+  pixels at raw frame indices (proxy frame k == raw start+k); `class_id` is the checkpoint's
+  index into the 35-class list; a filled row's `interpolated: true` must be honoured by the
+  seeder (a `strided_interpolated` manifest means the in-hand object's boxes between detected
+  frames are guesses). Scores are the detector's own; nothing here is accuracy.
