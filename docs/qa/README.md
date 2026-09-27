@@ -100,3 +100,16 @@ per-acceptance timestamps). The committed file holds 51 `labeled` and 1 `hidden`
 review evidence for scoring tracker arms, not a dataset and not ground truth. Scores against
 them: `runs/sam3-policy-ablation-20260918/anchor_iou.{json,md}` and the ledger's "Anchor IoU"
 subsection under "Sep 18: slot exclusivity and score-gated memory".
+
+## FineBio gate 1, seed decisions on trial 1 (held Sep 26)
+
+`finebio-P03_03_01-seed-decisions.human-record.json` is the no-pixel record of the soft seed
+gate of the FineBio 3D-tracking plan (`p2-gate1`): one entry per SAM3 seed slot of trial 1
+`P03_03_01` (60, plus the six plan-driven plate slots that had no decision) with the human's
+`accept` / `reject` / `null`, their `note`, the slot's `label`, `class`, `rule`, `seed_frame`,
+its index in both seed runs, the seed mask's SHA-256, and the SHA-256 of the `decisions.json`
+that `battle-detector-seed apply-decisions` consumed (52 accept / 6 reject / 2 null). The
+sheets, masks and filtered worker files stay under gitignored
+`runs/finebio-seeds-P03_03_01-20260925/` (FineBio licence). It is a seed filter, not an anchor
+and not ground truth; the ledger entry "Sep 26: gate 1 held, seed decisions on trial 1
+(p2-gate1)" describes the fields and the tile check.

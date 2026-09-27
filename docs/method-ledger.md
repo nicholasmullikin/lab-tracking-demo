@@ -73,7 +73,7 @@ track, compelling demo"); its closing record is
 | FineBio: multi-camera, one world frame, segmentation from multiple angles to keep track (a 3D object with a persistent id) | Done with its limits named. Per-trial camera solve (camera 6 re-solved in room 1, cameras 1-4 in room 2, 0.7-2.1 px; no view dropped), rig gates as formulas (association 30.1 / 27.5 px), the seven cross-checks and a negative control on every build; a new 3D tracker (birth by triangulation, predict-project-gate, coasting / lost, confirmed re-acquisition, hand-off re-seed) plus four extensions on inventory evidence: tracks born 285 / 308 / 270 -> 191 / 186 / 147 and ambiguities 126 / 158 / 133 -> 33 / 54 / 22 on trial 1, 290 / 321 / 208 -> 166 / 202 / 152 and 70 / 97 / 25 -> 8 / 35 / 7 on trial 2. The static objects are one id each in both rooms; a tube keeps its id `contained` through the closed-lid spins; **the in-hand pipette fragments in both rooms** (41 / 59 / 20 and 24 / 48 / 21 ids with the motion model) and per-tube identity in racks is out of scope by evidence. Identity metrics are the tracker's own against the SAM3 slots as a proxy; gate 2 unlabelled | [p0-cameras](#sep-25-battle-finebio-cameras-the-per-trial-camera-solve-p0-cameras); [p1-rig](#sep-25-battle-finebio-rig-and-the-gate-formulas-p1-rig); [p3-tracker](#sep-25-battle-multiview-tracks-core-p3-tracker); [p3-tracker-ext](#sep-25-tracker-extensions-on-the-inventorys-evidence-p3-tracker-ext) |
 | FineBio: compelling demo | Done as a review surface, not judged by a viewer. Three Rerun recordings (trial 1 core 915.6 MB / 508 entity paths, trial 1 extensions 887.6 MB, trial 2 extensions 817.2 MB / 399), each with World / Cameras / Evidence presets, the seven cross-checks, a negative control, confidence with abstention, an events strip and a storyboard marked on the timeline (ten items on trial 1: the centrifuge cycle, the fpv off the plate and back, the transparent plate in six views, a confidence drop that is a real failure; six on trial 2). Every recording `rerun rrd verify` clean; none opened in a viewer by an agent | [p5](#sep-25-confidence-events-and-the-review-recording-p5-confidence-p5-events-p5-viewer); [close-out](#sep-25-finebio-3d-tracking-phase-close-out-p-docs); [`docs/review-guide-2026-09-25-finebio-3d.md`](review-guide-2026-09-25-finebio-3d.md) |
 | FineBio: generalises to a second room with zero tuning | Done. `P20_03_01` through the trial-1 pipeline with the trial id swapped: (b) 0.919 / 98.5%, the same verdicts, the extensions' effect the same size; **three things named as overfit** (the rig's moving-object witness class list that put the hand-off gate at the 80 px cap; the trial-1 slot cap's `magnetic_rack` side effect in T2; the viewer's camera-6-only drawn negative control) and one stop rule fired (the plate `detector_unseeded` in T2, DDETR not substituted) | [p6-trial2](#sep-25-second-trial-p20_03_01-with-zero-tuning-p6-trial2); [close-out](#sep-25-finebio-3d-tracking-phase-close-out-p-docs); `runs/finebio-arms-P20_03_01-20260925/README.md` |
-| FineBio: the two soft human gates | **Prepared, awaiting the human.** Gate 1 (seed shortlist, ~15 min): 66 + 66 tiles, no decision recorded, every seed `provenance: auto`. Gate 2 (review anchors, ~1.5 h): 440 cells on 18 frames of trial 1, 0 labelled; the scoreboard runs on the empty record. Until they are held, no number in the FineBio phase is human-anchored | [p2-gate1](#sep-25-battle-detector-seed-observation-adapters-gate-1-sheets-p2-seeds-p2-gate1); [p6-anchors](#sep-25-anchor-frames-and-workspace-for-gate-2-p6-anchors-prepared); [`docs/labeling-sessions-2026-09-25-finebio.md`](labeling-sessions-2026-09-25-finebio.md) |
+| FineBio: the two soft human gates | **Gate 1 held on trial 1 (Sep 26); gate 2 awaiting the human.** Gate 1 (seed shortlist, ~15 min): trial 1 52 accept / 6 reject / 2 null of 60, filtered seeds written for both runs, arms not re-run (the arms ran on `provenance: auto` seeds); trial 2's 66 tiles undecided. Gate 2 (review anchors, ~1.5 h): 440 cells on 18 frames of trial 1, 0 labelled; the scoreboard runs on the empty record. Gate 1 filters seeds and anchors nothing: until gate 2 is held, no number in the FineBio phase is human-anchored | [p2-gate1 held](#sep-26-gate-1-held-seed-decisions-on-trial-1-p2-gate1); [p2-gate1 prepared](#sep-25-battle-detector-seed-observation-adapters-gate-1-sheets-p2-seeds-p2-gate1); [p6-anchors](#sep-25-anchor-frames-and-workspace-for-gate-2-p6-anchors-prepared); [`docs/labeling-sessions-2026-09-25-finebio.md`](labeling-sessions-2026-09-25-finebio.md) |
 | Audio | Deferred by plan; never revisited; closed with the phase | [close](#sep-24-assembly101-phase-closed) |
 
 The honest summary, as of the morning of Sep 18: nine-plus methods attempted, one clip,
@@ -876,6 +876,31 @@ GPU about **7.6 h** against the plan's 5, the plan copy's Outcome section, the r
 over both trials with a 20-minute route, and the README section. No tag placed. Record:
 [Sep 25: FineBio 3D tracking phase, close-out (p-docs)](#sep-25-finebio-3d-tracking-phase-close-out-p-docs).
 
+#### Sep 26: gate 1 held, seed decisions on trial 1 (p2-gate1)
+
+The human held the soft seed gate on trial 1 from the contact sheets: **52 accept / 6 reject /
+2 null** of 60 slots (T1 7 / 3 / 0, T2 9 / 0 / 1, T3 8 / 2 / 0, T4 10 / 0 / 0, T5 9 / 0 / 1, fpv
+9 / 1 / 0). The six rejections, each checked against its tile and visible there (one partly):
+T1 `8_channel_pipette#0` (one mask over the pipette and a rack), T1 `blue_pipette#0` (two
+pipettes under one mask), T1 `50ml_tube_group#1` (a hand over the centrifuge rotor), T3
+`yellow_pipette#0` (two pipettes), T3 `blue_pipette#0` (the glove in the mask), fpv
+`blue_pipette#0` (box clipped at the image border, a bench-edge fragment in the mask). No
+duplicate claims, no invalid values, no fields disturbed; the notes on accepted slots are class
+questions ("actually a red pipette", "sure it's a PCR machine?") that the brief says are not
+filter reasons, one of which (T2's "red") is a gate-2 identity question the tracker's
+class-based association cannot see. `apply-decisions` matches by `(view, label)`, so the one
+file filtered both the 60-slot base run (54 kept) and the 66-slot `with-plate/` run the arms
+used (60 kept, the plate slots `auto`), provenance `human_filtered` with the file's SHA-256.
+Downstream: the six slots are 9% of the arms' SAM3 rows and touch 83 of 308 arm-(b) tracks
+(mostly the fragmenting blue pipette, which keeps three of six views); removing them would move
+(b) from 99.1% to about 99.4% of masks >= 0.5 IoU and (c) from 79.3% to about 81.4%, the verdict
+unchanged. **No arm re-run recommended for the GPU**: (b) is per-slot independent, so its
+human-filtered scoreboard is a CPU row filter plus `--reuse-observations`; (c) would need a
+worker run and lost anyway. Committed record without pixels:
+[`docs/qa/finebio-P03_03_01-seed-decisions.human-record.json`](qa/finebio-P03_03_01-seed-decisions.human-record.json).
+Gate 1 on trial 2 and gate 2 are still unheld. Record: [Sep 26: gate 1 held, seed decisions on
+trial 1 (p2-gate1)](#sep-26-gate-1-held-seed-decisions-on-trial-1-p2-gate1).
+
 ### Plan versus actual
 
 What the plan said, what happened instead, and why, in one line each.
@@ -1006,11 +1031,17 @@ Human gates (nothing below can be claimed until these are recorded):
   name alone; the other checkpoint is one `--checkpoint` swap away in `pairs.json`.
 - Whether to seed e1 (HMC_21176875) mid-minute: every part is outside its frame at frame 0,
   so a run needs a profile that starts at the first frame the cabin is in view.
-- **FineBio gate 1, soft (~15 min):** accept / reject the 66 with-plate seeds per trial from
-  `runs/finebio-seeds-<trial>-20260925/with-plate/sheets/<view>.jpg` into a `decisions.json`
-  (`battle-detector-seed apply-decisions`); brief in
+- **FineBio gate 1, soft (~15 min): held on trial 1 (Sep 26), open on trial 2.** Trial 1: 52
+  accept / 6 reject / 2 null of 60, applied to both seed runs (`filtered/` under
+  `runs/finebio-seeds-P03_03_01-20260925/` and its `with-plate/`; the arms were **not** re-run
+  on the filtered seeds, and the human-filtered arm-(b) scoreboard is a CPU
+  `--reuse-observations` step away, see
+  [Sep 26](#sep-26-gate-1-held-seed-decisions-on-trial-1-p2-gate1)); the pipette slots
+  rejected in T1 / T3 / fpv are not replaced (a `select` re-run on other seed frames if wanted).
+  Trial 2 (`P20_03_01`): the 66 with-plate seeds in
+  `runs/finebio-seeds-P20_03_01-20260925/with-plate/sheets/<view>.jpg` have no decision; brief in
   [`docs/labeling-sessions-2026-09-25-finebio.md`](labeling-sessions-2026-09-25-finebio.md).
-  Nothing waited for it; every seed ran `provenance: auto` and the record says so.
+  Nothing waited for either; every arm ran on `provenance: auto` seeds and the record says so.
 - **FineBio gate 2, soft (~1.5 h):** the 440 anchor cells of trial 1 (frame 916 in six views,
   12 disagreement and 5 random frames on the fpv and T4) in
   `runs/finebio-anchors-P03_03_01-20260925/` (`decisions.template.json` -> `decisions.json`,
@@ -9706,3 +9737,193 @@ and the 83 `main()` entry points beyond their shared fragments.
   (the plan's Outcome section), this entry's commit (Part 2 and Part 1), and the README
   section's commit after it. No tag placed; the user decides whether the phase gets one as
   `assembly101-lab-close` did.
+
+### Sep 26: gate 1 held, seed decisions on trial 1 (p2-gate1)
+
+- **What this is.** The soft gate 1 of the FineBio plan
+  ([`docs/plan-2026-09-25-finebio-3d-tracking.md`](plan-2026-09-25-finebio-3d-tracking.md),
+  todo `p2-gate1`; brief in
+  [`docs/labeling-sessions-2026-09-25-finebio.md`](labeling-sessions-2026-09-25-finebio.md),
+  first section) was held by the human on Sep 26 on trial 1 `P03_03_01`: one accept / reject /
+  null per SAM3 seed slot from the contact sheets `runs/finebio-seeds-P03_03_01-20260925/sheets/`.
+  This entry reads the decisions back, checks each rejection against its tile, applies them as
+  the filter (`battle-detector-seed apply-decisions`) to both seed runs, works out what they
+  would change in the arms, and writes the committed no-pixel record. **No GPU, no arm re-run,
+  no source change**; the template the human edited is left exactly as edited.
+- **The decisions.** Filled directly into `decisions.template.json` (its mtime
+  2026-09-26 23:04:52 -04:00; the file carries no author or timestamp), copied byte-identical
+  to `decisions.json` (SHA-256 `d4dfbc2a609ded77d2167ce79ee56bcdd774935fb8932a814303744e75f4181b`).
+  60 slots: **52 accept, 6 reject, 2 null.** Per view (accept / reject / null): T1 7 / 3 / 0,
+  T2 9 / 0 / 1, T3 8 / 2 / 0, T4 10 / 0 / 0, T5 9 / 0 / 1, fpv 9 / 1 / 0. Checked: every
+  `decision` is one of `accept` / `reject` / `null`; `status`, `rule`, `role`, `seed_frame` and
+  `class` untouched on all 60 (compared field by field with the 60 shared entries of the
+  with-plate template); labels unique per view; the file's `seeds_sha256` matches the base
+  `seeds.json` (`7b5c9654...`). The two nulls (T2 `50ml_tube#0` from frame 2043, T5
+  `centrifuge#0`) read as skipped rather than decided; null means "keep as auto" and that is
+  what happened to them.
+- **The six rejected slots, with the tile check** (slot index in the base run / in
+  `with-plate/`, which is the run the arms used; det = detector score, dec = SAM3's IoU
+  prediction, bbox = mask-bbox IoU vs the detector box, all read off the tile). The tiles were
+  read at 2x from the sheets and, for the fpv one, the raw frame 600 was cropped around the box
+  (nothing left the machine; nothing under `runs/` committed).
+
+  | view | slot | label | rule | seed frame | det / dec / bbox | human's note | tile check |
+  |---|---|---|---|---|---|---|---|
+  | T1 | 3 / 4 | `8_channel_pipette#0` | moves | 681 | 0.31 / 0.86 / 0.94 | "two objects: a tray for holding microtubes and an 8 channel pipette" | **visible.** One mask runs from a blue tube/tip rack at the lower left of the box up the pipette body to its head: two objects under one mask (brief rule 1). |
+  | T1 | 4 / 5 | `blue_pipette#0` | moves | 861 | 0.31 / 0.87 / 0.91 | "There are two pipettes here" | **visible.** Two pipette bodies lying side by side, both inside the mask; the glove holding a tube beside them is not in the mask. |
+  | T1 | 9 / 10 | `50ml_tube_group#1` | group | 1158 | 0.52 / 0.75 / 0.70 | "impossible to tell since the hand is obscuring it" | **visible.** A gloved hand over the centrifuge rotor, the small mask on a dark object under it; no group of tubes identifiable (rule 3, occluded seed frame). This slot never entered the tracker (group slots have no single detector box: `associated 0.000` in every arm). |
+  | T3 | 3 / 4 | `yellow_pipette#0` | moves | 600 | 0.71 / 0.85 / 0.90 | "Two pipettes" | **visible.** The mask has two handle heads at its left end and covers two pipettes lying together on the bench. Not a duplicate: T3 slot 4 `8_channel_pipette#0` (accepted, same frame) is a different object at another spot. |
+  | T3 | 5 / 6 | `blue_pipette#0` | moves | 600 | 0.62 / 0.89 / 0.86 | "Pipette, but hand is included too" | **visible.** The whole glove is filled by the mask along with the pipette (rule 2). |
+  | fpv | 7 / 8 | `blue_pipette#0` | moves | 600 | 0.64 / 0.84 / 0.84 | "We picked up the edge of the table" | **partly visible.** On the raw frame the main body of the mask is the held pipette's barrel (horizontal, tip pointing left out of the box); the box is clipped at the right image border (`x1 = 1920.0`, rule 3: half out of the crop) and a jagged fragment of the mask sits on the metal bench edge under the barrel. The rejection holds on rules 2/3; the barrel itself is the pipette. |
+
+  None of the six is a duplicate claim, so there is no "twin also rejected" case. In the
+  scheme of the brief: three "two objects under one box" (rule 1), one glove (rule 2), one
+  occluded seed frame (rule 3), one clipped box with a bench fragment (rules 2/3); none is a
+  mask on an altogether different object.
+- **Accepted slots with a note** (six; the notes are class questions, none asks for a filter).
+  T1 `pcr_machine#0` "are you sure this is a PCR machine?": the tile shows a blue block with a
+  6 x 8 grid of wells (by its look a PCR tube rack or cooling block rather than a thermocycler);
+  the detector names it `pcr_machine` at 0.87 in every view that sees it, it is one static object
+  consistent across views, and the brief's rule ("reject only if the box is on the wrong object,
+  not because the word is wrong") makes accept right; the class word is the dataset's. T1
+  `50ml_tube#0` "can we double check it's 50 ml": nothing in the gate checks volume; the class is
+  the detector's. T1 `15ml_tube_group#0` "seems like just one, not a group?": visually right, the
+  union box at frame 600 holds one blue-capped 15 ml tube; the group rule joined three
+  `15ml_tube` instances over the window; a single-tube slot there would be a `select` change (the
+  group threshold), not a filter. T2 `blue_pipette#0` "actually a red pipette (red ring)": one
+  pipette lying on the bench with a red-orange ring, a second pipette beside it outside the
+  mask, so one object and accept is right; the relabel cannot be honoured by `select` either
+  (the class is the detector's) and is a gate-2 `instance_identity` question. It matters for
+  the tracker, which associates by class: this slot supports blue-pipette tracks together with
+  the other views' `blue_pipette#0` slots on 2,074 arm-(b) track-rows (co-support T3 1,370, T1
+  746, T5 459, T4 355, fpv 101; T2 residual median 12.7 px, inside the 30.1 px gate). If the T2
+  object is the red pipette resting on the bench while the others are the held blue one, that is
+  a class-confusion association the label-free measures cannot see; gate 2's identity names are
+  the instrument for it. T2 `yellow_pipette#0` "correctly labeled as yellow": confirmation. T4
+  `8_tube_stripes#0` "these look a bit weird": an 8-tube PCR strip lying diagonally on a dark
+  lid; one object.
+- **Inconsistencies looked for.** (1) Duplicate rejections whose twin is also rejected: none
+  (no rejection is a duplicate claim). (2) Notes that ask for a replacement, which per the brief
+  is a re-run of `select`, not a filter: none explicit. Implicit: rejecting a pipette slot for
+  "two pipettes / two objects in the box" removes that object from that view altogether; **T1
+  keeps no pipette slot** (both rejected), the blue pipette keeps three of six views (T2, T4,
+  T5; T1, T3 and fpv gone), the 8-channel pipette keeps T3, T5, fpv, the yellow pipette keeps
+  T2, T4, T5, fpv. Getting them back is a re-run of `select` / `decode` with a seed frame on
+  which the pipettes lie apart (or the held pipette without the glove), then the arms; not done,
+  the user's call. (3) Values outside accept / reject / null: none. (4) Fields the brief said to
+  leave alone: untouched.
+- **Applied.** `apply_decisions` (`src/battle/detector_seed.py`) matches a decision to a slot
+  by **`(view, label)`**, not by slot index, and a slot with no decision gets `None` -> kept as
+  `auto`. So the file written against the 60-slot base run applies to the 66-slot
+  `with-plate/` run unchanged: all 60 labels exist there with the same `class` / `rule` / `role`
+  / `status` / `seed_frame`, and the six `cell_culture_plate#0` slots (one per view, appended by
+  the arms lane, slot 3 in five views and slot 2 in T2) have no entry. No `--by-label` change
+  was needed; nothing in the source changed.
+
+  ```bash
+  cp -p runs/finebio-seeds-P03_03_01-20260925/decisions.template.json runs/finebio-seeds-P03_03_01-20260925/decisions.json
+  uv run battle-detector-seed apply-decisions --output runs/finebio-seeds-P03_03_01-20260925 \
+    --decisions runs/finebio-seeds-P03_03_01-20260925/decisions.json
+  uv run battle-detector-seed apply-decisions --output runs/finebio-seeds-P03_03_01-20260925/with-plate \
+    --decisions runs/finebio-seeds-P03_03_01-20260925/decisions.json
+  ```
+
+  Base run: kept 54 (T1 7, T2 10, T3 8, T4 10, T5 10, fpv 9), rejected 6; provenance
+  `human_accepted` 52, `auto` 2. `with-plate/`: kept 60 (T1 8, T2 11, T3 9, T4 11, T5 11, fpv
+  10), rejected 6; `human_accepted` 52, `auto` 8 (the two nulls and the six plate slots, each
+  `decision: null`, `rule: landmark_plan_shortlist`). Verified on both: `filtered/seeds.json`
+  has `step: apply-decisions`, `provenance: human_filtered`, `decisions_sha256` equal to the
+  file's hash above; per view `slot` is 0..N-1 in order and `schedule_slot` 0..N-1 over the
+  accepted; `filtered/box_streams/<view>.jsonl` (3,600 frames per view, 3,561 in the base fpv
+  where frames without a box are not written) carries only kept labels with the renumbered
+  slot ids (T1 frame 0 in with-plate: slots 0, 1, 2, 3, 6, 7 = centrifuge, vortex, pcr_machine,
+  plate, 15 ml group, 50 ml group #0; the 50 ml tube and micro-tube group start at analysis
+  frames 518 and 133); `filtered/schedules/<view>.json` has the same `corrections` / `seeds`
+  shape as the unfiltered file with the rejected `target`s absent; no rejected label appears
+  anywhere in `filtered/`. Two things noted, neither a defect in what was written: the tool does
+  not compare the decisions file's `seeds_sha256` with the target run's `seeds.json` (harmless
+  here because the match is by label), and `with-plate/decisions.template.json` carries a
+  `seeds_sha256` (`f02b57b1...`) that no longer matches its own `seeds.json` (`d00dfcc1...`),
+  because `battle-finebio-arms mark-plan-slots` rewrote `seeds.json` after the template was
+  written on Sep 25. The brief's sentence "arms run from `filtered/` when it exists" is a
+  convention for the invocation, not a fallback in code: `battle-finebio-arms run --seeds` and
+  the worker commands take explicit paths, so a re-run passes
+  `with-plate/filtered/box_streams` and `with-plate/filtered/schedules`.
+- **What the decisions change downstream** (counted on the Sep 25 arms of trial 1; nothing
+  re-run). Rows of the six slots in the arms' `observations.jsonl` and their footprint in the
+  tracker (`tracks/tracks.jsonl` `support_slots`); measures from `measures.md`.
+
+  | view / slot | (b) SAM3 rows | (b) det-box IoU median / frac >= 0.5 / associated | (c) SAM3 rows | (c) median / frac / associated |
+  |---|---|---|---|---|
+  | T1 `8_channel_pipette#0` | 2,842 | 0.891 / 1.000 / 0.41 | 3,519 | 0.883 / 0.694 / 0.41 |
+  | T1 `blue_pipette#0` | 2,279 | 0.826 / 0.993 / 0.68 | 3,322 | **0.067 / 0.179** / 0.64 (a dead video-memory slot) |
+  | T1 `50ml_tube_group#1` | 1,811 | group, no box / - / 0.00 | 2,994 | group / - / 0.00 |
+  | T3 `yellow_pipette#0` | 3,452 | **0.918 / 0.985 / 0.92** | 3,593 | 0.927 / 0.949 / 0.95 |
+  | T3 `blue_pipette#0` | 3,312 | 0.894 / 0.921 / 0.71 | 3,598 | 0.420 / 0.316 / 0.37 |
+  | fpv `blue_pipette#0` | 2,737 | 0.882 / 0.906 / 0.08 | 3,467 | 0.562 / 0.575 / 0.01 |
+  | sum | **16,433 of 181,984 (9.0%)** | | **20,493 of 222,520 (9.2%)** | |
+
+  - *Scoreboard.* In (b) the five non-group slots are 14,622 of the 148,362 measured rows
+    (9.9%) at medians 0.83-0.92 against the pooled 0.926, so removing them moves the pooled
+    numbers little: arithmetic on the per-slot rows gives frac >= 0.5 **0.991 -> about 0.994**
+    and the median up by a few thousandths. In (c) the same rows include two of its dead slots
+    (T1 and T3 blue pipette), so (c) gains more: frac **0.793 -> about 0.814**; the (b)-(c) gap
+    narrows by two points and does not close (the tubes that leave, the centrifuge lid and the
+    T2/T4/T5 pipettes are untouched). These are estimates from `measures.md`, not a re-scoring.
+  - *Tracker.* (b) core tracks: 83 of 308 tracks carry a rejected slot in their support on some
+    frame (77 `blue_pipette`, 5 `8_channel_pipette`, 1 `yellow_pipette`), on 7,206 of 158,290
+    track-rows (4.6%); 470 rows were supported by rejected slots only and would become coasting
+    or disappear. On `tracks-ext/`: 64 of 186 tracks, 7,198 of 134,007 rows (5.4%), 558 rows
+    rejected-only. (c): 42 of 270 tracks, 7,716 rows (5.3%), 346 rejected-only; ext 35 of 147,
+    6,723 rows (5.4%), 138. No track is supported by rejected slots on every frame. Per rejected
+    slot (b core): T3 yellow 3,171 rows, T3 blue 2,340, T1 blue 1,546, T1 8-channel 1,191, fpv
+    blue 212, T1 group 0. The blue pipette, the object that fragments most (47 / 80 / 30 ids
+    core, 41 / 59 / 20 ext), would be observed from three cameras instead of six.
+  - *Worth the GPU?* **No, and the arm (b) answer needs none.** Arm (b) is memory-free and
+    per-slot independent (each mask is decoded from its own detector box), so the filter is
+    exactly a row filter on its `observations.jsonl`: drop the six `(view, slot)` pairs, then
+    `battle-finebio-arms run --arm b --reuse-observations --seeds
+    runs/finebio-seeds-P03_03_01-20260925/with-plate/filtered ...` into a new directory gives
+    the human-filtered scoreboard, identity metrics and inventory exactly, on the CPU in minutes.
+    For (c) the slots share one multiplexed video-memory run, so exactness needs a worker re-run
+    (about 1.25 h of GPU for six views) and (c) is the arm that lost; not worth it. Against the
+    rule of thumb: the rejections are three "two objects under one box", one glove, one clipped
+    box with a bench fragment, one occluded group, i.e. partial wrong extent rather than a wrong
+    object; the pollution was limited (the fpv blue pipette associated on 8% of its rows, the T3
+    glove is included by (b)'s per-frame decode of the detector's box on the held frames the
+    same way), and the filter only removes, so the expected outcome is a slightly cleaner
+    scoreboard with fewer pipette observations, not a different verdict. If the user wants the
+    pipettes back in T1 / T3 / fpv, that is a `select` / `decode` re-run on other seed frames
+    (seconds of GPU) and then the arms (b) on those views; recommended only if gate 2 is going
+    to be labelled, since that is where the pipette's identity is scored.
+- **The committed human record.**
+  [`docs/qa/finebio-P03_03_01-seed-decisions.human-record.json`](qa/finebio-P03_03_01-seed-decisions.human-record.json),
+  written by a script kept in `/tmp` (`battle-detector-seed` has no `export`; the shape follows
+  `battle-finebio-anchors export`). Fields: `schema`
+  (`battle-detector-seed/1/human-record`), `gate`, `trial`, `window_raw_frames`, `author` (null:
+  the decisions file has none), `decided_at` (the template's mtime, with `decided_at_basis`
+  saying so), `exported_at`, `decisions` (`uri`, `sha256` of `decisions.json`), `seeds` and
+  `filtered` (`uri` + `sha256` of the base and with-plate `seeds.json` and
+  `filtered/seeds.json`), `counts` (per view and total accept / reject / null), and
+  `decisions_by_slot`, one entry per slot with `view`, `slot`, `slot_with_plate`, `label`,
+  `class`, `rule`, `role`, `status`, `seed_frame`, `decision`, `provenance_after_filter`
+  (`human_accepted` / `auto` / `removed`), `note`, `seed_detector_score`,
+  `seed_mask_bbox_iou_vs_box`, `seed_mask_sha256` (the hash of the seed mask PNG under
+  `runs/`); `plate_slots_without_decision` lists the six plate slots kept as `auto`;
+  `claim_boundary` and `licence` are the seed tool's verbatim. 36 KB, no pixels, no image
+  paths beyond the run-relative URIs.
+- **Claim boundary, unchanged.** The decisions are one person's review of which per-view SAM3
+  slots deserve to exist, made from a seed-frame tile each; they filter seeds and anchor
+  nothing. Every IoU in this phase is still model-vs-model agreement; gate 2 is where a
+  human-anchored number would come from, and it is still unlabelled (0 / 440). Gate 1 on trial 2
+  (`P20_03_01`, 66 slots) has not been held.
+- **Not done, on purpose.** No arm re-run (the plan's rule and this task's); no source or test
+  change (the label match already covers the with-plate numbering); the template left as the
+  human left it; nothing under `runs/` committed; `README.md` (the user's unstaged hunk) and
+  `test.sh` untouched.
+- **Pointers.** `runs/finebio-seeds-P03_03_01-20260925/{decisions.json,filtered/}` and
+  `.../with-plate/filtered/`; the sheets `.../sheets/<view>.jpg`; the arms
+  `runs/finebio-arms-P03_03_01-20260925/{b-box-decode-arm,c-video-memory-arm}/`; the plan copy's
+  Outcome table row `p2-gate1`; Part 1 pointer
+  [Sep 26: gate 1 held](#sep-26-gate-1-held-seed-decisions-on-trial-1-p2-gate1). Commit: this
+  entry's (ledger, plan Outcome row, the human record, the `docs/qa/README.md` pointer).

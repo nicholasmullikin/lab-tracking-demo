@@ -386,7 +386,7 @@ box, model against model.
 | `p1-rig` | done | gates as formulas: trial 1 association 30.1 / hand-off 27.0 px, trial 2 27.5 / 80.0 (the cap); the preflight reproduced on P03_01_01 (31.1 / 51.9) |
 | `p2-detect` | done | CUDA venv in 9 min of the 60; 86,400 frames (both trials, DINO + DDETR, six views, every frame) in 65 min of GPU at 46-47 ms/frame; the two detectors agree on 95.4% / 90.4% of confident boxes |
 | `p2-seeds` | done | trial 1 60/60 seeds accepted (mask-bbox IoU 0.63-0.99), 66/66 with the plate; trial 2 66/66 (0.60-0.98); the plate `detector_unseeded` in trial 2's T2 |
-| `p2-gate1` | prepared, awaiting the human | 60 tiles per trial on the sheets, the 15-minute brief written; no `decisions.json` exists; every seed ran with `provenance: auto` |
+| `p2-gate1` | held on trial 1 (Sep 26); trial 2 open | trial 1: **52 accept / 6 reject / 2 null** of 60 slots; the six rejected (T1 8-channel and blue pipettes and 50 ml group #1, T3 yellow and blue pipettes, fpv blue pipette; all visible in the tiles) removed by `apply-decisions` from both seed runs (54 / 60 and 60 / 66 kept, provenance `human_filtered`); the arms ran on `provenance: auto` seeds and were not re-run (estimated effect (b) 99.1% -> ~99.4%, (c) 79.3% -> ~81.4% of masks >= 0.5 IoU, verdict unchanged); record `docs/qa/finebio-P03_03_01-seed-decisions.human-record.json`; trial 2's 66 tiles undecided |
 | `p3-tracker` | done | 12 synthetic-rig tests plus the fixtures; one plate id over 300/300 frames; the two 50 ml tubes the slice collapsed at 154 px are two tracks at 1.5-4 px |
 | `p3-tracker-ext` | done | four extensions, each on an inventory count; trial 1 tracks born 285 / 308 / 270 -> 191 / 186 / 147, ambiguities 126 / 158 / 133 -> 33 / 54 / 22; the core byte-identical with the flags off |
 | `p3-worker` | done | memory-free box decode at 152 ms per prompted frame (149 the encoder) reproducing the preflight's masks (0.94 / 0.95 / 0.99 / 0.97); the tau hook, box re-prompts with `detector_reseed` / `track_reproject`, per-slot start frames |
@@ -451,9 +451,11 @@ box, model against model.
 
 ### What stays open
 
-- **Gates 1 and 2 are unlabelled**, so no human-anchored number exists: the arms are ranked on
-  label-free measures only, and every "IoU" in this phase is model-vs-model agreement. The
-  workspaces (`runs/finebio-seeds-<trial>-20260925/with-plate/sheets/`,
+- **Gate 1 was held on trial 1 on Sep 26** (52 / 6 / 2; filtered seeds written, arms not re-run
+  on them; trial 2 undecided). **Gate 2 is unlabelled**, so no human-anchored number exists (gate
+  1 filters seeds and anchors nothing): the arms are ranked on label-free measures only, and
+  every "IoU" in this phase is model-vs-model agreement. The workspaces
+  (`runs/finebio-seeds-<trial>-20260925/with-plate/sheets/`,
   `runs/finebio-anchors-P03_03_01-20260925/`) and the briefs
   ([`labeling-sessions-2026-09-25-finebio.md`](labeling-sessions-2026-09-25-finebio.md)) stand;
   the scoreboard re-runs when labels land.
