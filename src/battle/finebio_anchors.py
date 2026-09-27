@@ -8,7 +8,8 @@ scoreboard, so that scoring runs whenever labels exist and re-runs as more land:
     battle-finebio-anchors workspace --config <anchor config> --arm-b <arm (b) dir> \\
         --output runs/finebio-anchors-<trial>-<date>/                  # GPU, a few minutes
     battle-finebio-anchors score --workspace <workspace> --record <decisions.json> \\
-        --arms a=<dir>,b=<dir>,c=<dir>,d=<dir> --output <workspace>/scoreboard
+        --arms a=<dir>,b=<dir>,c=<dir>,d=<dir> [--tracks-dir tracks|tracks-ext] \\
+        --output <workspace>/scoreboard
     battle-finebio-anchors export --workspace <workspace> --record <decisions.json> \\
         --output docs/qa/<trial>-review-anchors.human-record.json
 
@@ -35,8 +36,10 @@ scoreboard, so that scoring runs whenever labels exist and re-runs as more land:
   accepted candidate's bbox or the detector box for box-level accepts, and for the boxes-only
   arm), false positives on hidden cells, missing masks; identity against the human's
   ``instance_identity`` (cross-camera IDF1 on the six-view frame and pooled over every
-  labelled cell, identities split across tracks, tracks merging identities). Runs on an empty
-  or partial record and says how many cells are labelled.
+  labelled cell, identities split across tracks, tracks merging identities); the track ids
+  come from ``<arm>/<tracks-dir>/tracks.jsonl`` (``--tracks-dir tracks`` by default, the core
+  tracker; ``tracks-ext`` scores the extensions' ids on the same masks). Runs on an empty or
+  partial record and says how many cells are labelled.
 * ``export``: the committed human-record skeleton under ``docs/qa/`` (states, SHA-256 of the
   accepted candidate masks, identities; no mask leaves ``runs/``).
 
@@ -1592,9 +1595,15 @@ def score_cell(
     return out
 
 
-def tracks_at(arm_dir: Path, frames: Iterable[int]) -> dict[int, dict[tuple[str, str], str]]:
-    """frame -> (view, slot) -> track id from the arm's tracks.jsonl `support_slots`."""
-    path = Path(arm_dir) / "tracks" / "tracks.jsonl"
+DEFAULT_TRACKS_DIR = "tracks"
+
+
+def tracks_at(
+    arm_dir: Path, frames: Iterable[int], *, tracks_dir: str = DEFAULT_TRACKS_DIR
+) -> dict[int, dict[tuple[str, str], str]]:
+    """frame -> (view, slot) -> track id from `<arm>/<tracks_dir>/tracks.jsonl` `support_slots`
+    (`tracks` = the core tracker, `tracks-ext` = the extensions' pass on the same masks)."""
+    path = Path(arm_dir) / tracks_dir / "tracks.jsonl"
     out: dict[int, dict[tuple[str, str], str]] = defaultdict(dict)
     if not path.is_file():
         return out
@@ -1676,6 +1685,7 @@ def score_arm(
     frame_offset: int,
     six_view_frames: Sequence[int],
     repository_root: Path,
+    tracks_dir: str = DEFAULT_TRACKS_DIR,
 ) -> dict[str, Any]:
     frames = sorted({a.cell["raw_frame"] for a in anchors})
     views = sorted({a.cell["view"] for a in anchors})
@@ -1684,7 +1694,7 @@ def score_arm(
     for row in rows:
         by_frame_view[(int(row["frame_index"]), str(row["view"]))].append(row)
     worker_runs = arm_worker_runs(Path(arm_dir), repository_root)
-    tracks = tracks_at(Path(arm_dir), frames)
+    tracks = tracks_at(Path(arm_dir), frames, tracks_dir=tracks_dir)
     cells = []
     identity_pairs: list[tuple[int, str, str | None]] = []
     for anchor in anchors:
@@ -1724,6 +1734,8 @@ def score_arm(
         "arm": name,
         "arm_dir": fs_common.relative_uri(Path(arm_dir), repository_root),
         "has_masks": bool(worker_runs),
+        "tracks_dir": tracks_dir,
+        "has_tracks": (Path(arm_dir) / tracks_dir / "tracks.jsonl").is_file(),
         "cells": cells,
         "counts": dict(counts),
         "cells_scored": len(scored_cells),
@@ -1789,6 +1801,7 @@ def score_arms(
     record_path: Path | None,
     arms: dict[str, Path],
     repository_root: Path,
+    tracks_dir: str = DEFAULT_TRACKS_DIR,
 ) -> dict[str, Any]:
     workspace = load_workspace(workspace_dir)
     config = load_config(repository_root / workspace["config"]["uri"])
@@ -1805,6 +1818,7 @@ def score_arms(
             frame_offset=offset,
             six_view_frames=six,
             repository_root=repository_root,
+            tracks_dir=tracks_dir,
         )
         for name, path in arms.items()
     ]
@@ -1813,6 +1827,7 @@ def score_arms(
         "anchor_kind": ANCHOR_KIND,
         "workspace": fs_common.relative_uri(workspace_dir, repository_root),
         "config": workspace["config"],
+        "tracks_dir": tracks_dir,
         "record": None
         if record_path is None or not Path(record_path).is_file()
         else {
@@ -1839,11 +1854,16 @@ def _fmt(value: Any, digits: int = 3) -> str:
 
 def scoreboard_markdown(report: dict[str, Any]) -> str:
     summary = report["record_summary"]
+    tracks_dir = report.get("tracks_dir", DEFAULT_TRACKS_DIR)
+    without_tracks = [a["arm"] for a in report["arms"] if not a.get("has_tracks", True)]
+    tracks_note = f"Track ids from `<arm>/{tracks_dir}/tracks.jsonl`"
+    if without_tracks:
+        tracks_note += f" (absent for: {', '.join(without_tracks)})"
     lines = [
         f"# Anchor scoreboard: {summary['labelled']} / {summary['cells']} cells labelled",
         "",
         f"States: {json.dumps(summary['by_state'])}; identity given on {summary['with_identity']} "
-        f"labelled cells ({len(summary['identities'])} identities).",
+        f"labelled cells ({len(summary['identities'])} identities). {tracks_note}.",
         "",
     ]
     if summary["labelled"] == 0:
@@ -1931,6 +1951,7 @@ def run_score(args: argparse.Namespace) -> dict[str, Any]:
         record_path=Path(args.record) if args.record else None,
         arms=arms,
         repository_root=root,
+        tracks_dir=args.tracks_dir,
     )
     output = Path(args.output) if args.output else Path(args.workspace) / "scoreboard"
     output.mkdir(parents=True, exist_ok=True)
@@ -2089,6 +2110,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--record", type=Path, default=None, help="decisions.json (missing = nothing labelled)"
     )
     sc.add_argument("--arms", required=True, help="name=path,name=path,... arm directories")
+    sc.add_argument(
+        "--tracks-dir",
+        default=DEFAULT_TRACKS_DIR,
+        help=(
+            "tracker output the identity metrics read, <arm>/<tracks-dir>/tracks.jsonl: "
+            "'tracks' (core, default) or 'tracks-ext' (the extensions)"
+        ),
+    )
     sc.add_argument("--output", type=Path, default=None, help="default <workspace>/scoreboard")
 
     ex = sub.add_parser("export", help="Write the committed human-record skeleton (no pixels).")

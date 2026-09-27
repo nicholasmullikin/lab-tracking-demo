@@ -679,6 +679,82 @@ def test_scoreboard_on_a_partial_record_scores_masks_boxes_hidden_and_identity(s
     assert "candidates/" not in text  # no mask leaves runs/
 
 
+def test_scoreboard_tracks_dir_reads_the_extensions_ids_on_the_same_masks(synthetic, capsys):
+    """`--tracks-dir tracks-ext` changes only where the identity metrics read their track ids:
+    arm (c)'s core tracks split the tube across two ids on the six-view frame; an ext pass
+    that keeps one id scores IDF1 1.0 on the same masks; an arm without the directory has no
+    track for any named cell and the table says so."""
+    root, workspace, arms = synthetic["root"], synthetic["workspace"], synthetic["arms"]
+    template = json.loads((workspace / "decisions.template.json").read_text())
+    for cell in template["cells"]:
+        cell["decision"] = 0
+        if cell["label"] == "50ml_tube#0":
+            cell["instance_identity"] = "tube_A"
+    record = root / "runs" / "decisions.json"
+    record.write_text(json.dumps(template), encoding="utf-8")
+    ext = arms["c"] / "tracks-ext"
+    ext.mkdir()
+    one_id_each = (("centrifuge-001", "centrifuge#0"), ("50ml_tube-009", "50ml_tube#0"))
+    with (ext / "tracks.jsonl").open("w", encoding="utf-8") as handle:
+        for frame in FRAMES:
+            for track, slot in one_id_each:
+                row = {
+                    "frame_index": frame,
+                    "track_id": track,
+                    "support_slots": {"fpv": slot, "T4": slot},
+                }
+                handle.write(json.dumps(row, separators=(",", ":")) + "\n")
+    core = fa.score_arms(
+        workspace_dir=workspace, record_path=record, arms=arms, repository_root=root
+    )
+    extended = fa.score_arms(
+        workspace_dir=workspace,
+        record_path=record,
+        arms=arms,
+        repository_root=root,
+        tracks_dir="tracks-ext",
+    )
+    assert core["tracks_dir"] == "tracks" and extended["tracks_dir"] == "tracks-ext"
+    c_core = next(a for a in core["arms"] if a["arm"] == "c")
+    c_ext = next(a for a in extended["arms"] if a["arm"] == "c")
+    # Same masks, same cells: only the identity block moves.
+    assert c_core["mask_iou_mean"] == c_ext["mask_iou_mean"]
+    assert c_core["cells_scored"] == c_ext["cells_scored"]
+    assert c_core["has_tracks"] and c_ext["has_tracks"]
+    assert c_core["identity"]["six_view_frame"]["identities_split_across_tracks"] == 1
+    assert c_ext["identity"]["six_view_frame"]["identities_split_across_tracks"] == 0
+    assert c_ext["identity"]["six_view_frame"]["idf1"] == 1.0
+    assert c_ext["identity"]["all_labelled"]["idf1"] == 1.0
+    # Arm (b) has no tracks-ext: every named cell is without a track, and the table says so.
+    b_ext = next(a for a in extended["arms"] if a["arm"] == "b")
+    assert b_ext["has_tracks"] is False
+    named = b_ext["identity"]["all_labelled"]
+    assert named["cells_without_track"] == named["cells"] > 0 and named["idf1"] == 0.0
+    table = fa.scoreboard_markdown(extended)
+    assert "Track ids from `<arm>/tracks-ext/tracks.jsonl` (absent for: a, b)." in table
+    assert "Track ids from `<arm>/tracks/tracks.jsonl`." in fa.scoreboard_markdown(core)
+    code = fa.main(
+        [
+            "score",
+            "--workspace",
+            str(workspace),
+            "--record",
+            str(record),
+            "--arms",
+            f"c={arms['c']}",
+            "--tracks-dir",
+            "tracks-ext",
+            "--output",
+            str(root / "runs" / "score-ext"),
+        ]
+    )
+    assert code == 0
+    written = json.loads((root / "runs" / "score-ext" / "anchor_scoreboard.json").read_text())
+    assert written["tracks_dir"] == "tracks-ext"
+    assert written["arms"][0]["identity"]["six_view_frame"]["idf1"] == 1.0
+    assert "tracks-ext/tracks.jsonl" in capsys.readouterr().out
+
+
 def test_record_validation_and_arm_parsing(synthetic):
     root, workspace = synthetic["root"], synthetic["workspace"]
     template = json.loads((workspace / "decisions.template.json").read_text())

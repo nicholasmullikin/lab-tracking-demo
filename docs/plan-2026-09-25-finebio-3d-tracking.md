@@ -370,9 +370,11 @@ evidence on a handful of frames, one person's choice of decoder masks; the shipp
 trained on FineBio's own objects and cameras, so its seeding quality is an upper bound for a new
 lab's bench"; "FineBio non-commercial research; nothing under `data/` or `runs/` is committed;
 no sharing determination is made by this plan"; "the plan runs without ground truth, and the
-human anchors are the only truth". No anchor was labelled, so **no human-anchored number exists
-anywhere in this phase**; every IoU is agreement between a SAM3 mask and the FineBio detector's
-box, model against model.
+human anchors are the only truth". At the close no anchor was labelled, so no human-anchored
+number existed; every IoU was agreement between a SAM3 mask and the FineBio detector's box,
+model against model. **Amended Sep 27:** gate 2 was held on trial 1 (337 / 440 cells), and the
+`p6-anchors` row and the first "what stays open" bullet below carry the human-anchored numbers
+(ledger entry "Sep 27: gate 2 held, the anchor scoreboard on trial 1 (p6-anchors)").
 
 ### Per todo
 
@@ -394,7 +396,7 @@ box, model against model.
 | `p5-confidence` | done | five label-free signals ranked within the arm; abstain (b) 0.723 over all rows and 0.070 on the rows with all five signals; DINO-vs-DDETR agreement near-redundant (0.73-0.87 in the lowest confidence quartile, 0.96-0.97 in the highest) |
 | `p5-events` | done | (b) contained 145, held 64, proximity 0 on the core tracks; on `tracks-ext/` contained 45 and one tube `contained` through both closures |
 | `p5-viewer` | done | one recording per build: 915.6 MB, 508 entity paths, 44,448 mask cut-outs, `rerun rrd verify` clean; three validated presets; the seven cross-checks and the camera-6 negative control standing; ten storyboard items |
-| `p6-anchors` | prepared, awaiting the human | 440 cells on 18 frames (916 in six views, 12 disagreement, 5 random), 337 with decoded candidates; 0 labelled; the scoreboard runs on the empty record |
+| `p6-anchors` | held on trial 1 (Sep 27) | **337 / 440 cells labelled** (every cell with a detector box; the 103 box-less cells `null`): arm (b)'s own mask accepted on 307, another decoder candidate on 18, the box rejected on 12 (4 hidden, 8 none_fits; nine of them the blue-pipette slot sitting on the red pipette's box); six identities (five static singletons + `red_pipette` on the T2 `blue_pipette#0` cell). Mask IoU vs the accepted candidate: (b) **1.000 median / 0.984 mean / 98.8% >= 0.5** (1.0 on every accepted c0, the built-in check), (c) 0.965 / 0.897 / 93.5%, (d) 0.961 / 0.871 / 91.7%; (a) boxes-only box IoU 0.929 / 0.903 vs (b) 0.975, (c) 0.901, (d) 0.867; hidden FP 4 per SAM3 arm; IDF1 pooled (c) 0.962 > (a) 0.956 > (d) 0.950 > (b) 0.921 (the centrifuge: one id in (c)/(d), two in (a)/(b) across the lid cycles), (b) 1.000 on the six-view frame; core and ext identical (every named object static). The human-anchored ranking agrees with the label-free one, (b) > (c) > (d), with a 5-point gap on >= 0.5 instead of 20; record `docs/qa/finebio-P03_03_01-review-anchors.human-record.json` |
 | `p6-trial2` | done | trial 2 with the trial id swapped and nothing else: (b) 0.919 / 98.5%, (c) 0.883 / 65.3%; both trials in the viewer (trial 2: 817.2 MB, 399 entity paths, 37,058 masks, verify clean) |
 | `p-docs` | done | 17 Part 2 ledger entries for the phase (contracts to close-out), the plan copy with this section, the review guide over both trials, the README section |
 
@@ -451,14 +453,20 @@ box, model against model.
 
 ### What stays open
 
-- **Gate 1 was held on trial 1 on Sep 26** (52 / 6 / 2; filtered seeds written, arms not re-run
-  on them; trial 2 undecided). **Gate 2 is unlabelled**, so no human-anchored number exists (gate
-  1 filters seeds and anchors nothing): the arms are ranked on label-free measures only, and
-  every "IoU" in this phase is model-vs-model agreement. The workspaces
-  (`runs/finebio-seeds-<trial>-20260925/with-plate/sheets/`,
-  `runs/finebio-anchors-P03_03_01-20260925/`) and the briefs
-  ([`labeling-sessions-2026-09-25-finebio.md`](labeling-sessions-2026-09-25-finebio.md)) stand;
-  the scoreboard re-runs when labels land.
+- **Both soft gates were held on trial 1** (gate 1 Sep 26: 52 / 6 / 2, filtered seeds written,
+  arms not re-run on them; gate 2 Sep 27: 337 / 440 cells, the scoreboard above). What the
+  human-anchored numbers settle: the mask ranking (b) > (c) > (d) holds on a human's choice of
+  masks, with a smaller gap than the label-free one; masks pay over the detector's boxes on the
+  static bench objects and lose on the tubes and the held pipettes; video memory's identity win
+  (the centrifuge through the lid cycles) holds on human names. What they leave open: no tube or
+  held pipette was named, so per-tube identity, the pipette's fragmentation and the
+  core-vs-extensions identity difference have no human-anchored reading; the 103 box-less cells
+  are `null`, so hidden false positives on detector-less frames are unmeasured; the T2
+  `blue_pipette#0` slot is the red pipette (the human's name) and arm (b)'s track puts it under
+  a blue-pipette id with T1's and T3's boxes, countable as a merge only once the counterpart
+  cells are named; the gate-1 filtered seeds were not applied to the arms before scoring; trial 2
+  has neither gate (66 seed tiles undecided, no anchor set chosen). Every "IoU vs the detector
+  box" elsewhere in this document is still model-vs-model agreement.
 - **Proximity events are zero by protocol**: no pipette comes within 30 cm of the plate in
   either window (the plate is a bench object in protocol 03). The mechanism is tested on
   synthetic tracks only.

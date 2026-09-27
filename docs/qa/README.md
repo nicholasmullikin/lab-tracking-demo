@@ -113,3 +113,19 @@ sheets, masks and filtered worker files stay under gitignored
 `runs/finebio-seeds-P03_03_01-20260925/` (FineBio licence). It is a seed filter, not an anchor
 and not ground truth; the ledger entry "Sep 26: gate 1 held, seed decisions on trial 1
 (p2-gate1)" describes the fields and the tile check.
+
+## FineBio gate 2, review anchors on trial 1 (held Sep 27)
+
+`finebio-P03_03_01-review-anchors.human-record.json` is written by `battle-finebio-anchors
+export` from the gitignored workspace `runs/finebio-anchors-P03_03_01-20260925/`: one entry per
+anchor cell (440 = 40 frame-views x 11 slots; frame 916 in six views, 12 disagreement and 5
+random frames on the fpv and T4) with its `state` (`mask` 325, `hidden` 4, `none_fits` 8,
+`unlabeled` 103: the cells without a detector box), the accepted candidate's index and kind
+(`arm_b_tight` 307, `tight_rank2` 8, `box_point` 6, `margin` 4), the SHA-256 and pixel area of
+the accepted mask PNG, and the human's `instance_identity` (six names); plus the counts, the
+anchor config's and the `decisions.json`'s URI and SHA-256, `author`, and the claim boundary. The
+masks, sheets and the decisions file stay under `runs/` (FineBio licence). It is the human's
+decision record for ranking the tracking arms (a)-(d) against each other, one person's choice
+among decoder masks on 18 frames of one trial, not a dataset and not ground truth; the scoreboard
+against it and the read-back are in the ledger entry "Sep 27: gate 2 held, the anchor scoreboard
+on trial 1 (p6-anchors)".

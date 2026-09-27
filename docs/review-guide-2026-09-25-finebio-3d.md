@@ -18,9 +18,10 @@ only.
 trained on FineBio's own bench and on frames from these cameras, so its boxes, and every SAM3
 mask prompted from them, are agreement between two models, not accuracy. "Confidence" ranks a
 track's rows within one arm by five label-free signals; it is not a probability of being right.
-Events are geometry on 3D tracks against volumes derived from the rig. No human anchor exists yet
-(`p6-anchors`); the human-facing frame is the six-view annotated frame 916, which the storyboard
-lands on.
+Events are geometry on 3D tracks against volumes derived from the rig. The recordings predate
+gate 2; the human-anchored numbers that exist since Sep 27 (trial 1 only, 337 cells) are under
+[Key numbers](#key-numbers) and rank the arms without making any of this accuracy. The
+human-facing frame is the six-view annotated frame 916, which the storyboard lands on.
 
 ## Open
 
@@ -177,6 +178,30 @@ model vs model): (b) per-frame decode 0.926 median / 99.1% >= 0.5; (c) video mem
 arm here. Identity: tracks born 285 / 308 / 270 / 264 (a / b / c / d), the plate and the
 machines one id each in every arm, the centrifuge one id in (c)/(d) and 8-9 in (a)/(b), the
 in-hand blue pipette 47 / 80 / 30 / 22 ids.
+
+**Human-anchored numbers (gate 2, held Sep 27 on trial 1; not in the recordings).** One person
+chose, on 337 of the 440 anchor cells (18 frames: 916 in six views, 12 disagreement and 5 random
+frames on the fpv and T4; the 103 cells without a detector box left unlabelled), which SAM3
+image-decoder mask is the object, or that the box is not: arm (b)'s own mask on 307, another
+candidate on 18, the box rejected on 12 (nine of them the blue-pipette slot sitting on the red
+pipette). Against the accepted masks: **(b) 1.000 median / 0.984 mean / 98.8% >= 0.5 IoU** (1.0
+wherever its own mask was accepted, the scorer's built-in check), **(c) 0.965 / 0.897 / 93.5%**,
+**(d) 0.961 / 0.871 / 91.7%**; the boxes-only arm (a) 0.929 median box IoU against (b) 0.975 and
+(c) 0.901. The same order as the label-free scoreboard above, with a 5-point gap on the fraction
+>= 0.5 instead of 20: the 18 frames sample the dead memory slots (13 (c) cells at 0.000, the fpv
+8-channel pipette and 15 ml tube and the T4 blue pipette) rather than counting every frame of
+them. Masks pay over the detector's boxes on the static bench objects, the red pipette and the
+tube strip, tie on the yellow pipette, and lose to the boxes on the tubes and the held pipettes.
+Identity on the six names given (five static singletons and `red_pipette` on the T2
+`blue_pipette#0` cell): pooled IDF1 (c) 0.962 > (a) 0.956 > (d) 0.950 > (b) 0.921, the whole
+difference being the centrifuge (one id in (c)/(d), two in (a)/(b) across the lid cycles, the
+storyboard's item 1 read on a human name), (b) 1.000 on the six-view frame; `tracks-ext/` gives
+the same identity numbers because no tube or held pipette was named. The record without pixels is
+[`docs/qa/finebio-P03_03_01-review-anchors.human-record.json`](qa/finebio-P03_03_01-review-anchors.human-record.json);
+the tables are in `runs/finebio-anchors-P03_03_01-20260925/scoreboard/README.md` and the ledger
+entry "Sep 27: gate 2 held, the anchor scoreboard on trial 1 (p6-anchors)". These numbers say
+which arm's masks a human chose and how far the others are from that choice on 18 frames of one
+trial; they rank arms and are not accuracy.
 
 Confidence (`checks/confidence/<arm>`; five signals ranked within the arm: detector-vs-mask bbox
 IoU, cross-view residual, SAM3 object score, detector score, support; abstain when support < 2,

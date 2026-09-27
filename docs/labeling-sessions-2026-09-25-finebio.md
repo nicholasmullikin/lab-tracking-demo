@@ -131,6 +131,13 @@ The default when you do nothing: every seed stays, `provenance: auto`, and the l
 
 # Gate 2 (soft), Sep 25: review anchors on trial 1, about 1.5 hours, no GPU
 
+**Held Sep 27** through the web workspace: 337 / 440 cells (every cell with a detector box),
+arm (b)'s mask accepted on 307, another candidate on 18, the box rejected on 12, six identities;
+scoreboard and read-back in the ledger entry "Sep 27: gate 2 held, the anchor scoreboard on
+trial 1 (p6-anchors)", the committed record in
+[`qa/finebio-P03_03_01-review-anchors.human-record.json`](qa/finebio-P03_03_01-review-anchors.human-record.json).
+The brief below stands as written for the record and for a trial-2 set.
+
 The `p6-anchors` todo of the FineBio 3D-tracking plan
 ([`plan-2026-09-25-finebio-3d-tracking.md`](plan-2026-09-25-finebio-3d-tracking.md)). **Nothing
 waits for this sitting either.** The frames were chosen and the candidate masks decoded as soon
@@ -293,6 +300,9 @@ uv run battle-finebio-anchors score \
   --record runs/finebio-anchors-P03_03_01-20260925/decisions.json \
   --arms a=runs/finebio-arms-P03_03_01-20260925/a-boxes-only,b=runs/finebio-arms-P03_03_01-20260925/b-box-decode-arm,c=runs/finebio-arms-P03_03_01-20260925/c-video-memory-arm,d=runs/finebio-arms-P03_03_01-20260925/d-video-memory-arm \
   --output runs/finebio-anchors-P03_03_01-20260925/scoreboard
+# the same on the tracker extensions' ids (identity columns only change; arm (d) has no tracks-ext):
+uv run battle-finebio-anchors score ... --arms a=...,b=...,c=... --tracks-dir tracks-ext \
+  --output runs/finebio-anchors-P03_03_01-20260925/scoreboard/ext
 # the committed skeleton of your record (states, hashes, identities; no pixels):
 uv run battle-finebio-anchors export \
   --workspace runs/finebio-anchors-P03_03_01-20260925 \
@@ -307,7 +317,8 @@ its detector box for the boxes-only arm (a), and the candidate's bbox (the refer
 on a cell you marked hidden; per class, per view, per origin (six-view / disagreement / random)
 and inside the centrifuge neighbourhoods. **Identity**: on every labelled cell with an
 `instance_identity`, the tracker's 3D track id behind the arm's row is looked up
-(`tracks.jsonl`, `support_slots`), and identity F1 is computed between your names and the track
+(`<arm>/tracks/tracks.jsonl` by default, `--tracks-dir tracks-ext` for the extensions' ids;
+`support_slots`), and identity F1 is computed between your names and the track
 ids (maximum one-to-one matching; IDF1 = 2 IDTP / (cells with a name + cells with a track)), on
 frame 916 across the six cameras and pooled over every labelled frame, with the number of names
 split across several ids, ids covering several names, and named cells the tracker has no track
