@@ -3,8 +3,9 @@
 The detector (`battle-finebio-detect`) gives class and box per view and frame; this tool
 decides **which objects get a SAM3 slot in which view**, where each slot starts, and whether
 the SAM3 image decoder accepts the detector box as a seed. Nothing here uses ground truth or a
-human; the human's part is gate 1 (`sheets`, `docs/labeling-sessions-2026-09-25-finebio.md`),
-applied afterwards as a filter (`apply-decisions`).
+human; the human's part is gate 1 (`sheets`,
+`docs/archive/labeling-sessions-2026-09-25-finebio.md`), applied afterwards as a filter
+(`apply-decisions`).
 
 Steps (one run directory, each step reads the previous one's files)::
 

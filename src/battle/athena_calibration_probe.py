@@ -21,7 +21,7 @@ DEFAULT_REPO = "cvml-nus/assembly101"
 DEFAULT_REVISION = "bfc15ea5e3f0bc8f8c232af6c1b45aa137a9d967"
 DEFAULT_ARCHIVE = "AssemblyPoses.zip"
 DEFAULT_RECORDING = "nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532"
-DEFAULT_OUTPUT = Path("docs/athena_hf_calibration_probe.json")
+DEFAULT_OUTPUT = Path("docs/archive/athena_hf_calibration_probe.json")
 CALIBRATION_PATTERNS = (
     "camera_extrinsics",
     "camera_position",

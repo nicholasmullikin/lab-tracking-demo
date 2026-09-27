@@ -377,7 +377,7 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
 ## Approved local source: FineBio (Sep 21, 2026)
 
 - Status: `access granted`; local handling approved for the non-commercial research
-  smoke recorded in `docs/method-ledger.md` ("Sep 21: FineBio first look"). No
+  smoke recorded in `docs/archive/method-ledger.md` ("Sep 21: FineBio first look"). No
   determination has been made about demos, job-seeking or any display beyond the local
   procedure; obtain one before sharing anything derived from these videos.
 - Dataset: FineBio, "FineBio: A Fine-Grained Video Dataset of Biological Experiments with
@@ -454,7 +454,7 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
 - Status: `access granted` under the same signed FineBio licence agreement as the videos
   above (non-commercial research/development, citation of Yagi et al., IJCV 2025); local
   handling approved for the 3D object tracking plan
-  ([`docs/plan-2026-09-25-finebio-3d-tracking.md`](plan-2026-09-25-finebio-3d-tracking.md)). No
+  ([`docs/archive/plan-2026-09-25-finebio-3d-tracking.md`](archive/plan-2026-09-25-finebio-3d-tracking.md)). No
   determination has been made about any display beyond the local procedure. The dataset
   README (`github.com/aistairc/FineBio`, read Sep 24) notes the licence agreement was updated
   on 2026-09-10; which version the user signed is the user's record, not the repository's.

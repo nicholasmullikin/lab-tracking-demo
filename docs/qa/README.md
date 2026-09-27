@@ -8,7 +8,7 @@ SHA-256.
 The preserved Sep 8 plan defines the fixed rule, not literal times: every completed method
 must be reviewed at the same two source-timeline instants, one representative easy
 manipulation and one hard/occluded manipulation
-([plan lines 70–77](../plan-2026-09-08-assembly-rerun-lab.md#pre-accuracy-success-measures)).
+([plan lines 70–77](../archive/plan-2026-09-08-assembly-rerun-lab.md#pre-accuracy-success-measures)).
 It also says those times belong in the clip manifest, but the approved manifests predate
 that field and do not contain them. Existing full-run sheets use three convenience samples
 at proxy times 0.000, 90.000, and 179.967 seconds; they are not evidence that any sample was

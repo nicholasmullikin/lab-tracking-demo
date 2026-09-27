@@ -1,7 +1,7 @@
 # FineBio preflight fixtures (P03_01_01, Sep 24, 2026)
 
 Numeric derived data from the FineBio preflight of Sep 24
-([`docs/preflight-2026-09-24-finebio.md`](../../../docs/preflight-2026-09-24-finebio.md)),
+([`docs/archive/preflight-2026-09-24-finebio.md`](../../../docs/archive/preflight-2026-09-24-finebio.md)),
 converted into the `p0-contracts` schemas so the tracker lane can develop against six real
 views without `data/`, `runs/` or a GPU. Loader: `tests/finebio_fixtures.py`
 (`load_preflight_fixtures()`); tests: `tests/test_finebio_fixtures.py`.
@@ -11,7 +11,8 @@ views without `data/`, `runs/` or a GPU. Loader: `tests/finebio_fixtures.py`
 FineBio is licensed for non-commercial research. This directory holds **numbers only**:
 detector boxes and scores, SAM3 mask bounding boxes, areas and scores, camera intrinsics,
 extrinsics and per-frame poses, and residual statistics. No video frame, video, mask image,
-contact sheet or Rerun recording is committed here or anywhere else in the repository.
+contact sheet or Rerun recording is committed here. The only FineBio pixels in the repository
+are the story media under `media/story/` (see `docs/LICENSES.md`, "Committed media (Sep 27)").
 
 ## Files
 

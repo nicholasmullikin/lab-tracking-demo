@@ -3,13 +3,13 @@
 One-off helpers from the Sep 9-16 phases, moved here at the Assembly101 close so `scripts/`
 holds only what is still run. Each still runs from this directory with
 `uv run python scripts/archive/<name>.py`; the run roots they read or wrote are cited by
-`docs/method-ledger.md` and are kept on disk (none is in the Sep 24 archive list,
-`docs/qa/runs-archive-list-2026-09-24.md`, and none was deleted in the Sep 24 cleanup pass).
+`docs/archive/method-ledger.md` and are kept on disk (none is in the Sep 24 archive list,
+`docs/archive/qa/runs-archive-list-2026-09-24.md`, and none was deleted in the Sep 24 cleanup pass).
 
 - `compare_frame_rate_arms.py`: the 30 vs 60 fps arm comparison keyed on source seconds
   (Sep 13 evening); read the three `runs/muggledsam-sam3-smoke-manual-seed-multiplexed-ego-hmc21179183-20260913t22{3959,4508,4556}z`
   arms and wrote `runs/frame_rate_comparison.json`, copied to
-  `docs/frame-rate-comparison-2026-09-13.json`.
+  `docs/archive/frame-rate-comparison-2026-09-13.json`.
 - `report_e4_candidate.py`: continuity measures (`e4_candidate_report.json`) for the Sep 9
   e4-only 60-second candidate, `runs/muggledsam-sam3-g4-e4-candidate-ego-hmc21179183-20260909t033519z`.
 - `report_ego_viewpoint_screen.py`: `viewpoint_screen_report.json` for the Sep 9 four-view

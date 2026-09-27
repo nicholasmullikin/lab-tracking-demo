@@ -178,7 +178,7 @@ def test_missing_vigra_reports_a_clear_error_instead_of_a_silent_substitute(
     assert unavailable_operator_ids(settings) == ("canny", "corner_response")
     description = describe_pipeline()
     assert description["vigra_available"] is False
-    assert "docs/vigra-build.md" in description["unavailable_reason"]
+    assert "docs/archive/vigra-build.md" in description["unavailable_reason"]
     assert [item["id"] for item in description["operators"] if not item["available"]] == [
         "canny",
         "zero_crossings",

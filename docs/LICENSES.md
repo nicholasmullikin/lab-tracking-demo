@@ -2,8 +2,9 @@
 
 This repository contains original code, configuration, and synthetic test coordinates.
 It includes no third-party recordings, annotations, model weights, or copied
-third-party source code. The ignored local `data/` directory contains approved G2
-inputs outside Git.
+third-party source code. Since Sep 27 it also holds rendered frames from two licensed
+datasets under `media/story/`; see "Committed media (Sep 27)" below. The ignored local
+`data/` directory contains approved G2 inputs outside Git.
 
 ## Noncommercial and provenance constraints
 
@@ -25,7 +26,8 @@ inputs outside Git.
   exact raw recordings and their 180-second, audio-free proxies. This is provenance
   approval for the local smoke procedure, not a legal conclusion that a job-seeking,
   private demo, or public display is noncommercial. Raw video, proxy video, derived
-  masks, annotations, and RRD files remain ignored and must not be redistributed.
+  masks, annotations, and RRD files remain ignored and must not be redistributed. The
+  one exception is the story media under `media/story/` (see "Committed media (Sep 27)").
 - **Assembly101 poses and fine-grained annotations (Sep 17):** the same `CC BY-NC 4.0`
   terms and citation (Sener et al., CVPR 2022) cover the selectively acquired hand poses,
   extrinsics, and this recording's fine-grained rows, and the derived reference window under
@@ -117,12 +119,28 @@ inputs outside Git.
   al. (CVPR 2020) hand-object detector on the IDEA DINO codebase; the FineBio README asks that
   the underlying methods be cited if the baselines are used, and only the two object detectors
   are used here. Everything under `data/raw/finebio/misc/` and `data/raw/finebio/ckpts/` stays
-  outside Git, as does every frame, video, mask, contact sheet and `.rrd` derived from the
-  videos (the Sep 24 trial-selection images under `runs/preflight-finebio-20260924/trials/`
-  included). What the repository commits from these sources is numbers: per-trial camera
-  configs fitted to or copied from the dataset's calibration, trial windows, centrifuge lid
-  intervals, pose validity fractions and the preflight observation fixtures, attributed to the
-  dataset. No sharing determination beyond the local procedure is made.
+  outside Git, as does every video and `.rrd` derived from the videos and every frame, mask
+  and contact sheet under `runs/` (the Sep 24 trial-selection images under
+  `runs/preflight-finebio-20260924/trials/` included). Until Sep 27, what the repository
+  committed from these sources was numbers: per-trial camera configs fitted to or copied from
+  the dataset's calibration, trial windows, centrifuge lid intervals, pose validity fractions
+  and the preflight observation fixtures, attributed to the dataset. Since Sep 27 it also
+  commits the rendered story media described in the next section. No sharing determination
+  beyond the local procedure is made.
+
+## Committed media (Sep 27)
+
+`media/story/` holds GIFs and stills rendered on Sep 27 by `battle-story-media` from the
+proxies, masks and tracks this lab produced, with `media/story/manifest.json` naming the
+source of every file. They are the first pixels from either dataset committed to Git.
+The Assembly101 frames are covered by `CC BY-NC 4.0` (Sener et al., CVPR 2022) and are
+attributed to the dataset. The FineBio frames come from a gated dataset whose licence
+agreement limits use to non-commercial research and requires citation of Yagi et al.,
+IJCV 2025. This repository is private and has no remote, which is the only reason these
+files are in it. Before any redistribution, sharing of the repository, publication of a
+clone or push to a remote, every file under `media/story/` must be removed from the tree
+and from history, or a rights determination obtained for each dataset. Committing them
+makes no sharing determination and does not change the terms above.
 
 ## Dependency and future-model review
 

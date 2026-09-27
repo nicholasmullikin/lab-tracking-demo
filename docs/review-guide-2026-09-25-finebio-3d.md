@@ -3,16 +3,20 @@
 One Rerun recording per trial window (raw frames [600, 4200), 20.02-140.14 s, six views)
 with three layout presets, built by `battle-finebio-viewer` from the tracking arms, the
 confidence and events passes, the rig check, the seeds and the lane-B proxies
-(plan `docs/plan-2026-09-25-finebio-3d-tracking.md`, todos `p5-confidence`, `p5-events`,
-`p5-viewer`, `p6-trial2`; ledger entries "Sep 25: confidence, events and the review recording"
-and "Sep 25: FineBio 3D tracking phase, close-out"). The first part of this guide describes the
+(plan [`docs/archive/plan-2026-09-25-finebio-3d-tracking.md`](archive/plan-2026-09-25-finebio-3d-tracking.md),
+todos `p5-confidence`, `p5-events`, `p5-viewer`, `p6-trial2`; ledger entries "Sep 25: confidence,
+events and the review recording" and "Sep 25: FineBio 3D tracking phase, close-out" in
+[`docs/archive/method-ledger.md`](archive/method-ledger.md)). The first part of this guide describes the
 trial-1 recording on the core tracker; the trial-2 recording (room 2, built on the tracker
 extensions with nothing tuned) and the two-trial scoreboard are in
 [Trial 2](#trial-2-p20_03_01-room-2-the-same-build-on-the-second-trial), and a 20-minute route
 through both is in [What to look at first](#what-to-look-at-first-20-minutes-both-trials).
-Nothing in the recordings is committed (FineBio licence: they hold the proxy videos and SAM3
+The recordings are not committed (FineBio licence: they hold the proxy videos and SAM3
 masks); the presets under `configs/rerun/finebio_{world,cameras,evidence}.rbl` hold entity paths
-only.
+only. The one set of FineBio pixels in Git is the story media under `media/story/`, GIFs and
+stills rendered on Sep 27 from these same proxies and masks; `docs/LICENSES.md` ("Committed
+media (Sep 27)") states the terms they carry and that they must be removed before any
+redistribution.
 
 **Claim boundary, read first.** Everything drawn is model output. The FineBio DINO detector was
 trained on FineBio's own bench and on frames from these cameras, so its boxes, and every SAM3

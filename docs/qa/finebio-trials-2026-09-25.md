@@ -1,6 +1,6 @@
 # FineBio trials, Sep 25, 2026: the two windows the 3D tracking plan runs on (`p0-trials`)
 
-The plan ([`plan-2026-09-25-finebio-3d-tracking.md`](../plan-2026-09-25-finebio-3d-tracking.md),
+The plan ([`archive/plan-2026-09-25-finebio-3d-tracking.md`](../archive/plan-2026-09-25-finebio-3d-tracking.md),
 todo `p0-trials`) asked for a ~120 s window of `P03_03_01` that contains the six-view annotated
 frame 916 and at least two centrifuge cycles, chosen from a top-down contact sheet with the
 centrifuge lid state read per frame, and for `P20_03_01` (room 2, same protocol) as the second

@@ -8,7 +8,7 @@ arrays; the caller keeps decoding from the original source pixels.
 
 Edge and corner operators call VIGRA (https://ukoethe.github.io/vigra/) directly. VIGRA
 is not on PyPI and cannot come from ``uv.lock``: it is built from source and installed
-into the project virtual environment (see ``docs/vigra-build.md``). When it is absent
+into the project virtual environment (see ``docs/archive/vigra-build.md``). When it is absent
 those operators are reported as unavailable instead of being silently approximated, so
 a reader can never mistake a substitute for VIGRA's own result. Brightness, contrast,
 and adaptive threshold are plain NumPy because VIGRA does not provide them.
@@ -67,7 +67,7 @@ def vigra_unavailable_reason() -> str | None:
         return None
     return (
         f"VIGRA is not importable ({VIGRA_IMPORT_ERROR}); VIGRA-backed aids are "
-        "disabled. Build it with docs/vigra-build.md."
+        "disabled. Build it with docs/archive/vigra-build.md."
     )
 
 
