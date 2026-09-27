@@ -95,6 +95,7 @@ battle-finebio-anchors-web = "battle.finebio_anchors_web:main"
 battle-finebio-confidence = "battle.finebio_confidence:main"
 battle-finebio-events = "battle.finebio_events:main"
 battle-finebio-viewer = "battle.finebio_viewer:main"
+battle-story-media = "battle.story_media:main"
 
 [build-system]
 requires = ["uv_build>=0.11.2,<0.12.0"]

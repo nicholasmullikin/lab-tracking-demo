@@ -1,0 +1,2133 @@
+{
+  "schema": "battle-story-media/1/output",
+  "config": "configs/story/media.json",
+  "renderer": "battle-story-media render",
+  "entries": [
+    {
+      "id": "text-prompts-fail",
+      "day": "2026-09-08",
+      "kind": "grid",
+      "caption": "Text prompts fail: 'toy wheel' never appears and the ego view finds only the hand",
+      "struggle": "Text prompting the toy vocabulary: 'toy wheel' is never initialised on either camera and the monochrome ego view initialises only 'hand'.",
+      "output": "media/story/2026-09-08-text-prompts-fail.gif",
+      "size_bytes": 1135635,
+      "sources": [
+        {
+          "label": "static C10379: hand / yellow toy body / toy wheel",
+          "video": "runs/muggledsam-sam3-smoke-static-c10379-20260909t025854z/input_smoke_300f.mp4",
+          "observations": "runs/muggledsam-sam3-smoke-static-c10379-20260909t025854z/observations.jsonl"
+        },
+        {
+          "label": "ego HMC21110305: same three text prompts",
+          "video": "runs/muggledsam-sam3-smoke-ego-hmc21110305-20260909t025910z/input_smoke_300f.mp4",
+          "observations": "runs/muggledsam-sam3-smoke-ego-hmc21110305-20260909t025910z/observations.jsonl"
+        }
+      ],
+      "frames": {
+        "start": 60,
+        "stop": 300,
+        "stride": 6
+      },
+      "fps": 10,
+      "duration_seconds": 4.0,
+      "width": 640,
+      "options": {
+        "columns": 2
+      },
+      "fallback": null,
+      "detail": {
+        "tiles": [
+          {
+            "label": "static C10379: hand / yellow toy body / toy wheel",
+            "video": "runs/muggledsam-sam3-smoke-static-c10379-20260909t025854z/input_smoke_300f.mp4",
+            "observations": "runs/muggledsam-sam3-smoke-static-c10379-20260909t025854z/observations.jsonl",
+            "run": "runs/muggledsam-sam3-smoke-static-c10379-20260909t025854z",
+            "frame_offset": 0,
+            "crop": null,
+            "view": null
+          },
+          {
+            "label": "ego HMC21110305: same three text prompts",
+            "video": "runs/muggledsam-sam3-smoke-ego-hmc21110305-20260909t025910z/input_smoke_300f.mp4",
+            "observations": "runs/muggledsam-sam3-smoke-ego-hmc21110305-20260909t025910z/observations.jsonl",
+            "run": "runs/muggledsam-sam3-smoke-ego-hmc21110305-20260909t025910z",
+            "frame_offset": 0,
+            "crop": null,
+            "view": null
+          }
+        ]
+      },
+      "encode": {
+        "attempts": [
+          {
+            "colours": 128,
+            "scale": 1.0,
+            "width": 640,
+            "size_bytes": 1536041
+          },
+          {
+            "colours": 64,
+            "scale": 1.0,
+            "width": 640,
+            "size_bytes": 1135635
+          }
+        ],
+        "size_bytes": 1135635,
+        "target_bytes": 1500000,
+        "max_bytes": 3000000
+      }
+    },
+    {
+      "id": "box-seed-fix",
+      "day": "2026-09-09",
+      "kind": "grid",
+      "caption": "Text prompts gave one hand; human box seeds on frame 0 give both hands and both toy parts",
+      "struggle": "The fix for the ego failure: human box seeds on frame 0 instead of text prompts. Left, the Sep 8 text-prompt smoke (one hand and nothing else); right, the Sep 9 four-target ego run seeded by human boxes, both starting at source 215 s.",
+      "output": "media/story/2026-09-09-box-seed-fix.gif",
+      "size_bytes": 1406690,
+      "sources": [
+        {
+          "label": "Sep 8: three text prompts (ego HMC21110305)",
+          "video": "runs/muggledsam-sam3-smoke-ego-hmc21110305-20260909t025910z/input_smoke_300f.mp4",
+          "observations": "runs/muggledsam-sam3-smoke-ego-hmc21110305-20260909t025910z/observations.jsonl"
+        },
+        {
+          "label": "Sep 9: four human box seeds (ego HMC21179183)",
+          "video": "runs/muggledsam-sam3-full-ego-manual-seed-multiplexed-ego-hmc21179183-20260910t024052z/input_5400f.mp4",
+          "observations": "runs/muggledsam-sam3-full-ego-manual-seed-multiplexed-ego-hmc21179183-20260910t024052z/observations.jsonl"
+        }
+      ],
+      "frames": {
+        "start": 60,
+        "stop": 300,
+        "stride": 6
+      },
+      "fps": 10,
+      "duration_seconds": 4.0,
+      "width": 640,
+      "options": {
+        "columns": 2
+      },
+      "fallback": null,
+      "detail": {
+        "tiles": [
+          {
+            "label": "Sep 8: three text prompts (ego HMC21110305)",
+            "video": "runs/muggledsam-sam3-smoke-ego-hmc21110305-20260909t025910z/input_smoke_300f.mp4",
+            "observations": "runs/muggledsam-sam3-smoke-ego-hmc21110305-20260909t025910z/observations.jsonl",
+            "run": "runs/muggledsam-sam3-smoke-ego-hmc21110305-20260909t025910z",
+            "frame_offset": 0,
+            "crop": null,
+            "view": null
+          },
+          {
+            "label": "Sep 9: four human box seeds (ego HMC21179183)",
+            "video": "runs/muggledsam-sam3-full-ego-manual-seed-multiplexed-ego-hmc21179183-20260910t024052z/input_5400f.mp4",
+            "observations": "runs/muggledsam-sam3-full-ego-manual-seed-multiplexed-ego-hmc21179183-20260910t024052z/observations.jsonl",
+            "run": "runs/muggledsam-sam3-full-ego-manual-seed-multiplexed-ego-hmc21179183-20260910t024052z",
+            "frame_offset": 0,
+            "crop": null,
+            "view": null
+          }
+        ]
+      },
+      "encode": {
+        "attempts": [
+          {
+            "colours": 128,
+            "scale": 1.0,
+            "width": 640,
+            "size_bytes": 1872093
+          },
+          {
+            "colours": 64,
+            "scale": 1.0,
+            "width": 640,
+            "size_bytes": 1406690
+          }
+        ],
+        "size_bytes": 1406690,
+        "target_bytes": 1500000,
+        "max_bytes": 3000000
+      }
+    },
+    {
+      "id": "keyframe-corrections",
+      "day": "2026-09-13",
+      "kind": "grid",
+      "caption": "Ego masks leak between keyframes; human corrections at 75, 150 and 240 reset them",
+      "struggle": "Monochrome ego masks leak between keyframes; the Sep 13 run applies human corrections at frames 75, 150 and 240 on the same clip as the Sep 9 seed-only run.",
+      "output": "media/story/2026-09-13-keyframe-corrections.gif",
+      "size_bytes": 1311564,
+      "sources": [
+        {
+          "label": "seed only (Sep 9)",
+          "video": "runs/muggledsam-sam3-smoke-manual-seed-multiplexed-ego-hmc21179183-20260909t223928z/input_300f.mp4",
+          "observations": "runs/muggledsam-sam3-smoke-manual-seed-multiplexed-ego-hmc21179183-20260909t223928z/observations.jsonl"
+        },
+        {
+          "label": "keyframe corrections 75 / 150 / 240",
+          "video": "runs/muggledsam-sam3-smoke-multi-keyframe-corrections-ego-hmc21179183-20260913t221457z/input_300f.mp4",
+          "observations": "runs/muggledsam-sam3-smoke-multi-keyframe-corrections-ego-hmc21179183-20260913t221457z/observations.jsonl"
+        }
+      ],
+      "frames": {
+        "start": 30,
+        "stop": 270,
+        "stride": 6
+      },
+      "fps": 10,
+      "duration_seconds": 4.0,
+      "width": 640,
+      "options": {
+        "columns": 2
+      },
+      "fallback": null,
+      "detail": {
+        "tiles": [
+          {
+            "label": "seed only (Sep 9)",
+            "video": "runs/muggledsam-sam3-smoke-manual-seed-multiplexed-ego-hmc21179183-20260909t223928z/input_300f.mp4",
+            "observations": "runs/muggledsam-sam3-smoke-manual-seed-multiplexed-ego-hmc21179183-20260909t223928z/observations.jsonl",
+            "run": "runs/muggledsam-sam3-smoke-manual-seed-multiplexed-ego-hmc21179183-20260909t223928z",
+            "frame_offset": 0,
+            "crop": null,
+            "view": null
+          },
+          {
+            "label": "keyframe corrections 75 / 150 / 240",
+            "video": "runs/muggledsam-sam3-smoke-multi-keyframe-corrections-ego-hmc21179183-20260913t221457z/input_300f.mp4",
+            "observations": "runs/muggledsam-sam3-smoke-multi-keyframe-corrections-ego-hmc21179183-20260913t221457z/observations.jsonl",
+            "run": "runs/muggledsam-sam3-smoke-multi-keyframe-corrections-ego-hmc21179183-20260913t221457z",
+            "frame_offset": 0,
+            "crop": null,
+            "view": null
+          }
+        ]
+      },
+      "encode": {
+        "attempts": [
+          {
+            "colours": 128,
+            "scale": 1.0,
+            "width": 640,
+            "size_bytes": 1741813
+          },
+          {
+            "colours": 64,
+            "scale": 1.0,
+            "width": 640,
+            "size_bytes": 1311564
+          }
+        ],
+        "size_bytes": 1311564,
+        "target_bytes": 1500000,
+        "max_bytes": 3000000
+      }
+    },
+    {
+      "id": "black-base-candidates",
+      "day": "2026-09-14",
+      "kind": "still",
+      "caption": "No text prompt finds the black base; the human picks its frame-0 mask from decoder candidates",
+      "struggle": "Five text-prompt variants for the black toy base were rejected (one latched onto an unrelated black fixture); the hybrid run seeds the base from a human-chosen frame-0 mask among the decoder's candidates.",
+      "output": "media/story/2026-09-14-black-base-candidates.png",
+      "size_bytes": 243396,
+      "sources": [
+        {
+          "label": "candidate 0",
+          "image": "runs/muggledsam-sam3-static-black-toy-top-base-calibration-20260914t022125z/results/t000000-b03_candidate-00_review.png"
+        },
+        {
+          "label": "candidate 1",
+          "image": "runs/muggledsam-sam3-static-black-toy-top-base-calibration-20260914t022125z/results/t000000-b03_candidate-01_review.png"
+        },
+        {
+          "label": "candidate 2",
+          "image": "runs/muggledsam-sam3-static-black-toy-top-base-calibration-20260914t022125z/results/t000000-b03_candidate-02_review.png"
+        },
+        {
+          "label": "candidate 3",
+          "image": "runs/muggledsam-sam3-static-black-toy-top-base-calibration-20260914t022125z/results/t000000-b03_candidate-03_review.png"
+        }
+      ],
+      "frames": null,
+      "fps": null,
+      "duration_seconds": null,
+      "width": 640,
+      "options": {
+        "columns": 2
+      },
+      "fallback": null,
+      "detail": {
+        "images": [
+          {
+            "image": "runs/muggledsam-sam3-static-black-toy-top-base-calibration-20260914t022125z/results/t000000-b03_candidate-00_review.png",
+            "label": "candidate 0",
+            "crop": null
+          },
+          {
+            "image": "runs/muggledsam-sam3-static-black-toy-top-base-calibration-20260914t022125z/results/t000000-b03_candidate-01_review.png",
+            "label": "candidate 1",
+            "crop": null
+          },
+          {
+            "image": "runs/muggledsam-sam3-static-black-toy-top-base-calibration-20260914t022125z/results/t000000-b03_candidate-02_review.png",
+            "label": "candidate 2",
+            "crop": null
+          },
+          {
+            "image": "runs/muggledsam-sam3-static-black-toy-top-base-calibration-20260914t022125z/results/t000000-b03_candidate-03_review.png",
+            "label": "candidate 3",
+            "crop": null
+          }
+        ]
+      },
+      "encode": null
+    },
+    {
+      "id": "exploratory-identity",
+      "day": "2026-09-15",
+      "kind": "overlay",
+      "caption": "Stable slots, unstable identities: chassis and cabin masks land on the same part",
+      "struggle": "The four-part exploratory full run: stable slot ids do not mean stable identities; chassis and cabin masks sit on one object at about 0.9 IoU in the first minutes.",
+      "output": "media/story/2026-09-15-exploratory-identity.gif",
+      "size_bytes": 1547420,
+      "sources": [
+        {
+          "label": "C10379 exploratory full run, four parts",
+          "video": "runs/muggledsam-sam3-four-part-static-full-exploratory-static-c10379-20260916t012945z/input_5901f.mp4",
+          "observations": "runs/muggledsam-sam3-four-part-static-full-exploratory-static-c10379-20260916t012945z/observations.jsonl",
+          "crop": "auto"
+        }
+      ],
+      "frames": {
+        "start": 30,
+        "stop": 190,
+        "stride": 4
+      },
+      "fps": 10,
+      "duration_seconds": 4.0,
+      "width": 560,
+      "options": {
+        "columns": 1
+      },
+      "fallback": null,
+      "detail": {
+        "tiles": [
+          {
+            "label": "C10379 exploratory full run, four parts",
+            "video": "runs/muggledsam-sam3-four-part-static-full-exploratory-static-c10379-20260916t012945z/input_5901f.mp4",
+            "observations": "runs/muggledsam-sam3-four-part-static-full-exploratory-static-c10379-20260916t012945z/observations.jsonl",
+            "run": "runs/muggledsam-sam3-four-part-static-full-exploratory-static-c10379-20260916t012945z",
+            "frame_offset": 0,
+            "crop": [
+              0.45187499999999997,
+              0.2821111111111111,
+              0.8067187499999999,
+              0.8887222222222222
+            ],
+            "view": null
+          }
+        ]
+      },
+      "encode": {
+        "attempts": [
+          {
+            "colours": 128,
+            "scale": 1.0,
+            "width": 560,
+            "size_bytes": 2181348
+          },
+          {
+            "colours": 64,
+            "scale": 1.0,
+            "width": 560,
+            "size_bytes": 1547420
+          }
+        ],
+        "size_bytes": 1547420,
+        "target_bytes": 1500000,
+        "max_bytes": 3000000
+      }
+    },
+    {
+      "id": "exploratory-arms",
+      "day": "2026-09-16",
+      "kind": "grid",
+      "caption": "Grounded-SAM-2 and SAMURAI drift off the parts; SAM3 with reviewed seeds holds",
+      "struggle": "The exploratory queue on the same 20 s: Grounded-SAM-2 and SAMURAI drift off the parts SAM3 holds with reviewed seeds; DAM4SAM slips around frame 330.",
+      "output": "media/story/2026-09-16-exploratory-arms.gif",
+      "size_bytes": 1413042,
+      "sources": [
+        {
+          "label": "SAM3, reviewed seeds",
+          "video": "runs/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260916t023700z/input_2781f.mp4",
+          "observations": "runs/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260916t023700z/observations.jsonl",
+          "crop": "auto"
+        },
+        {
+          "label": "Grounded-SAM-2, open vocabulary",
+          "video": "runs/grounding-dino-sam2-open-vocabulary-four-part-20s-20260916t1004z/input.mp4",
+          "observations": "runs/grounding-dino-sam2-open-vocabulary-four-part-20s-20260916t1004z/observations.jsonl"
+        },
+        {
+          "label": "SAMURAI, reviewed seeds",
+          "video": "runs/samurai-four-part-reviewed-seed-20s-20260916t1007z/input.mp4",
+          "observations": "runs/samurai-four-part-reviewed-seed-20s-20260916t1007z/observations.jsonl"
+        },
+        {
+          "label": "DAM4SAM, reviewed seeds",
+          "video": "runs/dam4sam-four-part-reviewed-seed-20s-20260916t1009z/input.mp4",
+          "observations": "runs/dam4sam-four-part-reviewed-seed-20s-20260916t1009z/observations.jsonl"
+        }
+      ],
+      "frames": {
+        "start": 250,
+        "stop": 370,
+        "stride": 3
+      },
+      "fps": 10,
+      "duration_seconds": 4.0,
+      "width": 640,
+      "options": {
+        "columns": 2,
+        "shared_crop": 0
+      },
+      "fallback": null,
+      "detail": {
+        "tiles": [
+          {
+            "label": "SAM3, reviewed seeds",
+            "video": "runs/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260916t023700z/input_2781f.mp4",
+            "observations": "runs/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260916t023700z/observations.jsonl",
+            "run": "runs/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260916t023700z",
+            "frame_offset": 0,
+            "crop": [
+              0.54575,
+              0.47338888888888886,
+              0.98003125,
+              0.9405
+            ],
+            "view": null
+          },
+          {
+            "label": "Grounded-SAM-2, open vocabulary",
+            "video": "runs/grounding-dino-sam2-open-vocabulary-four-part-20s-20260916t1004z/input.mp4",
+            "observations": "runs/grounding-dino-sam2-open-vocabulary-four-part-20s-20260916t1004z/observations.jsonl",
+            "run": "runs/grounding-dino-sam2-open-vocabulary-four-part-20s-20260916t1004z",
+            "frame_offset": 0,
+            "crop": [
+              0.54575,
+              0.47338888888888886,
+              0.98003125,
+              0.9405
+            ],
+            "view": null
+          },
+          {
+            "label": "SAMURAI, reviewed seeds",
+            "video": "runs/samurai-four-part-reviewed-seed-20s-20260916t1007z/input.mp4",
+            "observations": "runs/samurai-four-part-reviewed-seed-20s-20260916t1007z/observations.jsonl",
+            "run": "runs/samurai-four-part-reviewed-seed-20s-20260916t1007z",
+            "frame_offset": 0,
+            "crop": [
+              0.54575,
+              0.47338888888888886,
+              0.98003125,
+              0.9405
+            ],
+            "view": null
+          },
+          {
+            "label": "DAM4SAM, reviewed seeds",
+            "video": "runs/dam4sam-four-part-reviewed-seed-20s-20260916t1009z/input.mp4",
+            "observations": "runs/dam4sam-four-part-reviewed-seed-20s-20260916t1009z/observations.jsonl",
+            "run": "runs/dam4sam-four-part-reviewed-seed-20s-20260916t1009z",
+            "frame_offset": 0,
+            "crop": [
+              0.54575,
+              0.47338888888888886,
+              0.98003125,
+              0.9405
+            ],
+            "view": null
+          }
+        ]
+      },
+      "encode": {
+        "attempts": [
+          {
+            "colours": 128,
+            "scale": 1.0,
+            "width": 640,
+            "size_bytes": 2583216
+          },
+          {
+            "colours": 64,
+            "scale": 1.0,
+            "width": 640,
+            "size_bytes": 1862135
+          },
+          {
+            "colours": 64,
+            "scale": 0.85,
+            "width": 544,
+            "size_bytes": 1413042
+          }
+        ],
+        "size_bytes": 1413042,
+        "target_bytes": 1500000,
+        "max_bytes": 3000000
+      }
+    },
+    {
+      "id": "human-flags-swap",
+      "day": "2026-09-17",
+      "kind": "overlay",
+      "caption": "Interior leaks into the chassis from 1020 and the labels swap; a human correction at 1235 undoes it",
+      "struggle": "The human's v4 review: the interior mask leaks into the chassis from about frame 1020, the two labels swap by 1167, and only the human-selected correction at 1235 undoes it (the agent's 1172 correction lands in between).",
+      "output": "media/story/2026-09-17-human-flags-swap.gif",
+      "size_bytes": 1344540,
+      "sources": [
+        {
+          "label": "C10379 first minute, four parts",
+          "video": "runs/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260918t001210z/input_2781f.mp4",
+          "observations": "runs/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260918t001210z/observations.jsonl",
+          "crop": "auto"
+        }
+      ],
+      "frames": {
+        "start": 1010,
+        "stop": 1250,
+        "stride": 6
+      },
+      "fps": 10,
+      "duration_seconds": 4.0,
+      "width": 560,
+      "options": {
+        "columns": 1
+      },
+      "fallback": null,
+      "detail": {
+        "tiles": [
+          {
+            "label": "C10379 first minute, four parts",
+            "video": "runs/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260918t001210z/input_2781f.mp4",
+            "observations": "runs/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260918t001210z/observations.jsonl",
+            "run": "runs/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260918t001210z",
+            "frame_offset": 0,
+            "crop": [
+              0.5387500000000001,
+              0.4236111111111111,
+              0.9807812499999999,
+              0.9458333333333333
+            ],
+            "view": null
+          }
+        ]
+      },
+      "encode": {
+        "attempts": [
+          {
+            "colours": 128,
+            "scale": 1.0,
+            "width": 560,
+            "size_bytes": 1950404
+          },
+          {
+            "colours": 64,
+            "scale": 1.0,
+            "width": 560,
+            "size_bytes": 1344540
+          }
+        ],
+        "size_bytes": 1344540,
+        "target_bytes": 1500000,
+        "max_bytes": 3000000
+      }
+    },
+    {
+      "id": "v4-review-sheet",
+      "day": "2026-09-17",
+      "kind": "still",
+      "caption": "The v4 review's pinned moments: swap, leaks and hand drop-outs the human was asked to judge",
+      "struggle": "The pinned moments the v4 review put in front of the human.",
+      "output": "media/story/2026-09-17-v4-review-sheet.png",
+      "size_bytes": 268198,
+      "sources": [
+        {
+          "label": "",
+          "image": "runs/interaction-review-first-minute-v4/pinned_moments_contact_sheet.png"
+        }
+      ],
+      "frames": null,
+      "fps": null,
+      "duration_seconds": null,
+      "width": 640,
+      "options": {
+        "columns": 1
+      },
+      "fallback": null,
+      "detail": {
+        "images": [
+          {
+            "image": "runs/interaction-review-first-minute-v4/pinned_moments_contact_sheet.png",
+            "label": "",
+            "crop": null
+          }
+        ]
+      },
+      "encode": null
+    },
+    {
+      "id": "eight-views-disagree",
+      "day": "2026-09-18",
+      "kind": "grid",
+      "caption": "Eight cameras disagree: C10379's chassis is thrown out of the consensus over frames 1620-1700",
+      "struggle": "Eight static cameras through one rig: the consensus and the visual hull throw C10379's chassis out over frames 1620-1700, the identity failure the hull flagged.",
+      "output": "media/story/2026-09-18-eight-views-disagree.gif",
+      "size_bytes": 946058,
+      "sources": [
+        {
+          "label": "C10379 (human seeds)",
+          "video": "runs/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260918t001210z/input_2781f.mp4",
+          "observations": "runs/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260918t001210z/observations.jsonl",
+          "crop": "auto"
+        },
+        {
+          "label": "C10095",
+          "video": "runs/muggledsam-sam3-four-part-multiview-first-minute-static-c10095-20260918t055420z/input_1800f.mp4",
+          "observations": "runs/muggledsam-sam3-four-part-multiview-first-minute-static-c10095-20260918t055420z/observations.jsonl",
+          "crop": "auto"
+        },
+        {
+          "label": "C10115",
+          "video": "runs/muggledsam-sam3-four-part-multiview-first-minute-static-c10115-20260918t055658z/input_1800f.mp4",
+          "observations": "runs/muggledsam-sam3-four-part-multiview-first-minute-static-c10115-20260918t055658z/observations.jsonl",
+          "crop": "auto"
+        },
+        {
+          "label": "C10118",
+          "video": "runs/muggledsam-sam3-four-part-multiview-first-minute-static-c10118-20260918t055938z/input_1800f.mp4",
+          "observations": "runs/muggledsam-sam3-four-part-multiview-first-minute-static-c10118-20260918t055938z/observations.jsonl",
+          "crop": "auto"
+        },
+        {
+          "label": "C10119",
+          "video": "runs/muggledsam-sam3-four-part-multiview-first-minute-static-c10119-20260918t060222z/input_1800f.mp4",
+          "observations": "runs/muggledsam-sam3-four-part-multiview-first-minute-static-c10119-20260918t060222z/observations.jsonl",
+          "crop": "auto"
+        },
+        {
+          "label": "C10390",
+          "video": "runs/muggledsam-sam3-four-part-multiview-first-minute-static-c10390-20260918t060505z/input_1800f.mp4",
+          "observations": "runs/muggledsam-sam3-four-part-multiview-first-minute-static-c10390-20260918t060505z/observations.jsonl",
+          "crop": "auto"
+        },
+        {
+          "label": "C10395",
+          "video": "runs/muggledsam-sam3-four-part-multiview-first-minute-static-c10395-20260918t060741z/input_1800f.mp4",
+          "observations": "runs/muggledsam-sam3-four-part-multiview-first-minute-static-c10395-20260918t060741z/observations.jsonl",
+          "crop": "auto"
+        },
+        {
+          "label": "C10404",
+          "video": "runs/muggledsam-sam3-four-part-multiview-first-minute-static-c10404-20260918t061020z/input_1800f.mp4",
+          "observations": "runs/muggledsam-sam3-four-part-multiview-first-minute-static-c10404-20260918t061020z/observations.jsonl",
+          "crop": "auto"
+        }
+      ],
+      "frames": {
+        "start": 1620,
+        "stop": 1710,
+        "stride": 3
+      },
+      "fps": 10,
+      "duration_seconds": 3.0,
+      "width": 640,
+      "options": {
+        "columns": 4
+      },
+      "fallback": null,
+      "detail": {
+        "tiles": [
+          {
+            "label": "C10379 (human seeds)",
+            "video": "runs/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260918t001210z/input_2781f.mp4",
+            "observations": "runs/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260918t001210z/observations.jsonl",
+            "run": "runs/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260918t001210z",
+            "frame_offset": 0,
+            "crop": [
+              0.5553750000000001,
+              0.3753888888888889,
+              0.979,
+              0.951
+            ],
+            "view": null
+          },
+          {
+            "label": "C10095",
+            "video": "runs/muggledsam-sam3-four-part-multiview-first-minute-static-c10095-20260918t055420z/input_1800f.mp4",
+            "observations": "runs/muggledsam-sam3-four-part-multiview-first-minute-static-c10095-20260918t055420z/observations.jsonl",
+            "run": "runs/muggledsam-sam3-four-part-multiview-first-minute-static-c10095-20260918t055420z",
+            "frame_offset": 0,
+            "crop": [
+              0.43371875,
+              0.20277777777777778,
+              0.62096875,
+              0.42361111111111116
+            ],
+            "view": null
+          },
+          {
+            "label": "C10115",
+            "video": "runs/muggledsam-sam3-four-part-multiview-first-minute-static-c10115-20260918t055658z/input_1800f.mp4",
+            "observations": "runs/muggledsam-sam3-four-part-multiview-first-minute-static-c10115-20260918t055658z/observations.jsonl",
+            "run": "runs/muggledsam-sam3-four-part-multiview-first-minute-static-c10115-20260918t055658z",
+            "frame_offset": 0,
+            "crop": [
+              0.4165625,
+              0.20994444444444446,
+              0.756875,
+              0.5720000000000001
+            ],
+            "view": null
+          },
+          {
+            "label": "C10118",
+            "video": "runs/muggledsam-sam3-four-part-multiview-first-minute-static-c10118-20260918t055938z/input_1800f.mp4",
+            "observations": "runs/muggledsam-sam3-four-part-multiview-first-minute-static-c10118-20260918t055938z/observations.jsonl",
+            "run": "runs/muggledsam-sam3-four-part-multiview-first-minute-static-c10118-20260918t055938z",
+            "frame_offset": 0,
+            "crop": [
+              0.44625000000000004,
+              0.31233333333333335,
+              0.90765625,
+              0.9654444444444444
+            ],
+            "view": null
+          },
+          {
+            "label": "C10119",
+            "video": "runs/muggledsam-sam3-four-part-multiview-first-minute-static-c10119-20260918t060222z/input_1800f.mp4",
+            "observations": "runs/muggledsam-sam3-four-part-multiview-first-minute-static-c10119-20260918t060222z/observations.jsonl",
+            "run": "runs/muggledsam-sam3-four-part-multiview-first-minute-static-c10119-20260918t060222z",
+            "frame_offset": 0,
+            "crop": [
+              0.45071874999999995,
+              0.2737222222222222,
+              0.88209375,
+              0.8235
+            ],
+            "view": null
+          },
+          {
+            "label": "C10390",
+            "video": "runs/muggledsam-sam3-four-part-multiview-first-minute-static-c10390-20260918t060505z/input_1800f.mp4",
+            "observations": "runs/muggledsam-sam3-four-part-multiview-first-minute-static-c10390-20260918t060505z/observations.jsonl",
+            "run": "runs/muggledsam-sam3-four-part-multiview-first-minute-static-c10390-20260918t060505z",
+            "frame_offset": 0,
+            "crop": [
+              0.33628125000000003,
+              0.21461111111111109,
+              0.45668749999999997,
+              0.48538888888888887
+            ],
+            "view": null
+          },
+          {
+            "label": "C10395",
+            "video": "runs/muggledsam-sam3-four-part-multiview-first-minute-static-c10395-20260918t060741z/input_1800f.mp4",
+            "observations": "runs/muggledsam-sam3-four-part-multiview-first-minute-static-c10395-20260918t060741z/observations.jsonl",
+            "run": "runs/muggledsam-sam3-four-part-multiview-first-minute-static-c10395-20260918t060741z",
+            "frame_offset": 0,
+            "crop": [
+              0.22450000000000003,
+              0.42461111111111116,
+              0.4989375,
+              0.9795555555555555
+            ],
+            "view": null
+          },
+          {
+            "label": "C10404",
+            "video": "runs/muggledsam-sam3-four-part-multiview-first-minute-static-c10404-20260918t061020z/input_1800f.mp4",
+            "observations": "runs/muggledsam-sam3-four-part-multiview-first-minute-static-c10404-20260918t061020z/observations.jsonl",
+            "run": "runs/muggledsam-sam3-four-part-multiview-first-minute-static-c10404-20260918t061020z",
+            "frame_offset": 0,
+            "crop": [
+              0.54484375,
+              0.2306666666666667,
+              0.85125,
+              0.909611111111111
+            ],
+            "view": null
+          }
+        ]
+      },
+      "encode": {
+        "attempts": [
+          {
+            "colours": 128,
+            "scale": 1.0,
+            "size_bytes": 946058
+          }
+        ],
+        "size_bytes": 946058
+      }
+    },
+    {
+      "id": "anchors-swap-window",
+      "day": "2026-09-19",
+      "kind": "still",
+      "caption": "Against the human anchors, chassis and interior fall to 0.0-0.6 IoU on frames 1050-1150",
+      "struggle": "The human anchors become the yardstick and the first thing they show is the swap window: chassis and interior at 0.0-0.6 IoU on frames 1050-1150 for the reference and the best arm alike.",
+      "output": "media/story/2026-09-19-anchors-swap-window.png",
+      "size_bytes": 405639,
+      "sources": [
+        {
+          "label": "human anchors | reference | pm-append, frames 1050 / 1100 / 1150",
+          "image": "runs/anchor-scoreboard-20260919/anchors_vs_reference_vs_best.png",
+          "crop": [
+            0.0,
+            0.54,
+            1.0,
+            0.775
+          ]
+        }
+      ],
+      "frames": null,
+      "fps": null,
+      "duration_seconds": null,
+      "width": 640,
+      "options": {
+        "columns": 1
+      },
+      "fallback": null,
+      "detail": {
+        "images": [
+          {
+            "image": "runs/anchor-scoreboard-20260919/anchors_vs_reference_vs_best.png",
+            "label": "human anchors | reference | pm-append, frames 1050 / 1100 / 1150",
+            "crop": [
+              0.0,
+              0.54,
+              1.0,
+              0.775
+            ]
+          }
+        ]
+      },
+      "encode": null
+    },
+    {
+      "id": "interior-stays-human",
+      "day": "2026-09-20",
+      "kind": "grid",
+      "caption": "Interior stays human: agent consensus corrections reach 0.29-0.32 IoU, the human's 0.59-0.64",
+      "struggle": "The consensus re-prompt loop's agent corrections against the human's on the interior window 1020-1172: agent corrections score 0.29 (chassis) and 0.32 (interior) IoU against the anchors, the human's 0.64 and 0.59.",
+      "output": "media/story/2026-09-20-interior-stays-human.gif",
+      "size_bytes": 1441645,
+      "sources": [
+        {
+          "label": "human corrections (pm-append)",
+          "video": "runs/sam3-memory-arms-20260919/arms/pm-append/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260920t033947z-r1280-pm-append/input_1800f.mp4",
+          "observations": "runs/sam3-memory-arms-20260919/arms/pm-append/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260920t033947z-r1280-pm-append/observations.jsonl",
+          "crop": "auto",
+          "labels": [
+            "chassis",
+            "interior"
+          ]
+        },
+        {
+          "label": "agent consensus corrections (iter 1)",
+          "video": "runs/multiview-reprompt-20260920/C10379/iter1/arms/consensus-only/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260920t164049z-r1280-pm-append/input_1800f.mp4",
+          "observations": "runs/multiview-reprompt-20260920/C10379/iter1/arms/consensus-only/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260920t164049z-r1280-pm-append/observations.jsonl",
+          "crop": "auto",
+          "labels": [
+            "chassis",
+            "interior"
+          ]
+        }
+      ],
+      "frames": {
+        "start": 1020,
+        "stop": 1180,
+        "stride": 4
+      },
+      "fps": 10,
+      "duration_seconds": 4.0,
+      "width": 640,
+      "options": {
+        "columns": 2,
+        "shared_crop": true
+      },
+      "fallback": null,
+      "detail": {
+        "tiles": [
+          {
+            "label": "human corrections (pm-append)",
+            "video": "runs/sam3-memory-arms-20260919/arms/pm-append/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260920t033947z-r1280-pm-append/input_1800f.mp4",
+            "observations": "runs/sam3-memory-arms-20260919/arms/pm-append/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260920t033947z-r1280-pm-append/observations.jsonl",
+            "run": "runs/sam3-memory-arms-20260919/arms/pm-append/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260920t033947z-r1280-pm-append",
+            "frame_offset": 0,
+            "crop": [
+              0.5918125,
+              0.4197777777777778,
+              0.8488125000000001,
+              0.8955000000000001
+            ],
+            "view": null
+          },
+          {
+            "label": "agent consensus corrections (iter 1)",
+            "video": "runs/multiview-reprompt-20260920/C10379/iter1/arms/consensus-only/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260920t164049z-r1280-pm-append/input_1800f.mp4",
+            "observations": "runs/multiview-reprompt-20260920/C10379/iter1/arms/consensus-only/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260920t164049z-r1280-pm-append/observations.jsonl",
+            "run": "runs/multiview-reprompt-20260920/C10379/iter1/arms/consensus-only/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260920t164049z-r1280-pm-append",
+            "frame_offset": 0,
+            "crop": [
+              0.5918125,
+              0.4197777777777778,
+              0.8488125000000001,
+              0.8955000000000001
+            ],
+            "view": null
+          }
+        ]
+      },
+      "encode": {
+        "attempts": [
+          {
+            "colours": 128,
+            "scale": 1.0,
+            "size_bytes": 1441645
+          }
+        ],
+        "size_bytes": 1441645
+      }
+    },
+    {
+      "id": "v6-review",
+      "day": "2026-09-20",
+      "kind": "rerun_still",
+      "caption": "The v6 review recording under its segmentation preset: reference, provenance and six candidate arms",
+      "struggle": "The v6 review surface: one recording, three presets; the still is the segmentation preset at the viewer's default time.",
+      "output": "media/story/2026-09-20-v6-review.png",
+      "size_bytes": 437449,
+      "sources": [
+        {
+          "rrd": "runs/interaction-review-first-minute-v6/interaction_review_combined.rrd",
+          "blueprint": "runs/interaction-review-first-minute-v6/segmentation.rbl"
+        }
+      ],
+      "frames": null,
+      "fps": null,
+      "duration_seconds": null,
+      "width": 960,
+      "options": {
+        "settle_seconds": 30
+      },
+      "fallback": null,
+      "detail": {
+        "rrd": "runs/interaction-review-first-minute-v6/interaction_review_combined.rrd",
+        "blueprint": "runs/interaction-review-first-minute-v6/segmentation.rbl",
+        "command": "uv run rerun --headless --window-size 1600x900 --port 45853 /home/nick/src/battle/runs/interaction-review-first-minute-v6/interaction_review_combined.rrd /home/nick/src/battle/runs/interaction-review-first-minute-v6/segmentation.rbl",
+        "screenshot": "rerun.experimental.ViewerClient.save_screenshot after 30 s settle; time cursor = viewer default (last frame)"
+      },
+      "encode": null
+    },
+    {
+      "id": "detector-boxes",
+      "day": "2026-09-21",
+      "kind": "still",
+      "caption": "The shipped FineBio detector boxes the plate and tubes the text prompt could not",
+      "struggle": "The shipped FineBio detector, run on the CPU beside the SAM3 smoke: it boxes the plate and the tubes the text prompt could not.",
+      "output": "media/story/2026-09-21-detector-boxes.png",
+      "size_bytes": 423779,
+      "sources": [
+        {
+          "label": "",
+          "image": "runs/finebio-dino-20260921/contact_sheet.png"
+        }
+      ],
+      "frames": null,
+      "fps": null,
+      "duration_seconds": null,
+      "width": 640,
+      "options": {
+        "columns": 1
+      },
+      "fallback": null,
+      "detail": {
+        "images": [
+          {
+            "image": "runs/finebio-dino-20260921/contact_sheet.png",
+            "label": "",
+            "crop": null
+          }
+        ]
+      },
+      "encode": null
+    },
+    {
+      "id": "text-fails-on-plate",
+      "day": "2026-09-21",
+      "kind": "overlay",
+      "caption": "SAM3's text prompt never finds the transparent 6-well plate and loses the pipette at frame 106",
+      "struggle": "FineBio's first look: the SAM3 text prompt never initialises the transparent 6-well plate or the tube rack, and loses the pipette at frame 106; the shipped detector's boxes are the way in.",
+      "output": "media/story/2026-09-21-text-fails-on-plate.gif",
+      "size_bytes": 1579879,
+      "sources": [
+        {
+          "label": "fpv P03_01_01, text prompts: pipette / 6-well plate / tube rack / centrifuge / tip box",
+          "video": "data/derived/finebio/P03_01_01/P03_01_01_060.000-080.000_1280x960_30fps.mp4",
+          "observations": "runs/finebio-sam3-smoke-20260921/observations.jsonl"
+        }
+      ],
+      "frames": {
+        "start": 60,
+        "stop": 156,
+        "stride": 4
+      },
+      "fps": 8,
+      "duration_seconds": 3.0,
+      "width": 480,
+      "options": {
+        "columns": 1,
+        "tile_aspect": 1.3333
+      },
+      "fallback": null,
+      "detail": {
+        "tiles": [
+          {
+            "label": "fpv P03_01_01, text prompts: pipette / 6-well plate / tube rack / centrifuge / tip box",
+            "video": "data/derived/finebio/P03_01_01/P03_01_01_060.000-080.000_1280x960_30fps.mp4",
+            "observations": "runs/finebio-sam3-smoke-20260921/observations.jsonl",
+            "run": "runs/finebio-sam3-smoke-20260921",
+            "frame_offset": 0,
+            "crop": null,
+            "view": null
+          }
+        ]
+      },
+      "encode": {
+        "attempts": [
+          {
+            "colours": 128,
+            "scale": 1.0,
+            "width": 480,
+            "size_bytes": 2035859
+          },
+          {
+            "colours": 64,
+            "scale": 1.0,
+            "width": 480,
+            "size_bytes": 1579879
+          }
+        ],
+        "size_bytes": 1579879,
+        "target_bytes": 1500000,
+        "max_bytes": 3000000
+      }
+    },
+    {
+      "id": "camera6-pose",
+      "day": "2026-09-24",
+      "kind": "still",
+      "caption": "Camera 6's shipped pose (green) sits 94 px off the markers (red); marker PnP re-solves it to 0.7 px",
+      "struggle": "Preflight: camera 6's shipped pose projects the bench markers 94 px off their detected corners; a marker PnP re-solve brings it to 0.7 px.",
+      "output": "media/story/2026-09-24-camera6-pose.png",
+      "size_bytes": 216653,
+      "sources": [
+        {
+          "label": "T5 (camera 6), frame 899",
+          "image": "runs/preflight-finebio-20260924/mapping/T5_markers.jpg"
+        },
+        {
+          "label": "marker id0, detail",
+          "image": "runs/preflight-finebio-20260924/mapping/T5_markers.jpg",
+          "crop": [
+            0.6,
+            0.62,
+            0.8,
+            0.85
+          ]
+        }
+      ],
+      "frames": null,
+      "fps": null,
+      "duration_seconds": null,
+      "width": 640,
+      "options": {
+        "columns": 2,
+        "tile_aspect": 1.5
+      },
+      "fallback": null,
+      "detail": {
+        "images": [
+          {
+            "image": "runs/preflight-finebio-20260924/mapping/T5_markers.jpg",
+            "label": "T5 (camera 6), frame 899",
+            "crop": null
+          },
+          {
+            "image": "runs/preflight-finebio-20260924/mapping/T5_markers.jpg",
+            "label": "marker id0, detail",
+            "crop": [
+              0.6,
+              0.62,
+              0.8,
+              0.85
+            ]
+          }
+        ]
+      },
+      "encode": null
+    },
+    {
+      "id": "finebio-3d",
+      "day": "2026-09-25",
+      "kind": "world",
+      "caption": "One tube, one identity, through a closed centrifuge lid",
+      "struggle": "The one success clip: arm (b) masks in six cameras and the 3D tracker's top-down bench; micro_tube-032 keeps one identity while the centrifuge lid is closed (raw 3224-3311).",
+      "output": "media/story/2026-09-25-finebio-3d.gif",
+      "size_bytes": 1423078,
+      "sources": [
+        {
+          "label": "T1",
+          "view": "T1",
+          "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T1_600-4200.mp4",
+          "observations": "runs/finebio-arms-P03_03_01-20260925/b-box-decode/T1/muggledsam-arm-box-decode-t1-20260925t045505z-r1280/observations.jsonl",
+          "crop": [
+            0.0,
+            0.38,
+            0.36,
+            0.78
+          ]
+        },
+        {
+          "label": "T2",
+          "view": "T2",
+          "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T2_600-4200.mp4",
+          "observations": "runs/finebio-arms-P03_03_01-20260925/b-box-decode/T2/muggledsam-arm-box-decode-t2-20260925t050511z-r1280/observations.jsonl",
+          "crop": [
+            0.44,
+            0.61,
+            0.8,
+            1.0
+          ]
+        },
+        {
+          "label": "T3",
+          "view": "T3",
+          "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T3_600-4200.mp4",
+          "observations": "runs/finebio-arms-P03_03_01-20260925/b-box-decode/T3/muggledsam-arm-box-decode-t3-20260925t051507z-r1280/observations.jsonl",
+          "crop": [
+            0.25,
+            0.13,
+            0.61,
+            0.53
+          ]
+        },
+        {
+          "label": "T4",
+          "view": "T4",
+          "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T4_600-4200.mp4",
+          "observations": "runs/finebio-arms-P03_03_01-20260925/b-box-decode/T4/muggledsam-arm-box-decode-t4-20260925t052510z-r1280/observations.jsonl",
+          "crop": [
+            0.39,
+            0.19,
+            0.75,
+            0.59
+          ]
+        },
+        {
+          "label": "T5 (top)",
+          "view": "T5",
+          "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T5_600-4200.mp4",
+          "observations": "runs/finebio-arms-P03_03_01-20260925/b-box-decode/T5/muggledsam-arm-box-decode-t5-20260925t053512z-r1280/observations.jsonl",
+          "crop": [
+            0.46,
+            0.09,
+            0.82,
+            0.49
+          ]
+        },
+        {
+          "label": "fpv (head)",
+          "view": "fpv",
+          "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_fpv_600-4200.mp4",
+          "observations": "runs/finebio-arms-P03_03_01-20260925/b-box-decode/fpv/muggledsam-arm-box-decode-fpv-20260925t044450z-r1280/observations.jsonl"
+        }
+      ],
+      "frames": {
+        "start": 2600,
+        "stop": 2741,
+        "stride": 3
+      },
+      "fps": 10,
+      "duration_seconds": 4.7,
+      "width": 640,
+      "options": {
+        "columns": 3,
+        "tracks": "runs/finebio-arms-P03_03_01-20260925/b-box-decode-arm/tracks-ext/tracks.jsonl",
+        "tracks_frame_offset": 600,
+        "rig": "runs/finebio-rig-P03_03_01-600-4200/rig.json",
+        "cameras": "configs/finebio/cameras/P03_03_01_600-4200.json",
+        "events_summary": "runs/finebio-arms-P03_03_01-20260925/b-box-decode-arm/events-ext/events_summary.json",
+        "highlight": [
+          "micro_tube-032"
+        ],
+        "panel_height": 250,
+        "extent": [
+          -55,
+          -36,
+          48,
+          58
+        ]
+      },
+      "fallback": null,
+      "detail": {
+        "tiles": [
+          {
+            "label": "T1",
+            "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T1_600-4200.mp4",
+            "observations": "runs/finebio-arms-P03_03_01-20260925/b-box-decode/T1/muggledsam-arm-box-decode-t1-20260925t045505z-r1280/observations.jsonl",
+            "run": "runs/finebio-arms-P03_03_01-20260925/b-box-decode/T1/muggledsam-arm-box-decode-t1-20260925t045505z-r1280",
+            "frame_offset": 0,
+            "crop": [
+              0.0,
+              0.38,
+              0.36,
+              0.78
+            ],
+            "view": "T1"
+          },
+          {
+            "label": "T2",
+            "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T2_600-4200.mp4",
+            "observations": "runs/finebio-arms-P03_03_01-20260925/b-box-decode/T2/muggledsam-arm-box-decode-t2-20260925t050511z-r1280/observations.jsonl",
+            "run": "runs/finebio-arms-P03_03_01-20260925/b-box-decode/T2/muggledsam-arm-box-decode-t2-20260925t050511z-r1280",
+            "frame_offset": 0,
+            "crop": [
+              0.44,
+              0.61,
+              0.8,
+              1.0
+            ],
+            "view": "T2"
+          },
+          {
+            "label": "T3",
+            "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T3_600-4200.mp4",
+            "observations": "runs/finebio-arms-P03_03_01-20260925/b-box-decode/T3/muggledsam-arm-box-decode-t3-20260925t051507z-r1280/observations.jsonl",
+            "run": "runs/finebio-arms-P03_03_01-20260925/b-box-decode/T3/muggledsam-arm-box-decode-t3-20260925t051507z-r1280",
+            "frame_offset": 0,
+            "crop": [
+              0.25,
+              0.13,
+              0.61,
+              0.53
+            ],
+            "view": "T3"
+          },
+          {
+            "label": "T4",
+            "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T4_600-4200.mp4",
+            "observations": "runs/finebio-arms-P03_03_01-20260925/b-box-decode/T4/muggledsam-arm-box-decode-t4-20260925t052510z-r1280/observations.jsonl",
+            "run": "runs/finebio-arms-P03_03_01-20260925/b-box-decode/T4/muggledsam-arm-box-decode-t4-20260925t052510z-r1280",
+            "frame_offset": 0,
+            "crop": [
+              0.39,
+              0.19,
+              0.75,
+              0.59
+            ],
+            "view": "T4"
+          },
+          {
+            "label": "T5 (top)",
+            "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T5_600-4200.mp4",
+            "observations": "runs/finebio-arms-P03_03_01-20260925/b-box-decode/T5/muggledsam-arm-box-decode-t5-20260925t053512z-r1280/observations.jsonl",
+            "run": "runs/finebio-arms-P03_03_01-20260925/b-box-decode/T5/muggledsam-arm-box-decode-t5-20260925t053512z-r1280",
+            "frame_offset": 0,
+            "crop": [
+              0.46,
+              0.09,
+              0.82,
+              0.49
+            ],
+            "view": "T5"
+          },
+          {
+            "label": "fpv (head)",
+            "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_fpv_600-4200.mp4",
+            "observations": "runs/finebio-arms-P03_03_01-20260925/b-box-decode/fpv/muggledsam-arm-box-decode-fpv-20260925t044450z-r1280/observations.jsonl",
+            "run": "runs/finebio-arms-P03_03_01-20260925/b-box-decode/fpv/muggledsam-arm-box-decode-fpv-20260925t044450z-r1280",
+            "frame_offset": 0,
+            "crop": null,
+            "view": "fpv"
+          }
+        ],
+        "tracks": "runs/finebio-arms-P03_03_01-20260925/b-box-decode-arm/tracks-ext/tracks.jsonl",
+        "tracks_frame_offset": 600,
+        "rig": "runs/finebio-rig-P03_03_01-600-4200/rig.json",
+        "cameras": "configs/finebio/cameras/P03_03_01_600-4200.json",
+        "events_summary": "runs/finebio-arms-P03_03_01-20260925/b-box-decode-arm/events-ext/events_summary.json",
+        "highlight": [
+          "micro_tube-032"
+        ]
+      },
+      "encode": {
+        "attempts": [
+          {
+            "colours": 128,
+            "scale": 1.0,
+            "width": 640,
+            "size_bytes": 1796246
+          },
+          {
+            "colours": 64,
+            "scale": 1.0,
+            "width": 640,
+            "size_bytes": 1423078
+          }
+        ],
+        "size_bytes": 1423078,
+        "target_bytes": 1500000,
+        "max_bytes": 3000000
+      }
+    },
+    {
+      "id": "finebio-world-view",
+      "day": "2026-09-25",
+      "kind": "rerun_still",
+      "caption": "The Sep 25 review recording under its World preset: six cameras, containers and arm (b) tracks",
+      "struggle": "The review recording under the World preset: six frusta, static objects, containers and the arm (b) tracks, at the viewer's default time.",
+      "output": "media/story/2026-09-25-finebio-world-view.png",
+      "size_bytes": 373895,
+      "sources": [
+        {
+          "rrd": "runs/finebio-review-P03_03_01-20260925/review.rrd",
+          "blueprint": "runs/finebio-review-P03_03_01-20260925/world.rbl"
+        }
+      ],
+      "frames": null,
+      "fps": null,
+      "duration_seconds": null,
+      "width": 960,
+      "options": {
+        "settle_seconds": 150
+      },
+      "fallback": null,
+      "detail": {
+        "rrd": "runs/finebio-review-P03_03_01-20260925/review.rrd",
+        "blueprint": "runs/finebio-review-P03_03_01-20260925/world.rbl",
+        "command": "uv run rerun --headless --window-size 1600x900 --port 60123 /home/nick/src/battle/runs/finebio-review-P03_03_01-20260925/review.rrd /home/nick/src/battle/runs/finebio-review-P03_03_01-20260925/world.rbl",
+        "screenshot": "rerun.experimental.ViewerClient.save_screenshot after 150 s settle; time cursor = viewer default (last frame)"
+      },
+      "encode": null
+    },
+    {
+      "id": "pipette-fragments",
+      "day": "2026-09-25",
+      "kind": "world",
+      "caption": "The pipette in the hand splits into new identities every few seconds (59 ids in two minutes)",
+      "struggle": "The one named failure of the 3D tracker: the blue pipette in the hand is born as a new identity every few seconds (59 ids over the two-minute window). Masks and the top-down points are coloured by track id; the panel shows only blue_pipette tracks with their ids, the counter the distinct ids seen so far in the clip.",
+      "output": "media/story/2026-09-25-pipette-fragments.gif",
+      "size_bytes": 1540336,
+      "sources": [
+        {
+          "label": "fpv (head), arm b",
+          "view": "fpv",
+          "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_fpv_600-4200.mp4",
+          "observations": "runs/finebio-arms-P03_03_01-20260925/b-box-decode/fpv/muggledsam-arm-box-decode-fpv-20260925t044450z-r1280/observations.jsonl",
+          "labels": [
+            "blue_pipette#*"
+          ]
+        },
+        {
+          "label": "T2, arm b",
+          "view": "T2",
+          "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T2_600-4200.mp4",
+          "observations": "runs/finebio-arms-P03_03_01-20260925/b-box-decode/T2/muggledsam-arm-box-decode-t2-20260925t050511z-r1280/observations.jsonl",
+          "labels": [
+            "blue_pipette#*"
+          ],
+          "crop": "auto"
+        }
+      ],
+      "frames": {
+        "start": 1200,
+        "stop": 1500,
+        "stride": 6
+      },
+      "fps": 10,
+      "duration_seconds": 5.0,
+      "width": 640,
+      "options": {
+        "columns": 2,
+        "tile_aspect": 1.3333,
+        "tracks": "runs/finebio-arms-P03_03_01-20260925/b-box-decode-arm/tracks-ext/tracks.jsonl",
+        "tracks_frame_offset": 600,
+        "rig": "runs/finebio-rig-P03_03_01-600-4200/rig.json",
+        "cameras": "configs/finebio/cameras/P03_03_01_600-4200.json",
+        "events_summary": "runs/finebio-arms-P03_03_01-20260925/b-box-decode-arm/events-ext/events_summary.json",
+        "panel_classes": [
+          "blue_pipette"
+        ],
+        "label_classes": [
+          "blue_pipette"
+        ],
+        "panel_height": 200,
+        "extent": [
+          -55,
+          -36,
+          48,
+          58
+        ],
+        "count_ids_of_class": "blue_pipette"
+      },
+      "fallback": null,
+      "detail": {
+        "tiles": [
+          {
+            "label": "fpv (head), arm b",
+            "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_fpv_600-4200.mp4",
+            "observations": "runs/finebio-arms-P03_03_01-20260925/b-box-decode/fpv/muggledsam-arm-box-decode-fpv-20260925t044450z-r1280/observations.jsonl",
+            "run": "runs/finebio-arms-P03_03_01-20260925/b-box-decode/fpv/muggledsam-arm-box-decode-fpv-20260925t044450z-r1280",
+            "frame_offset": 0,
+            "crop": null,
+            "view": "fpv"
+          },
+          {
+            "label": "T2, arm b",
+            "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T2_600-4200.mp4",
+            "observations": "runs/finebio-arms-P03_03_01-20260925/b-box-decode/T2/muggledsam-arm-box-decode-t2-20260925t050511z-r1280/observations.jsonl",
+            "run": "runs/finebio-arms-P03_03_01-20260925/b-box-decode/T2/muggledsam-arm-box-decode-t2-20260925t050511z-r1280",
+            "frame_offset": 0,
+            "crop": [
+              0.17245833333333332,
+              0.0,
+              0.473375,
+              0.6477777777777778
+            ],
+            "view": "T2"
+          }
+        ],
+        "tracks": "runs/finebio-arms-P03_03_01-20260925/b-box-decode-arm/tracks-ext/tracks.jsonl",
+        "tracks_frame_offset": 600,
+        "rig": "runs/finebio-rig-P03_03_01-600-4200/rig.json",
+        "cameras": "configs/finebio/cameras/P03_03_01_600-4200.json",
+        "events_summary": "runs/finebio-arms-P03_03_01-20260925/b-box-decode-arm/events-ext/events_summary.json",
+        "highlight": [],
+        "distinct_ids_in_clip": {
+          "blue_pipette": 10
+        }
+      },
+      "encode": {
+        "attempts": [
+          {
+            "colours": 128,
+            "scale": 1.0,
+            "width": 640,
+            "size_bytes": 3550702
+          },
+          {
+            "colours": 64,
+            "scale": 1.0,
+            "width": 640,
+            "size_bytes": 2743197
+          },
+          {
+            "colours": 64,
+            "scale": 0.85,
+            "width": 544,
+            "size_bytes": 2083830
+          },
+          {
+            "colours": 48,
+            "scale": 0.75,
+            "width": 480,
+            "size_bytes": 1540336
+          }
+        ],
+        "size_bytes": 1540336,
+        "target_bytes": 1500000,
+        "max_bytes": 3000000
+      }
+    },
+    {
+      "id": "video-memory-drifts",
+      "day": "2026-09-25",
+      "kind": "grid",
+      "caption": "Video memory drifts off the micro tube; per-frame box decode holds",
+      "struggle": "Arm (c), SAM3 video memory, drifts off the micro tube in T3 for most of proxy frames 300-470 (its mask box overlaps arm (b)'s at IoU < 0.2 on 429 of the 556 frames both arms mask this slot; the gate-2 anchors score arm (c) at 0.21 on the micro tube class); arm (b), the per-frame box decode, holds on the same frames and abstains when the detector has no box.",
+      "output": "media/story/2026-09-25-video-memory-drifts.gif",
+      "size_bytes": 933875,
+      "sources": [
+        {
+          "label": "arm b: per-frame box decode",
+          "view": "T3",
+          "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T3_600-4200.mp4",
+          "observations": "runs/finebio-arms-P03_03_01-20260925/b-box-decode/T3/muggledsam-arm-box-decode-t3-20260925t051507z-r1280/observations.jsonl",
+          "labels": [
+            "micro_tube#0"
+          ],
+          "crop": "auto"
+        },
+        {
+          "label": "arm c: SAM3 video memory",
+          "view": "T3",
+          "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T3_600-4200.mp4",
+          "observations": "runs/finebio-arms-P03_03_01-20260925/c-video-memory/T3/muggledsam-arm-video-memory-t3-20260925t063839z-r1280-pm-append/observations.jsonl",
+          "labels": [
+            "micro_tube#0"
+          ],
+          "crop": "auto"
+        }
+      ],
+      "frames": {
+        "start": 290,
+        "stop": 470,
+        "stride": 4
+      },
+      "fps": 10,
+      "duration_seconds": 4.5,
+      "width": 640,
+      "options": {
+        "columns": 2,
+        "shared_crop": 0
+      },
+      "fallback": null,
+      "detail": {
+        "tiles": [
+          {
+            "label": "arm b: per-frame box decode",
+            "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T3_600-4200.mp4",
+            "observations": "runs/finebio-arms-P03_03_01-20260925/b-box-decode/T3/muggledsam-arm-box-decode-t3-20260925t051507z-r1280/observations.jsonl",
+            "run": "runs/finebio-arms-P03_03_01-20260925/b-box-decode/T3/muggledsam-arm-box-decode-t3-20260925t051507z-r1280",
+            "frame_offset": 0,
+            "crop": [
+              0.5170416666666667,
+              0.47685185185185186,
+              0.5725416666666666,
+              0.5398148148148149
+            ],
+            "view": "T3"
+          },
+          {
+            "label": "arm c: SAM3 video memory",
+            "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T3_600-4200.mp4",
+            "observations": "runs/finebio-arms-P03_03_01-20260925/c-video-memory/T3/muggledsam-arm-video-memory-t3-20260925t063839z-r1280-pm-append/observations.jsonl",
+            "run": "runs/finebio-arms-P03_03_01-20260925/c-video-memory/T3/muggledsam-arm-video-memory-t3-20260925t063839z-r1280-pm-append",
+            "frame_offset": 0,
+            "crop": [
+              0.5170416666666667,
+              0.47685185185185186,
+              0.5725416666666666,
+              0.5398148148148149
+            ],
+            "view": "T3"
+          }
+        ]
+      },
+      "encode": {
+        "attempts": [
+          {
+            "colours": 128,
+            "scale": 1.0,
+            "size_bytes": 933875
+          }
+        ],
+        "size_bytes": 933875
+      }
+    },
+    {
+      "id": "gate1-rejected-seeds",
+      "day": "2026-09-26",
+      "kind": "cells",
+      "caption": "Gate 1 rejects six seeds: two objects under one box, a glove inside the mask, a table edge",
+      "struggle": "Gate 1, the human review of the detector seeds: six of the slots are rejected, three for two objects under one box, one for a glove inside the mask, one for a table edge, one for an occluded seed frame.",
+      "output": "media/story/2026-09-26-gate1-rejected-seeds.png",
+      "size_bytes": 370603,
+      "sources": [
+        {
+          "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T1_600-4200.mp4",
+          "frame": 81,
+          "box": [
+            498.1,
+            325.3,
+            735.5,
+            515.3
+          ],
+          "mask": "runs/finebio-seeds-P03_03_01-20260925/decode/masks/T1/8_channel_pipette_0_000681.png",
+          "label": "T1 8_channel_pipette#0 @681",
+          "verdict": "reject",
+          "note": "two objects: a micro-tube tray and an 8-channel pipette"
+        },
+        {
+          "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T1_600-4200.mp4",
+          "frame": 261,
+          "box": [
+            668.5,
+            350.6,
+            827.8,
+            482.6
+          ],
+          "mask": "runs/finebio-seeds-P03_03_01-20260925/decode/masks/T1/blue_pipette_0_000861.png",
+          "label": "T1 blue_pipette#0 @861",
+          "verdict": "reject",
+          "note": "there are two pipettes here"
+        },
+        {
+          "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T1_600-4200.mp4",
+          "frame": 558,
+          "box": [
+            439.5,
+            588.7,
+            475.0,
+            632.5
+          ],
+          "mask": "runs/finebio-seeds-P03_03_01-20260925/decode/masks/T1/50ml_tube_group_1_001158.png",
+          "label": "T1 50ml_tube_group#1 @1158",
+          "verdict": "reject",
+          "note": "impossible to tell, the hand is obscuring it"
+        },
+        {
+          "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T3_600-4200.mp4",
+          "frame": 0,
+          "box": [
+            1124.6,
+            421.9,
+            1394.0,
+            516.5
+          ],
+          "mask": "runs/finebio-seeds-P03_03_01-20260925/decode/masks/T3/yellow_pipette_0_000600.png",
+          "label": "T3 yellow_pipette#0 @600",
+          "verdict": "reject",
+          "note": "two pipettes"
+        },
+        {
+          "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T3_600-4200.mp4",
+          "frame": 0,
+          "box": [
+            1356.5,
+            261.0,
+            1566.4,
+            567.3
+          ],
+          "mask": "runs/finebio-seeds-P03_03_01-20260925/decode/masks/T3/blue_pipette_0_000600.png",
+          "label": "T3 blue_pipette#0 @600",
+          "verdict": "reject",
+          "note": "pipette, but the hand is included too"
+        },
+        {
+          "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_fpv_600-4200.mp4",
+          "frame": 0,
+          "box": [
+            1599.9,
+            971.6,
+            1920.0,
+            1127.7
+          ],
+          "mask": "runs/finebio-seeds-P03_03_01-20260925/decode/masks/fpv/blue_pipette_0_000600.png",
+          "label": "fpv blue_pipette#0 @600",
+          "verdict": "reject",
+          "note": "we picked up the edge of the table"
+        }
+      ],
+      "frames": null,
+      "fps": null,
+      "duration_seconds": null,
+      "width": 640,
+      "options": {
+        "columns": 3,
+        "cell_height": 170,
+        "margin": 0.5
+      },
+      "fallback": null,
+      "detail": {
+        "cells": [
+          {
+            "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T1_600-4200.mp4",
+            "frame": 81,
+            "box": [
+              498.1,
+              325.3,
+              735.5,
+              515.3
+            ],
+            "mask": "runs/finebio-seeds-P03_03_01-20260925/decode/masks/T1/8_channel_pipette_0_000681.png",
+            "label": "T1 8_channel_pipette#0 @681",
+            "verdict": "reject",
+            "note": "two objects: a micro-tube tray and an 8-channel pipette"
+          },
+          {
+            "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T1_600-4200.mp4",
+            "frame": 261,
+            "box": [
+              668.5,
+              350.6,
+              827.8,
+              482.6
+            ],
+            "mask": "runs/finebio-seeds-P03_03_01-20260925/decode/masks/T1/blue_pipette_0_000861.png",
+            "label": "T1 blue_pipette#0 @861",
+            "verdict": "reject",
+            "note": "there are two pipettes here"
+          },
+          {
+            "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T1_600-4200.mp4",
+            "frame": 558,
+            "box": [
+              439.5,
+              588.7,
+              475.0,
+              632.5
+            ],
+            "mask": "runs/finebio-seeds-P03_03_01-20260925/decode/masks/T1/50ml_tube_group_1_001158.png",
+            "label": "T1 50ml_tube_group#1 @1158",
+            "verdict": "reject",
+            "note": "impossible to tell, the hand is obscuring it"
+          },
+          {
+            "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T3_600-4200.mp4",
+            "frame": 0,
+            "box": [
+              1124.6,
+              421.9,
+              1394.0,
+              516.5
+            ],
+            "mask": "runs/finebio-seeds-P03_03_01-20260925/decode/masks/T3/yellow_pipette_0_000600.png",
+            "label": "T3 yellow_pipette#0 @600",
+            "verdict": "reject",
+            "note": "two pipettes"
+          },
+          {
+            "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T3_600-4200.mp4",
+            "frame": 0,
+            "box": [
+              1356.5,
+              261.0,
+              1566.4,
+              567.3
+            ],
+            "mask": "runs/finebio-seeds-P03_03_01-20260925/decode/masks/T3/blue_pipette_0_000600.png",
+            "label": "T3 blue_pipette#0 @600",
+            "verdict": "reject",
+            "note": "pipette, but the hand is included too"
+          },
+          {
+            "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_fpv_600-4200.mp4",
+            "frame": 0,
+            "box": [
+              1599.9,
+              971.6,
+              1920.0,
+              1127.7
+            ],
+            "mask": "runs/finebio-seeds-P03_03_01-20260925/decode/masks/fpv/blue_pipette_0_000600.png",
+            "label": "fpv blue_pipette#0 @600",
+            "verdict": "reject",
+            "note": "we picked up the edge of the table"
+          }
+        ]
+      },
+      "encode": null
+    },
+    {
+      "id": "gate2-rejected-masks",
+      "day": "2026-09-27",
+      "kind": "cells",
+      "caption": "Gate 2 rejects arm b's mask on 30 of 337 cells: pipettes in the hand, a hidden object, a wider fit",
+      "struggle": "Gate 2, the human anchors: on 30 of 337 cells arm (b)'s own mask (candidate c0, red) is rejected for a wider or second-ranked candidate, 'none fits' or 'hidden'; almost all are pipettes in the hand.",
+      "output": "media/story/2026-09-27-gate2-rejected-masks.png",
+      "size_bytes": 578417,
+      "sources": [
+        {
+          "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T2_600-4200.mp4",
+          "frame": 316,
+          "box": [
+            416.1,
+            402.1,
+            701.6,
+            599.6
+          ],
+          "mask": "runs/finebio-anchors-P03_03_01-20260925/candidates/T2/f000916_s04_c0.png",
+          "label": "T2 yellow_pipette#0 @916",
+          "verdict": "reject",
+          "note": "none fits"
+        },
+        {
+          "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T3_600-4200.mp4",
+          "frame": 316,
+          "box": [
+            1124.4,
+            421.5,
+            1393.3,
+            512.1
+          ],
+          "mask": "runs/finebio-anchors-P03_03_01-20260925/candidates/T3/f000916_s06_c0.png",
+          "label": "T3 blue_pipette#0 @916",
+          "verdict": "reject",
+          "note": "none fits"
+        },
+        {
+          "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T3_600-4200.mp4",
+          "frame": 316,
+          "box": [
+            721.5,
+            575.0,
+            825.4,
+            667.9
+          ],
+          "mask": "runs/finebio-anchors-P03_03_01-20260925/candidates/T3/f000916_s01_c0.png",
+          "label": "T3 vortex_mixer#0 @916",
+          "verdict": "reject",
+          "note": "c1 chosen: the 0.15-margin box"
+        },
+        {
+          "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_fpv_600-4200.mp4",
+          "frame": 520,
+          "box": [
+            1148.6,
+            152.2,
+            1697.5,
+            506.5
+          ],
+          "mask": "runs/finebio-anchors-P03_03_01-20260925/candidates/fpv/f001120_s08_c0.png",
+          "label": "fpv blue_pipette#0 @1120",
+          "verdict": "reject",
+          "note": "c3 chosen: the decoder's second-ranked mask"
+        },
+        {
+          "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T4_600-4200.mp4",
+          "frame": 694,
+          "box": [
+            811.8,
+            700.9,
+            1014.5,
+            1039.2
+          ],
+          "mask": "runs/finebio-anchors-P03_03_01-20260925/candidates/T4/f001294_s05_c0.png",
+          "label": "T4 yellow_pipette#0 @1294",
+          "verdict": "reject",
+          "note": "c3 chosen: the decoder's second-ranked mask"
+        },
+        {
+          "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T4_600-4200.mp4",
+          "frame": 1640,
+          "box": [
+            845.4,
+            749.9,
+            1039.7,
+            983.7
+          ],
+          "mask": "runs/finebio-anchors-P03_03_01-20260925/candidates/T4/f002240_s07_c0.png",
+          "label": "T4 blue_pipette#0 @2240",
+          "verdict": "reject",
+          "note": "hidden: it's actually not in view"
+        },
+        {
+          "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T4_600-4200.mp4",
+          "frame": 1780,
+          "box": [
+            792.7,
+            503.8,
+            1168.5,
+            728.3
+          ],
+          "mask": "runs/finebio-anchors-P03_03_01-20260925/candidates/T4/f002380_s07_c0.png",
+          "label": "T4 blue_pipette#0 @2380",
+          "verdict": "reject",
+          "note": "none fits"
+        },
+        {
+          "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T4_600-4200.mp4",
+          "frame": 2454,
+          "box": [
+            988.0,
+            285.4,
+            1187.3,
+            542.3
+          ],
+          "mask": "runs/finebio-anchors-P03_03_01-20260925/candidates/T4/f003054_s00_c0.png",
+          "label": "T4 centrifuge#0 @3054",
+          "verdict": "reject",
+          "note": "c2 chosen: box plus a positive point"
+        },
+        {
+          "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_fpv_600-4200.mp4",
+          "frame": 2971,
+          "box": [
+            1649.9,
+            705.8,
+            1754.3,
+            1182.6
+          ],
+          "mask": "runs/finebio-anchors-P03_03_01-20260925/candidates/fpv/f003571_s08_c0.png",
+          "label": "fpv blue_pipette#0 @3571",
+          "verdict": "reject",
+          "note": "hidden"
+        }
+      ],
+      "frames": null,
+      "fps": null,
+      "duration_seconds": null,
+      "width": 640,
+      "options": {
+        "columns": 3,
+        "cell_height": 170,
+        "margin": 0.5
+      },
+      "fallback": null,
+      "detail": {
+        "cells": [
+          {
+            "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T2_600-4200.mp4",
+            "frame": 316,
+            "box": [
+              416.1,
+              402.1,
+              701.6,
+              599.6
+            ],
+            "mask": "runs/finebio-anchors-P03_03_01-20260925/candidates/T2/f000916_s04_c0.png",
+            "label": "T2 yellow_pipette#0 @916",
+            "verdict": "reject",
+            "note": "none fits"
+          },
+          {
+            "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T3_600-4200.mp4",
+            "frame": 316,
+            "box": [
+              1124.4,
+              421.5,
+              1393.3,
+              512.1
+            ],
+            "mask": "runs/finebio-anchors-P03_03_01-20260925/candidates/T3/f000916_s06_c0.png",
+            "label": "T3 blue_pipette#0 @916",
+            "verdict": "reject",
+            "note": "none fits"
+          },
+          {
+            "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T3_600-4200.mp4",
+            "frame": 316,
+            "box": [
+              721.5,
+              575.0,
+              825.4,
+              667.9
+            ],
+            "mask": "runs/finebio-anchors-P03_03_01-20260925/candidates/T3/f000916_s01_c0.png",
+            "label": "T3 vortex_mixer#0 @916",
+            "verdict": "reject",
+            "note": "c1 chosen: the 0.15-margin box"
+          },
+          {
+            "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_fpv_600-4200.mp4",
+            "frame": 520,
+            "box": [
+              1148.6,
+              152.2,
+              1697.5,
+              506.5
+            ],
+            "mask": "runs/finebio-anchors-P03_03_01-20260925/candidates/fpv/f001120_s08_c0.png",
+            "label": "fpv blue_pipette#0 @1120",
+            "verdict": "reject",
+            "note": "c3 chosen: the decoder's second-ranked mask"
+          },
+          {
+            "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T4_600-4200.mp4",
+            "frame": 694,
+            "box": [
+              811.8,
+              700.9,
+              1014.5,
+              1039.2
+            ],
+            "mask": "runs/finebio-anchors-P03_03_01-20260925/candidates/T4/f001294_s05_c0.png",
+            "label": "T4 yellow_pipette#0 @1294",
+            "verdict": "reject",
+            "note": "c3 chosen: the decoder's second-ranked mask"
+          },
+          {
+            "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T4_600-4200.mp4",
+            "frame": 1640,
+            "box": [
+              845.4,
+              749.9,
+              1039.7,
+              983.7
+            ],
+            "mask": "runs/finebio-anchors-P03_03_01-20260925/candidates/T4/f002240_s07_c0.png",
+            "label": "T4 blue_pipette#0 @2240",
+            "verdict": "reject",
+            "note": "hidden: it's actually not in view"
+          },
+          {
+            "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T4_600-4200.mp4",
+            "frame": 1780,
+            "box": [
+              792.7,
+              503.8,
+              1168.5,
+              728.3
+            ],
+            "mask": "runs/finebio-anchors-P03_03_01-20260925/candidates/T4/f002380_s07_c0.png",
+            "label": "T4 blue_pipette#0 @2380",
+            "verdict": "reject",
+            "note": "none fits"
+          },
+          {
+            "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T4_600-4200.mp4",
+            "frame": 2454,
+            "box": [
+              988.0,
+              285.4,
+              1187.3,
+              542.3
+            ],
+            "mask": "runs/finebio-anchors-P03_03_01-20260925/candidates/T4/f003054_s00_c0.png",
+            "label": "T4 centrifuge#0 @3054",
+            "verdict": "reject",
+            "note": "c2 chosen: box plus a positive point"
+          },
+          {
+            "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_fpv_600-4200.mp4",
+            "frame": 2971,
+            "box": [
+              1649.9,
+              705.8,
+              1754.3,
+              1182.6
+            ],
+            "mask": "runs/finebio-anchors-P03_03_01-20260925/candidates/fpv/f003571_s08_c0.png",
+            "label": "fpv blue_pipette#0 @3571",
+            "verdict": "reject",
+            "note": "hidden"
+          }
+        ]
+      },
+      "encode": null
+    }
+  ],
+  "coverage": {
+    "2026-09-08": {
+      "images": [
+        "media/story/2026-09-08-text-prompts-fail.gif"
+      ],
+      "fallbacks": [],
+      "placeholders": []
+    },
+    "2026-09-09": {
+      "images": [
+        "media/story/2026-09-09-box-seed-fix.gif"
+      ],
+      "fallbacks": [],
+      "placeholders": []
+    },
+    "2026-09-13": {
+      "images": [
+        "media/story/2026-09-13-keyframe-corrections.gif"
+      ],
+      "fallbacks": [],
+      "placeholders": []
+    },
+    "2026-09-14": {
+      "images": [
+        "media/story/2026-09-14-black-base-candidates.png"
+      ],
+      "fallbacks": [],
+      "placeholders": []
+    },
+    "2026-09-15": {
+      "images": [
+        "media/story/2026-09-15-exploratory-identity.gif"
+      ],
+      "fallbacks": [],
+      "placeholders": []
+    },
+    "2026-09-16": {
+      "images": [
+        "media/story/2026-09-16-exploratory-arms.gif"
+      ],
+      "fallbacks": [],
+      "placeholders": []
+    },
+    "2026-09-17": {
+      "images": [
+        "media/story/2026-09-17-human-flags-swap.gif",
+        "media/story/2026-09-17-v4-review-sheet.png"
+      ],
+      "fallbacks": [],
+      "placeholders": []
+    },
+    "2026-09-18": {
+      "images": [
+        "media/story/2026-09-18-eight-views-disagree.gif"
+      ],
+      "fallbacks": [],
+      "placeholders": []
+    },
+    "2026-09-19": {
+      "images": [
+        "media/story/2026-09-19-anchors-swap-window.png"
+      ],
+      "fallbacks": [],
+      "placeholders": []
+    },
+    "2026-09-20": {
+      "images": [
+        "media/story/2026-09-20-interior-stays-human.gif",
+        "media/story/2026-09-20-v6-review.png"
+      ],
+      "fallbacks": [],
+      "placeholders": []
+    },
+    "2026-09-21": {
+      "images": [
+        "media/story/2026-09-21-detector-boxes.png",
+        "media/story/2026-09-21-text-fails-on-plate.gif"
+      ],
+      "fallbacks": [],
+      "placeholders": []
+    },
+    "2026-09-24": {
+      "images": [
+        "media/story/2026-09-24-camera6-pose.png"
+      ],
+      "fallbacks": [],
+      "placeholders": []
+    },
+    "2026-09-25": {
+      "images": [
+        "media/story/2026-09-25-finebio-3d.gif",
+        "media/story/2026-09-25-finebio-world-view.png",
+        "media/story/2026-09-25-pipette-fragments.gif",
+        "media/story/2026-09-25-video-memory-drifts.gif"
+      ],
+      "fallbacks": [],
+      "placeholders": []
+    },
+    "2026-09-26": {
+      "images": [
+        "media/story/2026-09-26-gate1-rejected-seeds.png"
+      ],
+      "fallbacks": [],
+      "placeholders": []
+    },
+    "2026-09-27": {
+      "images": [
+        "media/story/2026-09-27-gate2-rejected-masks.png"
+      ],
+      "fallbacks": [],
+      "placeholders": []
+    }
+  }
+}
