@@ -281,6 +281,13 @@ def test_frame_page_renders_rows_candidates_and_serves_the_images(served, tmp_pa
     assert "background-position:-0px -50px" in row0
     assert "background-position:-256px -50px" in row0
     assert 'class="tile cand dup" data-index="1"' in row0 and "= c0" in row0
+    # Keys 1-4 name c0-c3 (the Assembly101 habit) while the stored index stays 0-3: the caption
+    # shows the key, then the candidate, and the page script maps the key back to the index.
+    assert "<kbd>1</kbd> c0 arm_b_tight" in row0 and "<kbd>2</kbd> c1 margin" in row0
+    assert "<kbd>0</kbd> c" not in page
+    assert "<kbd>1</kbd>-<kbd>4</kbd> candidate c0-c3" in page
+    assert "case '1': case '2': case '3': case '4':" in page and "Number(e.key) - 1" in page
+    assert "case '0': status(" in page and "case '0': case '1'" not in page
     assert "/files/candidates/fpv/f000916_s00_c0.png" in row0
     assert 'href="/files/sheets/f000916_fpv.jpg"' in page
     assert 'src="/files/sheets/f000916_fpv_overview.jpg"' in page
@@ -299,6 +306,7 @@ def test_frame_page_renders_rows_candidates_and_serves_the_images(served, tmp_pa
     row1 = section(page, "row-1")
     assert 'data-candidates="[0, 2]"' in row1
     assert '<img src="/files/candidates/T4/f000637_s01_c2.png"' in row1
+    assert "<kbd>3</kbd> c2 box_point" in row1 and "<kbd>2</kbd>" not in row1
     assert "f000637_s01_c1.png" not in row1
     assert "background-position" not in page
     # Navigation follows the recommended order; the last page's "next" is the index.

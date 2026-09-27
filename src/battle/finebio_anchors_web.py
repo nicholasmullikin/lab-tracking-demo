@@ -15,7 +15,8 @@ edit per cell; this module serves the same workspace as pages instead::
   with the reference-box crop and the candidate tiles cut from the workspace's own sheet
   (duplicates greyed with their `= cK`), the current decision, an `instance_identity` input
   with autocomplete over every identity already in the record, and a `note`.
-* Keys: ``0``-``3`` choose a candidate, ``h`` hidden, ``b`` box, ``n`` none_fits, ``x`` clear,
+* Keys: ``1``-``4`` choose candidate c0-c3 (the stored decision stays the index 0-3; ``0`` does
+  nothing), ``h`` hidden, ``b`` box, ``n`` none_fits, ``x`` clear,
   ``j``/``k`` (or the arrows) move between rows, ``]``/``[`` change page, ``a`` accepts c0 and
   advances (the fast path), ``i`` edits the identity, ``o`` toggles the overview size.
 * Every change is written at once to the record (a temporary file renamed into place) with
@@ -754,7 +755,7 @@ class App:
             if decision == index:
                 classes += " chosen"
             caption = (
-                f"<kbd>{index}</kbd> {_e(candidate.get('kind', ''))} &middot; dec "
+                f"<kbd>{index + 1}</kbd> c{index} {_e(candidate.get('kind', ''))} &middot; dec "
                 f"{_fmt(candidate.get('decoder_iou_pred'))} &middot; bbox "
                 f"{_fmt(candidate.get('mask_bbox_iou_vs_box'))}"
             )
@@ -895,9 +896,9 @@ tr.done td{color:#3c9}
 """
 
 KEYS_HTML = (
-    '<div class="keys"><kbd>0</kbd>-<kbd>3</kbd> candidate &nbsp; <kbd>h</kbd> hidden &nbsp; '
+    '<div class="keys"><kbd>1</kbd>-<kbd>4</kbd> candidate c0-c3 &nbsp; <kbd>h</kbd> hidden &nbsp; '
     "<kbd>b</kbd> box &nbsp; <kbd>n</kbd> none_fits &nbsp; <kbd>x</kbd> clear &nbsp; "
-    "<kbd>a</kbd> accept c0 and advance &nbsp; <kbd>j</kbd>/<kbd>k</kbd> row &nbsp; "
+    "<kbd>a</kbd> accept c0 (key 1) and advance &nbsp; <kbd>j</kbd>/<kbd>k</kbd> row &nbsp; "
     "<kbd>]</kbd>/<kbd>[</kbd> page &nbsp; <kbd>i</kbd> identity (Enter/Esc leaves) &nbsp; "
     "<kbd>o</kbd> overview size &nbsp; <kbd>-</kbd>/<kbd>=</kbd> tile size</div>"
 )
@@ -920,8 +921,9 @@ INDEX_TEMPLATE = """<!doctype html>
 </thead><tbody>{rows}</tbody></table>
 {keys}
 <p class="muted">One glance and one keypress per row: on a frame page <kbd>a</kbd> accepts arm
-(b)'s own mask (c0) and moves to the next row; choose another candidate with its digit, or
-<kbd>h</kbd> when the object is not visible. Every change is saved to the record at once.</p>
+(b)'s own mask (c0, key <kbd>1</kbd>) and moves to the next row; <kbd>2</kbd>-<kbd>4</kbd> choose
+c1-c3, or <kbd>h</kbd> when the object is not visible. Every change is saved to the record at
+once.</p>
 </main>
 <script id="page-data" type="application/json">{page_data}</script>
 <script>{script}</script>
@@ -1124,7 +1126,7 @@ SCRIPT = r"""
   function decide(row, decision) {
     var candidates = rowCandidates(row);
     if (typeof decision === 'number' && candidates.indexOf(decision) < 0) {
-      status('no candidate c' + decision + ' on this row (have ' +
+      status('no candidate c' + decision + ' (key ' + (decision + 1) + ') on this row (have ' +
         (candidates.length ? candidates.map(function (c) { return 'c' + c; }).join(' ') : 'none') +
         ')', 'error');
       return Promise.resolve(null);
@@ -1166,15 +1168,18 @@ SCRIPT = r"""
     if (e.altKey || e.ctrlKey || e.metaKey) return;
     var row = rows[current];
     switch (e.key) {
-      case '0': case '1': case '2': case '3':
-        decide(row, Number(e.key)); break;
+      // Keys 1-4 name candidates c0-c3 (the Assembly101 workspace's habit); the stored
+      // decision stays the candidate index. 0 does nothing.
+      case '1': case '2': case '3': case '4':
+        decide(row, Number(e.key) - 1); break;
+      case '0': status('keys 1-4 choose c0-c3; 0 does nothing', 'muted'); break;
       case 'h': decide(row, 'hidden'); break;
       case 'b': decide(row, 'box'); break;
       case 'n': decide(row, 'none_fits'); break;
       case 'x': decide(row, null); break;
       case 'a':
         if (rowCandidates(row).indexOf(0) < 0) {
-          status('no c0 on this row: h (hidden) or n (none_fits), then j', 'error');
+          status('no c0 (key 1) on this row: h (hidden) or n (none_fits), then j', 'error');
         } else {
           decide(row, 0).then(function (body) { if (body) advance(); });
         }

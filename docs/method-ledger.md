@@ -911,7 +911,8 @@ frame-views in the brief's order with per-page and total counts, and a page per 
 the overview and **one row per slot**, the tiles cut from the workspace's own sheet (duplicates
 greyed with their `= cK`, the 103 box-less cells offering only hidden / none_fits), an identity
 field with autocomplete over the record and a note. **One glance and one keypress per row:**
-`0`-`3` candidate, `h` / `b` / `n` / `x`, `j` / `k` rows, `]` / `[` pages, `a` accepts c0 and
+`1`-`4` candidates c0-c3 (rekeyed from `0`-`3` the same evening; the stored index is
+unchanged), `h` / `b` / `n` / `x`, `j` / `k` rows, `]` / `[` pages, `a` accepts c0 and
 advances, `i` identity. Every change is written at once to `decisions.json` (atomic rename,
 `author`, `updated_at`) in the template's own schema, so `score` and `export` read it unchanged
 and the template is never touched; a Score button runs `battle-finebio-anchors score` against the
@@ -9993,8 +9994,12 @@ and the 83 `main()` entry points beyond their shared fragments.
   sheet's "no box on this frame" text tile and only the hidden / none_fits / clear buttons.
   Without a sheet (the synthetic test workspace) the candidate PNGs themselves are the tiles.
 - **Keys** (document-level `keydown`, ignored while a text input has focus except Enter / Esc,
-  which leave the field; ignored with Ctrl / Alt / Meta): `0`-`3` choose that candidate for the
-  current row, `h` hidden, `b` box, `n` none_fits, `x` clear (null), `j` / `k` and the arrows
+  which leave the field; ignored with Ctrl / Alt / Meta): `1`-`4` choose candidates c0-c3 for
+  the current row (**rekeyed later the same evening at the user's request from `0`-`3`: the
+  Assembly101 workspace used 1-4 and that is the habit; the tile captions show the key before
+  the candidate, `[1] c0 arm_b_tight`, the stored decision stays the index 0-3 so the record,
+  `score`, `export` and the template are untouched, and `0` is a no-op with a hint**), `h`
+  hidden, `b` box, `n` none_fits, `x` clear (null), `j` / `k` and the arrows
   move the current row, `]` / `[` next / previous page in the index order (`]` on the last
   page goes to the index), **`a` accepts c0 and advances** (the fast path), `i` focuses the
   identity field, `o` toggles the overview, `-` / `=` zoom the tiles (CSS `zoom` on the tile

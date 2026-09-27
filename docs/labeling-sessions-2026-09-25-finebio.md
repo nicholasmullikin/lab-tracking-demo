@@ -233,13 +233,15 @@ uv run battle-finebio-anchors-web --workspace runs/finebio-anchors-P03_03_01-202
   the current decision in yellow; an `instance_identity` field that autocompletes over every
   identity already in the record; a `note` field. The 103 rows without a box offer only
   `hidden` / `none_fits`.
-- **Keys** (no modifier; when no text field has focus): `0`-`3` choose that candidate for the
-  current row; `h` hidden, `b` box, `n` none_fits, `x` clear (back to null); `j` / `k` (or the
-  arrows) move the current row; `]` / `[` next / previous frame-view in the index order (`]` on
-  the last page returns to the index); **`a` accepts c0 for the current row and advances**, the
-  fast path: when arm (b)'s own mask is right, a page is eleven presses of `a`; `i` focuses the
-  identity field, Enter or Esc leaves it; `-` / `=` shrink / enlarge the tiles. Clicking a tile
-  or a button does the same as its key.
+- **Keys** (no modifier; when no text field has focus): **`1`-`4` choose candidates c0-c3** for
+  the current row (`1` = c0, arm (b)'s mask; `4` = c3), the Assembly101 workspace's habit; each
+  tile's caption shows its key, and the record still stores the candidate index `0`-`3`, so
+  `score` / `export` and the template are unchanged; `0` does nothing. `h` hidden, `b` box, `n`
+  none_fits, `x` clear (back to null); `j` / `k` (or the arrows) move the current row; `]` / `[`
+  next / previous frame-view in the index order (`]` on the last page returns to the index);
+  **`a` accepts c0 for the current row and advances**, the fast path: when arm (b)'s own mask is
+  right, a page is eleven presses of `a`; `i` focuses the identity field, Enter or Esc leaves
+  it; `-` / `=` shrink / enlarge the tiles. Clicking a tile or a button does the same as its key.
 - **Saving**: every change is written at once to `decisions.json` (a temporary file renamed into
   place; `author` and `updated_at` at the top) in the template's own schema, so `score` and
   `export` read it unchanged, and the template is never modified. The page updates in place and
