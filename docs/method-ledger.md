@@ -901,6 +901,27 @@ worker run and lost anyway. Committed record without pixels:
 Gate 1 on trial 2 and gate 2 are still unheld. Record: [Sep 26: gate 1 held, seed decisions on
 trial 1 (p2-gate1)](#sep-26-gate-1-held-seed-decisions-on-trial-1-p2-gate1).
 
+#### Sep 26: gate-2 web workspace (battle-finebio-anchors-web)
+
+The gate-2 brief had the human open 40 sheets and hand-edit a 7,866-line decisions JSON; the
+user called that annoying, so the same workspace is now served as pages by a small headless
+tool (`uv run battle-finebio-anchors-web --workspace runs/finebio-anchors-P03_03_01-20260925
+--tailscale`; loopback by default, no GPU, no external JavaScript): an index of the 40
+frame-views in the brief's order with per-page and total counts, and a page per frame-view with
+the overview and **one row per slot**, the tiles cut from the workspace's own sheet (duplicates
+greyed with their `= cK`, the 103 box-less cells offering only hidden / none_fits), an identity
+field with autocomplete over the record and a note. **One glance and one keypress per row:**
+`0`-`3` candidate, `h` / `b` / `n` / `x`, `j` / `k` rows, `]` / `[` pages, `a` accepts c0 and
+advances, `i` identity. Every change is written at once to `decisions.json` (atomic rename,
+`author`, `updated_at`) in the template's own schema, so `score` and `export` read it unchanged
+and the template is never touched; a Score button runs `battle-finebio-anchors score` against the
+four trial-1 arms and shows the table (18 s). Smoked on the real workspace over loopback: the
+record created from the template at 0 / 440, pages and images at 200, the keys exercised in a
+browser (one decision written and cleared), the scoreboard rendered; 11 tests on a synthetic
+workspace, default tier 993 passed / 14 skipped, lint clean. Gate 2 itself is still unheld
+(0 / 440). Record: [Sep 26: gate-2 web workspace
+(battle-finebio-anchors-web)](#sep-26-gate-2-web-workspace-battle-finebio-anchors-web).
+
 ### Plan versus actual
 
 What the plan said, what happened instead, and why, in one line each.
@@ -9927,3 +9948,150 @@ and the 83 `main()` entry points beyond their shared fragments.
   Outcome table row `p2-gate1`; Part 1 pointer
   [Sep 26: gate 1 held](#sep-26-gate-1-held-seed-decisions-on-trial-1-p2-gate1). Commit: this
   entry's (ledger, plan Outcome row, the human record, the `docs/qa/README.md` pointer).
+
+### Sep 26: gate-2 web workspace (battle-finebio-anchors-web)
+
+- **What this is.** The gate-2 brief
+  ([`docs/labeling-sessions-2026-09-25-finebio.md`](labeling-sessions-2026-09-25-finebio.md),
+  second section) asked the human to open 40 sheets and fill a 7,866-line
+  `decisions.template.json` by hand; the user called that annoying, and the Sep 25 workspace
+  entry had already said why the Assembly101 calibration web tool was not reused (bound to its
+  clip configs and four-part target policy). This entry adds a small headless web workspace
+  over the existing anchors workspace, `src/battle/finebio_anchors_web.py` (console script
+  `battle-finebio-anchors-web`, 1,415 lines including the page CSS and script), with the design
+  goal **one glance and one keypress per row**. Nothing about the anchors changes: the cells,
+  the candidates, the record schema and the scorer are the Sep 25 ones; the tool is a different
+  way to write the same `decisions.json`. No GPU, no decode, no browser opened by the tool, no
+  external JavaScript, no framework. FineBio pixels are served read-only from the workspace
+  directory under `runs/` to the browser and go nowhere else; nothing under `runs/` is
+  committed.
+- **Command.** `uv run battle-finebio-anchors-web --workspace
+  runs/finebio-anchors-P03_03_01-20260925 [--record decisions.json] [--port 8766] [--tailscale |
+  --bind 127.0.0.1] [--arms a=..,b=..] [--author NAME]`. Loopback by default; `--tailscale`
+  binds `tailscale ip -4` and prints the MagicDNS URL too (the `resolve_tailscale_ipv4` /
+  `tailscale_dns_name` / `reachable_urls` helpers of `muggled_calibration_web` are imported, not
+  copied); wildcard binds are refused, as there, because there is no authentication. `--port 0`
+  takes a free port. `ThreadingHTTPServer`, `BaseHTTPRequestHandler`, the calibration tool's
+  idioms.
+- **Pages.** *Index*: the 40 frame-views in the brief's recommended order, computed from the
+  cells' `origin` and `in_cycle_neighbourhood` (`six_view_annotated` first, fpv then T1..T5; then
+  the disagreement frames inside the centrifuge-cycle neighbourhoods, 1120 / 1294 / 3372; then
+  the rest by frame number), each with labelled / 11, the total out of 440, the record path, an
+  author field, the key map and the Score button. *Frame page* `/frame/<raw>/<view>`: the
+  overview JPEG (slot boxes and numbers are already drawn on it; click or `o` toggles 640 px /
+  full width), then one `<section class="row">` per slot: label, class, role, the decision, the
+  `hidden` / `box` / `none_fits` / `clear` buttons (`box` only where a reference box exists),
+  the identity input with a `<datalist>` of every identity in the record, the note input, and
+  the tiles. **The tiles are crops of the workspace's own sheet**, not re-rendered: the sheet
+  `f<raw>_<view>.jpg` is a 50 px title over rows of 256 x 318 tiles in five columns (context
+  crop, c0..c3), so a tile is a `<div>` with the sheet as `background-image` and a
+  `background-position` of `(-256 (1 + k), -(50 + 318 row))`; the geometry is read from the
+  image size (PIL, header only) rather than assumed, and the browser fetches one JPEG per page.
+  The tile's caption carries the index, kind, `dec` and `bbox IoU` from `workspace.json`, and
+  `= cK` for the duplicates `assemble_cells` marked, greyed at 45% opacity; missing indices are
+  absent; the raw mask PNG is linked under each tile. The 103 cells without a box show the
+  sheet's "no box on this frame" text tile and only the hidden / none_fits / clear buttons.
+  Without a sheet (the synthetic test workspace) the candidate PNGs themselves are the tiles.
+- **Keys** (document-level `keydown`, ignored while a text input has focus except Enter / Esc,
+  which leave the field; ignored with Ctrl / Alt / Meta): `0`-`3` choose that candidate for the
+  current row, `h` hidden, `b` box, `n` none_fits, `x` clear (null), `j` / `k` and the arrows
+  move the current row, `]` / `[` next / previous page in the index order (`]` on the last
+  page goes to the index), **`a` accepts c0 and advances** (the fast path), `i` focuses the
+  identity field, `o` toggles the overview, `-` / `=` zoom the tiles (CSS `zoom` on the tile
+  strip, because at a 1024 px viewport five 256 px tiles wrap; remembered in `localStorage`).
+  Clicking a tile or a button does the same as its key and makes that row current. The current
+  row is outlined in yellow, labelled rows get a green edge; the current row is remembered per
+  page in `localStorage`, and a fresh visit starts at the first unlabelled row. A digit for a
+  candidate the row does not have, `b` without a box, `a` without a c0: refused client-side
+  with a message, and again server-side.
+- **The record.** `Record` owns `decisions.json`: loaded if present (`finebio_anchors.
+  load_record`, schema check), else created from `decisions.template.json`; cells the record
+  lacks are added from the template; `author` from `--author` (default `$USER`). Every change
+  goes through `POST /api/cell {raw_frame, view, slot, decision | instance_identity | note}`,
+  is validated against the cell (`validate_decision`: an index in the cell's `candidates`, one
+  of `box` / `hidden` / `none_fits`, or null; `box` needs a reference box; identity and note
+  whitespace-collapsed, empty identity -> null; unknown fields refused), and the whole document
+  is written at once with `fs_common.write_json(atomic=True)` (`decisions.tmp`, then rename)
+  with `updated_at` (UTC, seconds). The template is never opened for writing. The response
+  carries the cell, the page and global counts and the identity list, and the page updates the
+  DOM in place; no reload. `reviewed_at` is left as the template has it (null): the tool records
+  when the file last changed, not that the review is finished. The schema is the template's, so
+  `battle-finebio-anchors score` and `export` read it unchanged (a test loads a served record
+  through `load_record` and `anchors_from_record`). Two browsers on one server share the
+  process lock; two servers on one record would race, and nothing prevents that beyond the
+  advice not to do it.
+- **Score now.** `POST /api/score` runs `python -m battle.finebio_anchors score --workspace ..
+  --record .. --arms .. --output <workspace>/scoreboard` in a subprocess (cwd = the repository
+  root, one run at a time via a non-blocking lock, 409 while one is running, 30-minute
+  timeout), returns `anchor_scoreboard.md` as text, and the page renders the markdown tables
+  as HTML with links to the `.md` / `.json` under `/files/scoreboard/`; a non-zero exit shows
+  the subprocess's stderr. The arms default to the trial's `a-boxes-only`, `b-box-decode-arm`,
+  `c-video-memory-arm`, `d-video-memory-arm` beside the workspace's `arm_b`, those that exist;
+  `--arms name=dir,...` overrides; with none the button is disabled and says so.
+- **Static files.** `GET /files/<path>` serves `.png` / `.jpg` / `.jpeg` / `.md` / `.json` under
+  the resolved workspace directory only (path resolved, must have the workspace as a parent;
+  anything else, including `../` and `worker.log`, is 404); images `max-age=3600`, the rest
+  `no-store`. `/api/state` returns the counts, pages, identities and the last score outcome.
+- **Smoke against the real workspace** (Sep 26 evening, loopback, `--port 0`). Start:
+  `Record: runs/finebio-anchors-P03_03_01-20260925/decisions.json (0 / 440 labelled; 40
+  frame-views)`; the record did not exist before and was created from the template with its
+  440 cells identical to the template's (`author` nick, `updated_at 2026-09-27T03:22:32Z`), the
+  template's mtime unchanged (Sep 25 06:11). `curl`: index 200 (21.1 KB; the first links
+  `/frame/916/fpv`, `/frame/916/T1` .. `T5`, `/frame/1120/fpv`, `/frame/1120/T4`,
+  `/frame/1294/..`, `/frame/3372/..`, then `/frame/637/..`; `0 / 440`); frame 916 fpv 200 (42.3
+  KB, 11 rows, background positions `-0px -50px`, `-256px -50px`, .. `-1024px -50px`, `-0px
+  -368px`, 19 `= c0` captions); `/files/sheets/f000916_fpv_overview.jpg` 200 image/jpeg 216 KB,
+  `f000916_fpv.jpg` 200 872 KB, `candidates/fpv/f000916_s00_c0.png` 200 image/png 6.5 KB;
+  `/files/../README.md` 404, `/files/worker.log` 404. In a browser tab (the IDE's): the page
+  renders as intended (overview, rows, tiles with the sheet's own captions, the current row
+  outlined); `j` moved the row, `a` wrote `decision: 0` on slot 1 (vortex_mixer), the header
+  went to `page 1 / 11 · all 1 / 440 · saved ..:25:41Z` and the next row became current; `k`,
+  `x` cleared it (0 / 440 again, `updated_at ..:26:07Z`); `-` twice showed `tiles at 80%`.
+  **Score now** with the four trial-1 arms: 18.2 s through the API and 17.6 s from the button,
+  the 0 / 440 table rendered inline with the per-arm rows and the links,
+  `scoreboard/anchor_scoreboard.{md,json}` written (that directory did not exist before). The
+  server was stopped; the record is at 0 / 440 with `author: nick`.
+- **A bug the browser found.** The first version HTML-escaped the JSON in the `<script
+  type="application/json">` page-data block; script contents are raw text, so `JSON.parse`
+  failed and no key worked (the screenshot looked right, the keys did nothing). Fixed
+  (`_script_json`: raw JSON with `</` escaped) and the test now parses that block; the `curl`
+  checks alone would not have caught it, so the browser pass is recorded here as part of the
+  verification, not as a demo.
+- **Tests.** `tests/test_finebio_anchors_web.py`, 11 tests, default tier, on a synthetic
+  workspace under `tmp_path` (two frame-views x two slots: a cell with c0 and a duplicate c1, a
+  cell without candidates, a cell with c0 only, a cell with c0 and c2; 1 x 1 white PNG masks; a
+  black 1280 x 686 sheet for one page, none for the other; the template written by
+  `finebio_anchors.decisions_template` itself), served on `127.0.0.1:0` with the `serve` pattern
+  of `tests/conftest.py`: the recommended order (a unit test on frames 916 / 1120 / 1294 / 637 /
+  1521 / 4122 and the served index); the frame page's rows, candidates, sheet positions,
+  duplicate caption, PNG fallback and the images at 200 with traversal and `.log` at 404; a
+  POST writing the record atomically (no `.tmp` left, `updated_at`, `author`, the cell's keys
+  identical to the template's, the template's SHA-256 unchanged) and the page showing the
+  choice; identity / note / clear / author; refused changes leaving the record byte-identical;
+  the no-candidate cell offering only hidden / none_fits; the served record loading through
+  `load_record` and `anchors_from_record` with the right states; an existing record reused and
+  completed, a `--record` elsewhere created; the score button with a stand-in command (the
+  markdown returned and served, a failing command's stderr, two concurrent runs giving one 409);
+  CLI defaults and the wildcard refusal. Default tier **993 passed / 14 skipped** in 14.3 s
+  (982 + these 11); `ruff check src tests scripts` and `ruff format --check` clean, no `noqa`.
+- **Deviations from the brief.** Added beyond it: the `-` / `=` tile zoom, the `o` overview
+  toggle, the author field on the index, `/api/state`, `--port 0`, and the Score button on the
+  frame pages as well as the index. Not done: the page script has no automated test (the
+  default tier has no JavaScript runtime; the calibration tool's node-backed checks are `slow`
+  tier); it was exercised once in a browser as above. `reviewed_at` is not set by the tool
+  (see the record bullet). The `serve` fixture in `conftest.py` is bound to the calibration
+  handler and was not generalised; the test file carries a four-line copy of the pattern.
+- **Claim boundary.** Unchanged from the Sep 25 entry: an anchor is one person's choice among
+  decoder masks on 18 frames of one trial, ranks arms against each other, and is not ground
+  truth; the tool changes how fast the choice is written, not what it is. Gate 2 is still
+  unheld: 0 / 440.
+- **Pointers.** `src/battle/finebio_anchors_web.py`; `tests/test_finebio_anchors_web.py`;
+  `pyproject.toml` (`battle-finebio-anchors-web`); the brief's new "Web workspace" subsection in
+  [`docs/labeling-sessions-2026-09-25-finebio.md`](labeling-sessions-2026-09-25-finebio.md);
+  the workspace `runs/finebio-anchors-P03_03_01-20260925/` with its `decisions.json` (created
+  by the smoke run, 0 / 440) and `scoreboard/`; the Sep 25 entry
+  [anchor frames and workspace for gate 2 (p6-anchors, prepared)](#sep-25-anchor-frames-and-workspace-for-gate-2-p6-anchors-prepared).
+  Part 1 pointer [Sep 26: gate-2 web workspace](#sep-26-gate-2-web-workspace-battle-finebio-anchors-web).
+  `README.md` (the user's unstaged hunk) and `test.sh` untouched; the workspace's
+  `decisions.template.json` untouched. Commit: this entry's (module, tests, pyproject line,
+  brief subsection, ledger).

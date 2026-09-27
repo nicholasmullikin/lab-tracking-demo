@@ -201,9 +201,10 @@ and gate 2 follows the gate-1 pattern instead, static sheets plus a decisions JS
   `author`.
 - `workspace.json`, `requests.json`, `results.json`: the record of what was asked and decoded.
 
-Viewing: the sheets are plain JPEGs. If you want them over the tailnet the way the Assembly101
-workspaces were served, a read-only static server on this machine's Tailscale address is enough
-(not started; nothing here needs a GPU or a POST):
+Viewing: the sheets are plain JPEGs, and the web workspace below serves the same tiles as pages
+with one keypress per row. The static sheets stay as the fallback: if you want only them over
+the tailnet the way the Assembly101 workspaces were served, a read-only static server on this
+machine's Tailscale address is enough (nothing here needs a GPU):
 
 ```bash
 cd /home/nick/src/battle/runs/finebio-anchors-P03_03_01-20260925
@@ -211,9 +212,48 @@ python3 -m http.server 8766 --bind "$(tailscale ip -4)" --directory sheets
 # then http://<tailscale ip>:8766/ from any device on the tailnet; Ctrl-C when done
 ```
 
+### Web workspace (`battle-finebio-anchors-web`, Sep 26)
+
+Added because clicking through 40 sheets and hand-editing a 7,866-line JSON is the slow part.
+The same workspace, served as pages; nothing decoded, no GPU, no browser opened by the tool:
+
+```bash
+cd /home/nick/src/battle
+uv run battle-finebio-anchors-web --workspace runs/finebio-anchors-P03_03_01-20260925 --tailscale
+# prints http://<tailscale ip>:8766/ (and the MagicDNS name); Ctrl-C when done
+# loopback only: --bind 127.0.0.1 (the default); another record: --record <file>; --author <name>
+```
+
+- **Index**: the 40 frame-views in the order that pays (916 in all six views, then 1120 / 1294 /
+  3372 in the centrifuge neighbourhoods, then the rest), each with its labelled / 11 count, and
+  the total out of 440. The author field writes into the record.
+- **Frame page**: the overview at the top (click or `o` to enlarge), then **one row per slot**:
+  label and class, the reference-box crop, the candidate tiles c0..c3 cut from the sheet with
+  their `dec` / `bbox IoU`; missing candidates are absent, duplicates greyed with their `= cK`;
+  the current decision in yellow; an `instance_identity` field that autocompletes over every
+  identity already in the record; a `note` field. The 103 rows without a box offer only
+  `hidden` / `none_fits`.
+- **Keys** (no modifier; when no text field has focus): `0`-`3` choose that candidate for the
+  current row; `h` hidden, `b` box, `n` none_fits, `x` clear (back to null); `j` / `k` (or the
+  arrows) move the current row; `]` / `[` next / previous frame-view in the index order (`]` on
+  the last page returns to the index); **`a` accepts c0 for the current row and advances**, the
+  fast path: when arm (b)'s own mask is right, a page is eleven presses of `a`; `i` focuses the
+  identity field, Enter or Esc leaves it; `-` / `=` shrink / enlarge the tiles. Clicking a tile
+  or a button does the same as its key.
+- **Saving**: every change is written at once to `decisions.json` (a temporary file renamed into
+  place; `author` and `updated_at` at the top) in the template's own schema, so `score` and
+  `export` read it unchanged, and the template is never modified. The page updates in place and
+  keeps its current row; the record is the only state, so stopping and restarting the server, or
+  editing the JSON by hand in between, loses nothing.
+- **Score now** (index and frame pages) runs `battle-finebio-anchors score` against the trial's
+  four arms into `<workspace>/scoreboard/` (about 20 s) and shows the table inline with links to
+  the `.md` / `.json`; the button is disabled while a run is in progress and shows the error if
+  one fails.
+
 ## What to do per frame (about 1.5 h for 440 cells, most of them one glance)
 
-Open the frame's sheet and its overview side by side. Per row (slot):
+Open the frame's page in the web workspace (or its sheet and overview side by side). Per row
+(slot):
 
 1. **Pick the candidate whose mask is the object the label names**: write its index (`0`-`3`)
    into `decision`. `0` is arm (b)'s mask; if it is right, `0` is the answer and takes a second.
