@@ -30,7 +30,7 @@ from battle.finebio_arms import (
     scoreboard_markdown,
     slot_measures,
 )
-from battle.multiview_schemas import FineBioObservation, Track3D, TrackEvent
+from battle.multiview_schemas import FineBioObservation, Track3D, TrackEvent, read_jsonl
 from battle.multiview_tracks import ResidualRow
 
 CLIP_CONFIG = Path("configs/clips/finebio_P03_03_01_600-4200.json")
@@ -607,6 +607,90 @@ def test_mark_plan_slots_rewrites_rule_and_seeds_md(tmp_path: Path):
     )
 
 
+def test_filter_observations_drops_rejected_slots_by_view_and_label(tmp_path: Path):
+    from battle.finebio_observations import write_observations
+
+    rows = []
+    for f in (600, 601):
+        rows.append(_det("T1", f, "centrifuge", (100, 100, 300, 300)))
+        rows.append(_det("T3", f, "blue_pipette", (10, 10, 60, 90)))
+        rows.append(
+            _sam3("T1", f, "centrifuge#0", "centrifuge", (100.0, 100.0, 300.0, 300.0), area=1)
+        )
+        rows.append(_sam3("T1", f, "blue_pipette#0", "blue_pipette", (0.0, 0.0, 9.0, 9.0), area=1))
+        # The same label kept in another view: the match is per (view, label), not per label.
+        rows.append(
+            _sam3("T3", f, "blue_pipette#0", "blue_pipette", (10.0, 10.0, 60.0, 90.0), area=1)
+        )
+    rows.append(
+        FineBioObservation(
+            view="T3",
+            frame_index=602,
+            slot="blue_pipette#0",
+            object_class="blue_pipette",
+            mask_bbox_px=(10.0, 10.0, 60.0, 90.0),
+            pose_valid=True,
+            source="sam3_video",
+            provenance={"mask": "absent"},
+        )
+    )
+    src = tmp_path / "sep25"
+    src.mkdir()
+    write_observations(rows, src / "observations.jsonl")
+    (src / "observations_summary.json").write_text(
+        json.dumps({"arm": "b", "worker_runs": {"T1": "w/T1", "T3": "w/T3"}, "rows_written": 11})
+    )
+    seeds = tmp_path / "filtered"
+    seeds.mkdir()
+    (seeds / "seeds.json").write_text(
+        json.dumps(
+            {
+                "step": "apply-decisions",
+                "provenance": "human_filtered",
+                "decisions_sha256": "abc",
+                "views": {
+                    "T1": {
+                        "slots": [{"label": "centrifuge#0"}, {"label": "vortex_mixer#0"}],
+                        "rejected": [{"label": "blue_pipette#0"}],
+                    },
+                    "T3": {"slots": [{"label": "blue_pipette#0"}], "rejected": []},
+                },
+            }
+        )
+    )
+    out = tmp_path / "filtered-arm"
+    assert (
+        main(
+            [
+                "filter-observations",
+                "--observations",
+                str(src / "observations.jsonl"),
+                "--seeds",
+                str(seeds),
+                "--output",
+                str(out),
+            ]
+        )
+        == 0
+    )
+    kept = list(read_jsonl(out / "observations.jsonl", FineBioObservation))
+    assert len(kept) == 9 and not any(r.view == "T1" and r.slot == "blue_pipette#0" for r in kept)
+    assert sum(r.source == "detector" for r in kept) == 4
+    assert sum(r.view == "T3" and r.source == "sam3_video" for r in kept) == 3
+    summary = json.loads((out / "observations_summary.json").read_text())
+    assert summary["worker_runs"] == {"T1": "w/T1", "T3": "w/T3"}  # the source's, carried
+    assert summary["rows_written"] == 9
+    assert summary["sam3_rows_by_view"] == {"T1": 2, "T3": 3}
+    assert summary["sam3_rows_without_mask_by_view"] == {"T1": 0, "T3": 1}
+    sf = summary["seed_filter"]
+    assert sf["dropped_slots"] == [{"view": "T1", "slot": "blue_pipette#0", "rows": 2}]
+    assert sf["rows_dropped"] == 2 and sf["detector_rows"] == 4
+    assert sf["seeds_provenance"] == "human_filtered" and sf["decisions_sha256"] == "abc"
+    assert sf["kept_slots_not_in_source"] == {"T1": ["vortex_mixer#0"]}
+    # The source is untouched.
+    assert len(list(read_jsonl(src / "observations.jsonl", FineBioObservation))) == 11
+
+
 def _measures(iou_median: float, frac: float, **identity):
     ident = {"id_switches": 3, "fragmentation": 10, "ambiguities": 5}
     ident.update(identity)
@@ -734,6 +818,10 @@ def test_arm_a_pipeline_on_the_preflight_fixtures(tmp_path: Path, fixtures):
     assert "objects_only" in measures["identity"]
     assert measures["residual_px"]["pooled"]["n"] > 0
     assert "slots" not in measures  # no SAM3 rows in arm (a)
+    # The claim boundary on the record points at where the human-anchored numbers live and
+    # does not claim they are absent (gate 2 was held on Sep 27).
+    assert "battle-finebio-anchors" in measures["claim_boundary"]
+    assert "no human anchor exists" not in measures["claim_boundary"].lower()
     inventory = measures["occlusion_inventory"]
     assert set(inventory["extension_needs"]) >= {"held", "contained", "unexplained"}
     summary = json.loads((output / "observations_summary.json").read_text())

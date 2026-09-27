@@ -100,8 +100,9 @@ LOO_CLASSES = ("cell_culture_plate", "blue_pipette", "left_hand", "right_hand")
 CLAIM_BOUNDARY = (
     "Model output throughout: the FineBio DINO detector was trained on FineBio's own bench and "
     "cameras, so its boxes (and every mask prompted from them) are agreement between models, not "
-    "accuracy; confidence ranks rows within an arm; events are geometry on 3D tracks; no human "
-    "anchor exists yet (p6-anchors)."
+    "accuracy; confidence ranks rows within an arm; events are geometry on 3D tracks; the human "
+    "anchors of gate 2 (p6-anchors) are scored apart by battle-finebio-anchors and rank arms "
+    "without making any of this accuracy."
 )
 
 

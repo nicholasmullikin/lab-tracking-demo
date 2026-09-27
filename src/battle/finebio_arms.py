@@ -34,11 +34,15 @@ window camera config and the rig's gates. From its `tracks.jsonl`, `events.jsonl
   payload format.
 * **sanity**: the first-view check of a worker run against the preflight numbers (ms per
   frame or step, mask-bbox IoU vs the prompt or detector box on the first N frames).
+* **filter-observations**: a row filter of an arm's `observations.jsonl` to the slots a
+  human-filtered seed run keeps, by `(view, slot label)`; exact for the memory-free arm (b),
+  whose masks are per-slot independent, and the input of `run --reuse-observations` there.
 
 Claim boundary: the FineBio detector was trained on FineBio's own objects and cameras; every
 "IoU vs detector box" here is agreement between two models, not accuracy; identity metrics
-against SAM3 per-view slots are a proxy; no human anchor exists yet. Nothing under `runs/` or
-`data/` is committed (FineBio licence).
+against SAM3 per-view slots are a proxy; the human anchors of gate 2 are scored apart
+(`battle-finebio-anchors`) and rank arms without making any of this accuracy. Nothing under
+`runs/` or `data/` is committed (FineBio licence).
 """
 
 from __future__ import annotations
@@ -111,7 +115,8 @@ SANITY_MIN_IOU = 0.8
 CLAIM_BOUNDARY = (
     "The FineBio DINO detector was trained on FineBio's own objects and on frames from these "
     "cameras; mask-bbox IoU against its boxes is agreement between two models, not accuracy. "
-    "Identity metrics against SAM3 per-view slots are a proxy. No human anchor exists yet."
+    "Identity metrics against SAM3 per-view slots are a proxy. Human anchors (gate 2, "
+    "battle-finebio-anchors) are scored apart and rank arms without making any of this accuracy."
 )
 LICENCE_NOTE = (
     "FineBio is licensed for non-commercial research; frames, masks and videos derived from it "
@@ -1173,6 +1178,94 @@ def mark_plan_slots(
     return {"rule": rule, "classes": list(classes), "changed": dict(changed)}
 
 
+# --------------------------------------------------------------------------- seed filter
+
+
+def kept_slots_from_seeds(seeds_dir: Path) -> dict[str, set[str]]:
+    """view -> labels of the slots a seed run keeps (`views.<view>.slots`; a run written by
+    `battle-detector-seed apply-decisions` lists only the accepted ones there)."""
+    doc = json.loads((Path(seeds_dir) / "seeds.json").read_text(encoding="utf-8"))
+    return {
+        view: {str(slot["label"]) for slot in selected.get("slots", [])}
+        for view, selected in doc.get("views", {}).items()
+    }
+
+
+def filter_observations_to_seeds(source: Path, seeds_dir: Path, output: Path) -> dict[str, Any]:
+    """Row filter of an arm's `observations.jsonl` to the slots a (human-filtered) seed run
+    keeps, matched by `(view, slot label)`: every detector row stays, a SAM3 row stays when its
+    `(view, slot)` is a kept slot. Exact for arm (b), whose per-frame box decode is
+    per-slot independent (no memory shared between slots); for the video-memory arms the slots
+    share one multiplexed run and a worker re-run is the exact filter. Writes
+    `<output>/observations.jsonl` and `<output>/observations_summary.json` (the source's
+    summary, when one sits beside it, with the SAM3 counts recomputed and a `seed_filter`
+    block naming what was dropped), so `run --reuse-observations --seeds <seeds_dir>` can take
+    it from there."""
+    source = Path(source)
+    seeds_dir = Path(seeds_dir)
+    output = Path(output)
+    output.mkdir(parents=True, exist_ok=True)
+    kept = kept_slots_from_seeds(seeds_dir)
+    seeds_doc = json.loads((seeds_dir / "seeds.json").read_text(encoding="utf-8"))
+    dropped: Counter[tuple[str, str]] = Counter()
+    kept_rows: Counter[str] = Counter()
+    kept_no_mask: Counter[str] = Counter()
+    seen_slots: dict[str, set[str]] = defaultdict(set)
+    detector_rows = 0
+    written = 0
+    with (
+        source.open(encoding="utf-8") as src,
+        (output / "observations.jsonl").open("w", encoding="utf-8") as dst,
+    ):
+        for line in src:
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if row.get("source") in SAM3_SOURCES:
+                view, slot = str(row["view"]), str(row["slot"])
+                seen_slots[view].add(slot)
+                if slot not in kept.get(view, set()):
+                    dropped[(view, slot)] += 1
+                    continue
+                kept_rows[view] += 1
+                if row.get("mask_area_px") is None:
+                    kept_no_mask[view] += 1
+            else:
+                detector_rows += 1
+            dst.write(line if line.endswith("\n") else line + "\n")
+            written += 1
+    summary_path = source.parent / "observations_summary.json"
+    summary: dict[str, Any] = (
+        json.loads(summary_path.read_text(encoding="utf-8")) if summary_path.is_file() else {}
+    )
+    summary["sam3_rows_by_view"] = {v: kept_rows[v] for v in sorted(seen_slots)}
+    summary["sam3_rows_without_mask_by_view"] = {v: kept_no_mask[v] for v in sorted(seen_slots)}
+    summary["rows_written"] = written
+    summary["seed_filter"] = {
+        "method": "row filter by (view, slot label) against the seed run's kept slots",
+        "source_observations": str(source),
+        "seeds": str(seeds_dir),
+        "seeds_provenance": seeds_doc.get("provenance"),
+        "seeds_step": seeds_doc.get("step"),
+        "decisions_sha256": seeds_doc.get("decisions_sha256"),
+        "kept_slots_by_view": {v: sorted(kept[v]) for v in sorted(kept)},
+        "dropped_slots": [
+            {"view": v, "slot": s, "rows": n} for (v, s), n in sorted(dropped.items())
+        ],
+        "rows_dropped": sum(dropped.values()),
+        "detector_rows": detector_rows,
+        "kept_slots_not_in_source": {
+            v: sorted(kept[v] - seen_slots.get(v, set()))
+            for v in sorted(kept)
+            if kept[v] - seen_slots.get(v, set())
+        },
+    }
+    (output / "observations_summary.json").write_text(
+        json.dumps(summary, indent=1) + "\n", encoding="utf-8"
+    )
+    return summary
+
+
 # --------------------------------------------------------------------------- run an arm
 
 
@@ -1792,6 +1885,14 @@ def build_parser() -> argparse.ArgumentParser:
     mark.add_argument("--rule", default="landmark_plan_shortlist")
     mark.add_argument("--note", required=True)
 
+    filt = sub.add_parser(
+        "filter-observations",
+        help="row-filter an arm's observations.jsonl to a (human-filtered) seed run's slots",
+    )
+    filt.add_argument("--observations", type=Path, required=True, help="source observations.jsonl")
+    filt.add_argument("--seeds", type=Path, required=True, help="seed run dir (seeds.json)")
+    filt.add_argument("--output", type=Path, required=True, help="arm dir to write into")
+
     board = sub.add_parser("scoreboard", help="arms x measures from measures.json files")
     board.add_argument(
         "--arm",
@@ -1904,6 +2005,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             note=args.note,
         )
         print(json.dumps(report, indent=1))
+        return 0
+    if args.command == "filter-observations":
+        summary = filter_observations_to_seeds(args.observations, args.seeds, args.output)
+        print(json.dumps(summary["seed_filter"], indent=1))
         return 0
     if args.command == "scoreboard":
         arms = {}
