@@ -981,6 +981,17 @@ gates were trial-1 sittings; the plan forbids per-trial tuning). Default tier 99
 skipped, lint clean; nothing under `runs/` committed. Record: [Sep 27: trial-1 downstream redone
 on the human-filtered seeds (post-gate)](#sep-27-trial-1-downstream-redone-on-the-human-filtered-seeds-post-gate).
 
+#### Sep 27: arm (d) checkpoints deleted (disk)
+
+The Sep 25 close-out's disk finding acted on with the user's approval: the six
+`runs/finebio-arms-P03_03_01-20260925/d-video-memory/<view>/*/native/checkpoints/` directories,
+**985 per-correction SAM3 memory checkpoints, 269.7 GB (251.2 GiB)**, deleted and nothing else;
+(d)'s observations, 222,740 masks, manifests, measures, tracks and decision files kept and
+verified identical (hashes, mask inventory, a read-only loader pass and a byte-identical
+scoreboard rebuild before and after). `runs/` 332G -> **81G**, the trial-1 arms root about 260G
+-> 8.5G. The (c) checkpoints of the three arms roots (2.6 / 2.4 / 3.4G, the 600-frame cadence)
+stay. Record: [Sep 27: arm (d) checkpoints deleted (disk)](#sep-27-arm-d-checkpoints-deleted-disk).
+
 ### Plan versus actual
 
 What the plan said, what happened instead, and why, in one line each.
@@ -1190,11 +1201,14 @@ Technical:
   - Parameters left open by the plan and never revisited: K = 5 / repeat 30 before a re-seed,
     tau for memory writes (unset), the hysteresis 0 / 3 cm / 5 frames, the per-class container
     heights, the window.
-  - **Disk:** `runs/finebio-arms-P03_03_01-20260925/d-video-memory/` holds 985 checkpoints of
-    ~305 MB (252 GiB) written at every one of arm (d)'s 986 correction frames by the worker's
-    per-correction checkpoint rule; the arm's verdict is negative and its numbers rest on its
-    `observations.jsonl`, masks and manifests, not the checkpoints. Nothing deleted; the user
-    decides. `--no-checkpoints` exists on the worker for a re-run.
+  - **Disk: closed Sep 27.** `runs/finebio-arms-P03_03_01-20260925/d-video-memory/` held 985
+    checkpoints of ~305 MB (251.2 GiB) written at every one of arm (d)'s 986 correction frames by
+    the worker's per-correction checkpoint rule; the arm's verdict is negative and its numbers
+    rest on its `observations.jsonl`, masks and manifests, not the checkpoints. **Deleted with
+    the user's approval** (the six `native/checkpoints/` directories and nothing else; the kept
+    files verified identical, the loader and scoreboard unchanged; `runs/` 332G -> 81G):
+    [Sep 27: arm (d) checkpoints deleted (disk)](#sep-27-arm-d-checkpoints-deleted-disk).
+    `--no-checkpoints` exists on the worker for a re-run.
   - Nothing under `runs/` or `data/` is committed (FineBio licence, non-commercial research); no
     sharing determination was made. No tag was placed on the close; the user decides.
   - Audio: never entered, closed with the Assembly101 phase (Sep 24).
@@ -10684,3 +10698,93 @@ and the 83 `main()` entry points beyond their shared fragments.
   two gate open items. Commits: `abd053e` (the subcommand, the claim strings, the tests) and this
   entry's (ledger, plan copy, review guide). `README.md` (the user's unstaged hunk) and `test.sh`
   untouched; nothing under `runs/` committed.
+
+### Sep 27: arm (d) checkpoints deleted (disk)
+
+- **What this is.** The disk finding of the Sep 25 close-out
+  ([close-out](#sep-25-finebio-3d-tracking-phase-close-out-p-docs): 985 per-correction SAM3
+  memory checkpoints of ~305 MB under arm (d)'s six video-memory worker runs, written by the
+  worker's checkpoint-before-correction rule on top of `--checkpoint-every 600` because (d)'s
+  schedules carried 986 tracker-emitted box corrections; "nothing deleted; the user decides"),
+  acted on with the user's approval. **Scope, exactly:** the six
+  `runs/finebio-arms-P03_03_01-20260925/d-video-memory/<view>/*/native/checkpoints/` directories
+  and nothing else. Every other (d) artifact (the worker runs' `manifest.json`,
+  `worker_command.json`, `worker_result.json`, `observations.jsonl`, `masks/`, the two empty
+  `worker.*.log`; `d-video-memory-arm/` with `observations.jsonl`, `observations_summary.json`,
+  `measures.{json,md}`, `tracks/`, `occlusion_inventory.{jsonl,md}`, `confidence/`, `events/`;
+  `d-reseed-schedules/`; `decision_c_vs_b.json`; the scoreboard) stays, since (d)'s negative
+  result is cited in the ledger, the plan Outcome, the anchor scoreboards and the review
+  recordings. Not deleted, only sized: the (c) checkpoints of this root, of
+  `runs/finebio-arms-P03_03_01-filtered-20260927/` and of `runs/finebio-arms-P20_03_01-20260925/`
+  (only (d) was approved).
+- **Dry run (before anything was removed).** `find -type d -path '*/native/checkpoints'` under
+  `d-video-memory/` lists exactly six directories, one per worker run
+  (`muggledsam-arm-video-memory-<view>-20260925t{073522,081134,082936,084432,090233,091957}z-r1280-pm-append/native/checkpoints`
+  for fpv, T1..T5), holding **985 files, all `f<frame:06d>.pt`, no sub-directories, no
+  symlinks**; nothing else under `d-video-memory/` matches `*/native/checkpoints*`. Per view
+  (`du -sh --apparent-size`, and `du -sh` on disk, identical): **fpv 107G (398 files), T1 40G
+  (153), T2 4.4G (31), T3 47G (182), T4 20G (85), T5 35G (136); total 252G = 269,711,591,078
+  bytes (251.2 GiB)**; the (d) schedules carry 426 / 149 / 23 / 177 / 78 / 133 corrections on
+  391 / 143 / 23 / 174 / 78 / 130 distinct frames per view (fpv, T1..T5), so the file counts are
+  the distinct correction frames plus a handful of cadence and late-seed-frame checkpoints (not
+  reconstructed file by file; the names are gone). No `muggled_worker` or `battle-*` process
+  existed (`pgrep -af`),
+  `fuser` on the 985 files and on the six directories returned 1 (no process held them), the GPU
+  showed only `kwin_wayland` (132 MiB). Other roots' checkpoint directories, reported and kept:
+  this root's `c-video-memory/` 6 directories / 47 files / **2.6G** (in 3.7G apparent, 4.4G on
+  disk); `runs/finebio-arms-P03_03_01-filtered-20260927/` 7 / 45 / **2.4G** (incl. the fpv
+  300-frame sanity run's one; root 4.7G / 5.3G); `runs/finebio-arms-P20_03_01-20260925/` 6 /
+  56 / **3.4G** (root 7.0G / 7.9G); `b-box-decode/` and `sanity/` none (1.1G and 23M). Across
+  all of `runs/` the checkpoint directories outside (d) are 94 / 574 files / **27G**, the rest
+  being the Sep 18-22 Assembly101 SAM3 runs (`multiview-reprompt-*`, `sam3-views-*`,
+  `sam3-memory-arms-*`, `sam3-policy-ablation-*`, `rec2-automatic-*`, `sam3-exemplar-*`; the
+  largest 1.4G); none touched.
+- **Loader check (nothing reads the checkpoints).** `src/battle/finebio_arms.py` and
+  `src/battle/finebio_observations.py` do not contain the word "checkpoint": `find_worker_run`
+  accepts a run on `manifest.json` (`method_statuses[0].state == succeeded`) plus
+  `observations.jsonl`, `worker_to_observations` reads `observations.jsonl` and
+  `masks/<frame>_<slot>.png`, `worker_timing` reads `worker_result.json`; `_load_measures` reads
+  the arm's `measures.json`. In the (d) files, `manifest.json`, `worker_result.json` and
+  `observations_summary.json` carry no checkpoint key or path (the summary names the worker
+  run directories); `worker_command.json` records the `--checkpoint-every 600` flag only. The
+  viewer (`finebio_viewer.py`) and the anchor scorer (`finebio_anchors.py`) likewise never
+  mention checkpoints. A one-off read-only script (`/tmp`, not in the repository) ran the loader
+  path over the six (d) runs before and after the deletion (`find_worker_run`,
+  `load_observations`, `read_mask` on the first and last mask of each run, `worker_timing`,
+  `_load_measures`, the arm summary): identical output but for the checkpoint counts (398 / 153
+  / 31 / 182 / 85 / 136 -> 0, directory gone), 3600 frames and 36,393 / 37,988 / 36,218 / 37,395
+  / 37,375 / 37,371 masked objects per view (fpv, T1..T5; 222,740 total = the manifests'
+  `mask_artifact_count` = the PNGs on disk), masks 1920 x 1440 (fpv) and 1920 x 1080, every
+  manifest `succeeded`, the arm's 917,825 rows, pooled det-box IoU 0.9111 / p10 0.0 / 75.75% /
+  n 175,997, residual 6.04 px. `battle-finebio-arms scoreboard --arm a=.. b=.. c=.. d=..` into
+  `/tmp` before and after: `scoreboard.json` and `scoreboard.md` **byte-identical** (SHA-256
+  `cd14e29f...`; the (d) rows 0.911 / 0.000 / 0.757 / 175997 and 264 / 227 / 79 / 11.0 / 173 /
+  201 / 358 / 17 as in the run README; this rebuild lacks only the `*-ext` arms the stored Sep 25
+  `scoreboard/` carries, so the stored file was not overwritten). No loader was patched; none
+  needed it.
+- **Deleted (Sep 27, 14:04 UTC).** The six paths written to a list file, each line checked
+  against the pattern `runs/finebio-arms-P03_03_01-20260925/d-video-memory/(fpv|T[1-5])/<run>/native/checkpoints`,
+  then `xargs rm -rf` over the list; 10 s. After: 0 `checkpoints` directories and 0 `.pt` files
+  under `d-video-memory/`; the six `native/` directories remain, empty.
+- **Kept, verified after.** Mask inventory (path and byte size of every PNG, 222,740 lines)
+  byte-identical to the pre-deletion listing; the 61 non-mask files under `d-video-memory/`,
+  `d-video-memory-arm/` and `d-reseed-schedules/` SHA-256-identical (`sha256sum -c`); files
+  under `d-video-memory/` + `d-video-memory-arm/` 222,794 both times; worker `observations.jsonl`
+  3600 rows per view, arm `observations.jsonl` 917,825 rows, `tracks/*.jsonl` 681,233 lines in
+  all, unchanged.
+- **Sizes before -> after.** `du -sh --apparent-size` / `du -sh`: `d-video-memory/` 253G / 253G
+  -> **1.2G / 1.8G** (the masks; `du -h` rounds up, 251.2 GiB deleted + 1.2G kept reads 253G);
+  `d-video-memory-arm/` 483M unchanged; the run root `runs/finebio-arms-P03_03_01-20260925/`
+  about 260G / 262G (the Sep 25 reading; the same deletion arithmetic) -> **8.5G / 11G**, of
+  which `c-video-memory/` 3.7G / 4.4G, `b-box-decode/` 1.1G / 1.6G, the four arm directories and
+  the rest; **`runs/` 332G / 336G -> 81G / 85G**; `/home` (3.7T) used 1.8T -> 1.6T, 49% -> 44%,
+  available 1.9T -> 2.1T.
+- **Docs and commit.** `runs/finebio-arms-P03_03_01-20260925/README.md` (gitignored) gains a
+  "Checkpoints deleted Sep 27" section (what, how much, why safe, the sizes, `--no-checkpoints`
+  for any re-run of (d), or ~305 MB per correction frame) and a note on its Layout line. This
+  entry, the Part 1 pointer [Sep 27: arm (d) checkpoints deleted
+  (disk)](#sep-27-arm-d-checkpoints-deleted-disk) and the disk item under Part 1 "Open items"
+  (FineBio block) closed. The Sep 25 close-out and the Sep 27 post-gate entry keep their
+  "nothing deleted / remain for the user's decision" wording as the record of that date. Only
+  `docs/method-ledger.md` committed; `README.md` (the user's unstaged hunk) and `test.sh`
+  untouched; nothing under `runs/` committed. No source file changed.
