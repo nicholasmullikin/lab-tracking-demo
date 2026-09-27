@@ -482,3 +482,26 @@ model against model. **Amended Sep 27:** gate 2 was held on trial 1 (337 / 440 c
 - Left open on purpose and still open: K before a re-seed, tau for memory writes (never set),
   the hysteresis widths (enter <= 0 cm, exit >= 3 cm, dwell 5 frames, read off trial 1 and not
   revisited), the window length (one for both trials).
+
+### After the gates (Sep 27)
+
+With both gates held, trial 1 was redone downstream of them so the record rests on the human
+seeds and the human anchors (`runs/finebio-arms-P03_03_01-filtered-20260927/`, the Sep 25 root
+kept for comparison; ledger entry "Sep 27: trial-1 downstream redone on the human-filtered seeds
+(post-gate)"). Arm (b) as a row filter of its Sep 25 observations to the 60 kept slots (exact:
+the per-frame decode is per-slot independent), arm (c) re-run per view on the filtered schedules
+(1.26 h of GPU; T2 / T4 / T5, whose schedules did not change, reproduce the Sep 25 masks object
+for object), arm (a) unchanged, arm (d) not re-run (negative on Sep 25; on the filtered seeds the
+pre-registered (c)-vs-(b) rule does not fire, so (d) would not have started). The verdicts hold:
+(b) **0.928 / 99.3%** vs (c) **0.915 / 80.4%** label-free (0.926 / 99.1% vs 0.914 / 79.3% on the
+auto seeds); on the anchor cells that are not on a rejected slot (b) is identical to Sep 25 (0.988
+mean / 99.0% >= 0.5) and (c) unchanged in the mean (0.903 / 93.9%) with its drift **moved**
+between the fpv tube and pipette slots (8 cells down, 6 up; dead slots 9 of 58 -> 10 of 53)
+rather than removed; (b) > (c) on masks and (c) > (b) on identity through the centrifuge in both
+roots. What the human seeds change: the blue pipette, seen from three cameras instead of six,
+fragments less in (b) (80 -> 61 core, 59 -> 51 ext ids; ambiguities 158 -> 116 / 54 -> 35) and
+more in (c) (30 -> 41 / 20 -> 30), and (b)'s 3D track no longer joins the T2 red pipette to
+T1's and T3's blue boxes (the gate-1 / gate-2 question; the cell has no track now, IDF1 six-view
+1.000 -> 0.980). The review recording `runs/finebio-review-P03_03_01-filtered-20260927/` is the
+recommended one for trial 1. Trial 2 was **not** redone: both gates were trial-1 sittings and
+this plan forbids per-trial tuning; its arms stand on `provenance: auto` seeds with no anchor set.

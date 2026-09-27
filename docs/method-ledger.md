@@ -73,7 +73,7 @@ track, compelling demo"); its closing record is
 | FineBio: multi-camera, one world frame, segmentation from multiple angles to keep track (a 3D object with a persistent id) | Done with its limits named. Per-trial camera solve (camera 6 re-solved in room 1, cameras 1-4 in room 2, 0.7-2.1 px; no view dropped), rig gates as formulas (association 30.1 / 27.5 px), the seven cross-checks and a negative control on every build; a new 3D tracker (birth by triangulation, predict-project-gate, coasting / lost, confirmed re-acquisition, hand-off re-seed) plus four extensions on inventory evidence: tracks born 285 / 308 / 270 -> 191 / 186 / 147 and ambiguities 126 / 158 / 133 -> 33 / 54 / 22 on trial 1, 290 / 321 / 208 -> 166 / 202 / 152 and 70 / 97 / 25 -> 8 / 35 / 7 on trial 2. The static objects are one id each in both rooms; a tube keeps its id `contained` through the closed-lid spins; **the in-hand pipette fragments in both rooms** (41 / 59 / 20 and 24 / 48 / 21 ids with the motion model) and per-tube identity in racks is out of scope by evidence. Identity metrics are the tracker's own against the SAM3 slots as a proxy; **on the gate-2 names (Sep 27; six identities, all static but one) pooled IDF1 is (c) 0.962 > (a) 0.956 > (d) 0.950 > (b) 0.921, the difference being the centrifuge's one id in (c)/(d) vs two in (a)/(b) across the lid cycles, and (b) 1.000 on the six-view frame; core and ext identical because no tube or held pipette was named** | [gate 2 held](#sep-27-gate-2-held-the-anchor-scoreboard-on-trial-1-p6-anchors); [p0-cameras](#sep-25-battle-finebio-cameras-the-per-trial-camera-solve-p0-cameras); [p1-rig](#sep-25-battle-finebio-rig-and-the-gate-formulas-p1-rig); [p3-tracker](#sep-25-battle-multiview-tracks-core-p3-tracker); [p3-tracker-ext](#sep-25-tracker-extensions-on-the-inventorys-evidence-p3-tracker-ext) |
 | FineBio: compelling demo | Done as a review surface, not judged by a viewer. Three Rerun recordings (trial 1 core 915.6 MB / 508 entity paths, trial 1 extensions 887.6 MB, trial 2 extensions 817.2 MB / 399), each with World / Cameras / Evidence presets, the seven cross-checks, a negative control, confidence with abstention, an events strip and a storyboard marked on the timeline (ten items on trial 1: the centrifuge cycle, the fpv off the plate and back, the transparent plate in six views, a confidence drop that is a real failure; six on trial 2). Every recording `rerun rrd verify` clean; none opened in a viewer by an agent | [p5](#sep-25-confidence-events-and-the-review-recording-p5-confidence-p5-events-p5-viewer); [close-out](#sep-25-finebio-3d-tracking-phase-close-out-p-docs); [`docs/review-guide-2026-09-25-finebio-3d.md`](review-guide-2026-09-25-finebio-3d.md) |
 | FineBio: generalises to a second room with zero tuning | Done. `P20_03_01` through the trial-1 pipeline with the trial id swapped: (b) 0.919 / 98.5%, the same verdicts, the extensions' effect the same size; **three things named as overfit** (the rig's moving-object witness class list that put the hand-off gate at the 80 px cap; the trial-1 slot cap's `magnetic_rack` side effect in T2; the viewer's camera-6-only drawn negative control) and one stop rule fired (the plate `detector_unseeded` in T2, DDETR not substituted) | [p6-trial2](#sep-25-second-trial-p20_03_01-with-zero-tuning-p6-trial2); [close-out](#sep-25-finebio-3d-tracking-phase-close-out-p-docs); `runs/finebio-arms-P20_03_01-20260925/README.md` |
-| FineBio: the two soft human gates | **Both held on trial 1 (gate 1 Sep 26, gate 2 Sep 27).** Gate 1 (seed shortlist, ~15 min): 52 accept / 6 reject / 2 null of 60, filtered seeds written for both runs, arms not re-run (the arms ran on `provenance: auto` seeds); trial 2's 66 tiles undecided. Gate 2 (review anchors): **337 / 440 cells labelled** (the 103 box-less cells `null`), (b)'s own mask accepted on 307, another candidate on 18, the box rejected on 12; six identities (five static singletons + `red_pipette`). The first human-anchored numbers: mask IoU vs the accepted candidate (b) 1.000 median / 98.8% >= 0.5, (c) 0.965 / 93.5%, (d) 0.961 / 91.7%; (a) boxes 0.929 box IoU vs (b) 0.975 / (c) 0.901; IDF1 pooled (c) 0.962 > (a) 0.956 > (d) 0.950 > (b) 0.921 (the centrifuge), (b) 1.000 on the six-view frame; the human-anchored ranking agrees with the label-free one, (b) > (c) > (d), with a 5-point gap on >= 0.5 instead of 20. Anchors rank arms against each other; not accuracy | [p2-gate1 held](#sep-26-gate-1-held-seed-decisions-on-trial-1-p2-gate1); [gate 2 held](#sep-27-gate-2-held-the-anchor-scoreboard-on-trial-1-p6-anchors); [p6-anchors prepared](#sep-25-anchor-frames-and-workspace-for-gate-2-p6-anchors-prepared); [`docs/qa/finebio-P03_03_01-review-anchors.human-record.json`](qa/finebio-P03_03_01-review-anchors.human-record.json) |
+| FineBio: the two soft human gates | **Both held on trial 1 (gate 1 Sep 26, gate 2 Sep 27).** Gate 1 (seed shortlist, ~15 min): 52 accept / 6 reject / 2 null of 60, filtered seeds written for both runs; the Sep 25 arms ran on `provenance: auto` seeds and **trial 1 was redone on the filtered seeds on Sep 27** ((b) 0.928 / 99.3%, (c) 0.915 / 80.4%; (b) identical to Sep 25 on every shared anchor cell, (c)'s drift moved between slots rather than removed; [post-gate](#sep-27-trial-1-downstream-redone-on-the-human-filtered-seeds-post-gate)); trial 2's 66 tiles undecided. Gate 2 (review anchors): **337 / 440 cells labelled** (the 103 box-less cells `null`), (b)'s own mask accepted on 307, another candidate on 18, the box rejected on 12; six identities (five static singletons + `red_pipette`). The first human-anchored numbers: mask IoU vs the accepted candidate (b) 1.000 median / 98.8% >= 0.5, (c) 0.965 / 93.5%, (d) 0.961 / 91.7%; (a) boxes 0.929 box IoU vs (b) 0.975 / (c) 0.901; IDF1 pooled (c) 0.962 > (a) 0.956 > (d) 0.950 > (b) 0.921 (the centrifuge), (b) 1.000 on the six-view frame; the human-anchored ranking agrees with the label-free one, (b) > (c) > (d), with a 5-point gap on >= 0.5 instead of 20. Anchors rank arms against each other; not accuracy | [p2-gate1 held](#sep-26-gate-1-held-seed-decisions-on-trial-1-p2-gate1); [gate 2 held](#sep-27-gate-2-held-the-anchor-scoreboard-on-trial-1-p6-anchors); [p6-anchors prepared](#sep-25-anchor-frames-and-workspace-for-gate-2-p6-anchors-prepared); [`docs/qa/finebio-P03_03_01-review-anchors.human-record.json`](qa/finebio-P03_03_01-review-anchors.human-record.json) |
 | Audio | Deferred by plan; never revisited; closed with the phase | [close](#sep-24-assembly101-phase-closed) |
 
 The honest summary, as of the morning of Sep 18: nine-plus methods attempted, one clip,
@@ -954,6 +954,33 @@ Claim boundary unchanged: one person's choice among decoder masks on 18 frames o
 ranking arms against each other, not accuracy. Record: [Sep 27: gate 2 held, the anchor
 scoreboard on trial 1 (p6-anchors)](#sep-27-gate-2-held-the-anchor-scoreboard-on-trial-1-p6-anchors).
 
+#### Sep 27: trial-1 downstream redone on the human-filtered seeds (post-gate)
+
+With both gates held, trial 1 was redone downstream of them into
+`runs/finebio-arms-P03_03_01-filtered-20260927/` (the Sep 25 root kept as the auto-seed
+comparison): arm (b) as a row filter of its Sep 25 observations to the 60 kept slots (exact; the
+new `battle-finebio-arms filter-observations`, 16,433 of 181,984 SAM3 rows dropped), arm (c)
+re-run per view on the filtered schedules (**1.26 h of GPU**; the three views whose schedules did
+not change reproduce the Sep 25 masks object for object), arm (a) unchanged and linked, arm (d)
+not re-run (negative on Sep 25, and the pre-registered rule does not fire on the human seeds),
+then tracker core and extensions, measures, inventory, confidence, events, a recording (867.5 MB,
+389 entity paths, 37,984 masks, verify clean, the storyboard re-picked: the same tube through
+both closures, a new (c) confidence drop at raw 2037) and the anchor scoreboard. Label-free (b)
+0.926 / 99.1% -> **0.928 / 99.3%**, (c) 0.914 / 79.3% -> **0.915 / 80.4%** (the pure-removal
+arithmetic says 80.5%: the kept video-memory slots of fpv / T1 / T3 moved both ways, dead slots
+9 of 58 -> 10 of 53). Human-anchored, on the anchor cells not on a rejected slot: **(b)
+identical to Sep 25 cell by cell** (0.988 mean / 99.0% >= 0.5; 0.949 / 95.1% if the 13 rejected
+mask cells count as 0), **(c) unchanged in the mean** (0.903 / 93.9%; 8 cells down, 6 up), so
+**removing the six seeds moved video memory's drift rather than removing it**; two of the four
+hidden false positives gone (the rejected fpv blue slot on the red pipette); IDF1 (b) 0.921 ->
+0.919 (the T2 `red_pipette` cell lost the track that joined it to T1's and T3's blue boxes), (c)
+0.962 -> 0.965; the ranking (b) > (c) on masks, (c) > (b) on identity through the centrifuge,
+holds. Tracker identity with the extensions: (b) ambiguities 54 -> 35, blue pipette 59 -> 51 ids
+(8-channel 8 -> 11, its T1 slot rejected), (c) 22 -> 14 and 20 -> 30. Trial 2 not redone (the
+gates were trial-1 sittings; the plan forbids per-trial tuning). Default tier 995 passed / 14
+skipped, lint clean; nothing under `runs/` committed. Record: [Sep 27: trial-1 downstream redone
+on the human-filtered seeds (post-gate)](#sep-27-trial-1-downstream-redone-on-the-human-filtered-seeds-post-gate).
+
 ### Plan versus actual
 
 What the plan said, what happened instead, and why, in one line each.
@@ -1091,10 +1118,15 @@ Human gates (nothing below can be claimed until these are recorded):
   `--reuse-observations` step away, see
   [Sep 26](#sep-26-gate-1-held-seed-decisions-on-trial-1-p2-gate1)); the pipette slots
   rejected in T1 / T3 / fpv are not replaced (a `select` re-run on other seed frames if wanted).
+  **Redone Sep 27:** the trial-1 arms (b) and (c) were re-run on the filtered seeds into
+  `runs/finebio-arms-P03_03_01-filtered-20260927/` and scored against the anchors
+  ([Sep 27, post-gate](#sep-27-trial-1-downstream-redone-on-the-human-filtered-seeds-post-gate));
+  the Sep 25 arms stand as the auto-seed comparison.
   Trial 2 (`P20_03_01`): the 66 with-plate seeds in
   `runs/finebio-seeds-P20_03_01-20260925/with-plate/sheets/<view>.jpg` have no decision; brief in
   [`docs/labeling-sessions-2026-09-25-finebio.md`](labeling-sessions-2026-09-25-finebio.md).
-  Nothing waited for either; every arm ran on `provenance: auto` seeds and the record says so.
+  Nothing waited for either; every Sep 25 arm ran on `provenance: auto` seeds and the record
+  says so; trial 2's arms still do.
 - **FineBio gate 2, soft: held on trial 1 (Sep 27)**, 337 / 440 cells (every cell with a
   detector box; the 103 box-less cells left `null`, so hidden false positives on detector-less
   frames are unmeasured), six identities (the five static singletons and `red_pipette` on one
@@ -1102,9 +1134,11 @@ Human gates (nothing below can be claimed until these are recorded):
   [Sep 27](#sep-27-gate-2-held-the-anchor-scoreboard-on-trial-1-p6-anchors). What it leaves
   open: no tube or held pipette is named, so per-tube identity, the pipette's fragmentation and
   the core-vs-extensions identity difference have no human-anchored reading (four more names
-  on 916 would make the T2 red-pipette merge countable); the gate-1 filtered seeds were not
-  applied to the arms before scoring; a trial-2 anchor set (six-view frame 1442) was never
-  chosen.
+  on 916 would make the T2 red-pipette merge countable); a trial-2 anchor set (six-view frame
+  1442) was never chosen. The gate-1 filtered seeds were applied to the arms and scored on Sep 27
+  ([post-gate](#sep-27-trial-1-downstream-redone-on-the-human-filtered-seeds-post-gate);
+  `scoreboard-filtered/`): (b) identical on every shared cell, (c) unchanged in the mean with
+  its drift moved between slots.
 
 Technical:
 
@@ -9706,6 +9740,23 @@ and the 83 `main()` entry points beyond their shared fragments.
   | Tests and lint at close (Sep 25, morning) | `uv run pytest -q`: **982 passed, 14 skipped, 72 deselected, 23.8 s**; `-m real_data -k finebio`: **14 passed** (1054 deselected, 29.7 s); `-m gpu`: 2 collected, not run; `uv run ruff check src tests scripts`: **all checks passed**; `uv run ruff format --check src tests scripts`: **242 files already formatted** | repository | this entry |
   | GPU hours, whole phase | **about 7.6 h** (27,228 s): preflight ~300 s, detector CUDA build checks ~120 s, worker smokes ~20 s, detector runs 3,912 s (four runs), seed decodes 24 s (preflight and trial-1 base), arms on trial 1 14,558 s ((b) 3,635, (c) 4,466, (d) 6,354, smokes 91, with-plate seed decode 12), anchors 33 s, trial 2 8,261 s ((b) 3,634, (c) 4,516, smokes 88, seed decodes 23); the plan said about 5 h | sums of the wall-clock figures in the Part 2 entries | the entries named in the Outcome table |
 
+  *Filtered (Sep 27), added after the gates; the rows above are left as written.* Trial 1 was
+  redone on the human-filtered seeds into `runs/finebio-arms-P03_03_01-filtered-20260927/`
+  (entry [Sep 27: trial-1 downstream redone on the human-filtered seeds (post-gate)](#sep-27-trial-1-downstream-redone-on-the-human-filtered-seeds-post-gate));
+  the values that change, row by row: *Arm (b)* T1 **0.928** / 0.853 / **99.3%** / 137,917;
+  *Arm (c)* T1 **0.915** / 0.016 / **80.4%** / 165,162, dead slots 10 of 53; *Arm (d)* not
+  re-run (the rule does not fire on the filtered seeds); *Identity, core* T1 (a/b/c) born 285 /
+  **299** / **294**, ambiguities 126 / **116** / **170**, fragmentation 220 / **233** / **229**;
+  *Identity, extensions* T1 born 191 / **183** / **155**, ambiguities 33 / **35** / **14**,
+  fragmentation 134 / **126** / **103**, pipette 41 / **51** / **30**, micro tubes 32 / 26 / 17;
+  *Confidence* T1 (b) 0.520 / 0.679 / **0.041 on 45,272**, (c) 0.485 / 0.648 / **0.041 on
+  43,521**; *Events* T1 contained 43 / 45 / 36, held 55 / **59** / **55**, the centrifuge tube
+  through both closures 1 (`micro_tube-031`); *Review recordings* T1 filtered **867.5 MB / 389 /
+  37,984 / 10** items, verify clean; *Gate 1* held Sep 26 (52 / 6 / 2) and applied to the arms
+  here; *Gate 2* held Sep 27 (337 / 440), the filtered arms scored in `scoreboard-filtered/`
+  ((b) 0.988 mean / 99.0% and (c) 0.903 / 93.9% on the 312 / 311 shared cells); *Worker cost*
+  (c) 200-211 ms/step, 3.2-4.0 GiB; *GPU hours* + **4,533 s (1.26 h)**, total about 8.8 h.
+
 - **The two trials, compared.** The full table is in the review guide's
   [two-trial scoreboard](review-guide-2026-09-25-finebio-3d.md#two-trial-scoreboard); what it
   says in one paragraph. With the trial id the only change, room 2 reproduced the room-1
@@ -10371,3 +10422,265 @@ and the 83 `main()` entry points beyond their shared fragments.
   [Sep 27: gate 2 held](#sep-27-gate-2-held-the-anchor-scoreboard-on-trial-1-p6-anchors), the
   goals scorecard's FineBio rows and the gate-2 open item. Commit: this entry's. `README.md`
   (the user's unstaged hunk) and `test.sh` untouched; nothing under `runs/` committed.
+
+### Sep 27: trial-1 downstream redone on the human-filtered seeds (post-gate)
+
+- **What this is.** Both soft gates of the FineBio plan
+  ([`docs/plan-2026-09-25-finebio-3d-tracking.md`](plan-2026-09-25-finebio-3d-tracking.md)) are
+  held on trial 1 `P03_03_01` (gate 1 Sep 26: 52 accept / 6 reject / 2 null; gate 2 Sep 27: 337
+  / 440 anchor cells), and the Sep 25 arms had run on `provenance: auto` seeds. This entry redoes
+  the steps downstream of the gates on trial 1 so the record rests on the human-filtered seeds
+  (`runs/finebio-seeds-P03_03_01-20260925/with-plate/filtered/`, `seeds.json` SHA-256
+  `0205ada8...`, decisions SHA-256 `d4dfbc2a...`, 60 slots of 66: T1 8, T2 11, T3 9, T4 11, T5
+  11, fpv 10; rejected T1 `8_channel_pipette#0`, T1 `blue_pipette#0`, T1 `50ml_tube_group#1`,
+  T3 `yellow_pipette#0`, T3 `blue_pipette#0`, fpv `blue_pipette#0`) and the human anchors
+  (`runs/finebio-anchors-P03_03_01-20260925/decisions.json`, SHA-256 `a70ac43e...`): arms (b) and
+  (c) on the filtered seeds, the tracker core and extensions, measures, identity, inventory,
+  confidence, events, the review recording, and the anchor scoreboard, all into new roots
+  (`runs/finebio-arms-P03_03_01-filtered-20260927/`,
+  `runs/finebio-review-P03_03_01-filtered-20260927/`,
+  `runs/finebio-anchors-P03_03_01-20260925/scoreboard-filtered/`) so the Sep 25 results stay
+  intact for comparison. GPU **4,533 s (1.26 h)**, arm (c) only, one worker at a time, the card
+  free but for the compositor (`kwin_wayland`, 116-118 MiB) before the smoke and every worker,
+  nothing killed; CPU for the rest; no viewer opened. Source: one new subcommand
+  (`battle-finebio-arms filter-observations`) and a claim-string fix, both tested. **Not redone:**
+  arm (a) (detector rows only; the seed filter changes nothing there), arm (d) (negative on both
+  measures on Sep 25; the pre-registered rule does not fire on the filtered seeds, below; its
+  985 Sep 25 checkpoints, 253 GB, remain for the user's decision), arm (e), and **trial 2**: the
+  gates were trial-1 sittings (trial 2 has no seed decision and no anchor set) and the plan
+  forbids per-trial tuning, so its arms stand on auto seeds as recorded. **Claim boundary:**
+  every IoU against the detector is model-vs-model agreement; the anchors are one person's choice
+  among decoder masks on 18 frames of one trial and rank arms without being accuracy; the seed
+  decisions are one person's read of one tile per slot; the SAM3-slot id-switch proxy loses six
+  identities in the filtered run and is not comparable in absolute terms across the two roots.
+- **Arm (b) on the human seeds (CPU, exact).** (b) is memory-free and per-slot independent (each
+  mask is decoded from its own detector box), so the human filter is a row filter of the Sep 25
+  `b-box-decode-arm/observations.jsonl`: `battle-finebio-arms filter-observations --observations
+  <Sep 25> --seeds with-plate/filtered --output <new>/b-box-decode-arm` keeps every detector row
+  and a SAM3 row when its `(view, slot label)` is a kept slot of `filtered/seeds.json`
+  (`views.<view>.slots`, the accepted ones), writes the filtered file and the Sep 25 summary
+  with the SAM3 counts recomputed and a `seed_filter` block (source, seeds, provenance
+  `human_filtered`, the decisions SHA-256, kept slots per view, dropped slots with row counts,
+  kept slots absent from the source: none). **16,433 of 181,984 SAM3 rows dropped** (T1 group
+  1,811, T1 8-channel 2,842, T1 blue 2,279, T3 blue 3,312, T3 yellow 3,452, fpv blue 2,737; the
+  gate-1 entry's count), 695,085 detector rows kept, 2 s. Then `run --arm b
+  --reuse-observations --seeds .../filtered --worker-root <Sep 25 b-box-decode> --gates rig.json`
+  core and `--ext` (the Sep 25 flags: `--motion-model --containers <clip> --group-tracks --held`
+  at their defaults), 2 min. The worker runs and mask PNGs are the Sep 25 ones, referenced from
+  the summary, so the viewer and the anchor scorer find the masks; the kept slots' per-slot
+  measures are unchanged to the last digit (checked slot by slot).
+- **Arm (c) on the human seeds (GPU, a worker re-run per view).** The slots of one view share one
+  multiplexed video-memory run, so exactness needs the worker. `battle-muggled-arms video-memory
+  --video <proxy> --view-id <v> --schedule with-plate/filtered/schedules/<v>.json --start-frame 0
+  --max-frames 3600 --max-side-length 1280 --prompt-memory-semantics append --checkpoint-every
+  600 --run-root <new>/c-video-memory/<v>` (the Sep 25 invocation, no tau; the driver adds
+  `--max-frame-memory 4 --max-prompt-memory 32` and the VRAM guard as before), queue fpv, T1..T5.
+  **First-view sanity before the queue** (fpv, 300 frames, 72 s of GPU; `sanity/c-fpv-300/`):
+  **210.3 ms/step steady** (Sep 25 204.0, the preflight's 220; within 2x), 3.94 GiB (4.13),
+  mask-bbox IoU vs the best same-class detector box **0.947 median / p10 0.887 / 99.8% >= 0.5** on
+  2,153 masks (Sep 25 0.941 / 0.715 / 98.7% on 2,428; the p10 rise is the rejected fpv blue
+  pipette, median 0.731 on Sep 25, gone), every shared slot within 0.005 of Sep 25 (8-channel
+  0.955 / 0.954, plate 0.938 / 0.937, centrifuge 0.980 / 0.978, PCR 0.904 / 0.900, red 0.919 /
+  0.914, trash 0.943 / 0.944, vortex 0.954 / 0.951, yellow 0.964 / 0.960). Passed; queued. Walls
+  **765 / 731 / 751 / 745 / 742 / 727 s** (fpv, T1..T5; Sep 25 793 / 771 / 731 / 738 / 724 / 709),
+  steady 210.9 / 201.7 / 207.0 / 205.4 / 204.6 / 200.5 ms per step, peak VRAM **3.96 / 3.19 / 3.63 /
+  3.34 / 3.62 / 3.61 GiB** (the views that lost slots use less; the step time is the encoder's),
+  masks 32,303 / 27,893 / 36,222 / 30,088 / 37,311 / 37,372 = **201,189** (222,520). Adapter +
+  tracker + measures 7 min, `--ext --reuse-observations` 1 min. **Determinism, checked:** T2, T4
+  and T5, whose schedules did not change, reproduce the Sep 25 worker output **object for object**
+  (label, box, confidence on all 36,222 / 37,311 / 37,372 masks), so every difference in fpv, T1
+  and T3 is the effect of removing a slot from that view's run, not run-to-run noise; and the
+  tracker is deterministic (a measures re-run over the same observations, below, left all twelve
+  `tracks{,-ext}/{tracks,events,residuals}.jsonl` of (b) and (c) byte-identical). Arm (b)'s CPU
+  steps ran while the queue held the GPU (tracker and measures only, no mask reads), so T2-T5's
+  walls may carry a few seconds of contention.
+- **Label-free measures, Sep 25 (auto seeds) -> filtered (human seeds).** Det-box IoU pooled
+  median / p10 / fraction >= 0.5 / n: **(b) 0.926 / 0.842 / 0.991 / 148,362 -> 0.928 / 0.853 /
+  0.993 / 137,917**; **(c) 0.914 / 0.060 / 0.793 / 175,827 -> 0.915 / 0.016 / 0.804 / 165,162**;
+  masks 181,984 -> 165,551 and 222,520 -> 201,189. Per view (b) median 0.921 / 0.920 / 0.920 /
+  0.926 / 0.931 / 0.936 -> 0.926 / 0.920 / 0.935 / 0.926 / 0.931 / 0.938 (T1..T5, fpv), fraction
+  >= 0.5 98.2-99.9% -> 98.9-100%; (c) fraction 65.8 / 61.9 / 68.8 / 97.4 / 93.3 / 82.7% -> **68.2 /
+  61.9 / 71.8 / 97.4 / 93.3 / 81.7%**. For (b) the pooled change is the arithmetic of dropping five
+  scored slots at medians 0.83-0.92 (the gate-1 estimate "0.991 -> about 0.994" reads 0.993). For
+  (c) the arithmetic of dropping the five scored slots from the Sep 25 run gives 80.5% and the
+  re-run reads **80.4%** (the gate-1 estimate was ~81.4%), but the kept slots of the three views
+  that lost a seed moved both ways: fpv's kept slots 84.5 -> 81.7% (`15ml_tube#0` 0.639 / 52.4%
+  -> **0.161 / 14.7%**, `8_channel_pipette#0` 0.713 / 62.2% -> **0.242 / 39.8%**, `15ml_tube#1`
+  0.000 / 2.0% -> 0.153 / 32.5%), T1 69.2 -> 68.2% (`50ml_tube#0` 0.241 / 6.6% -> 0.116 / 0.1%), T3
+  68.6 -> 71.8% (`50ml_tube#1` 0.000 / 0.8% -> **0.824 / 57.0%**, `micro_tube#0` 0.437 / 10.1% ->
+  0.000 / 0.1%, `50ml_tube#0` 0.247 / 6.0% -> 0.000 / 3.2%); the static and landmark slots moved by
+  <= 0.01 everywhere (plate 0.946-0.955; the centrifuge in T1 / T2 still 0.475 / 0.447 with the
+  open lid; vortex, PCR, trash can, red and yellow pipettes as before). Dead slots (median < 0.35)
+  **9 of 58 -> 10 of 53**: T1 `blue_pipette#0` (dead, rejected) gone, T3 `50ml_tube#1` recovered,
+  T3 `micro_tube#0`, fpv `15ml_tube#0` and fpv `8_channel_pipette#0` newly dead. **Finding:**
+  removing a seed from a multiplexed video-memory run does not only remove that slot; the other
+  slots of the view answer differently (the frame-memory bank and the per-frame slot competition
+  are shared), and on trial 1 the drift moved between the fpv / T3 tube and pipette slots rather
+  than going away. The residual pooled median (b) 5.4 -> 5.4 px (ext 5.9 -> 5.9), (c) 6.0 -> 6.3
+  (ext 6.5 -> 6.5). **The pre-registered (c)-vs-(b) rule on the filtered arms
+  (`decision_c_vs_b.json`): (c) -0.014 on the median and worse on ambiguities (170 vs 116), so
+  `run_arm_d: false`**; on Sep 25 it fired on the identity clause. (d) was not re-run either way.
+- **Identity (tracker; core / `tracks-ext/`), Sep 25 -> filtered.** (b): born 308 -> **299**
+  (objects 249 -> 240) / 186 -> **183** (149 -> 146); ambiguities 158 -> **116** / 54 -> **35**;
+  fragmentation 242 -> 233 (190 -> 181) / 129 -> 126 (98 -> 95); proxy id switches 629 -> 353 /
+  544 -> 281 (six proxy identities fewer); slot disagreements 64 / 41 unchanged; re-acquired 141 /
+  134 -> 136; ids: **blue pipette 80 -> 61 / 59 -> 51**, **8-channel pipette 8 -> 17 / 8 -> 11**,
+  yellow pipette 1 -> 2 / 1 -> 3, 50 ml tubes 6 / 2, micro tubes 100 / 26, centrifuge 9 / 9
+  unchanged; movers 99 -> 100, contained episodes 32 -> 33 (re-acquired 29 -> 30), groups 9 (2
+  footprint, 19 splits, 1 joined) unchanged, held 155 -> 154 (re-acquired 56 -> 59). (c): born
+  270 -> **294** (211 -> 235) / 147 -> **155** (110 -> 118); ambiguities 133 -> **170** / 22 ->
+  **14**; fragmentation 207 -> 229 (155 -> 177) / 93 -> 103 (62 -> 72); proxy id switches 264 ->
+  239 / 202 -> 180; slot disagreements 28 -> 63 / **163 -> 342**; re-acquired 101 -> 106 / 81 ->
+  101; ids: **blue pipette 30 -> 41 / 20 -> 30**, 8-channel 15 -> 19 / 16 -> 18, 50 ml tubes 19 ->
+  13 / 12 -> 7, micro tubes 101 -> 115 / 17 -> 17, centrifuge 1 / 1; movers 100 -> 95, contained
+  25 -> 22, groups 12 -> 13, held 102 -> 120 (re-acquired 25 -> 36). Reading: in (b) the blue
+  pipette, the object three of the six rejections were about, is seen from three cameras instead
+  of six and fragments *less*, with fewer ambiguities; the price is the 8-channel pipette (its T1
+  slot was the rejected "pipette plus rack" mask, and T1 was the view that held the 3D track
+  together) and the yellow pipette (the T3 "two pipettes" slot). In (c) the core fragments *more*:
+  the rejected T1 / T3 / fpv blue-pipette memory slots were dead or half-dead (0.07 / 0.42 / 0.56)
+  but gave the 3D track a stable, wrong-extent anchor in three views, and without them the blue
+  pipette is (b)'s problem in (c) too; with the extensions the ambiguities fall (22 -> 14) while
+  births rise, and the slot disagreements double because the longer-lived ids now meet the newly
+  drifted fpv / T3 slots. The static objects are one id each in every arm and root, as before.
+- **Occlusion inventory (object episodes; hands apart), Sep 25 -> filtered.** (b) core 317 -> 308
+  episodes (lost at timeout 208 -> 199, re-acquired 109), `held` 166 (strict 19) -> 157 (14),
+  `contained` 135 -> 136 (rack 100), group candidates 156 (80 ambiguous) unchanged, association
+  misses 16 -> 25, unexplained 68 -> 59; ext 220 -> 219 (tracker-handled coasting / contained /
+  held 90 / 31 / 99 -> 89 / 32 / 98). (c) core 247 -> **275** (178 -> 201 lost, 69 -> 74
+  re-acquired), held 102 (6) -> 117 (8), contained 138 (rack 109) -> 152 (125), group candidates
+  171 (88) -> 178 (94), misses 21 -> 17, unexplained 42 -> 53; ext 136 -> 160 (66 / 24 / 46 -> 75
+  / 21 / 64).
+- **Confidence and events on `tracks-ext/`** (`<arm>/confidence-ext/`, `<arm>/events-ext/`, the
+  p5 commands with `--tracks-dir tracks-ext`; 15 / 7 s per arm). (a) reproduces Sep 25 exactly
+  (132,518 rows, median 0.531, abstain 1.000; contained 43, held 55). (b) 134,007 -> 135,477 rows
+  on 186 -> 183 tracks, median 0.520 -> 0.520, abstain 0.668 -> 0.679 over all rows, 0.636 ->
+  0.642 on observed rows, **0.058 -> 0.041 on the 47,271 -> 45,272 rows with all five signals**;
+  the blue pipette 0.134 / abstain 0.652 on 59 tracks -> 0.038 / 0.777 on 51. (c) 123,474 ->
+  118,720 rows on 147 -> 155 tracks, 0.485 -> 0.485, 0.638 -> 0.648, **0.009 -> 0.041 on 45,058 ->
+  43,521 complete rows** (the newly drifted fpv / T3 slots carry every signal and rank low).
+  Events: (b) contained 45 -> 45 (rack 18, magnetic rack 20, vortex 6, centrifuge 1), held 61 ->
+  59, proximity 0; (c) contained 36 -> 36 (rack 13 -> 16, magnetic rack 19 -> 16), held 58 ->
+  55, proximity 0; lid closed 638 frames. The plan's storyboard holds in every arm and root: one
+  micro tube `contained` in the centrifuge from raw 887 to the window end **through both closures
+  with the same id** ((b) `micro_tube-032` -> `-031`, renumbered; (c) the same plus a second tube
+  `-112` -> `-116` in the second cycle), no successor.
+- **The review recording** (`battle-finebio-viewer --arm-dirs a=..,b=..,c=.. --tracks-dir
+  tracks-ext --seeds with-plate/filtered --preset-dir "" --output
+  runs/finebio-review-P03_03_01-filtered-20260927`; `--preset-dir ""` so the committed
+  `configs/rerun/finebio_*.rbl`, the Sep 25 core recording's, are untouched): `review.rrd`
+  **867.5 MB, 389 entity paths** (407 with the blueprint and properties), **37,984 mask cut-outs**
+  (every 6th frame for (b), every 30th for (c), the storyboard frames for both; 60 mask entities
+  per mask arm, the kept slots), 88,667 chunks, 711,931 rows, **`rerun rrd verify`: "1 file
+  verified without error"**, presets `world.rbl` 8 views / 47 queries, `cameras.rbl` 8 / 41,
+  `evidence.rbl` 27 / 65, every query resolved; 393 s to build (the first build, carrying the
+  stale claim sentence below, was discarded and rebuilt). `world/tracks/b/{observed, single_view,
+  coasting, contained, held, trails}` present; `world/<view>/seeds` from the filtered seeds.
+  **Storyboard, re-picked from the data** (`storyboard.md`; ten items): the centrifuge story on
+  `micro_tube-031` (arm b; `contained` from raw 887, the lid closes at 3224, inside at 3267,
+  opens at 3311, **the same id back at 3313**), the fpv look-away on the plate
+  `cell_culture_plate-009` (2862 / 2923 / 2983, one id over the window), the six-view plate frame
+  916 (the plate masked in all six views on 3402 of 3600 frames in (b)), and a new
+  confidence-drop item: **arm (c)'s `50ml_tube-064` at raw 2037, 0.47 -> 0.03 over 15 frames
+  either side as its T3 `50ml_tube#1` mask-vs-box IoU falls 0.89 -> 0.00** (the Sep 25 ext
+  recording's item was `50ml_tube-060` at 1919 in T4; on the filtered run the T4 slot is
+  unchanged and the T3 slot is the one that recovered and then drifts, above). This recording is
+  the recommended one for trial 1 in the review guide; the Sep 25 recordings stay listed and are
+  what the guide's body describes.
+- **Anchor scoreboard on the filtered arms** (`battle-finebio-anchors score --tracks-dir
+  tracks-ext --arms a=..,b=..,c=.. --output .../scoreboard-filtered`, 15 s; beside the Sep 27
+  `scoreboard/ext/` on the Sep 25 arms). **The six rejected slots own 23 of the 440 anchor
+  cells**: fpv `blue_pipette#0` on all 18 frames and one cell each on 916 for the five T1 / T3
+  slots; the human labelled **13 of them with a mask** (fpv blue pipette on 637, 916, 1120, 1521,
+  1635, 1966, 2380, 3054, 3372, 3481; 916 T1 8-channel and blue pipette; 916 T3 yellow pipette),
+  2 `none_fits` (916 T3 blue pipette, 2748 fpv), 2 `hidden` (3571 and 4122 fpv: the blue slot on
+  the red pipette), 6 unlabelled (no box). For the filtered arms these cells have no SAM3 row: 10
+  fall back to a same-class detector row (box IoU only, no mask), 3 are `missing`, the two
+  `hidden` become `hidden_correct`, the `none_fits` are skipped as before. They were the human's
+  own rejections at gate 1, so they are reported apart. "Shared" = the mask cells not on a
+  rejected slot, the same cells in both roots (312 for (b); 311 for (c), whose filtered run
+  emits no mask on 1739 fpv `8_channel_pipette#0`, a 0.000 cell on Sep 25); "incl. rejected as
+  0" = the 13 rejected mask cells counted as IoU 0 against the filtered arm (the object was there
+  and the arm has no mask). Mask IoU vs the accepted candidate, mean / median / p10, fraction >=
+  0.5 / >= 0.9:
+
+  | arm, cells | mask IoU | >= 0.5 / >= 0.9 | box IoU mean | hidden FP (px) | IDF1 six-view / pooled (IDTP / IDFP / IDFN) |
+  |---|---|---|---|---|---|
+  | (b) Sep 25, all 325 mask cells | 0.984 / 1.000 / 1.000 | 0.988 / 0.957 | 0.975 | 4 (50,279) | 1.000 / 0.921 (170 / 9 / 20) |
+  | (b) Sep 25, shared 312 | 0.988 / 1.000 / 1.000 | 0.990 / 0.971 | 0.984 | | |
+  | **(b) filtered, shared 312 (the scorer's)** | **0.988 / 1.000 / 1.000** | **0.990 / 0.971** | 0.984 (0.975 over 322 with the 10 detector fall-backs) | **2 (19,513)** | **0.980 / 0.919** (169 / 9 / 21) |
+  | (b) filtered, incl. 13 rejected as 0 (325) | 0.949 / 1.000 / 1.000 | 0.951 / 0.932 | 0.966 | | |
+  | (c) Sep 25, all 325 | 0.897 / 0.965 / 0.772 | 0.935 / 0.846 | 0.901 | 4 (27,685) | 0.980 / 0.962 (176 / 0 / 14) |
+  | (c) Sep 25, shared 312 | 0.903 / 0.966 / 0.825 | 0.939 / 0.865 | 0.912 | | |
+  | **(c) filtered, shared 311 (the scorer's)** | **0.903 / 0.966 / 0.787** | **0.939 / 0.868** | 0.909 (0.902 over 321) | **2 (9,173)** | **1.000 / 0.965** (177 / 0 / 13) |
+  | (c) filtered, incl. 13 rejected as 0 (324) | 0.867 / 0.964 / 0.530 | 0.901 / 0.833 | 0.894 | | |
+  | (a), unchanged (307 cells; 297 shared, box 0.910) | box 0.903 / 0.929 / 0.845 | 0.987 / 0.691 | | 0 (scorer asymmetry) | 0.960 / 0.956 |
+
+  *(b)* is identical to Sep 25 on all 312 shared cells (by construction), so the human-filtered
+  (b) reads **0.988 mean / 99.0% >= 0.5** on the cells it has and **0.949 / 95.1%** if the 13
+  rejected cells count against it; two of the four hidden false positives (the rejected fpv
+  blue-pipette slot on the red pipette) are gone. Its six-view IDF1 falls 1.000 -> 0.980: 916 T2
+  `blue_pipette#0`, the cell the human named `red_pipette`, was supported in (b) by a track that
+  also used T1's and T3's blue-pipette slots (the gate-1 / gate-2 finding); with those slots
+  gone the cell has no track (IDFN 20 -> 21), and no merge is counted, as before. *(c)* on the 311
+  shared cells: mean **0.903 -> 0.903**, median 0.966 -> 0.966, 93.9% -> 93.9% >= 0.5; 169 cells
+  identical, **14 moved by more than 0.02: down 8** (the fpv 8-channel pipette on 1635 **0.96 ->
+  0.00**, 3372 0.45 -> 0.10, 1294 0.33 -> 0.00, 3481 0.59 -> 0.45; the fpv `15ml_tube#0` on 1120
+  0.92 -> 0.53 and 916 0.89 -> 0.67; two group cells by 0.02-0.03), **up 6** (the fpv
+  `15ml_tube#1` on 2132 / 2240 / 2380 from 0.00 to 0.78 / 0.32 / 0.35; 916 T3 `micro_tube#0`,
+  1966 fpv red pipette, 916 T1 15 ml group by 0.02-0.04); per class 8-channel 0.433 -> **0.311**
+  (12 -> 11 cells), blue 0.681 -> 0.681, yellow 0.917 -> 0.917, red 0.955 -> 0.956, the five
+  static classes 0.972 -> 0.972 (189 cells), tubes / pipettes / strip / groups 0.797 -> 0.797
+  (123 / 122). **So, to the question the gate-1 entry left ("did removing the six seeds change
+  video memory's drift; the label-free estimate 79.3% -> ~81.4%"): label-free 79.3% -> 80.4%
+  (80.5% is the pure-removal arithmetic), and on the human's frames the drift did not change, it
+  moved**, from the fpv 15 ml tube #1 to the fpv 8-channel pipette and 15 ml tube #0. Identity:
+  (c) pooled IDF1 0.962 -> **0.965**, six-view 0.980 -> **1.000** (the 916 cell without a track
+  has one now). **The ranking holds in both roots:** (b) > (c) on every mask measure (shared
+  0.988 vs 0.903 mean, 99.0 vs 93.9% >= 0.5), (c) > (b) on pooled IDF1 through the centrifuge
+  alone (one id vs two across the lid cycles), (a) and (c) within 0.02 on box IoU (0.910 vs
+  0.909 on the shared cells). Built-in check: (b) 1.0 on every accepted c0 cell it has a row for.
+- **Source (`src/battle/finebio_arms.py`, `src/battle/finebio_viewer.py`,
+  `tests/test_finebio_arms.py`).** `filter-observations` (above; `kept_slots_from_seeds`,
+  `filter_observations_to_seeds`) with one test: a two-view fixture where the same label is
+  rejected in one view and kept in the other, the detector rows kept, the summary's
+  `worker_runs` carried and its SAM3 counts recomputed, `seed_filter` naming the dropped slot
+  with its row count, the provenance and decisions hash, a kept slot absent from the source, the
+  source untouched. And a claim-string fix: `finebio_arms.CLAIM_BOUNDARY` (written into every
+  `measures.json`) and `finebio_viewer.CLAIM_BOUNDARY` (`checks/claim_boundary`, the storyboard
+  footer) said "no human anchor exists yet", which stopped being true on Sep 27; they now say the
+  human anchors of gate 2 are scored apart by `battle-finebio-anchors` and rank arms without
+  making any of this accuracy (the arm-(a) pipeline test asserts the pointer and the absence of
+  the old sentence). The filtered measures were rewritten with the new text over the same
+  observations (`--reuse-observations`, core and ext for (b) and (c); the twelve tracker files
+  byte-identical, checked by hash) and the recording rebuilt. Default tier **995 passed / 14
+  skipped, 72 deselected, 24.5 s** (994 + the filter test; the `test_exemplar_seed`
+  order-dependent flake noted on Sep 27 not seen); `uv run ruff check src tests scripts` all
+  checks passed, `ruff format --check` 244 files already formatted.
+- **Deviations and findings.** (1) The gate-1 entry's estimate for (c) (~81.4%) assumed the
+  kept slots would not move; they did (the multiplexed run couples them), and the re-run reads
+  80.4%, 0.1 point under the pure-removal arithmetic; the estimate for (b) (~0.994) reads 0.993.
+  (2) The 8-channel pipette fragments more in (b) without its T1 slot (8 -> 17 ids core): the
+  rejected "pipette plus rack" mask was a wrong extent that nonetheless anchored the right 3D
+  track; the human's rule (reject two objects under one mask) is kept as decided and the cost is
+  on the record. (3) The anchor scorer's detector fall-back scores 10 rejected-slot cells on box
+  IoU with no mask; the tables above give the shared-cell and rejected-as-zero readings so the
+  fall-back does not flatter the filtered arms. (4) The (c)-vs-(b) rule would not have started
+  (d) on the human seeds; (d) is not re-run and its Sep 25 verdict stands. (5) Trial 2 not redone
+  (above). (6) Nothing under `runs/` or `data/` is committed (FineBio licence); the numbers are
+  here and in the run README. (7) The first recording build carried the stale claim sentence and
+  was discarded (not kept beside the rebuilt one). (8) The user's `README.md` hunk and `test.sh`
+  untouched; the plan file under `~/.cursor/plans` untouched.
+- **Pointers.** `runs/finebio-arms-P03_03_01-filtered-20260927/README.md` (the Sep 25 vs
+  filtered tables, the layout, the commands), `.../scoreboard/scoreboard.md`,
+  `.../decision_c_vs_b.json`, `.../sanity/c-fpv-300/sanity.json`, `.../c-video-memory-queue.log`;
+  `runs/finebio-review-P03_03_01-filtered-20260927/{review.rrd,storyboard.md,review_index.json,rrd_verify.txt}`;
+  `runs/finebio-anchors-P03_03_01-20260925/scoreboard-filtered/anchor_scoreboard.{json,md}`; the
+  close-out entry's final-numbers table carries a "Filtered (Sep 27)" note under it; the plan
+  copy's Outcome gains "After the gates (Sep 27)"; the review guide's Open section recommends
+  the filtered recording for trial 1 and its Key numbers carry the post-gate paragraph; Part 1
+  pointer [Sep 27: trial-1 downstream redone on the human-filtered seeds
+  (post-gate)](#sep-27-trial-1-downstream-redone-on-the-human-filtered-seeds-post-gate) and the
+  two gate open items. Commits: `abd053e` (the subcommand, the claim strings, the tests) and this
+  entry's (ledger, plan copy, review guide). `README.md` (the user's unstaged hunk) and `test.sh`
+  untouched; nothing under `runs/` committed.

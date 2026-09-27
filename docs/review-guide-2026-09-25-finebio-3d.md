@@ -18,12 +18,43 @@ only.
 trained on FineBio's own bench and on frames from these cameras, so its boxes, and every SAM3
 mask prompted from them, are agreement between two models, not accuracy. "Confidence" ranks a
 track's rows within one arm by five label-free signals; it is not a probability of being right.
-Events are geometry on 3D tracks against volumes derived from the rig. The recordings predate
-gate 2; the human-anchored numbers that exist since Sep 27 (trial 1 only, 337 cells) are under
+Events are geometry on 3D tracks against volumes derived from the rig. The Sep 25 recordings
+predate both gates; the Sep 27 one is built on gate 1's human-filtered seeds but draws no anchor
+either; the human-anchored numbers that exist since Sep 27 (trial 1 only, 337 cells) are under
 [Key numbers](#key-numbers) and rank the arms without making any of this accuracy. The
 human-facing frame is the six-view annotated frame 916, which the storyboard lands on.
 
 ## Open
+
+**Recommended for trial 1 since Sep 27: the post-gate recording**
+`runs/finebio-review-P03_03_01-filtered-20260927/review.rrd`, built on the arms re-run on the
+human-filtered seeds of gate 1 (60 slots of 66; the six rejected seed slots are absent from the
+tiles) with the tracker extensions (`tracks-ext/`, arms a / b / c), scored against the human
+anchors of gate 2. Its numbers are at least as good as the Sep 25 recordings' on the default arm
+(b): det-box IoU 0.928 / 99.3% >= 0.5 (Sep 25 0.926 / 99.1%), ambiguities 35 (54), the blue
+pipette 51 ids (59), the human-anchored mask IoU identical on every shared anchor cell (0.988
+mean / 99.0% >= 0.5), two of the four hidden false positives gone; arm (c) 0.915 / 80.4% (0.914 /
+79.3%) with its drift moved between slots rather than removed (ledger entry "Sep 27: trial-1
+downstream redone on the human-filtered seeds (post-gate)"; run README
+`runs/finebio-arms-P03_03_01-filtered-20260927/README.md`). 867.5 MB, 389 entity paths, 37,984
+mask cut-outs, `rerun rrd verify` clean, presets validated; the same three presets sit beside it
+(`--preset-dir ""` was used, so the committed `configs/rerun/finebio_*.rbl` copies are still the
+Sep 25 core recording's; they fit this one too, being entity paths on the same application id).
+
+```bash
+# Post-gate recording (trial 1, human-filtered seeds, tracks-ext; recommended)
+uv run rerun runs/finebio-review-P03_03_01-filtered-20260927/review.rrd runs/finebio-review-P03_03_01-filtered-20260927/world.rbl
+uv run rerun runs/finebio-review-P03_03_01-filtered-20260927/review.rrd runs/finebio-review-P03_03_01-filtered-20260927/cameras.rbl
+uv run rerun runs/finebio-review-P03_03_01-filtered-20260927/review.rrd runs/finebio-review-P03_03_01-filtered-20260927/evidence.rbl
+```
+
+What differs from the Sep 25 recordings below: 60 mask entities per mask arm instead of 66
+(T1 8, T3 9, fpv 10 slots), `world/<view>/seeds` from `with-plate/filtered/seeds.json`, the
+storyboard's tube is `micro_tube-031` (renumbered; the same object, `contained` from raw 887
+through both closures with the same id), and its confidence-drop item is arm (c)'s
+`50ml_tube-064` at raw 2037 (T3 `50ml_tube#1`, IoU 0.89 -> 0.00). Everything else in this guide
+(presets, cross-checks, negative control, timeline) reads the same. The Sep 25 recordings stay
+as built and are what the sections below describe:
 
 ```bash
 # World preset (default): the 3D rig with tracks, volumes, events strip, confidence, storyboard
@@ -202,6 +233,28 @@ the tables are in `runs/finebio-anchors-P03_03_01-20260925/scoreboard/README.md`
 entry "Sep 27: gate 2 held, the anchor scoreboard on trial 1 (p6-anchors)". These numbers say
 which arm's masks a human chose and how far the others are from that choice on 18 frames of one
 trial; they rank arms and are not accuracy.
+
+**After the gates (Sep 27): the arms on the human-filtered seeds.** Trial 1 was redone downstream
+of both gates into `runs/finebio-arms-P03_03_01-filtered-20260927/` ((b) as a row filter of the
+Sep 25 observations to the 60 kept slots, exact because the per-frame decode is per-slot
+independent; (c) re-run per view on the filtered schedules, 1.26 h of GPU; (a) unchanged and
+linked; (d) not re-run: negative on Sep 25, and on the filtered seeds the pre-registered rule
+would not have started it). Label-free: (b) 0.928 median / 99.3% >= 0.5 (0.926 / 99.1%), (c)
+0.915 / 80.4% (0.914 / 79.3%); the three views that lost a seed answer differently on their
+remaining video-memory slots (T2 / T4 / T5 reproduce the Sep 25 masks object for object), so
+(c)'s drift moved between the fpv tube and pipette slots (dead slots 9 of 58 -> 10 of 53) rather
+than going away. Human-anchored, on the 312 / 311 anchor cells that are not on a rejected slot:
+(b) 0.988 mean / 99.0% >= 0.5, identical cell by cell to Sep 25; (c) 0.903 / 93.9% (Sep 25 on
+the same cells 0.903 / 93.9%; 14 cells moved by more than 0.02, 8 down and 6 up); counting the 13
+rejected mask cells as 0 against the filtered arms, (b) 0.949 / 95.1% and (c) 0.867 / 90.1%.
+Identity on the human names: (b) pooled IDF1 0.921 -> 0.919 (the T2 `red_pipette` cell lost its
+track with T1's and T3's blue slots), (c) 0.962 -> 0.965; the ranking (b) > (c) on masks, (c) >
+(b) on identity through the centrifuge, is unchanged. Tracker identity with the extensions: (b)
+born 186 -> 183, ambiguities 54 -> 35, blue pipette 59 -> 51 ids, 8-channel 8 -> 11; (c) 147 ->
+155, 22 -> 14, blue pipette 20 -> 30. Full tables in the run README and the ledger entry "Sep 27:
+trial-1 downstream redone on the human-filtered seeds (post-gate)"; the anchor scoreboard on the
+filtered arms is `runs/finebio-anchors-P03_03_01-20260925/scoreboard-filtered/`. Trial 2 was not
+redone (the gates were trial-1 sittings; the plan forbids per-trial tuning).
 
 Confidence (`checks/confidence/<arm>`; five signals ranked within the arm: detector-vs-mask bbox
 IoU, cross-view residual, SAM3 object score, detector score, support; abstain when support < 2,
@@ -420,3 +473,10 @@ chunks, 698,620 rows, built in 356 s): the same file set, presets bound to their
 recording; per arm `<arm>/confidence-ext/` and `<arm>/events-ext/` under
 `runs/finebio-arms-<trial>-20260925/`. Build logs beside each directory
 (`runs/finebio-review-<trial>-20260925[-ext].build.log`). All gitignored.
+
+`runs/finebio-review-P03_03_01-filtered-20260927/` (trial 1 on the human-filtered seeds and
+`tracks-ext/`, arms a / b / c; the recommended trial-1 recording since Sep 27): the same file
+set, presets beside the recording, `review_index.json` naming the filtered arms root
+`runs/finebio-arms-P03_03_01-filtered-20260927/` (per arm `<arm>/confidence-ext/`,
+`<arm>/events-ext/`), build log `runs/finebio-review-P03_03_01-filtered-20260927.build.log`.
+Gitignored.
