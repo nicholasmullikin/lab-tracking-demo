@@ -1,5 +1,9 @@
 # Method ledger and timeline
 
+> Archived Sep 27, 2026.
+> Append-only: this ledger takes no further entries.
+> The live summary is `docs/story.md` (day by day) and `docs/results.md` (numbers and claim boundaries).
+
 This is the record of what this repository set out to do, what actually happened, in
 what order, and why it diverged from the plan. Part 1 is the short version: the original
 ask, a goals scorecard, a dated timeline, and the plan-versus-actual list. Part 2 holds the

@@ -135,7 +135,7 @@ The default when you do nothing: every seed stays, `provenance: auto`, and the l
 arm (b)'s mask accepted on 307, another candidate on 18, the box rejected on 12, six identities;
 scoreboard and read-back in the ledger entry "Sep 27: gate 2 held, the anchor scoreboard on
 trial 1 (p6-anchors)", the committed record in
-[`qa/finebio-P03_03_01-review-anchors.human-record.json`](qa/finebio-P03_03_01-review-anchors.human-record.json).
+[`qa/finebio-P03_03_01-review-anchors.human-record.json`](../qa/finebio-P03_03_01-review-anchors.human-record.json).
 The brief below stands as written for the record and for a trial-2 set.
 
 The `p6-anchors` todo of the FineBio 3D-tracking plan
