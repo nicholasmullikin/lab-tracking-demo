@@ -1062,6 +1062,55 @@ def test_b_moving_pipette_seen_as_different_portions_is_one_line_track(rig) -> N
     assert back.endpoints_cm == pipette[10].endpoints_cm and back.observed_class == "blue_pipette"
 
 
+def test_b2_geometric_point_track_mover_seen_in_one_view_takes_the_ray_update(rig) -> None:
+    """A pipette every camera sees as a compact blob (no axis in any view) is born as a point
+    track of the geometric class; carried 3 cm a frame it becomes a mover, and when one view
+    alone sees it the update is the core's lateral ray step, not the line one (the Sep 28
+    trial-1 run hit the line path's endpoint assertion here)."""
+    cams, _fpv = rig
+    rng = np.random.default_rng(5)
+    frames = list(range(16))
+    rows = []
+    for f in frames:
+        mid = np.array([25.0, -10.0 + 3.0 * f, -14.0])
+        views = ("T1", "T2", "T4") if f < 10 else ("T1",)
+        for v in views:
+            centroid = cams[v].project(mid)[0] + rng.normal(0.0, 0.5, 2)
+            box = (
+                float(centroid[0] - 12),
+                float(centroid[1] - 12),
+                float(centroid[0] + 12),
+                float(centroid[1] + 12),
+            )
+            rows.append(
+                FineBioObservation(
+                    view=v,
+                    frame_index=f,
+                    slot="blue_pipette#0",
+                    object_class="blue_pipette",
+                    detector_score=0.8,
+                    box_xyxy_px=box,
+                    mask_bbox_px=box,
+                    mask_centroid_px=(float(centroid[0]), float(centroid[1])),
+                    mask_area_px=400,
+                    mask_elongation=1.1,
+                    mask_width_px=20.0,
+                    sam3_object_score=0.9,
+                    pose_valid=True,
+                    source="sam3_decode",
+                )
+            )
+    out = run_tracker(
+        rows, cams, lambda f: None, frames, TrackerParams(**LINE_P, line_classes=("blue_pipette",))
+    )
+    pipette = [r for r in out.rows if r.object_class == "pipette"]
+    assert pipette and all(r.endpoints_cm is None for r in pipette)
+    assert _lines_metrics(out)["point_births"] == 1 and _lines_metrics(out)["line_births"] == 0
+    single = [r for r in pipette if r.state == "single_view"]
+    assert len(single) >= 3 and out.metrics["extensions"]["motion_model"]["single_view_ray_updates"]
+    assert out.metrics["per_class"]["pipette"]["tracks_born"] == 1
+
+
 def test_c_two_flat_parallel_pipettes_stay_two_tracks_and_a_merged_mask_is_dropped(rig) -> None:
     cams, _fpv = rig
     rng = np.random.default_rng(3)
@@ -1346,3 +1395,375 @@ def test_g_track3d_line_fields_round_trip_and_old_rows_validate(tmp_path) -> Non
         r.observed_class in LINE_CLASS_SHORTHANDS["pipette"] for r in geometric
     )
     assert "pipette" in metrics["per_class"]
+
+
+# --------------------------------------------------------------------------- Sep 29 defects
+#
+# Found on the first full run of --line-classes (runs/finebio-lines-*-20260928): every runaway
+# extent began in a prediction-aided fit whose in-plane direction nobody checked, the held
+# offset was measured from a stale prediction, and T2's blue slot joined the red pipette's
+# track. Each test here fails on the Sep 28 tracker and passes on the corrected one.
+
+
+def _blob_row(cams, view: str, frame: int, point, cls: str, *, rng, slot: str | None = None):
+    """A compact SAM3 row (no usable axis): the view looks down the shaft."""
+    centroid = cams[view].project(np.asarray(point, dtype=float))[0] + rng.normal(0.0, 0.5, 2)
+    box = (
+        float(centroid[0] - 12),
+        float(centroid[1] - 12),
+        float(centroid[0] + 12),
+        float(centroid[1] + 12),
+    )
+    return FineBioObservation(
+        view=view,
+        frame_index=frame,
+        slot=slot or f"{cls}#0",
+        object_class=cls,
+        detector_score=0.8,
+        box_xyxy_px=box,
+        mask_bbox_px=box,
+        mask_centroid_px=(float(centroid[0]), float(centroid[1])),
+        mask_area_px=400,
+        mask_elongation=1.1,
+        mask_width_px=20.0,
+        sam3_object_score=0.9,
+        pose_valid=True,
+        source="sam3_decode",
+    )
+
+
+def _row_length(r) -> float:
+    return float(np.linalg.norm(np.subtract(*r.endpoints_cm)))
+
+
+def test_h_aided_fit_with_a_wrong_prediction_no_longer_writes_a_runaway_extent(rig) -> None:
+    """The real failure (trial 1, pipette-047 at 1370, pipette-025 at 1105): a pipette
+    pointing nearly at a camera (14 deg off its ray), then seen by that axis view plus one
+    compact view only while it turns in the one way the axis view cannot see, within the
+    plane through the camera and the shaft. The axis still lies on the predicted line's
+    projection, so it is associated; the aided fit took the predicted direction, 60 deg from
+    the observed axis within the plane, and the plane's endpoint rays met that near-grazing
+    line four times a pipette away (257 and 292 cm written on the real rows, a 130 cm
+    midpoint jump). Now the aided fit is rejected on its own plane's extent, the centroids
+    carry the segment as a point, its length stays a pipette's and every step stays under
+    the cap."""
+    cams, _fpv = rig
+    rng = np.random.default_rng(29)
+    frames = list(range(18))
+    length = PRIOR.length_for("blue_pipette")
+    mid = np.array([25.0, -10.0, -14.0])
+    ray = _unit(mid - cams["T4"].centre)
+    across = _unit(np.cross(ray, [0.0, 0.0, 1.0]))
+    before = _unit(np.cos(np.radians(14.0)) * ray + np.sin(np.radians(14.0)) * across)
+    after = _unit(np.cos(np.radians(74.0)) * ray + np.sin(np.radians(74.0)) * across)
+    rows = []
+    for f in frames:
+        direction = before if f < 6 else after
+        a, b = _segment(mid, direction, length)
+        if f < 6:
+            for v in ("T1", "T2", "T4", "T5"):
+                rows.append(_axis_row(cams, v, f, a, b, "blue_pipette", rng=rng))
+        else:
+            rows.append(_axis_row(cams, "T4", f, a, b, "blue_pipette", rng=rng))
+            rows.append(_blob_row(cams, "T3", f, mid, "blue_pipette", rng=rng))
+    params = TrackerParams(**LINE_P, line_classes=("blue_pipette",))
+    out = run_tracker(rows, cams, lambda f: None, frames, params)
+    pipette = [r for r in out.rows if r.object_class == "pipette"]
+    assert out.metrics["per_class"]["pipette"]["tracks_born"] == 1
+    assert [r.frame_index for r in pipette] == frames
+    # The turned axis is still associated in T4 (it lies on the prediction's projection).
+    assert all("T4" in r.support_views for r in pipette[6:])
+    lengths = [_row_length(r) for r in pipette]
+    assert max(lengths) <= 1.2 * length + 0.5, max(lengths)
+    steps = [
+        np.linalg.norm(np.subtract(b.position_cm, a.position_cm))
+        for a, b in zip(pipette, pipette[1:])
+        if a.state in ("observed", "single_view") and b.state in ("observed", "single_view")
+    ]
+    assert max(steps) <= params.line_max_step_cm + 1e-6, max(steps)
+    metrics = _lines_metrics(out)
+    assert metrics["frames"]["aided_rejected"] >= 6
+    assert metrics["frames"]["line_prediction_aided"] == 0
+    for r in pipette[6:]:
+        assert r.state in ("observed", "single_view"), r.frame_index
+        assert r.line_update in ("point", "predicted", "capped", "lateral"), r.frame_index
+        assert r.extent_clamped is False
+
+
+def test_i_two_axis_views_must_overlap_along_the_line_to_fit(rig) -> None:
+    """Two planes always meet in a line, so their fit carries no residual: the first run
+    accepted a T2 axis and a T4 axis of two different pipettes lying along one line when the
+    union of their extents fitted a pipette. Births refused that pair (`_line_pair_cost`);
+    updates now do too."""
+    from battle.multiview_tracks import Obs, fit_line_members
+
+    cams, _fpv = rig
+    rng = np.random.default_rng(31)
+    length = PRIOR.length_cm
+    a, b = _segment([10.0, 0.0, -8.0], [1.0, 0.3, -0.1], length)
+
+    def member(view: str, visible: tuple[float, float]) -> Obs:
+        row = _axis_row(cams, view, 0, a, b, "yellow_pipette", rng=rng, visible=visible)
+        return Obs(
+            view=view,
+            point=np.array(row.point_px, dtype=float),
+            object_class="pipette",
+            slot=row.slot,
+            source=row.source,
+            detector_score=row.detector_score,
+            sam3_score=row.sam3_object_score,
+            box=row.mask_bbox_px,
+            confirmed=True,
+            axis_px=row.mask_axis_px,
+            elongation=row.mask_elongation,
+            width_px=row.mask_width_px,
+            axis_residual_px=row.mask_axis_residual_px,
+            colour_class="yellow_pipette",
+        )
+
+    params = TrackerParams(observation_source="auto", line_classes=("yellow_pipette",))
+    # T1 sees the first 40% of the shaft, T4 a stretch 35% further along the same line: the
+    # union (1.15 L) fits under the merged factor, the gap (0.35 L = 8 cm) does not fit one
+    # pipette.
+    apart = {"T1": member("T1", (0.0, 0.4)), "T4": member("T4", (0.75, 1.15))}
+    fit, merged = fit_line_members(apart, cams, params, length, PRIOR.spread_cm)
+    assert fit is None and merged == ()
+    # Two portions of one shaft that overlap or nearly touch fit as before.
+    touching = {"T1": member("T1", (0.0, 0.4)), "T4": member("T4", (0.45, 0.85))}
+    fit, _ = fit_line_members(touching, cams, params, length, PRIOR.spread_cm)
+    assert fit is not None and not fit.clamped
+    # The two portions span 85% of the shaft; the prior completes the rest by halves.
+    assert fit.visible_length_cm == pytest.approx(0.85 * length, abs=1.0)
+    assert np.linalg.norm(fit.endpoints[1] - fit.endpoints[0]) == pytest.approx(length, abs=0.5)
+    assert _endpoint_error(fit.endpoints, a, b) < 2.5
+
+
+def test_j_single_view_update_is_refused_when_the_view_looks_along_the_line(rig) -> None:
+    """A single-view lateral update projects the segment onto the plane through the camera
+    and the axis. When the predicted line runs along the camera's ray the plane fixes nothing
+    along the shaft and the ends slide; when the predicted direction is near the plane's
+    normal the projection collapses the segment. Both keep the prediction now."""
+    from battle.multiview_lines import plane_from_axis
+    from battle.multiview_tracks import MultiviewTracker, Track, _obs
+
+    cams, _fpv = rig
+    rng = np.random.default_rng(37)
+    params = TrackerParams(**LINE_P, line_classes=("blue_pipette",))
+    tracker = MultiviewTracker(cams, lambda f: None, params)
+    mid = np.array([25.0, -10.0, -14.0])
+    length = PRIOR.length_for("blue_pipette")
+    # The observation: a shaft seen broadside in T2, 1 cm above the predicted midpoint.
+    seen_a, seen_b = _segment(mid + np.array([0.0, 0.0, -1.0]), [0.0, 1.0, 0.0], length)
+    obs = _obs(_axis_row(cams, "T2", 0, seen_a, seen_b, "blue_pipette", rng=rng))
+    obs.colour_class, obs.object_class = obs.object_class, "pipette"
+
+    def track(direction) -> Track:
+        t = Track("pipette-001", "pipette", mid.copy(), 1.0, "observed", 0, 0, mover=True)
+        t.set_endpoints(np.stack(_segment(mid, direction, length)))
+        return t
+
+    along = track(cams["T2"].centre - mid)
+    kept = along.endpoints_cm.copy()
+    assert tracker._lateral_line_update(along, cams["T2"], obs) is False
+    assert np.allclose(along.endpoints_cm, kept)
+    normal, _ = plane_from_axis(cams["T2"], np.asarray(obs.axis_px, dtype=float))
+    crossing = track(normal)
+    kept = crossing.endpoints_cm.copy()
+    assert tracker._lateral_line_update(crossing, cams["T2"], obs) is False
+    assert np.allclose(crossing.endpoints_cm, kept)
+    broadside = track([0.0, 1.0, 0.0])
+    assert tracker._lateral_line_update(broadside, cams["T2"], obs) is True
+    # Moved onto the observed plane, length kept, and by about the 1 cm offset.
+    feet = broadside.endpoints_cm @ normal - float(normal @ cams["T2"].centre)
+    assert np.abs(feet).max() < 1e-6
+    assert _row_length_of(broadside) == pytest.approx(length, abs=1e-6)
+    assert 0.3 < np.linalg.norm(broadside.position - mid) < 1.5
+
+
+def _row_length_of(t) -> float:
+    return float(np.linalg.norm(t.endpoints_cm[1] - t.endpoints_cm[0]))
+
+
+def test_k_midpoint_step_is_capped_and_the_row_demoted(rig) -> None:
+    from battle.multiview_lines import Line3D
+    from battle.multiview_tracks import LineFit, MultiviewTracker, Track
+
+    cams, _fpv = rig
+    params = TrackerParams(**LINE_P, line_classes=("blue_pipette",))
+    tracker = MultiviewTracker(cams, lambda f: None, params)
+    mid = np.array([25.0, -10.0, -14.0])
+    length = PRIOR.length_for("blue_pipette")
+    direction = _unit([0.3, 0.2, -1.0])
+    t = Track("pipette-001", "pipette", mid.copy(), 1.0, "observed", 0, 0)
+    t.set_endpoints(np.stack(_segment(mid, direction, length)))
+    t.class_votes["blue_pipette"] = 5
+    far = np.stack(_segment(mid + np.array([0.0, 40.0, 0.0]), direction, length))
+    members = {"T1": None, "T4": None}  # only the view names are read here
+    fit = LineFit(
+        line=Line3D(point=far.mean(axis=0), direction=direction, endpoints=far),
+        endpoints=far,
+        members=members,
+        residuals={"T1": 1.0, "T4": 1.0},
+        merged_views=(),
+        visible_length_cm=length,
+        extended=False,
+        plane_views=("T1", "T4"),
+    )
+    predicted = t.position.copy()
+    tracker._apply_line_fit(t, fit, cams, 1, predicted=predicted, dt=1)
+    # The gain (about 0.5) would have moved the midpoint 20 cm; the cap holds it at 15.
+    assert np.linalg.norm(t.position - predicted) == pytest.approx(params.line_max_step_cm)
+    assert t.line_update == "capped" and tracker.line_step_capped == 1
+    assert t.uncertainty_cm == 1.0  # not shrunk: nothing was confirmed
+    assert _row_length_of(t) == pytest.approx(length, abs=1e-6)
+    # A plausible step passes untouched and shrinks the uncertainty.
+    near = np.stack(_segment(mid + np.array([0.0, 2.0, 0.0]), direction, length))
+    fit_near = LineFit(
+        line=Line3D(point=near.mean(axis=0), direction=direction, endpoints=near),
+        endpoints=near,
+        members=members,
+        residuals={"T1": 1.0, "T4": 1.0},
+        merged_views=(),
+        visible_length_cm=length,
+        extended=False,
+        plane_views=("T1", "T4"),
+    )
+    t2 = Track("pipette-002", "pipette", mid.copy(), 1.0, "observed", 0, 0)
+    t2.set_endpoints(np.stack(_segment(mid, direction, length)))
+    t2.class_votes["blue_pipette"] = 5
+    tracker._apply_line_fit(t2, fit_near, cams, 1, predicted=t2.position.copy(), dt=1)
+    assert t2.line_update == "fit" and t2.uncertainty_cm < 1.0
+    assert tracker.line_step_capped == 1
+
+
+def test_l_a_hold_is_refused_when_the_hand_was_never_near_the_butt(rig) -> None:
+    """The first run measured the held offset from the coasted prediction at the moment
+    support dropped, whatever the hand's distance: 12.7 / 19.9 cm butt-to-hand medians while
+    held. A hand box over a pipette 20 cm from the hand track is an occlusion, not a hold."""
+    cams, _fpv = rig
+    rng = np.random.default_rng(41)
+    frames = list(range(30))
+    length = PRIOR.length_for("red_pipette")
+    tip = np.array([-10.0, 5.0, -3.0])
+    direction = _unit([0.5, 0.3, -1.0])
+    butt = tip + direction * length
+    params = TrackerParams(
+        observation_source="auto",
+        coast_timeout_frames=15,
+        held=True,
+        line_classes=("red_pipette",),
+    )
+
+    def run(hand: np.ndarray, box_px: float):
+        rows = []
+        for f in frames:
+            for v in FIXED[:4]:
+                rows.append(_box_row(cams, v, f, hand, "right_hand", size=(box_px, box_px)))
+            if f < 15 or f >= 25:
+                for v in FIXED:
+                    rows.append(_axis_row(cams, v, f, tip, butt, "red_pipette", rng=rng))
+        return run_tracker(rows, cams, lambda f: None, frames, params)
+
+    # The hand 20 cm from the butt with a box wide enough to cover the pipette's projection.
+    far = run(butt + np.array([0.0, 0.0, -20.0]), 700.0)
+    pipette = {r.frame_index: r for r in far.rows if r.object_class == "pipette"}
+    assert pipette[15].state == "coasting" and pipette[20].state == "coasting"
+    assert far.metrics["extensions"]["held"]["episodes"] == 0
+    assert _lines_metrics(far)["held"]["refused_hand_far_from_butt"] == 1
+    assert not _events(far, "held")
+    # The hand at the butt holds it as before, from the offset a localised frame measured,
+    # and the rows say how far the butt and the tip sit from that hand.
+    near = run(butt + np.array([0.0, 0.0, 1.0]), 220.0)
+    pipette = {r.frame_index: r for r in near.rows if r.object_class == "pipette"}
+    assert pipette[15].state == "held" and pipette[24].state == "held"
+    assert near.metrics["extensions"]["held"]["episodes"] == 1
+    assert _lines_metrics(near)["held"]["offset_from_a_localised_frame"] == 1
+    for f in range(15, 25):
+        assert pipette[f].butt_to_hand_cm == pytest.approx(1.0, abs=1.0), f
+        assert pipette[f].tip_to_hand_cm == pytest.approx(length, abs=2.0), f
+        assert pipette[f].tip_to_hand_cm > pipette[f].butt_to_hand_cm
+    assert pipette[10].butt_to_hand_cm == pytest.approx(1.0, abs=1.0)
+
+
+def test_m_class_veto_refuses_another_colour_while_a_same_class_mask_is_within_reach(
+    rig,
+) -> None:
+    """Trial 1: T2's `blue_pipette#0` sat on the red pipette and joined the red track on six
+    of the seven red disagreements, because the geometric class permitted it and the half-gate
+    colour penalty did not outweigh a mask exactly on the line. A track whose plurality is
+    decisive (>= 0.75 of the votes over >= 30 frames) now refuses the other colour while a
+    same-class mask is within reach in that view; without one the colour never bars."""
+    cams, _fpv = rig
+    rng = np.random.default_rng(43)
+    frames = list(range(70))
+    length = PRIOR.length_for("red_pipette")
+    a, b = _segment([0.0, -7.0, -1.0], [1.0, 0.0, 0.0], length)
+    # The red mask in T2 drawn 2.5 cm off the shaft (a mask that caught the shadow), the blue
+    # slot exactly on it.
+    view = cams["T2"].centre - 0.5 * (a + b)
+    across = _unit(np.cross(view, b - a)) * 2.5
+    rows = []
+    for f in frames:
+        for v in FIXED:
+            if v == "T2" and f >= 40:
+                if f < 55:
+                    rows.append(
+                        _axis_row(cams, v, f, a + across, b + across, "red_pipette", rng=rng)
+                    )
+                rows.append(_axis_row(cams, v, f, a, b, "blue_pipette", rng=rng))
+                continue
+            rows.append(_axis_row(cams, v, f, a, b, "red_pipette", rng=rng))
+    params = TrackerParams(observation_source="auto", line_classes=("red_pipette", "blue_pipette"))
+    out = run_tracker(rows, cams, lambda f: None, frames, params)
+    assert out.metrics["per_class"]["pipette"]["tracks_born"] == 1
+    pipette = {r.frame_index: r for r in out.rows if r.object_class == "pipette"}
+    for f in range(40, 55):
+        assert pipette[f].support_slots.get("T2") == "red_pipette#0", f
+    for f in range(55, 70):
+        assert pipette[f].support_slots.get("T2") == "blue_pipette#0", f
+    metrics = _lines_metrics(out)
+    assert metrics["class_veto"]["observations_refused"] == 15
+    assert metrics["class_veto"]["splits"] == 0
+    assert all(r.observed_class == "red_pipette" for r in pipette.values())
+
+
+def test_n_a_track_whose_votes_flip_to_another_colour_splits_into_a_new_id(rig) -> None:
+    cams, _fpv = rig
+    rng = np.random.default_rng(47)
+    frames = list(range(140))
+    length = PRIOR.length_cm
+    a, b = _segment([0.0, -7.0, -1.0], [1.0, 0.0, 0.0], length)
+    rows = []
+    for f in frames:
+        cls = "red_pipette" if f < 100 else "yellow_pipette"
+        for v in FIXED:
+            rows.append(_axis_row(cams, v, f, a, b, cls, rng=rng))
+    params = TrackerParams(
+        observation_source="auto", line_classes=("red_pipette", "yellow_pipette")
+    )
+    out = run_tracker(rows, cams, lambda f: None, frames, params)
+    assert out.metrics["per_class"]["pipette"]["tracks_born"] == 2
+    assert out.metrics["per_class"]["red_pipette"]["tracks_born"] == 1
+    assert out.metrics["per_class"]["yellow_pipette"]["tracks_born"] == 1
+    splits = _events(out, "class_split")
+    assert len(splits) == 1 and _lines_metrics(out)["class_veto"]["splits"] == 1
+    (split,) = splits
+    # 60 voting frames, 5 votes each: the yellow share reaches 0.4 after 24 yellow frames.
+    assert split.frame_index == 123
+    assert split.payload["plurality_from"] == "red_pipette"
+    assert split.payload["plurality_to"] == "yellow_pipette"
+    old, new = split.payload["split_from"], split.track_id
+    by_track = _by_track(out)
+    assert by_track[old][-1].state == "lost" and by_track[old][-1].frame_index == 123
+    assert by_track[new][0].frame_index == 123 and by_track[new][0].state == "observed"
+    assert by_track[new][-1].observed_class == "yellow_pipette"
+    assert by_track[old][-2].observed_class == "red_pipette"
+    # The geometry carried over: same line on both rows of the split frame.
+    assert np.allclose(by_track[old][-1].endpoints_cm, by_track[new][0].endpoints_cm)
+    lost = [e for e in _events(out, "lost") if e.track_id == old]
+    assert lost and lost[0].payload["split_to"] == new
+    # The rows carry the new fields and round-trip through the schema.
+    row = by_track[new][5]
+    assert row.line_update == "fit" and row.extent_clamped is False
+    back = Track3D.model_validate_json(row.model_dump_json(exclude_none=True))
+    assert back == row

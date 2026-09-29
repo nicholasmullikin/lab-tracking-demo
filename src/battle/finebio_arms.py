@@ -59,9 +59,11 @@ from typing import Any
 
 import numpy as np
 
+from . import finebio_lines_scoreboard as lines_scoreboard
 from . import multiview_tracks
 from .finebio_cameras import Camera, cameras_from_config, read_camera_config
 from .finebio_detect import box_iou
+from .finebio_lines_scoreboard import DEFAULT_CONTROL_FRAMES
 from .finebio_observations import (
     AXIS_ELONGATION_THRESHOLD,
     detections_to_observations,
@@ -1613,16 +1615,19 @@ def run_arm(
     reuse_observations: bool = False,
     ext: bool = False,
     lines: bool = False,
+    observations_dir: Path | None = None,
 ) -> dict[str, Any]:
     """observations -> tracker -> measures + inventory under `output`. With
     `reuse_observations` an existing `observations.jsonl` (and its summary) is read back instead
-    of rebuilt, so the tracker and the measures can be re-run without re-reading the masks.
-    With `ext` the tracker runs with the p3-tracker-ext flags (`--motion-model --containers
-    <the clip's containers> --group-tracks --held`, plus `tracker_extra`) into `tracks-ext/`
-    beside `tracks/`, and the measures and inventory are written with an `-ext` suffix, so the
-    core results are never overwritten. With `lines` (which implies `ext`) the p2-tracker-lines
-    flags (`LINES_TRACKER_FLAGS`) are added and the suffix is `-lines`, so a lines run sits
-    beside an earlier ext run of the same arm."""
+    of rebuilt, so the tracker and the measures can be re-run without re-reading the masks;
+    `observations_dir` names another directory to read them from (a remeasured set, Sep 28),
+    so the tracker output lands under a fresh `output` and the source directory is never
+    written to. With `ext` the tracker runs with the p3-tracker-ext flags (`--motion-model
+    --containers <the clip's containers> --group-tracks --held`, plus `tracker_extra`) into
+    `tracks-ext/` beside `tracks/`, and the measures and inventory are written with an `-ext`
+    suffix, so the core results are never overwritten. With `lines` (which implies `ext`) the
+    p2-tracker-lines flags (`LINES_TRACKER_FLAGS`) are added and the suffix is `-lines`, so a
+    lines run sits beside an earlier ext run of the same arm."""
     output = Path(output)
     ext = ext or lines
     suffix = (LINES_SUFFIX if lines else EXT_SUFFIX) if ext else None
@@ -1634,14 +1639,21 @@ def run_arm(
             *tracker_extra,
         ]
     output.mkdir(parents=True, exist_ok=True)
-    obs_path = output / "observations.jsonl"
-    summary_path = output / "observations_summary.json"
-    if reuse_observations and obs_path.is_file():
+    external = observations_dir is not None
+    source_dir = Path(observations_dir) if external else output
+    obs_path = source_dir / "observations.jsonl"
+    summary_path = source_dir / "observations_summary.json"
+    if external and not obs_path.is_file():
+        raise FileNotFoundError(f"--observations-dir has no observations.jsonl: {source_dir}")
+    if (reuse_observations or external) and obs_path.is_file():
         rows = list(read_jsonl(obs_path, FineBioObservation))
         obs_summary = (
             json.loads(summary_path.read_text(encoding="utf-8")) if summary_path.is_file() else {}
         )
         obs_summary["reused_observations"] = True
+        if external:
+            obs_summary["observations_dir"] = str(source_dir)
+            reuse_observations = True
     else:
         rows, obs_summary = build_observations(
             clip,
@@ -1653,7 +1665,12 @@ def run_arm(
             fpv_poses=fpv_poses,
         )
         obs_summary["rows_written"] = write_observations(rows, obs_path)
-    if not (ext and reuse_observations):
+    if external:
+        # The source directory is read only; the output records where its rows came from.
+        (output / "observations_summary.json").write_text(
+            json.dumps(obs_summary, indent=1) + "\n", encoding="utf-8"
+        )
+    elif not (ext and reuse_observations):
         # An ext re-run over the core's observations leaves the core's files as written.
         summary_path.write_text(json.dumps(obs_summary, indent=1) + "\n", encoding="utf-8")
     tracks_dir = output / _suffixed("tracks", suffix)
@@ -2189,6 +2206,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="read <output>/observations.jsonl instead of rebuilding it",
     )
     run.add_argument(
+        "--observations-dir",
+        type=Path,
+        default=None,
+        help="read <dir>/observations.jsonl (and its summary) instead of <output>'s; implies "
+        "--reuse-observations and never writes into <dir>",
+    )
+    run.add_argument(
         "--ext",
         action="store_true",
         help="tracker extensions on (--motion-model --containers <clip> --group-tracks --held) "
@@ -2262,7 +2286,96 @@ def build_parser() -> argparse.ArgumentParser:
     decide.add_argument("--b", type=Path, required=True)
     decide.add_argument("--c", type=Path, required=True)
     decide.add_argument("--output", type=Path, required=True)
+
+    lines_board = sub.add_parser(
+        "lines-scoreboard",
+        help="the p3-metrics scoreboard of a --lines run against the point tracker",
+    )
+    lines_board.add_argument(
+        "--lines-dir", type=Path, required=True, help="arm dir with tracks-lines/, or that dir"
+    )
+    lines_board.add_argument(
+        "--ext-dir", type=Path, required=True, help="the point tracker on the same rows"
+    )
+    lines_board.add_argument(
+        "--baseline-ext-dir", type=Path, required=True, help="the Sep 27 tracks-ext"
+    )
+    lines_board.add_argument(
+        "--observations", type=Path, required=True, help="remeasured observations dir or file"
+    )
+    lines_board.add_argument("--clip-config", type=Path, required=True)
+    lines_board.add_argument("--rig", type=Path, required=True, help="rig.json")
+    lines_board.add_argument(
+        "--prior", type=Path, default=Path(multiview_tracks.DEFAULT_LINE_PRIOR_PATH)
+    )
+    lines_board.add_argument(
+        "--stand-report", type=Path, default=None, help="stand_report.json (rest geometry)"
+    )
+    lines_board.add_argument(
+        "--colour-tracks",
+        type=Path,
+        default=None,
+        help="tracks_colour.jsonl (default: beside the line tracks)",
+    )
+    lines_board.add_argument(
+        "--negative-controls",
+        type=Path,
+        action="append",
+        default=None,
+        help="negative_controls.json (repeatable, one per frame window)",
+    )
+    lines_board.add_argument(
+        "--other-trial", type=Path, default=None, help="the other trial's lines_scoreboard.json"
+    )
+    lines_board.add_argument("--fpv-poses", type=Path, default=None)
+    lines_board.add_argument("--output", type=Path, required=True, help="directory")
+
+    controls = sub.add_parser(
+        "lines-negative-controls",
+        help="the line tracker on a few hundred frames with a shipped pose and a shifted view",
+    )
+    controls.add_argument("--observations", type=Path, required=True)
+    controls.add_argument("--clip-config", type=Path, required=True)
+    controls.add_argument("--gates", type=Path, default=None, help="rig.json")
+    controls.add_argument(
+        "--prior", type=Path, default=Path(multiview_tracks.DEFAULT_LINE_PRIOR_PATH)
+    )
+    controls.add_argument(
+        "--frames",
+        default=f"{DEFAULT_CONTROL_FRAMES[0]}-{DEFAULT_CONTROL_FRAMES[1]}",
+        help="raw frame range a-b (inclusive)",
+    )
+    controls.add_argument("--shipped-view", default="T5")
+    controls.add_argument(
+        "--shift-view", default="T3", help="comma-separated views, one shift control each"
+    )
+    controls.add_argument(
+        "--shipped-pose",
+        type=Path,
+        default=None,
+        help='JSON {"rvec": [...], "tvec": [...]} instead of the shipped extrinsics on disk',
+    )
+    controls.add_argument("--fpv-poses", type=Path, default=None)
+    controls.add_argument("--output", type=Path, required=True, help="directory")
     return parser
+
+
+def lines_tracker_flags(clip: ClipWindow, prior: Path | None = None) -> list[str]:
+    """The flags `run --lines` gives the tracker for this clip."""
+    flags = [
+        *EXT_TRACKER_FLAGS,
+        *(["--containers", ",".join(clip.containers)] if clip.containers else []),
+        *LINES_TRACKER_FLAGS,
+    ]
+    if prior is not None:
+        flags += ["--line-prior", str(prior)]
+    return flags
+
+
+def _read_json_or_none(path: Path | None) -> dict[str, Any] | None:
+    if path is None:
+        return None
+    return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
 def _load_measures(arm_dir: Path) -> dict[str, Any]:
@@ -2292,6 +2405,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             reuse_observations=args.reuse_observations,
             ext=args.ext,
             lines=args.lines,
+            observations_dir=args.observations_dir,
         )
         print(
             json.dumps(
@@ -2395,6 +2509,72 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(decision, indent=1) + "\n", encoding="utf-8")
         print(json.dumps(decision, indent=1))
+        return 0
+    if args.command == "lines-scoreboard":
+        clip = load_clip(args.clip_config)
+        lines_dir = lines_scoreboard.resolve_tracks_dir(args.lines_dir, "tracks-lines")
+        ext_dir = lines_scoreboard.resolve_tracks_dir(args.ext_dir, "tracks-ext")
+        baseline_dir = lines_scoreboard.resolve_tracks_dir(args.baseline_ext_dir, "tracks-ext")
+        colour_tracks = args.colour_tracks or (lines_dir / "tracks_colour.jsonl")
+        read = _read_json_or_none
+        board = lines_scoreboard.build_scoreboard(
+            lines_tracks_dir=lines_dir,
+            ext_tracks_dir=ext_dir,
+            baseline_tracks_dir=baseline_dir,
+            observations=args.observations,
+            camera_config=clip.camera_config,
+            window=(clip.start_frame, clip.end_frame_exclusive),
+            rig=read(args.rig),
+            prior=multiview_tracks.load_line_prior(args.prior),
+            trial=clip.trial,
+            stand_report=read(args.stand_report),
+            colour_tracks=colour_tracks,
+            negative_controls=[read(p) for p in args.negative_controls or ()] or None,
+            other_trial=read(args.other_trial),
+            fpv_poses=args.fpv_poses,
+            inputs={
+                "lines_tracks": str(lines_dir),
+                "ext_tracks": str(ext_dir),
+                "baseline_tracks": str(baseline_dir),
+                "observations": str(args.observations),
+                "clip_config": str(args.clip_config),
+                "rig": str(args.rig),
+                "prior": str(args.prior),
+                "stand_report": None if args.stand_report is None else str(args.stand_report),
+                "colour_tracks": str(colour_tracks) if colour_tracks.is_file() else None,
+                "negative_controls": [str(p) for p in args.negative_controls or ()],
+                "other_trial": None if args.other_trial is None else str(args.other_trial),
+            },
+        )
+        args.output.mkdir(parents=True, exist_ok=True)
+        (args.output / "lines_scoreboard.json").write_text(
+            json.dumps(board, indent=1) + "\n", encoding="utf-8"
+        )
+        text = lines_scoreboard.scoreboard_markdown(board)
+        (args.output / "lines_scoreboard.md").write_text(text, encoding="utf-8")
+        print(text)
+        return 0
+    if args.command == "lines-negative-controls":
+        clip = load_clip(args.clip_config)
+        a, _, b = args.frames.partition("-")
+        shipped_pose = None
+        if args.shipped_pose is not None:
+            doc = json.loads(args.shipped_pose.read_text(encoding="utf-8"))
+            shipped_pose = (doc["rvec"], doc["tvec"])
+        report = lines_scoreboard.run_negative_controls(
+            observations=args.observations,
+            camera_config=clip.camera_config,
+            gates=args.gates,
+            tracker_flags=lines_tracker_flags(clip, args.prior),
+            output=args.output,
+            frames=(int(a), int(b)),
+            shipped_view=args.shipped_view,
+            shift_views=tuple(v.strip() for v in args.shift_view.split(",") if v.strip()),
+            shipped_pose=shipped_pose,
+            fpv_poses=args.fpv_poses,
+            run_tracker=run_tracker_cli,
+        )
+        print(json.dumps({k: v for k, v in report.items() if k in ("runs", "verdict")}, indent=1))
         return 0
     return 1
 

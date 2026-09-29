@@ -359,6 +359,9 @@ TrackEventKind = Literal[
     "group_formed",
     "group_split",
     "group_joined",
+    # Sep 29 (p2-tracker-lines, defects): a line track whose observed classes flipped to a
+    # second colour continues under a new id.
+    "class_split",
 ]
 
 Vec2 = tuple[float, float]
@@ -526,6 +529,16 @@ class Track3D(VersionedModel):
     merged_views: tuple[str, ...] | None = None
     colour_identity: str | None = None
     colour_confidence: float | None = Field(default=None, ge=0, le=1)
+    # Sep 29 (p2-tracker-lines, defects found on the first run), None unless a line track:
+    # what moved the segment this frame (`fit` a multi-view line fit, `aided` one plane plus
+    # the predicted direction, `point` the centroid fallback, `lateral` a single-view
+    # update, `predicted` no geometric update, `capped` an update cut to the step cap);
+    # whether the written extent was cut to the merged factor times the prior; and the
+    # distance from the resolved butt / tip to the holding or nearest hand track (cm).
+    line_update: str | None = None
+    extent_clamped: bool | None = None
+    butt_to_hand_cm: float | None = Field(default=None, ge=0)
+    tip_to_hand_cm: float | None = Field(default=None, ge=0)
 
 
 class TrackEvent(VersionedModel):

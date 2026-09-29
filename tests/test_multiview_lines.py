@@ -17,6 +17,7 @@ from battle.multiview_lines import (
     axis_residual,
     centroid_loo_residual,
     centroid_point,
+    clamp_interval,
     fit_line,
     is_elongated,
     line_cost,
@@ -27,6 +28,7 @@ from battle.multiview_lines import (
     point_to_line_cm,
     ray_from_point,
     reproject_line,
+    view_angle_to_line_deg,
 )
 from battle.multiview_tracks import ray_point
 
@@ -472,3 +474,53 @@ def test_reproject_line_and_axis_residual_agree_with_the_camera(rig) -> None:
     behind = Line3D(point=cams["T1"].centre - 10 * cams["T1"].R.T[:, 2], direction=[1, 0, 0])
     assert all(np.isnan(reproject_line(cams["T1"], behind)))
     assert np.isnan(axis_residual(cams["T1"], np.array([[0.0, 0.0], [10.0, 0.0]]), behind)[0])
+
+
+# --------------------------------------------------------------------------- Sep 29 defects
+
+
+def test_j_clamp_interval_cuts_a_runaway_extent_from_the_supported_end() -> None:
+    """The first full run wrote extents of 11 m: nothing cut them. The clamp keeps the end
+    more views reach and cuts the other to the maximum; tied support centres the cut."""
+    assert clamp_interval(-10.0, 15.0, (1, 1), 30.0) == (-10.0, 15.0, False)
+    lo, hi, clamped = clamp_interval(-150.0, 12.0, (1, 3), 27.8)
+    assert clamped and hi == 12.0 and hi - lo == pytest.approx(27.8)
+    lo, hi, clamped = clamp_interval(-12.0, 150.0, (3, 1), 27.8)
+    assert clamped and lo == -12.0 and hi - lo == pytest.approx(27.8)
+    lo, hi, clamped = clamp_interval(-100.0, 100.0, (1, 1), 27.8)
+    assert clamped and lo == pytest.approx(-13.9) and hi == pytest.approx(13.9)
+
+
+def test_k_line_endpoints_clamp_flag_cuts_the_merged_extent_and_keeps_the_default(rig) -> None:
+    cams, _ = rig
+    rng = np.random.default_rng(29)
+    a, b = TILTED
+    long_a, long_b = _segment(0.5 * (a + b), b - a, 4.0 * LENGTH_CM)
+    obs = _observations(cams, ("T1", "T4", "T5"), long_a, long_b, rng)
+    line = fit_line(obs)
+    assert line is not None
+    as_seen = line_endpoints(line, obs, LENGTH_CM)
+    assert as_seen.merged and not as_seen.clamped
+    assert as_seen.length_cm == pytest.approx(4.0 * LENGTH_CM, abs=1.5)
+    cut = line_endpoints(line, obs, LENGTH_CM, clamp=True)
+    assert cut.merged and cut.clamped
+    assert cut.length_cm == pytest.approx(1.2 * LENGTH_CM, abs=1e-6)
+    # The visible extremes are reported unchanged; only the written endpoints are cut.
+    assert cut.visible_length_cm == pytest.approx(as_seen.visible_length_cm)
+    on_line = [point_to_line_cm(e, line) for e in cut.endpoints]
+    assert max(on_line) < 1e-6
+
+
+def test_l_view_angle_to_line_names_the_camera_looking_along_the_shaft(rig) -> None:
+    cams, _ = rig
+    mid = np.array([25.0, -10.0, -14.0])
+    towards_t2 = Line3D(point=mid, direction=cams["T2"].centre - mid)
+    assert view_angle_to_line_deg(cams["T2"], towards_t2) < 1e-6
+    # T1 sits on the far side of the bench from T2: it sees that shaft nearly broadside.
+    assert view_angle_to_line_deg(cams["T1"], towards_t2) > 45.0
+    flat = Line3D(point=mid, direction=[0.0, 1.0, 0.0])
+    for cam in cams.values():
+        assert 10.0 < view_angle_to_line_deg(cam, flat) <= 90.0
+    # The angle is sign-free: the reversed direction reads the same.
+    reversed_ = Line3D(point=mid, direction=mid - cams["T2"].centre)
+    assert view_angle_to_line_deg(cams["T2"], reversed_) < 1e-6

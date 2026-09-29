@@ -190,6 +190,7 @@ class Extent:
     extended: bool = False
     extended_end: int | None = None
     merged: bool = False
+    clamped: bool = False
 
     @property
     def length_cm(self) -> float:
@@ -395,6 +396,36 @@ def fit_line(
 # --------------------------------------------------------------------------- extent
 
 
+def clamp_interval(
+    lo: float, hi: float, support: tuple[int, int], max_length_cm: float
+) -> tuple[float, float, bool]:
+    """An interval of the line parameter longer than `max_length_cm` is cut to that length
+    from the end more views reach (the other end is the one that ran off), both ends by half
+    when tied. Returns ``(lo, hi, clamped)``. Found on the Sep 28 run: an extent from a plane
+    whose rays meet the line at a grazing angle runs metres along it, and nothing cut it."""
+    if hi - lo <= max_length_cm:
+        return lo, hi, False
+    if support[0] > support[1]:
+        return lo, lo + max_length_cm, True
+    if support[1] > support[0]:
+        return hi - max_length_cm, hi, True
+    mid = 0.5 * (lo + hi)
+    return mid - max_length_cm / 2, mid + max_length_cm / 2, True
+
+
+def view_angle_to_line_deg(cam: Camera, line: Line3D) -> float:
+    """The angle (deg, 0..90) between the camera's ray to the line's point and the line's
+    direction: near 0 the camera looks along the shaft and its rays meet the line at a
+    grazing angle, so neither the extent along the line nor a lateral update is
+    constrained; near 90 it sees the shaft broadside."""
+    ray = line.point - cam.centre
+    norm = float(np.linalg.norm(ray))
+    if norm < 1e-9:
+        return 0.0
+    cosine = min(1.0, abs(float(ray @ line.direction)) / norm)
+    return math.degrees(math.acos(cosine))
+
+
 def line_endpoints(
     line: Line3D,
     cams_and_obs: Sequence[CamObs],
@@ -403,15 +434,18 @@ def line_endpoints(
     elongation_threshold: float = ELONGATION_THRESHOLD,
     end_tolerance_cm: float = END_TOLERANCE_CM,
     merged_factor: float = MERGED_FACTOR,
+    clamp: bool = False,
 ) -> Extent | None:
     """Endpoints on `line` from the elongated views: each axis endpoint's ray gives the closest
     point on the line, so each view spans an interval of the line parameter; the visible
     extent is the min/max over views (up to three views) or the 10th/90th percentile of the
-    low and high ends (more).     With a `length_prior_cm`: a shorter visible extent is completed
+    low and high ends (more). With a `length_prior_cm`: a shorter visible extent is completed
     to the prior from the end more views reach (both ends by half when tied) and flagged
     `extended` when more than `end_tolerance_cm` was missing; a visible extent over
-    `merged_factor` times the prior is flagged `merged` and left as seen. None when no view
-    is elongated. Endpoint order is increasing along `line.direction`."""
+    `merged_factor` times the prior is flagged `merged` and left as seen, or, with `clamp`,
+    cut to that length from the better-supported end (`clamp_interval`) and flagged
+    `clamped` too. None when no view is elongated. Endpoint order is increasing along
+    `line.direction`."""
     per_view: dict[str, tuple[float, float]] = {}
     for cam, obs in cams_and_obs:
         if not is_elongated(obs, elongation_threshold):
@@ -432,7 +466,7 @@ def line_endpoints(
         int((highs >= hi - end_tolerance_cm).sum()),
     )
     visible = np.stack([line.point_at(lo), line.point_at(hi)])
-    extended, extended_end, merged = False, None, False
+    extended, extended_end, merged, clamped = False, None, False, False
     if length_prior_cm is not None:
         length = hi - lo
         if length < length_prior_cm:
@@ -447,6 +481,8 @@ def line_endpoints(
                 lo, hi = lo - missing / 2, hi + missing / 2
         elif length > merged_factor * length_prior_cm:
             merged = True
+            if clamp:
+                lo, hi, clamped = clamp_interval(lo, hi, support, merged_factor * length_prior_cm)
     return Extent(
         endpoints=np.stack([line.point_at(lo), line.point_at(hi)]),
         visible=visible,
@@ -455,6 +491,7 @@ def line_endpoints(
         extended=extended,
         extended_end=extended_end,
         merged=merged,
+        clamped=clamped,
     )
 
 

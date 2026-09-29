@@ -97,6 +97,18 @@ above reproduces byte for byte). Each was added on the occlusion inventory of ar
   `--motion-model` both endpoints carry a velocity; with `--held` the hand holds the butt.
   Evidence: 61 blue-pipette ids on trial 1 from box centres that are different places on a
   23 cm shaft in T1, T4 and the head camera.
+  Sep 29, after the first full run (10-22% of line rows longer than twice a pipette, 6% of
+  midpoint steps over 10 cm): every runaway extent began in a prediction-aided fit whose
+  in-plane direction nobody checked. The aided fit now rejects a plane whose own extent on
+  the aided line exceeds the merged factor times the prior and drops rays far along the line;
+  a written extent is clamped to that length (`extent_clamped`); two-plane updates must
+  overlap along the line as births must; a view looking along the shaft (under
+  `line_min_view_angle_deg`) gives no extent and no single-view update; a midpoint step over
+  `line_max_step_cm` a frame is cut to it and the row demoted to prediction-aided
+  (`line_update`); the held offset is taken only from a frame where the hand was within reach
+  of the butt (`butt_to_hand_cm` on the rows); and an observation whose class differs from a
+  track's decisive plurality is refused while a same-class candidate exists, a track whose
+  votes flip to a second colour splitting into a new id (`class_split`).
 """
 
 from __future__ import annotations
@@ -128,6 +140,7 @@ from .multiview_lines import (
     AxisObs,
     Line3D,
     axis_residual,
+    clamp_interval,
     fit_line,
     is_elongated,
     line_distance,
@@ -136,6 +149,7 @@ from .multiview_lines import (
     plane_from_axis,
     point_residual,
     ray_from_point,
+    view_angle_to_line_deg,
 )
 from .multiview_schemas import (
     FINEBIO_FPV_VIEW,
@@ -278,6 +292,21 @@ class TrackerParams:
     line_merged_width_factor: float = 1.6
     line_merged_extent_factor: float = 1.2
     line_max_axis_residual_px: float = 25.0
+    # -- Sep 29, geometry corrections after the first run. A view whose ray to the segment is
+    # within this angle of the line looks along the shaft: its extent on the line and a
+    # single-view update from it are unconstrained and are not used. A midpoint step over
+    # this many cm a frame (15 cm at 30 fps is 4.5 m/s) is cut to it and the row demoted to
+    # prediction-aided. The class veto: a track whose plurality class holds at least the
+    # share of its votes over at least the frames refuses an observation of another class
+    # while a same-class candidate exists in that view; a track whose votes over the last
+    # window of frames give a second colour at least the split share continues under a new
+    # id.
+    line_min_view_angle_deg: float = 10.0
+    line_max_step_cm: float = 15.0
+    line_class_veto_share: float = 0.75
+    line_class_veto_frames: int = 30
+    line_class_split_share: float = 0.4
+    line_class_split_window: int = 60
 
     def as_dict(self) -> dict[str, Any]:
         out = {k: getattr(self, k) for k in CORE_PARAM_KEYS}
@@ -643,6 +672,17 @@ class Track:
     line_residuals: dict[str, float] = field(default_factory=dict)
     merged_views: tuple[str, ...] = ()
     line_this_frame: bool | None = None
+    # -- Sep 29 defects: what moved the segment this frame (`Track3D.line_update`), whether
+    # the extent was clamped, the frames that cast a class vote and the last window of
+    # per-frame votes (the class split), and the butt-to-hand offset measured on a localised
+    # frame with the hand within reach (the only offset a hold may follow).
+    line_update: str | None = None
+    extent_clamped: bool = False
+    class_vote_frames: int = 0
+    recent_class_votes: list[Counter] = field(default_factory=list)
+    butt_offset: np.ndarray | None = None
+    butt_offset_hand: str | None = None
+    butt_offset_frame: int | None = None
 
     @property
     def is_line(self) -> bool:
@@ -1008,6 +1048,7 @@ class Candidate:
     merged_views: tuple[str, ...] = ()
     visible_length_cm: float | None = None
     extended: bool = False
+    clamped: bool = False
 
 
 def _pair_cost(cam_a: Camera, obs_a: Obs, cam_b: Camera, obs_b: Obs) -> float:
@@ -1186,6 +1227,10 @@ class LineFit:
     plane_views: tuple[str, ...]
     # True when the direction came from the prediction (one plane plus rays), not the views.
     aided: bool = False
+    # True when the extent was cut to the merged factor times the prior (Sep 29), and when no
+    # view could measure an extent and the prediction's was kept (not a visible length).
+    clamped: bool = False
+    extent_from_prediction: bool = False
 
 
 def _view_weight(view: str, params: TrackerParams) -> float:
@@ -1320,6 +1365,27 @@ def _plane_ray_cost_cm(
     return overshoot_cm + across / scale
 
 
+@dataclass
+class CompletedExtent:
+    """`complete_extent` result: the endpoints after the clamp and the soft prior, the
+    visible length before either, whether the prior reconstructed an end, whether the clamp
+    cut the extent, the compact views whose ray point lies off this shaft (not this pipette
+    on this line), the views that gave an extent, and whether the extent is the prediction's
+    because no view could measure one."""
+
+    endpoints: np.ndarray
+    visible_length_cm: float
+    extended: bool
+    clamped: bool
+    far_rays: tuple[str, ...]
+    extent_views: tuple[str, ...]
+    from_prediction: bool
+
+
+def _sees_broadside(cam: Camera, line: Line3D, params: TrackerParams) -> bool:
+    return view_angle_to_line_deg(cam, line) >= params.line_min_view_angle_deg
+
+
 def complete_extent(
     line: Line3D,
     cams_and_obs: Sequence[tuple[Camera, AxisObs]],
@@ -1327,26 +1393,52 @@ def complete_extent(
     prior_length_cm: float,
     prior_spread_cm: float,
     tip_hint: np.ndarray | None = None,
-) -> tuple[np.ndarray, float, bool] | None:
-    """The soft prior on a fitted line's visible extent: ``(endpoints, visible length,
-    extended)``. The visible extent is the axis views' (`line_endpoints`) widened by the
-    compact views' centroid rays (their closest points on the line are on the shaft too).
-    Within `prior_spread_cm` of the prior it is left as seen; shorter, it is completed to the
-    prior at the tip end (the visible end nearer `tip_hint`, the track's predicted tip) unless
-    every view reaches that end and not the other, in which case the other end is the one the
-    masks missed; without a hint, from the end more views reach, both ends by half when tied.
-    None when no view is elongated."""
-    extent = line_endpoints(line, cams_and_obs)
-    if extent is None:
+    fallback_extent: np.ndarray | None = None,
+) -> CompletedExtent | None:
+    """The soft prior on a fitted line's visible extent. The visible extent is the axis
+    views' (`line_endpoints`) widened by the compact views' centroid rays (their closest
+    points on the line are on the shaft too). Within `prior_spread_cm` of the prior it is left
+    as seen; shorter, it is completed to the prior at the tip end (the visible end nearer
+    `tip_hint`, the track's predicted tip) unless every view reaches that end and not the
+    other, in which case the other end is the one the masks missed; without a hint, from the
+    end more views reach, both ends by half when tied.
+
+    Sep 29 corrections: a view whose ray runs within `line_min_view_angle_deg` of the line
+    looks along the shaft and gives no extent (its rays meet the line at a grazing angle); a
+    ray point beyond the axis views' interval by more than the length they may not see plus
+    `line_gate_cm` is another object's and is reported in `far_rays`, not used; an extent
+    over `line_merged_extent_factor` times the prior is cut to that length from the
+    better-supported end (`clamped`). When no view can give an extent, `fallback_extent`
+    (the track's predicted endpoints) is projected onto the line (`from_prediction`); None
+    without one."""
+    extent_pairs = [
+        (cam, obs)
+        for cam, obs in cams_and_obs
+        if is_elongated(obs) and _sees_broadside(cam, line, params)
+    ]
+    extent = line_endpoints(line, extent_pairs) if extent_pairs else None
+    from_prediction = False
+    if extent is not None:
+        lo, hi = line.parameter(extent.visible[0]), line.parameter(extent.visible[1])
+        support = list(extent.support)
+        n_views = len(extent.per_view)
+        extent_views = list(extent.per_view)
+    elif fallback_extent is not None:
+        lo, hi = sorted(line.parameter(e) for e in np.asarray(fallback_extent).reshape(2, 3))
+        support, n_views, extent_views, from_prediction = [0, 0], 0, [], True
+    else:
         return None
-    lo, hi = line.parameter(extent.visible[0]), line.parameter(extent.visible[1])
-    support = list(extent.support)
-    n_views = len(extent.per_view)
+    slack = max(0.0, prior_length_cm - (hi - lo))
+    far_rays: list[str] = []
     for cam, obs in cams_and_obs:
-        if is_elongated(obs):
+        if is_elongated(obs) or not _sees_broadside(cam, line, params):
             continue
         parameter = line.parameter_closest_to_ray(*ray_from_point(cam, obs.centroid_px))
+        if max(0.0, lo - parameter, parameter - hi) > slack + params.line_gate_cm:
+            far_rays.append(obs.view)
+            continue
         n_views += 1
+        extent_views.append(obs.view)
         if parameter < lo:
             lo, support[0] = parameter, 1
         elif parameter <= lo + END_TOLERANCE_CM:
@@ -1356,8 +1448,23 @@ def complete_extent(
         elif parameter >= hi - END_TOLERANCE_CM:
             support[1] += 1
     visible = hi - lo
+    lo, hi, clamped = clamp_interval(
+        lo, hi, (support[0], support[1]), params.line_merged_extent_factor * prior_length_cm
+    )
+
+    def result(lo: float, hi: float, extended: bool) -> CompletedExtent:
+        return CompletedExtent(
+            endpoints=np.stack([line.point_at(lo), line.point_at(hi)]),
+            visible_length_cm=visible,
+            extended=extended,
+            clamped=clamped,
+            far_rays=tuple(sorted(far_rays)),
+            extent_views=tuple(sorted(extent_views)),
+            from_prediction=from_prediction,
+        )
+
     if visible >= prior_length_cm - prior_spread_cm:
-        return np.stack([line.point_at(lo), line.point_at(hi)]), visible, False
+        return result(lo, hi, False)
     missing = prior_length_cm - visible
     extend_end: int | None = None
     if tip_hint is not None:
@@ -1377,8 +1484,14 @@ def complete_extent(
         hi = lo + prior_length_cm
     else:
         lo, hi = lo - missing / 2, hi + missing / 2
-    endpoints = np.stack([line.point_at(lo), line.point_at(hi)])
-    return endpoints, visible, missing > END_TOLERANCE_CM
+    return result(lo, hi, missing > END_TOLERANCE_CM)
+
+
+def _odd_interval(per_view: dict[str, tuple[float, float]]) -> str:
+    """The view whose interval centre is farthest from the median centre."""
+    centres = {v: 0.5 * (lo + hi) for v, (lo, hi) in per_view.items()}
+    median = float(np.median(list(centres.values())))
+    return max(centres, key=lambda v: abs(centres[v] - median))
 
 
 def fit_line_members(
@@ -1391,15 +1504,20 @@ def fit_line_members(
     predicted: Line3D | None = None,
     uncertainty_cm: float = 0.0,
     tip_hint: np.ndarray | None = None,
+    direction_uncertainty_deg: float = 0.0,
 ) -> tuple[LineFit | None, tuple[str, ...]]:
     """The line fit over a set of members (one per view), with the merged-mask rejections,
     the residual prune (a member over its gate is dropped while three or more remain) and,
     against a `predicted` line, the line gate (angle and perpendicular offset at the
-    midpoint, the latter inflated by `uncertainty_cm`; the member whose view disagrees most
-    with the prediction is dropped and the fit repeated). Returns ``(fit, merged views)``;
-    the fit is None when no line can be fitted from the members that survive (fewer than
-    two, no plane, degenerate, a two-member fit over its gate), the merged views are
-    reported either way."""
+    midpoint, inflated by `direction_uncertainty_deg` and `uncertainty_cm` as the pixel gate
+    is; the member whose view disagrees most with the prediction is dropped and the fit
+    repeated). Sep 29: the axis views' intervals along the line must overlap within
+    `line_gate_cm`, as `_line_pair_cost` asks of a birth pair (with three or more the odd
+    interval's view is dropped, with two there is no fit); a view looking along the line
+    gives no interval; a compact view whose ray point lies off the shaft is dropped. Returns
+    ``(fit, merged views)``; the fit is None when no line can be fitted from the members
+    that survive (fewer than two, no plane, degenerate, a two-member fit over its gate), the
+    merged views are reported either way."""
     members = dict(members)
     merged: list[str] = []
     for v, o in list(members.items()):
@@ -1424,30 +1542,50 @@ def fit_line_members(
             v: (r.perpendicular_px if np.isfinite(r.perpendicular_px) else float("inf"))
             for v, r in line.residuals.items()
         }
-        extent = line_endpoints(line, cams_and_obs)
-        assert extent is not None
-        too_long = [
-            v
-            for v, (lo, hi) in extent.per_view.items()
-            if hi - lo > params.line_merged_extent_factor * prior_length_cm
+        extent_pairs = [
+            (cam, obs) for cam, obs in cams_and_obs if _sees_broadside(cam, line, params)
         ]
-        if too_long:
-            for v in too_long:
-                merged.append(v)
-                del members[v]
-            continue
-        if extent.visible_length_cm > params.line_merged_extent_factor * prior_length_cm:
-            # The views' extents together span more than one pipette: two objects, or one view
-            # on the wrong one. With three or more, the odd interval goes; with two, no fit.
-            if len(extent.per_view) < 3:
-                return None, tuple(sorted(merged))
-            centres = {v: 0.5 * (lo + hi) for v, (lo, hi) in extent.per_view.items()}
-            median = float(np.median(list(centres.values())))
-            del members[max(centres, key=lambda v: abs(centres[v] - median))]
-            continue
+        extent = line_endpoints(line, extent_pairs) if extent_pairs else None
+        if extent is not None:
+            too_long = [
+                v
+                for v, (lo, hi) in extent.per_view.items()
+                if hi - lo > params.line_merged_extent_factor * prior_length_cm
+            ]
+            if too_long:
+                for v in too_long:
+                    merged.append(v)
+                    del members[v]
+                continue
+            if len(extent.per_view) >= 2:
+                # The axis views must see one shaft: their intervals overlap within the gate.
+                gaps = {
+                    v: max(
+                        _interval_gap(extent.per_view[v], extent.per_view[w])
+                        for w in extent.per_view
+                        if w != v
+                    )
+                    for v in extent.per_view
+                }
+                if max(gaps.values()) > params.line_gate_cm:
+                    if len(extent.per_view) < 3:
+                        return None, tuple(sorted(merged))
+                    del members[_odd_interval(extent.per_view)]
+                    continue
+            if extent.visible_length_cm > params.line_merged_extent_factor * prior_length_cm:
+                # The views' extents together span more than one pipette: two objects, or one
+                # view on the wrong one. With three or more, the odd interval goes; with two,
+                # no fit.
+                if len(extent.per_view) < 3:
+                    return None, tuple(sorted(merged))
+                del members[_odd_interval(extent.per_view)]
+                continue
         if predicted is not None:
             angle, perpendicular, _ = line_distance(predicted, line)
-            if angle > params.line_gate_deg or perpendicular > params.line_gate_cm + uncertainty_cm:
+            if (
+                angle > params.line_gate_deg + direction_uncertainty_deg
+                or perpendicular > params.line_gate_cm + uncertainty_cm
+            ):
                 worst = max(
                     members, key=lambda v: _line_view_residual(cams[v], members[v], predicted)
                 )
@@ -1460,19 +1598,32 @@ def fit_line_members(
         if over:
             return None, tuple(sorted(merged))
         completed = complete_extent(
-            line, cams_and_obs, params, prior_length_cm, prior_spread_cm, tip_hint
+            line,
+            cams_and_obs,
+            params,
+            prior_length_cm,
+            prior_spread_cm,
+            tip_hint,
+            fallback_extent=None if predicted is None else predicted.endpoints,
         )
-        assert completed is not None
-        endpoints, visible, extended = completed
+        if completed is None:
+            return None, tuple(sorted(merged))
+        if completed.far_rays:
+            # A compact view whose ray point lies off the shaft sees another object.
+            for v in completed.far_rays:
+                del members[v]
+            continue
         fit = LineFit(
             line=line,
-            endpoints=endpoints,
+            endpoints=completed.endpoints,
             members=members,
             residuals=residuals,
             merged_views=tuple(sorted(merged)),
-            visible_length_cm=visible,
-            extended=extended,
+            visible_length_cm=completed.visible_length_cm,
+            extended=completed.extended,
             plane_views=line.plane_views,
+            clamped=completed.clamped,
+            extent_from_prediction=completed.from_prediction,
         )
         return fit, fit.merged_views
     return None, tuple(sorted(merged))
@@ -1557,6 +1708,7 @@ def line_birth_candidates(
                 merged_views=fit.merged_views,
                 visible_length_cm=fit.visible_length_cm,
                 extended=fit.extended,
+                clamped=fit.clamped,
             )
         else:
             point, kept, residuals = _prune_clique(members, cams, params)
@@ -1650,6 +1802,17 @@ class MultiviewTracker:
         self.line_track_frames = 0
         self.line_tip_resolved_frames = 0
         self.line_tip_resolutions: dict[str, int] = defaultdict(int)
+        # -- Sep 29 defect corrections (all zero with the extension off)
+        self.line_extent_clamped = 0
+        self.line_step_capped = 0
+        self.line_single_view_vetoed = 0
+        self.line_aided_rejected = 0
+        self.line_aided_from_prediction = 0
+        self.line_far_rays_dropped = 0
+        self.line_held_refused = 0
+        self.line_held_offset_remeasured = 0
+        self.line_class_vetoes = 0
+        self.line_class_splits = 0
 
     # -- helpers
 
@@ -1879,11 +2042,50 @@ class MultiviewTracker:
                     continue
                 for j, o in enumerate(items):
                     cost[i, j] = self._line_view_cost(t, cam, o)
+                self._class_veto(t, items, cost[i])
             for i, j in hungarian(cost):
                 if cost[i, j] < HUNGARIAN_FORBIDDEN:
                     assigned[(tracks[i].track_id, v)] = items[j]
                     used_obs.add((v, items[j].index))
         return assigned
+
+    def _decisive_class(self, t: Track) -> str | None:
+        """The class veto's plurality: the top class when it holds at least
+        `line_class_veto_share` of the votes cast over at least `line_class_veto_frames`
+        frames; None before that (the colour never bars an association on a young track)."""
+        params = self.params
+        if t.class_vote_frames < params.line_class_veto_frames or not t.class_votes:
+            return None
+        cls, top = max(sorted(t.class_votes.items()), key=lambda kv: kv[1])
+        total = sum(t.class_votes.values())
+        return cls if top >= params.line_class_veto_share * total else None
+
+    def _class_veto(self, t: Track, items: Sequence[Obs], costs: np.ndarray) -> None:
+        """Sep 29: an observation whose class differs from the track's decisive plurality is
+        refused while a same-class observation is within reach in that view (T2's blue slot
+        joined the red pipette's track on 6 of 7 red disagreements; the geometric class
+        alone permitted it). Without a same-class candidate the colour still never bars an
+        association: the detector's class is least reliable while pipetting."""
+        decisive = self._decisive_class(t)
+        if decisive is None:
+            return
+        same = [
+            j
+            for j, o in enumerate(items)
+            if o.colour_class == decisive and costs[j] < HUNGARIAN_FORBIDDEN
+        ]
+        if not same:
+            return
+        vetoed = 0
+        for j, o in enumerate(items):
+            if (
+                o.colour_class is not None
+                and o.colour_class != decisive
+                and costs[j] < HUNGARIAN_FORBIDDEN
+            ):
+                costs[j] = HUNGARIAN_FORBIDDEN
+                vetoed += 1
+        self.line_class_vetoes += vetoed
 
     def _update(
         self,
@@ -1964,13 +2166,109 @@ class MultiviewTracker:
         }
 
     def _record_line_support(self, t: Track, mine: dict[str, Obs], cams: dict[str, Camera]) -> None:
+        votes: Counter = Counter()
         for v, o in mine.items():
             if o.colour_class is not None:
                 t.class_votes[o.colour_class] += 1
+                votes[o.colour_class] += 1
             if o.width_px is not None and o.axis_px is not None and v in cams:
                 history = t.width_history.setdefault(v, [])
                 history.append(float(o.width_px) / pixels_per_cm(cams[v], t.position))
                 del history[:-60]
+        if votes:
+            t.class_vote_frames += 1
+            t.recent_class_votes.append(votes)
+            del t.recent_class_votes[: -self.params.line_class_split_window]
+
+    def _class_flip(self, t: Track) -> str | None:
+        """The second colour that took at least `line_class_split_share` of the votes over the
+        last `line_class_split_window` voting frames of a track with a decisive plurality of
+        another class; None otherwise (or while the window is not full)."""
+        params = self.params
+        decisive = self._decisive_class(t)
+        if decisive is None or len(t.recent_class_votes) < params.line_class_split_window:
+            return None
+        recent: Counter = sum(t.recent_class_votes, Counter())
+        total = sum(recent.values())
+        for cls, n in sorted(recent.items(), key=lambda kv: (-kv[1], kv[0])):
+            if cls != decisive and n >= params.line_class_split_share * total:
+                return cls
+        return None
+
+    def _class_split(self, t: Track, flipped_to: str, frame: int) -> Track:
+        """Sep 29: the track's recent votes belong to another pipette. The geometry continues
+        under a new id whose votes are the recent window's; the old id ends here (`lost`
+        with `split_to`), its plurality intact."""
+        recent: Counter = sum(t.recent_class_votes, Counter())
+        new = Track(
+            track_id=self._new_id(t.object_class),
+            object_class=t.object_class,
+            position=t.position.copy(),
+            uncertainty_cm=t.uncertainty_cm,
+            state=t.state,
+            born_frame=frame,
+            last_observed_frame=t.last_observed_frame,
+            support_views=t.support_views,
+            residuals=dict(t.residuals),
+            per_view_last_seen=dict(t.per_view_last_seen),
+            per_view_extent=dict(t.per_view_extent),
+            per_view_slot=dict(t.per_view_slot),
+            support_slots=dict(t.support_slots),
+            velocity=t.velocity.copy(),
+            mover=t.mover,
+            mover_frames=t.mover_frames,
+            last_observed_position=(
+                None if t.last_observed_position is None else t.last_observed_position.copy()
+            ),
+            direction=None if t.direction is None else t.direction.copy(),
+            endpoints_cm=None if t.endpoints_cm is None else t.endpoints_cm.copy(),
+            endpoint_velocity=(None if t.endpoint_velocity is None else t.endpoint_velocity.copy()),
+            direction_uncertainty_deg=t.direction_uncertainty_deg,
+            class_votes=Counter(recent),
+            tip_is_endpoint_0=t.tip_is_endpoint_0,
+            last_observed_endpoints=(
+                None if t.last_observed_endpoints is None else t.last_observed_endpoints.copy()
+            ),
+            last_endpoints_frame=t.last_endpoints_frame,
+            width_history={v: list(h) for v, h in t.width_history.items()},
+            line_residuals=dict(t.line_residuals),
+            merged_views=t.merged_views,
+            line_this_frame=t.line_this_frame,
+            line_update=t.line_update,
+            extent_clamped=t.extent_clamped,
+            class_vote_frames=len(t.recent_class_votes),
+            recent_class_votes=[Counter(c) for c in t.recent_class_votes],
+            butt_offset=None if t.butt_offset is None else t.butt_offset.copy(),
+            butt_offset_hand=t.butt_offset_hand,
+            butt_offset_frame=t.butt_offset_frame,
+        )
+        if t.mover:
+            self.mover_track_ids.add(new.track_id)
+        self.tracks[new.track_id] = new
+        self.class_births[new.object_class] += 1
+        self.line_class_splits += 1
+        plurality_from = t.observed_class
+        t.state = "lost"
+        t.lost_frame = frame
+        self._event(
+            frame,
+            new.track_id,
+            "class_split",
+            split_from=t.track_id,
+            plurality_from=plurality_from,
+            plurality_to=flipped_to,
+            recent_votes=dict(sorted(recent.items())),
+            views=sorted(t.support_views),
+        )
+        self._event(
+            frame,
+            t.track_id,
+            "lost",
+            frames_unobserved=0,
+            last_observed_frame=t.last_observed_frame,
+            split_to=new.track_id,
+        )
+        return new
 
     def _update_line(
         self,
@@ -1991,6 +2289,10 @@ class MultiviewTracker:
         t.line_residuals = {}
         t.merged_views = ()
         t.line_this_frame = None
+        t.line_update = None
+        t.extent_clamped = False
+        # The prediction this frame's update moves away from: the step cap measures against it.
+        predicted = t.position.copy()
         if len(mine) >= 2:
             resolved = t.tip_and_butt()
             fit, merged = fit_line_members(
@@ -2003,6 +2305,7 @@ class MultiviewTracker:
                 predicted=t.line() if t.is_line else None,
                 uncertainty_cm=t.uncertainty_cm,
                 tip_hint=None if resolved is None else resolved[0],
+                direction_uncertainty_deg=t.direction_uncertainty_deg,
             )
             for v in merged:
                 self.line_merged_by_view[v] += 1
@@ -2013,13 +2316,15 @@ class MultiviewTracker:
                 if fit is not None:
                     self.line_aided_frames += 1
             if fit is not None:
-                self._apply_line_fit(t, fit, cams, frame)
+                self._apply_line_fit(t, fit, cams, frame, predicted=predicted, dt=dt)
                 mine = fit.members
             else:
                 self.line_degenerate_fits += 1
                 point, kept, residuals = _prune_clique(remaining, cams, params)
                 if len(kept) >= 2:
-                    self._apply_point_fit(t, point, kept, residuals, cams, frame)
+                    self._apply_point_fit(
+                        t, point, kept, residuals, cams, frame, predicted=predicted, dt=dt
+                    )
                     mine = kept
                     t.line_this_frame = False
                     self.line_point_frames += 1
@@ -2033,9 +2338,22 @@ class MultiviewTracker:
             (v, o) = next(iter(mine.items()))
             residual = self._single_view_residual(t, cams[v], o)
             t.residuals = {v: round(residual, 2)} if np.isfinite(residual) else {}
+            t.line_update = "predicted"
             if params.motion_model and t.mover:
-                self._lateral_line_update(t, cams[v], o)
-                self.single_view_ray_updates += 1
+                if t.is_line:
+                    if self._lateral_line_update(t, cams[v], o):
+                        t.line_update = "lateral"
+                        self.single_view_ray_updates += 1
+                    else:
+                        self.line_single_view_vetoed += 1
+                else:
+                    # A geometric-class track still tracked as a point (born from a
+                    # degenerate fit): the core's lateral update along the ray.
+                    t.position = ray_point(cams[v], o.point, t.position)
+                    t.line_update = "lateral"
+                    self.single_view_ray_updates += 1
+                if t.line_update == "lateral" and self._cap_step(t, predicted, dt):
+                    t.line_update = "capped"
             t.state = "single_view"
             t.frames_unobserved = 0
             t.last_observed_frame = frame
@@ -2049,7 +2367,28 @@ class MultiviewTracker:
             self._record_support(t, v, o, cams[v], frame)
         self._record_line_support(t, mine, cams)
         if t.is_line and obs is not None:
-            self._resolve_tip(t, cams, obs)
+            self._resolve_tip(t, cams, obs, frame)
+        flipped = self._class_flip(t)
+        if flipped is not None:
+            self._class_split(t, flipped, frame)
+
+    def _cap_step(self, t: Track, predicted: np.ndarray, dt: int) -> bool:
+        """Sep 29: a midpoint step over `line_max_step_cm` a frame is not a pipette moving, it
+        is a bad update; the step is cut to the cap along its own direction and the caller
+        demotes the row to prediction-aided (no uncertainty shrink, no velocity fed)."""
+        limit = self.params.line_max_step_cm * dt
+        step = t.position - predicted
+        norm = float(np.linalg.norm(step))
+        if norm <= limit:
+            return False
+        pull = step * (limit / norm - 1.0)
+        if t.is_line:
+            assert t.endpoints_cm is not None
+            t.set_endpoints(t.endpoints_cm + pull)
+        else:
+            t.position = t.position + pull
+        self.line_step_capped += 1
+        return True
 
     def _single_view_residual(self, t: Track, cam: Camera, o: Obs) -> float:
         if t.is_line:
@@ -2065,8 +2404,12 @@ class MultiviewTracker:
         residuals: dict[str, float],
         cams: dict[str, Camera],
         frame: int,
+        *,
+        predicted: np.ndarray | None = None,
+        dt: int = 1,
     ) -> None:
-        """The core's >= 2-view position update; a line track's endpoints move with it."""
+        """The core's >= 2-view position update; a line track's endpoints move with it. With
+        `predicted` the step from it is capped (`_cap_step`) and the row demoted."""
         params = self.params
         depth = np.median([depth_cm(cams[v], point) for v in kept])
         f = np.median([cams[v].K[0, 0] for v in kept])
@@ -2085,20 +2428,34 @@ class MultiviewTracker:
             t.set_endpoints(t.endpoints_cm + delta)
         else:
             t.position = new_position
-        t.uncertainty_cm = float(np.sqrt((1 - gain) * prior_var))
+        capped = predicted is not None and self._cap_step(t, predicted, dt)
+        t.line_update = "capped" if capped else "point"
+        if not capped:
+            t.uncertainty_cm = float(np.sqrt((1 - gain) * prior_var))
         t.state = "observed"
-        if params.motion_model:
+        if params.motion_model and not capped:
             self._update_velocity(t, frame)
         t.last_observed_frame = frame
         t.frames_unobserved = 0
         t.residuals = {v: round(residuals[v], 2) for v in kept}
 
-    def _apply_line_fit(self, t: Track, fit: LineFit, cams: dict[str, Camera], frame: int) -> None:
+    def _apply_line_fit(
+        self,
+        t: Track,
+        fit: LineFit,
+        cams: dict[str, Camera],
+        frame: int,
+        *,
+        predicted: np.ndarray | None = None,
+        dt: int = 1,
+    ) -> None:
         """Blend the fitted line into the track: the midpoint and the length by the scalar
         Kalman gain the core uses for a position, the direction by its own gain (its process
         noise is `LINE_DIRECTION_NOISE_DEG` per frame, a measurement is worth
         `LINE_DIRECTION_MEAS_DEG`, so it follows the measurement while pipetting); a point
-        track of the geometric class is promoted to a line track."""
+        track of the geometric class is promoted to a line track. With `predicted` the
+        midpoint step from it is capped (`_cap_step`) and the row demoted to
+        prediction-aided: the uncertainty is not shrunk and no velocity is fed."""
         params = self.params
         measured = fit.endpoints
         direction = fit.line.direction
@@ -2135,9 +2492,15 @@ class MultiviewTracker:
             ends = measured - measured.mean(axis=0) + midpoint
             t.direction_uncertainty_deg = LINE_DIRECTION_MEAS_DEG
         t.set_endpoints(ends)
-        t.uncertainty_cm = float(np.sqrt((1 - gain) * prior_var))
+        capped = predicted is not None and self._cap_step(t, predicted, dt)
+        t.line_update = "capped" if capped else ("aided" if fit.aided else "fit")
+        t.extent_clamped = fit.clamped
+        if fit.clamped:
+            self.line_extent_clamped += 1
+        if not capped:
+            t.uncertainty_cm = float(np.sqrt((1 - gain) * prior_var))
         t.state = "observed"
-        if params.motion_model:
+        if params.motion_model and not capped:
             self._update_velocity(t, frame, endpoints=not fit.aided)
         t.last_observed_frame = frame
         t.frames_unobserved = 0
@@ -2150,13 +2513,14 @@ class MultiviewTracker:
     def _record_line_metrics(
         self, t: Track, fit: LineFit, cams: dict[str, Camera], prior_length: float
     ) -> None:
-        self.line_lengths.append(
-            (
-                decisive_class(t.class_votes),
-                fit.visible_length_cm,
-                fit.visible_length_cm - prior_length,
+        if not fit.extent_from_prediction:
+            self.line_lengths.append(
+                (
+                    decisive_class(t.class_votes),
+                    fit.visible_length_cm,
+                    fit.visible_length_cm - prior_length,
+                )
             )
-        )
         if fit.extended:
             self.line_extended_frames += 1
         if len(fit.plane_views) >= 3:
@@ -2169,25 +2533,35 @@ class MultiviewTracker:
                     if record["angle_deg"] is not None and np.isfinite(record["angle_deg"]):
                         self.line_loo_deg.append(float(record["angle_deg"]))
 
-    def _lateral_line_update(self, t: Track, cam: Camera, o: Obs) -> None:
+    def _lateral_line_update(self, t: Track, cam: Camera, o: Obs) -> bool:
         """A moving line track seen in one view: an elongated mask moves each endpoint onto
         the plane through the camera and the observed axis (the perpendicular correction, the
         length kept, the depth along the view kept); a compact one moves the midpoint along
-        the centroid's ray as the core does for a point."""
-        assert t.endpoints_cm is not None
+        the centroid's ray as the core does for a point. Sep 29: no update (False) when the
+        view looks along the predicted line within `line_min_view_angle_deg` (the plane then
+        constrains nothing along the shaft and the projection slides the ends away) or the
+        predicted direction is within that angle of the plane's normal (the projection
+        collapses the segment and its direction is noise); the frame keeps the prediction."""
+        assert t.endpoints_cm is not None and t.direction is not None
+        if not _sees_broadside(cam, t.line(), self.params):
+            return False
         axis = o.axis_obs()
         if is_elongated(axis):
             assert axis.endpoints_px is not None
             try:
                 normal, offset = plane_from_axis(cam, axis.endpoints_px)
             except ValueError:
-                return
+                return False
+            if abs(float(normal @ t.direction)) > math.cos(
+                math.radians(self.params.line_min_view_angle_deg)
+            ):
+                return False
             feet = t.endpoints_cm - ((t.endpoints_cm @ normal) - offset)[:, None] * normal
             length = float(np.linalg.norm(t.endpoints_cm[1] - t.endpoints_cm[0]))
             span = feet[1] - feet[0]
             norm = float(np.linalg.norm(span))
             if norm < 1e-9:
-                return
+                return False
             midpoint = feet.mean(axis=0)
             ends = np.stack(
                 [midpoint - span / norm * length / 2, midpoint + span / norm * length / 2]
@@ -2195,6 +2569,7 @@ class MultiviewTracker:
         else:
             ends = t.endpoints_cm + (ray_point(cam, o.point, t.position) - t.position)
         t.set_endpoints(ends)
+        return True
 
     def _aided_line_fit(
         self, t: Track, members: dict[str, Obs], cams: dict[str, Camera]
@@ -2204,7 +2579,18 @@ class MultiviewTracker:
         onto the plane gives the direction; the line runs through the mean of the ray-plane
         intersections (the rays' points on the shaft), else through the foot of the predicted
         midpoint. Members over their view gate against that line are left out; the extent
-        and the prior follow as for a full fit. None without a plane in front of its camera."""
+        and the prior follow as for a full fit. None without a plane in front of its camera.
+
+        Sep 29: every runaway extent of the first run began here. The line lies in the
+        plane, so the plane view's residual is zero whatever the in-plane direction; the
+        only check on that direction is the plane view's own extent on the aided line, which
+        runs off when the predicted direction disagrees with the observed axis (found 70-80
+        deg off on the worst rows). A plane view whose extent exceeds
+        `line_merged_extent_factor` times the prior rejects the fit, and so does an aided
+        line running within `line_min_view_angle_deg` of a plane view's ray (an elongated
+        mask is a shaft seen broadside); a ray far along the line is dropped
+        (`complete_extent`); fewer than two members left is no fit (a lone plane is the
+        single-view update's case, bounded); the extent is clamped."""
         params = self.params
         assert t.direction is not None and self.line_prior is not None
         planes: list[tuple[str, np.ndarray, float]] = []
@@ -2250,38 +2636,65 @@ class MultiviewTracker:
                 residuals[v] = residual
         if not any(is_elongated(o.axis_obs()) for o in kept.values()):
             return None
-        cams_and_obs = _cams_and_obs(kept, cams, params)
+        prior_length = self._prior_length(t)
+        for v, o in kept.items():
+            if not is_elongated(o.axis_obs()):
+                continue
+            # An elongated mask is a shaft seen broadside; an aided line running along that
+            # view's ray contradicts it (the worst rows: 4-8 deg), as does an extent on the
+            # aided line longer than a pipette.
+            if not _sees_broadside(cams[v], line, params):
+                self.line_aided_rejected += 1
+                return None
+            lo, hi = _along_line_interval(cams[v], o, line)
+            if hi - lo > params.line_merged_extent_factor * prior_length:
+                self.line_aided_rejected += 1
+                return None
         resolved = t.tip_and_butt()
         completed = complete_extent(
             line,
-            cams_and_obs,
+            _cams_and_obs(kept, cams, params),
             params,
-            self._prior_length(t),
+            prior_length,
             self.line_prior.spread_cm,
             None if resolved is None else resolved[0],
+            fallback_extent=t.endpoints_cm,
         )
         if completed is None:
             return None
-        endpoints, visible, extended = completed
+        for v in completed.far_rays:
+            del kept[v]
+            del residuals[v]
+            self.line_far_rays_dropped += 1
+        if len(kept) < 2 or not any(is_elongated(o.axis_obs()) for o in kept.values()):
+            return None
+        if completed.from_prediction:
+            self.line_aided_from_prediction += 1
         return LineFit(
             line=line,
-            endpoints=endpoints,
+            endpoints=completed.endpoints,
             members=kept,
             residuals=residuals,
             merged_views=(),
-            visible_length_cm=visible,
-            extended=extended,
+            visible_length_cm=completed.visible_length_cm,
+            extended=completed.extended,
             plane_views=tuple(v for v, _, _ in planes if v in kept),
             aided=True,
+            clamped=completed.clamped,
+            extent_from_prediction=completed.from_prediction,
         )
 
-    def _resolve_tip(self, t: Track, cams: dict[str, Camera], obs: FrameObservations) -> None:
+    def _resolve_tip(
+        self, t: Track, cams: dict[str, Camera], obs: FrameObservations, frame: int
+    ) -> None:
         """The end nearer a hand is the butt (the plunger button, the coloured part), the
         other end the tip: the nearest live hand track within `LINE_HAND_REACH_CM` of one end
         and `LINE_HAND_MARGIN_CM` nearer to it than to the other decides; without a hand
         track, an end whose projection lies inside a hand box in >= `held_min_views` views
         while the other end's does not. Otherwise the ordering is kept by direction
-        continuity (the update orients the measured direction along the predicted one)."""
+        continuity (the update orients the measured direction along the predicted one).
+        Sep 29: a hand track that decides also leaves the butt-to-hand offset it measured
+        (`butt_offset`), the only offset a later hold may follow."""
         assert t.endpoints_cm is not None
         params = self.params
         hands = [
@@ -2295,6 +2708,10 @@ class MultiviewTracker:
             d0, d1 = np.linalg.norm(t.endpoints_cm - hand.position, axis=1)
             if min(d0, d1) <= LINE_HAND_REACH_CM and abs(d0 - d1) >= LINE_HAND_MARGIN_CM:
                 self._set_tip(t, tip_is_endpoint_0=bool(d0 > d1), basis="hand_track")
+                butt = t.endpoints_cm[1 if d0 > d1 else 0]
+                t.butt_offset = butt - hand.position
+                t.butt_offset_hand = hand.track_id
+                t.butt_offset_frame = frame
                 return
         counts = [0, 0]
         for v, cam in cams.items():
@@ -2404,6 +2821,13 @@ class MultiviewTracker:
             hand = None
             if volume is None and params.held and cams is not None and obs is not None:
                 hand = self._hand_holding(t, cams, obs)
+            line_offset: np.ndarray | None = None
+            if hand is not None and hand[1] is not None and t.is_line:
+                line_offset = self._held_offset(t, hand[1], frame)
+                if line_offset is None:
+                    # The hand was never within reach of the butt: not a hold, a coast.
+                    self.line_held_refused += 1
+                    hand = None
             if volume is not None and self._is_group_class(t.object_class):
                 group = self._footprint_group_for(t.object_class, volume.container_id)
                 if group is not None and group.track_id != t.track_id:
@@ -2432,10 +2856,10 @@ class MultiviewTracker:
                 if hand_track is None:
                     t.held_offset = None
                 elif t.is_line:
-                    # The hand holds the butt: the offset is measured from the hand to it
-                    # (the end nearer the hand, resolved now if it was not).
-                    anchor = self._butt_anchor(t, hand_track.position, resolve=True)
-                    t.held_offset = anchor - hand_track.position
+                    # The hand holds the butt: the offset measured on a localised frame with
+                    # the hand within reach of it (`_held_offset`).
+                    assert line_offset is not None
+                    t.held_offset = line_offset
                 else:
                     t.held_offset = t.position - hand_track.position
                 self.held_by_hand[hand_class] += 1
@@ -2529,6 +2953,57 @@ class MultiviewTracker:
         )
         if t.frames_unobserved > params.coast_timeout_frames:
             self._lose(t, frame, from_state=t.state)
+
+    def _held_offset(self, t: Track, hand_track: Track, frame: int) -> np.ndarray | None:
+        """Sep 29: the offset a hold follows. The first run measured it from the coasted
+        prediction at the moment support dropped, whatever the hand's distance (butt to hand
+        12.7 / 19.9 cm at the median while held). Now: the butt-to-hand offset this hand
+        measured on a localised frame within the coast timeout (`_resolve_tip`), else one
+        measured now when the butt lies within `LINE_HAND_REACH_CM` of the hand; None when
+        the hand was never near the butt, and the track coasts instead."""
+        params = self.params
+        if (
+            t.butt_offset is not None
+            and t.butt_offset_hand == hand_track.track_id
+            and t.butt_offset_frame is not None
+            and frame - t.butt_offset_frame <= params.coast_timeout_frames
+        ):
+            self.line_held_offset_remeasured += 1
+            return t.butt_offset.copy()
+        anchor = self._butt_anchor(t, hand_track.position, resolve=True)
+        offset = anchor - hand_track.position
+        if float(np.linalg.norm(offset)) <= LINE_HAND_REACH_CM:
+            return offset
+        return None
+
+    def _hand_distances(self, t: Track) -> tuple[float, float] | None:
+        """``(butt, tip)`` distances (cm) to the holding hand track while held, else to the
+        nearest localised hand track when it is within twice `LINE_HAND_REACH_CM` of an end;
+        None without a resolved tip or a hand. Written on the row so a wrong tip / butt
+        assignment shows as a tip nearer the hand than the butt."""
+        ends = t.tip_and_butt()
+        if ends is None:
+            return None
+        tip, butt = ends
+        hand: Track | None = None
+        if t.state == "held" and t.held_by is not None:
+            hand = self.tracks.get(t.held_by)
+            if hand is not None and hand.state not in LOCALISED_STATES:
+                hand = None
+        if hand is None:
+            hands = [
+                h
+                for h in self.live_tracks()
+                if h.object_class in self.params.hand_classes and h.state in LOCALISED_STATES
+            ]
+            if not hands:
+                return None
+            hand = min(hands, key=lambda h: float(np.linalg.norm(butt - h.position)))
+        d_butt = float(np.linalg.norm(butt - hand.position))
+        d_tip = float(np.linalg.norm(tip - hand.position))
+        if t.state != "held" and min(d_butt, d_tip) > 2.0 * LINE_HAND_REACH_CM:
+            return None
+        return d_butt, d_tip
 
     def _butt_anchor(
         self, t: Track, hand_position: np.ndarray, *, resolve: bool = False
@@ -3131,6 +3606,8 @@ class MultiviewTracker:
             # A point candidate returns a line track: the segment moves with its midpoint.
             assert t.endpoints_cm is not None
             t.set_endpoints(t.endpoints_cm + (cand.point - t.position))
+            t.line_update = "point"
+            t.extent_clamped = False
         else:
             t.position = cand.point.copy()
         t.uncertainty_cm = self.params.base_uncertainty_cm
@@ -3187,6 +3664,10 @@ class MultiviewTracker:
         t.line_residuals = {v: round(r, 2) for v, r in cand.residuals.items()}
         t.merged_views = cand.merged_views
         t.line_this_frame = True
+        t.line_update = "fit"
+        t.extent_clamped = cand.clamped
+        if cand.clamped:
+            self.line_extent_clamped += 1
         t.endpoint_velocity = None
         t.last_observed_endpoints = t.endpoints_cm.copy() if t.endpoints_cm is not None else None
         t.last_endpoints_frame = t.last_observed_frame
@@ -3203,6 +3684,7 @@ class MultiviewTracker:
             visible_length_cm=float(cand.visible_length_cm or 0.0),
             extended=cand.extended,
             plane_views=cand.line.plane_views,
+            clamped=cand.clamped,
         )
         assert self.line_prior is not None
         prior_length = self.line_prior.length_for(decisive_class(t.class_votes + votes))
@@ -3307,6 +3789,12 @@ class MultiviewTracker:
             if t.state in LOCALISED_STATES:
                 fields["line_residual_px"] = dict(t.line_residuals) or None
                 fields["merged_views"] = t.merged_views or None
+                fields["line_update"] = t.line_update
+                fields["extent_clamped"] = t.extent_clamped
+            distances = self._hand_distances(t)
+            if distances is not None:
+                fields["butt_to_hand_cm"] = round(distances[0], 2)
+                fields["tip_to_hand_cm"] = round(distances[1], 2)
         if t.colour_hist:
             identity = max(sorted(t.colour_hist), key=t.colour_hist.__getitem__)
             total = sum(t.colour_hist.values())
@@ -3451,6 +3939,28 @@ class MultiviewTracker:
                 "single_view": self.line_single_view_frames,
                 "degenerate_fits": self.line_degenerate_fits,
                 "extended_by_prior": self.line_extended_frames,
+                # Sep 29 corrections: how often each one acted.
+                "extent_clamped": self.line_extent_clamped,
+                "step_capped": self.line_step_capped,
+                "single_view_vetoed": self.line_single_view_vetoed,
+                "aided_rejected": self.line_aided_rejected,
+                "aided_extent_from_prediction": self.line_aided_from_prediction,
+                "far_rays_dropped": self.line_far_rays_dropped,
+            },
+            "held": {
+                "refused_hand_far_from_butt": self.line_held_refused,
+                "offset_from_a_localised_frame": self.line_held_offset_remeasured,
+            },
+            "class_veto": {
+                "observations_refused": self.line_class_vetoes,
+                "splits": self.line_class_splits,
+                "rule": (
+                    f"plurality >= {params.line_class_veto_share} of the votes over >= "
+                    f"{params.line_class_veto_frames} frames refuses another class while a "
+                    f"same-class candidate exists; a second colour at >= "
+                    f"{params.line_class_split_share} of the last "
+                    f"{params.line_class_split_window} voting frames splits the id"
+                ),
             },
             "loo_residual_px": summary(self.line_loo_px),
             "loo_angle_deg": summary(self.line_loo_deg),

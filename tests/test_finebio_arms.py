@@ -27,6 +27,7 @@ from battle.finebio_arms import (
     main,
     mark_plan_slots,
     pooled_decision,
+    run_arm,
     sanity_check,
     scoreboard,
     scoreboard_markdown,
@@ -1101,6 +1102,47 @@ def test_arm_a_pipeline_on_the_preflight_fixtures(tmp_path: Path, fixtures):
     assert LINES_TRACKER_FLAGS == ("--line-classes", "pipette")
     assert lines_ext["classes"] == list(PIPETTE_CLASSES)
     assert lines_measures["tracker_params"]["extensions"]["line_classes"] == list(PIPETTE_CLASSES)
+    # `--observations-dir` reads another directory's rows into a fresh output: the tracker
+    # output is byte-identical with the ext run over the same rows, the source directory is
+    # not written to, and the new summary names where the rows came from.
+    source_files = {p.name: p.read_bytes() for p in output.iterdir() if p.is_file()}
+    elsewhere = tmp_path / "elsewhere"
+    rc = main(
+        [
+            "run",
+            "--clip-config",
+            str(clip_path),
+            "--detections",
+            str(detections),
+            "--arm",
+            "a",
+            "--gates",
+            str(gates),
+            "--output",
+            str(elsewhere),
+            "--fpv-poses",
+            str(FIXTURE_DIR / "fpv_poses.json"),
+            "--observations-dir",
+            str(output),
+            "--ext",
+        ]
+    )
+    assert rc == 0
+    assert (elsewhere / "tracks-ext" / "tracks.jsonl").read_bytes() == ext_bytes
+    assert not (elsewhere / "observations.jsonl").exists()
+    assert {p.name: p.read_bytes() for p in output.iterdir() if p.is_file()} == source_files
+    elsewhere_summary = json.loads((elsewhere / "observations_summary.json").read_text())
+    assert elsewhere_summary["observations_dir"] == str(output)
+    assert elsewhere_summary["reused_observations"] is True
+    with pytest.raises(FileNotFoundError, match="observations-dir"):
+        run_arm(
+            clip=load_clip(clip_path),
+            detections_dir=detections,
+            arm="a",
+            output=tmp_path / "nowhere",
+            gates=gates,
+            observations_dir=tmp_path / "missing",
+        )
     # The arm (b) worker root is required.
     with pytest.raises(ValueError, match="worker-root"):
         from battle.finebio_arms import build_observations
