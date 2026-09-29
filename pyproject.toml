@@ -1,7 +1,7 @@
 [project]
 name = "battle"
 version = "0.1.0"
-description = "Inference-free schemas and Rerun export fixtures for a video-understanding method lab."
+description = "Six-camera 3D object tracking on a wet-lab bench with SAM3.1 and a detector; no training, every number bounded by evidence."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
