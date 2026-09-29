@@ -1,11 +1,12 @@
 """Link, media and style checks on the documentation pages.
 
-Every relative link and image path on the root README, the live `docs/*.md` pages and the
-`docs/archive/` and `docs/qa/` indexes must resolve to a file, and a `#fragment` must name a
-heading in the target page under GitHub's anchor rules.  Every `media/story/` path the story and
-the README show must exist, and every output the renderer's manifest lists must appear in the
-story.  The live pages also obey two rules of `docs/writing-style.md`: no sentence over 60 words
-and none of the actor names the style guide forbids.  Text is read once per page; no network.
+Every relative link and image path on the root README, the live `docs/*.md` pages, the
+`docs/archive/` and `docs/qa/` indexes and the script and fixture READMEs must resolve to a
+file, and a `#fragment` must name a heading in the target page under GitHub's anchor rules.
+Every `media/story/` path the story and the README show must exist, and every output the
+renderer's manifest lists must appear in the story.  The live pages also obey two rules of
+`docs/writing-style.md`: no sentence over 60 words and none of the actor names the style guide
+forbids.  Text is read once per page; no network.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ MANIFEST = ROOT / "media" / "story" / "manifest.json"
 
 LINK_PAGES = sorted(
     [README, *DOCS.glob("*.md"), DOCS / "archive" / "README.md", DOCS / "qa" / "README.md"]
+    + [*ROOT.glob("scripts/*/README.md"), *ROOT.glob("tests/fixtures/*/README.md")]
 )
 STYLE_PAGES = [
     README,
