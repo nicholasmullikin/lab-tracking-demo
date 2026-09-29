@@ -740,8 +740,17 @@ def _write_axis_worker_run(root: Path, view: str, frames: int) -> None:
     (root / "observations.jsonl").write_text("\n".join(lines) + "\n")
 
 
-AXIS_FIELDS = ("mask_axis_px", "mask_elongation", "mask_width_px", "mask_axis_residual_px")
-AXIS_PROVENANCE = ("axis_method", "axis_reason")
+AXIS_FIELDS = (
+    "mask_axis_px",
+    "mask_elongation",
+    "mask_width_px",
+    "mask_axis_residual_px",
+    "mask_end_widths_px",
+    # Sep 29 v4: the long-thin-tail side and the terminal centroids.
+    "tip_side",
+    "body_end_px",
+)
+AXIS_PROVENANCE = ("axis_method", "axis_reason", "tails_px")
 
 
 def _strip_axis(line: str) -> str:

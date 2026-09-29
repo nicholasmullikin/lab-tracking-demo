@@ -117,6 +117,16 @@ above reproduces byte for byte). Each was added on the occlusion inventory of ar
   end widths (`mask_end_widths_px`): the 8-channel pipette's wide end is the manifold that
   carries the tips, a single-channel pipette's wide end is its grip (the butt); it decides
   for an unresolved track or one a hand box named, and reports its votes.
+  Sep 29, v4 (after `finebio_tipseg`): the rows carry the long-thin-tail tip side
+  (`tip_side`) and the mask's terminal centroid at each end (`body_end_px`). The tip side is
+  a fifth tip / butt basis (`tail`), ranked under the tip box and the hand track and over
+  the hand box and the widths, for every class but the 8-channel (its manifold is its wide
+  end; the tail rule is unvalidated there and the class rule stays). The terminal centroid
+  is the end observation for the extent along the line (the plane and the residual still
+  read the axis). `tip_attached` no longer follows the tip boxes: it reads the track's
+  measured butt-to-tip length over the last line frames against the class's two length
+  modes (`length_modes_cm` in the prior; bare-only classes are never "attached"), with a
+  hysteresis band around the midpoint; the tip boxes corroborate and are reported as such.
 """
 
 from __future__ import annotations
@@ -126,7 +136,7 @@ import json
 import math
 import sys
 from collections import Counter, defaultdict
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from itertools import combinations
 from pathlib import Path
@@ -246,6 +256,24 @@ LINE_WIDTH_RATIO_MIN = 1.25
 LINE_WIDTH_VOTE_WINDOW = 30
 LINE_WIDTH_VOTE_MARGIN = 5
 LINE_WIDE_TIP_CLASSES: tuple[str, ...] = ("8_channel_pipette",)
+# Sep 29 v4, the fifth basis: the row's `tip_side` (the axis end with the longer thin tail,
+# `finebio_observations.tip_side_from_tails`) is matched to the track endpoint its axis end
+# projects nearest and cast as a vote; the net vote over a window of line frames decides at
+# a margin. It is skipped for the wide-tip classes (the 8-channel), whose tail rule is
+# unvalidated, and it never overrides a tip box while the state is on or a hand track.
+TAIL_BASIS = "tail"
+LINE_TAIL_VOTE_WINDOW = 30
+LINE_TAIL_VOTE_MARGIN = 3
+# Sep 29 v4, the tip state from the 3D length: the median of the visible butt-to-tip length
+# over the last `LINE_TIP_LENGTH_WINDOW` measured line frames (at least the minimum) is
+# compared with the class's two modes; the state flips on when the median clears the
+# midpoint by the hysteresis band and off when it falls under it by the band; a median more
+# than the truncated margin under the bare mode is a mask the hand cut short and decides
+# nothing.
+LINE_TIP_LENGTH_WINDOW = 15
+LINE_TIP_LENGTH_MIN_FRAMES = 5
+LINE_TIP_LENGTH_HYSTERESIS_CM = 1.0
+LINE_TIP_LENGTH_TRUNCATED_CM = 3.0
 
 
 # --------------------------------------------------------------------------- parameters
@@ -360,6 +388,23 @@ class TrackerParams:
     # Off (the brief's order): tip box, hand track, hand box, then the widths as a
     # tie-breaker. On: a decisive width vote outranks the hand (the variant run reports it).
     line_width_over_hand: bool = False
+    # -- Sep 29 v4. The tail basis (the row's `tip_side`; module constants above) and the
+    # 3D-length tip state; either off reproduces the v3 behaviour for that piece.
+    line_tail_basis: bool = True
+    line_tail_vote_window: int = LINE_TAIL_VOTE_WINDOW
+    line_tail_vote_margin: int = LINE_TAIL_VOTE_MARGIN
+    # Off (the brief's ranking): the tail sits under the hand track. On (a reported variant,
+    # as `line_width_over_hand` was): a decisive tail vote outranks the hand track, which
+    # then only measures the butt offset.
+    line_tail_over_hand: bool = False
+    line_tip_length_rule: bool = True
+    # With the length rule: a birth pair and a fit may span the body plus its tip whether or
+    # not a tip box attached (a mask may cover a tip on any frame); off, only with a box (v3).
+    line_birth_tip_slack: bool = True
+    line_tip_length_window: int = LINE_TIP_LENGTH_WINDOW
+    line_tip_length_min_frames: int = LINE_TIP_LENGTH_MIN_FRAMES
+    line_tip_length_hysteresis_cm: float = LINE_TIP_LENGTH_HYSTERESIS_CM
+    line_tip_length_truncated_cm: float = LINE_TIP_LENGTH_TRUNCATED_CM
 
     def as_dict(self) -> dict[str, Any]:
         out = {k: getattr(self, k) for k in CORE_PARAM_KEYS}
@@ -434,7 +479,14 @@ class LinePrior:
     pipette class (`bare_length_cm` in the config) and `tip` the tip length per tip class
     (`tip_length_cm`); `expected_length(cls, tip_class, attached)` is the bare length, plus
     the tip when a tip is attached. A config without the two-state keys gives the old
-    single-state prior (bare = `length_for`, tip = 0), so earlier files still load."""
+    single-state prior (bare = `length_for`, tip = 0), so earlier files still load.
+
+    Sep 29 v4: `modes` holds, per pipette class, the two measured body-plus-tip length modes
+    (`length_modes_cm` in the config: `bare` and `with_tip`, the latter None for a class
+    whose with-tip length was never measured). `modes_for(cls)` returns them, and for a
+    config without the block derives them from the two-state keys (bare, bare plus tip) so
+    a test prior works; with the block present a class it does not name is bare-only. The
+    tip state reads the modes; the completion prior still reads `expected_length`."""
 
     length_cm: float
     spread_cm: float
@@ -443,6 +495,7 @@ class LinePrior:
     bare: dict[str, float] = field(default_factory=dict)
     tip: dict[str, float] = field(default_factory=dict)
     tip_of_class: dict[str, str] = field(default_factory=lambda: dict(LINE_TIP_CLASSES))
+    modes: dict[str, tuple[float, float | None]] | None = None
 
     def length_for(self, cls: str | None) -> float:
         if cls is not None and cls in self.per_class:
@@ -480,6 +533,16 @@ class LinePrior:
     def two_state(self) -> bool:
         return bool(self.bare) and bool(self.tip)
 
+    def modes_for(self, cls: str | None) -> tuple[float, float | None]:
+        """(bare mode, with-tip mode or None) of a class for the 3D-length tip state."""
+        if self.modes is not None:
+            if cls is not None and cls in self.modes:
+                return self.modes[cls]
+            return self.bare_for(cls), None
+        bare = self.bare_for(cls)
+        tip = self.tip_for(self.tip_class_for(cls)) if self.two_state else 0.0
+        return bare, (bare + tip if tip > 0 else None)
+
     def as_dict(self) -> dict[str, Any]:
         return {
             "length_cm": self.length_cm,
@@ -488,6 +551,14 @@ class LinePrior:
             "bare_length_cm": dict(sorted(self.bare.items())),
             "tip_length_cm": dict(sorted(self.tip.items())),
             "two_state": self.two_state,
+            "length_modes_cm": (
+                None
+                if self.modes is None
+                else {
+                    cls: {"bare": bare, "with_tip": with_tip}
+                    for cls, (bare, with_tip) in sorted(self.modes.items())
+                }
+            ),
             "source": self.source,
         }
 
@@ -512,6 +583,14 @@ def load_line_prior(path: str | Path) -> LinePrior:
     tip = {
         str(cls): float(v) for cls, v in (doc.get("tip_length_cm") or {}).items() if v is not None
     }
+    modes: dict[str, tuple[float, float | None]] | None = None
+    if doc.get("length_modes_cm") is not None:
+        modes = {}
+        for cls, block in doc["length_modes_cm"].items():
+            if not isinstance(block, Mapping) or block.get("bare") is None:
+                continue
+            with_tip = block.get("with_tip")
+            modes[str(cls)] = (float(block["bare"]), None if with_tip is None else float(with_tip))
     return LinePrior(
         length_cm=float(doc["length_cm"]),
         spread_cm=float(doc.get("length_spread_cm", 0.0)),
@@ -519,6 +598,7 @@ def load_line_prior(path: str | Path) -> LinePrior:
         source=str(path),
         bare=bare,
         tip=tip,
+        modes=modes,
     )
 
 
@@ -560,6 +640,10 @@ class Obs:
     colour_class: str | None = None
     # Sep 29: the mask's width at each axis end (`mask_end_widths_px`), the width basis.
     end_widths_px: tuple[float, float] | None = None
+    # Sep 29 v4: the row's long-thin-tail tip side (an index into `axis_px`) and the mask's
+    # terminal centroid at each end, in the order of `axis_px` (the end observations).
+    tip_side: int | None = None
+    body_ends_px: tuple[tuple[float, float], tuple[float, float]] | None = None
     # -- Sep 29, disposable tips (set on a copy by `attach_tip`): the attached `*_tip` detector
     # box, its class, the index of the axis end it extends (`axis_px` is then the extended
     # axis and `body_axis_px` the mask's own), how it attached (`axis`: on this observation's
@@ -584,13 +668,22 @@ class Obs:
 
     def axis_obs(self, weight: float = 1.0) -> AxisObs:
         """The `multiview_lines` record of this observation: the mask axis as the plane
-        constraint when elongated, the centroid's ray otherwise."""
+        constraint when elongated, the centroid's ray otherwise. Sep 29 v4: the terminal
+        centroids are the end observations for the extent along the line when the row
+        carries them (the tip box's far edge still stands in on the end it extended)."""
+        ends_px = None
+        if self.axis_px is not None and self.body_ends_px is not None:
+            ends = np.asarray(self.body_ends_px, dtype=np.float64).reshape(2, 2).copy()
+            if self.tip_mode == "axis" and self.tip_end is not None:
+                ends[self.tip_end] = np.asarray(self.axis_px[self.tip_end], dtype=np.float64)
+            ends_px = ends
         return AxisObs(
             self.view,
             None if self.axis_px is None else np.asarray(self.axis_px, dtype=np.float64),
             self.point,
             self.elongation,
             weight,
+            ends_px=ends_px,
         )
 
 
@@ -673,6 +766,8 @@ def _obs(row: FineBioObservation) -> Obs:
         width_px=row.mask_width_px,
         axis_residual_px=row.mask_axis_residual_px,
         end_widths_px=row.mask_end_widths_px,
+        tip_side=row.tip_side,
+        body_ends_px=row.body_end_px,
     )
 
 
@@ -893,6 +988,12 @@ class Track:
     tip_basis: str | None = None
     # The width basis: per line frame the net vote (+1 endpoint 0 is the tip, -1 endpoint 1).
     width_votes: list[int] = field(default_factory=list)
+    # -- Sep 29 v4: the tail basis votes (as the width votes), the visible butt-to-tip lengths
+    # of the last measured line fits (the 3D-length tip state) and the median the state
+    # read this frame (None while too few frames measured).
+    tail_votes: list[int] = field(default_factory=list)
+    length_history: list[float] = field(default_factory=list)
+    tip_rule_length_cm: float | None = None
 
     @property
     def is_line(self) -> bool:
@@ -1469,10 +1570,11 @@ def _line_view_residual(cam: Camera, o: Obs, line: Line3D) -> float:
 
 
 def _along_line_interval(cam: Camera, o: Obs, line: Line3D) -> tuple[float, float]:
-    """The interval of the line parameter the observation covers: its axis endpoints' rays'
-    closest points (an elongated mask), else the centroid ray's."""
+    """The interval of the line parameter the observation covers: its end observations'
+    rays' closest points (an elongated mask; v4: the terminal centroids when the row has
+    them), else the centroid ray's."""
     axis = o.axis_obs()
-    pixels = axis.endpoints_px if is_elongated(axis) else o.point.reshape(1, 2)
+    pixels = axis.extent_px if is_elongated(axis) else o.point.reshape(1, 2)
     assert pixels is not None
     params = [line.parameter_closest_to_ray(*ray_from_point(cam, p)) for p in pixels]
     return min(params), max(params)
@@ -1604,6 +1706,7 @@ def complete_extent(
     prior_spread_cm: float,
     tip_hint: np.ndarray | None = None,
     fallback_extent: np.ndarray | None = None,
+    ceiling_length_cm: float | None = None,
 ) -> CompletedExtent | None:
     """The soft prior on a fitted line's visible extent. The visible extent is the axis
     views' (`line_endpoints`) widened by the compact views' centroid rays (their closest
@@ -1620,7 +1723,12 @@ def complete_extent(
     over `line_merged_extent_factor` times the prior is cut to that length from the
     better-supported end (`clamped`). When no view can give an extent, `fallback_extent`
     (the track's predicted endpoints) is projected onto the line (`from_prediction`); None
-    without one."""
+    without one. Sep 29 v4: `ceiling_length_cm` (the body plus its tip; the prior when not
+    given) is the length the far-ray slack and the clamp read, so a mask that covers a tip
+    is not cut or refused while the state still says bare."""
+    ceiling = (
+        prior_length_cm if ceiling_length_cm is None else max(ceiling_length_cm, prior_length_cm)
+    )
     extent_pairs = [
         (cam, obs)
         for cam, obs in cams_and_obs
@@ -1638,7 +1746,7 @@ def complete_extent(
         support, n_views, extent_views, from_prediction = [0, 0], 0, [], True
     else:
         return None
-    slack = max(0.0, prior_length_cm - (hi - lo))
+    slack = max(0.0, ceiling - (hi - lo))
     far_rays: list[str] = []
     for cam, obs in cams_and_obs:
         if is_elongated(obs) or not _sees_broadside(cam, line, params):
@@ -1659,7 +1767,7 @@ def complete_extent(
             support[1] += 1
     visible = hi - lo
     lo, hi, clamped = clamp_interval(
-        lo, hi, (support[0], support[1]), params.line_merged_extent_factor * prior_length_cm
+        lo, hi, (support[0], support[1]), params.line_merged_extent_factor * ceiling
     )
 
     def result(lo: float, hi: float, extended: bool) -> CompletedExtent:
@@ -1697,6 +1805,19 @@ def complete_extent(
     return result(lo, hi, missing > END_TOLERANCE_CM)
 
 
+def _ends_corroborated(view: str, per_view: dict[str, tuple[float, float]]) -> bool:
+    """Sep 29 v4: a view whose extent on the line runs past the state's prior (up to the
+    body-plus-tip ceiling) is kept only when other views reach within `END_TOLERANCE_CM` of
+    both its ends. A mask that covers the tip in two views passes (the tipseg lengths came
+    from exactly such frames); a lone view whose rays meet the line at a grazing angle and
+    run off (test B's head camera) does not, and is dropped as merged as before."""
+    lo, hi = per_view[view]
+    others = [interval for v, interval in per_view.items() if v != view]
+    return any(abs(o_lo - lo) <= END_TOLERANCE_CM for o_lo, _ in others) and any(
+        abs(o_hi - hi) <= END_TOLERANCE_CM for _, o_hi in others
+    )
+
+
 def _odd_interval(per_view: dict[str, tuple[float, float]]) -> str:
     """The view whose interval centre is farthest from the median centre."""
     centres = {v: 0.5 * (lo + hi) for v, (lo, hi) in per_view.items()}
@@ -1715,6 +1836,7 @@ def fit_line_members(
     uncertainty_cm: float = 0.0,
     tip_hint: np.ndarray | None = None,
     direction_uncertainty_deg: float = 0.0,
+    ceiling_length_cm: float | None = None,
 ) -> tuple[LineFit | None, tuple[str, ...]]:
     """The line fit over a set of members (one per view), with the merged-mask rejections,
     the residual prune (a member over its gate is dropped while three or more remain) and,
@@ -1727,9 +1849,13 @@ def fit_line_members(
     gives no interval; a compact view whose ray point lies off the shaft is dropped. Returns
     ``(fit, merged views)``; the fit is None when no line can be fitted from the members
     that survive (fewer than two, no plane, degenerate, a two-member fit over its gate), the
-    merged views are reported either way."""
+    merged views are reported either way. Sep 29 v4: the merged-extent gates read
+    `ceiling_length_cm` (the body plus its tip) when given, the completion `prior_length_cm`."""
     members = dict(members)
     merged: list[str] = []
+    ceiling = (
+        prior_length_cm if ceiling_length_cm is None else max(ceiling_length_cm, prior_length_cm)
+    )
     for v, o in list(members.items()):
         too_rough = (
             o.axis_residual_px is not None and o.axis_residual_px > params.line_max_axis_residual_px
@@ -1761,6 +1887,10 @@ def fit_line_members(
                 v
                 for v, (lo, hi) in extent.per_view.items()
                 if hi - lo > params.line_merged_extent_factor * prior_length_cm
+                and not (
+                    hi - lo <= params.line_merged_extent_factor * ceiling
+                    and _ends_corroborated(v, extent.per_view)
+                )
             ]
             if too_long:
                 for v in too_long:
@@ -1782,7 +1912,7 @@ def fit_line_members(
                         return None, tuple(sorted(merged))
                     del members[_odd_interval(extent.per_view)]
                     continue
-            if extent.visible_length_cm > params.line_merged_extent_factor * prior_length_cm:
+            if extent.visible_length_cm > params.line_merged_extent_factor * ceiling:
                 # The views' extents together span more than one pipette: two objects, or one
                 # view on the wrong one. With three or more, the odd interval goes; with two,
                 # no fit.
@@ -1815,6 +1945,7 @@ def fit_line_members(
             prior_spread_cm,
             tip_hint,
             fallback_extent=None if predicted is None else predicted.endpoints,
+            ceiling_length_cm=ceiling,
         )
         if completed is None:
             return None, tuple(sorted(merged))
@@ -1839,6 +1970,12 @@ def fit_line_members(
     return None, tuple(sorted(merged))
 
 
+def may_carry_tip(prior: LinePrior, cls: str | None) -> bool:
+    """Sep 29 v4: whether a class's masks may honestly run past its bare body, that is,
+    whether the prior holds a with-tip length mode for it (an undecided class may)."""
+    return cls is None or prior.modes_for(cls)[1] is not None
+
+
 def decisive_class(votes: Counter) -> str | None:
     """The plurality class when it holds more than half of the votes, else None."""
     if not votes:
@@ -1861,7 +1998,10 @@ def line_birth_candidates(
     triangulation of its centroids. The birth rule (fixed views, or fixed views plus the fpv)
     is the core's. Sep 29: `tips` (per view, the `*_tip` detector boxes) are attached to the
     elongated observations first, either side, so a birth sees the tip's extent and the prior
-    it expects is the two-state one (bare plus tip when a member carries a tip)."""
+    it expects is the two-state one (bare plus tip when a member carries a tip). Sep 29 v4
+    (the length rule on): a mask may cover a tip on any frame, so the pair gate and the
+    merged-extent gates allow the body plus its tip whether or not a box attached; the
+    completion still expects the bare body unless a box says otherwise."""
     cls = params.line_geometric_class
     per_view = {
         v: [o for o in unassigned.get(v, ()) if o.object_class == cls] for v in sorted(cams)
@@ -1872,6 +2012,7 @@ def line_birth_candidates(
             attached = attach_tips_in_view(items, tips.get(v, ()), params.gates.association_px)
             per_view[v] = [attached.get(i, o) for i, o in enumerate(items)]
     tip_slack = max([prior.tip_for(tip) for tip, _ in params.line_tip_classes] or [0.0])
+    slack_always = params.line_tip_length_rule and params.line_birth_tip_slack and prior.two_state
     born: list[Candidate] = []
     if len(per_view) < min(
         params.gates.birth_min_fixed_views, params.gates.birth_fixed_views_with_fpv
@@ -1882,8 +2023,11 @@ def line_birth_candidates(
         cost = np.full((len(per_view[u]), len(per_view[v])), HUNGARIAN_FORBIDDEN)
         for i, a in enumerate(per_view[u]):
             for j, b in enumerate(per_view[v]):
+                pair_may = slack_always and (
+                    may_carry_tip(prior, a.colour_class) or may_carry_tip(prior, b.colour_class)
+                )
                 pair_prior = prior.length_cm + (
-                    tip_slack if (a.tip_attached or b.tip_attached) else 0.0
+                    tip_slack if (pair_may or a.tip_attached or b.tip_attached) else 0.0
                 )
                 cost[i, j] = _line_pair_cost(cams[u], a, cams[v], b, params, pair_prior)
         for i, j in hungarian(cost):
@@ -1916,12 +2060,18 @@ def line_birth_candidates(
         votes = Counter(o.colour_class for o in members.values() if o.colour_class)
         tip_classes = Counter(o.tip_class for o in members.values() if o.tip_class)
         tip_class = tip_classes.most_common(1)[0][0] if tip_classes else None
+        birth_class = decisive_class(votes)
         fit, _merged = fit_line_members(
             members,
             cams,
             params,
-            prior.expected_length(decisive_class(votes), tip_class, attached=bool(tip_classes)),
+            prior.expected_length(birth_class, tip_class, attached=bool(tip_classes)),
             prior.spread_cm,
+            ceiling_length_cm=(
+                prior.expected_length(birth_class, tip_class, attached=True)
+                if slack_always and may_carry_tip(prior, birth_class)
+                else None
+            ),
         )
         if fit is not None and len(fit.members) >= 2:
             kept = fit.members
@@ -2052,6 +2202,13 @@ class MultiviewTracker:
         self.line_tip_side_refused = 0
         self.line_width_votes_cast = 0
         self.line_tip_basis_frames: dict[str, int] = defaultdict(int)
+        # -- Sep 29 v4: the tail basis and the 3D-length tip state
+        self.line_tail_votes_cast = 0
+        self.line_tail_votes_skipped_class = 0
+        self.line_tip_length_undecided = 0
+        self.line_tip_length_truncated = 0
+        self.line_tip_length_no_mode = 0
+        self.line_tip_box_corroboration: dict[str, int] = defaultdict(int)
 
     # -- helpers
 
@@ -2060,11 +2217,29 @@ class MultiviewTracker:
 
     def _prior_length(self, t: Track) -> float:
         """The length the track expects this frame: the class's bare body, plus its tip when
-        the track's `tip_attached` state is on or a view attached a tip box this frame."""
+        the track's `tip_attached` state is on (v4: the state alone; under the v3 box rule
+        also when a view attached a tip box this frame)."""
         assert self.line_prior is not None
         cls = decisive_class(t.class_votes)
-        attached = bool(t.tip_views_this_frame) or bool(t.tip_attached)
+        attached = bool(t.tip_attached)
+        if not self.params.line_tip_length_rule:
+            attached = attached or bool(t.tip_views_this_frame)
         return self.line_prior.expected_length(cls, t.tip_class, attached=attached)
+
+    def _ceiling_length(self, t: Track) -> float:
+        """Sep 29 v4: the longest a single mask of this track may honestly be, the body plus
+        its tip. The merged-extent gates and the clamp read it (a mask that covers a tip is
+        not two masks) whatever the state says; the completion reads `_prior_length`."""
+        assert self.line_prior is not None
+        prior = self._prior_length(t)
+        if not self.params.line_tip_length_rule:
+            return prior
+        cls = decisive_class(t.class_votes)
+        if not may_carry_tip(self.line_prior, cls):
+            # A bare-only class (no with-tip mode): nothing longer than its body is honest,
+            # and the 8-channel's merged masks must still be dropped.
+            return prior
+        return max(prior, self.line_prior.expected_length(cls, t.tip_class, attached=True))
 
     def _new_id(self, cls: str) -> str:
         self._next_id += 1
@@ -2502,6 +2677,9 @@ class MultiviewTracker:
             tip_views_this_frame=t.tip_views_this_frame,
             tip_basis=t.tip_basis,
             width_votes=list(t.width_votes),
+            tail_votes=list(t.tail_votes),
+            length_history=list(t.length_history),
+            tip_rule_length_cm=t.tip_rule_length_cm,
         )
         if t.mover:
             self.mover_track_ids.add(new.track_id)
@@ -2571,6 +2749,7 @@ class MultiviewTracker:
                 uncertainty_cm=t.uncertainty_cm,
                 tip_hint=None if resolved is None else resolved[0],
                 direction_uncertainty_deg=t.direction_uncertainty_deg,
+                ceiling_length_cm=self._ceiling_length(t),
             )
             for v in merged:
                 self.line_merged_by_view[v] += 1
@@ -2725,10 +2904,14 @@ class MultiviewTracker:
         return out
 
     def _update_tip_state(self, t: Track, mine: dict[str, Obs]) -> None:
-        """The two-state flag with hysteresis over the track's line frames: on after
-        `line_tip_on_frames` of the last `line_tip_on_window` frames carried an attached tip
-        in some view, off after `line_tip_off_window` frames without one; None before either
-        window decides. The tip class follows the plurality of the recent attached classes."""
+        """The two-state flag. Sep 29 v4 (`line_tip_length_rule`): the median visible
+        butt-to-tip length over the track's last measured line fits against the class's two
+        length modes (`_tip_state_from_length`), the attached boxes recorded as
+        corroboration. The v3 rule otherwise: on after `line_tip_on_frames` of the last
+        `line_tip_on_window` line frames carried an attached tip in some view, off after
+        `line_tip_off_window` frames without one; None before either window decides. The tip
+        class follows the plurality of the recent attached classes, else the pipette's own
+        tip class while the state is on."""
         params = self.params
         attached = [o for o in mine.values() if o.tip_attached]
         self.line_tip_line_frames += 1
@@ -2746,24 +2929,77 @@ class MultiviewTracker:
         keep = max(params.line_tip_on_window, params.line_tip_off_window)
         del t.tip_history[:-keep]
         del t.tip_class_history[:-keep]
-        recent = t.tip_history[-params.line_tip_on_window :]
-        if sum(recent) >= params.line_tip_on_frames:
-            if t.tip_attached is not True:
-                self.line_tip_state_on += 1
-            t.tip_attached = True
-        elif len(t.tip_history) >= params.line_tip_off_window and not any(
-            t.tip_history[-params.line_tip_off_window :]
-        ):
-            if t.tip_attached is True:
-                self.line_tip_state_off += 1
-            t.tip_attached = False
+        if params.line_tip_length_rule:
+            self._tip_state_from_length(t)
+            state = {True: "on", False: "off", None: "undecided"}[t.tip_attached]
+            self.line_tip_box_corroboration[f"{state}_{'with' if attached else 'without'}_box"] += 1
+        else:
+            recent = t.tip_history[-params.line_tip_on_window :]
+            if sum(recent) >= params.line_tip_on_frames:
+                if t.tip_attached is not True:
+                    self.line_tip_state_on += 1
+                t.tip_attached = True
+            elif len(t.tip_history) >= params.line_tip_off_window and not any(
+                t.tip_history[-params.line_tip_off_window :]
+            ):
+                if t.tip_attached is True:
+                    self.line_tip_state_off += 1
+                t.tip_attached = False
         recent_classes = Counter(
             c for c in t.tip_class_history[-params.line_tip_on_window :] if c is not None
         )
         if recent_classes:
             t.tip_class = recent_classes.most_common(1)[0][0]
+        elif t.tip_attached is True and params.line_tip_length_rule:
+            assert self.line_prior is not None
+            t.tip_class = t.tip_class or self.line_prior.tip_class_for(
+                decisive_class(t.class_votes)
+            )
         elif t.tip_attached is False:
             t.tip_class = None
+
+    def _tip_state_from_length(self, t: Track) -> None:
+        """Sep 29 v4, the tipseg finding as the tracker's rule: SAM3's body mask covers the
+        tip when one is on, so the pipette's butt-to-tip length has two modes (the blue
+        pipette: 22.3 cm bare, 29.5 with a tip) and the per-view boxes are not needed. The
+        median of the last `line_tip_length_window` measured visible lengths (at least
+        `line_tip_length_min_frames`) is read against the class's modes: over the midpoint
+        by the hysteresis band the state is on, under it by the band it is off, in the band
+        it keeps; a median more than `line_tip_length_truncated_cm` under the bare mode is a
+        mask the hand cut short and decides nothing; a class with no with-tip mode is bare
+        when the median sits within that margin of its bare mode and undecided otherwise."""
+        params = self.params
+        assert self.line_prior is not None
+        recent = t.length_history[-params.line_tip_length_window :]
+        if len(recent) < params.line_tip_length_min_frames:
+            t.tip_rule_length_cm = None
+            self.line_tip_length_undecided += 1
+            return
+        median = float(np.median(recent))
+        t.tip_rule_length_cm = round(median, 2)
+        bare, with_tip = self.line_prior.modes_for(decisive_class(t.class_votes))
+        decision: bool | None = None
+        if median < bare - params.line_tip_length_truncated_cm:
+            self.line_tip_length_truncated += 1
+        elif with_tip is None:
+            if median <= bare + params.line_tip_length_truncated_cm:
+                decision = False
+            else:
+                self.line_tip_length_no_mode += 1
+        else:
+            midpoint = 0.5 * (bare + with_tip)
+            band = params.line_tip_length_hysteresis_cm
+            if median >= midpoint + band:
+                decision = True
+            elif median <= midpoint - band:
+                decision = False
+        if decision is None or decision == t.tip_attached:
+            return
+        if decision:
+            self.line_tip_state_on += 1
+        elif t.tip_attached is True:
+            self.line_tip_state_off += 1
+        t.tip_attached = decision
 
     def _resolve_tip_from_boxes(
         self, t: Track, cams: dict[str, Camera], mine: dict[str, Obs]
@@ -2922,7 +3158,18 @@ class MultiviewTracker:
         t.line_residuals = dict(t.residuals)
         t.line_this_frame = True
         self.line_frames += 1
+        self._record_length(t, fit)
         self._record_line_metrics(t, fit, cams, self._prior_length(t))
+
+    def _record_length(self, t: Track, fit: LineFit) -> None:
+        """Sep 29 v4: the visible butt-to-tip length of a measured fit joins the track's
+        length history (the 3D-length tip state reads its median). A prediction-aided fit
+        (its direction is the prediction's), an extent the prediction supplied and a clamped
+        one are not measurements of the pipette."""
+        if fit.aided or fit.extent_from_prediction or fit.clamped or fit.visible_length_cm <= 0:
+            return
+        t.length_history.append(float(fit.visible_length_cm))
+        del t.length_history[: -self.params.line_tip_length_window]
 
     def _record_line_metrics(
         self, t: Track, fit: LineFit, cams: dict[str, Camera], prior_length: float
@@ -3051,12 +3298,15 @@ class MultiviewTracker:
         if not any(is_elongated(o.axis_obs()) for o in kept.values()):
             return None
         prior_length = self._prior_length(t)
+        ceiling = self._ceiling_length(t)
         for v, o in kept.items():
             if not is_elongated(o.axis_obs()):
                 continue
             # An elongated mask is a shaft seen broadside; an aided line running along that
             # view's ray contradicts it (the worst rows: 4-8 deg), as does an extent on the
-            # aided line longer than a pipette.
+            # aided line longer than a pipette. The extent check keeps the state's prior, not
+            # the with-tip ceiling: the extent here is the sign of a wrong in-plane direction,
+            # and loosening it by a tip length lets wrong directions through (test B).
             if not _sees_broadside(cams[v], line, params):
                 self.line_aided_rejected += 1
                 return None
@@ -3073,6 +3323,7 @@ class MultiviewTracker:
             self.line_prior.spread_cm,
             None if resolved is None else resolved[0],
             fallback_extent=t.endpoints_cm,
+            ceiling_length_cm=ceiling,
         )
         if completed is None:
             return None
@@ -3106,17 +3357,18 @@ class MultiviewTracker:
         frame: int,
         mine: dict[str, Obs] | None = None,
     ) -> None:
-        """Which end is the tip, by three bases in order of strength. Sep 29: an attached
+        """Which end is the tip, by five bases in order of strength. Sep 29: an attached
         `*_tip` box marks the tip end (`_resolve_tip_from_boxes`), and while the track's tip
         state is on that decision stands. Then the hand: the end nearer a hand is the butt
         (the plunger button, the coloured part), the other end the tip: the nearest live hand
         track within `LINE_HAND_REACH_CM` of one end and `LINE_HAND_MARGIN_CM` nearer to it
-        than to the other decides; without a hand track, an end whose projection lies inside
-        a hand box in >= `held_min_views` views while the other end's does not. Otherwise the
-        ordering is kept by direction continuity (the update orients the measured direction
-        along the predicted one). A hand track within reach of the butt leaves the
-        butt-to-hand offset it measured (`butt_offset`), the only offset a later hold may
-        follow."""
+        than to the other decides. Sep 29 v4: then the rows' long-thin-tail side
+        (`_resolve_tip_from_tail`). Then, without a hand track, an end whose projection lies
+        inside a hand box in >= `held_min_views` views while the other end's does not; then
+        the widths. Otherwise the ordering is kept by direction continuity (the update
+        orients the measured direction along the predicted one). A hand track within reach
+        of the butt leaves the butt-to-hand offset it measured (`butt_offset`), the only
+        offset a later hold may follow."""
         assert t.endpoints_cm is not None
         params = self.params
         # The box basis follows the hysteresis state, not one frame's box: a loose tip
@@ -3125,13 +3377,24 @@ class MultiviewTracker:
             self._resolve_tip_from_boxes(t, cams, mine)
         if mine:
             self._accumulate_width_votes(t, cams, mine)
+            if params.line_tail_basis:
+                self._accumulate_tail_votes(t, cams, mine)
         box_holds = t.tip_attached is True and t.tip_basis == TIP_BASIS
         width_total = sum(t.width_votes)
         width_decisive = abs(width_total) >= params.line_width_vote_margin
         width_first = params.line_width_over_hand and width_decisive and not box_holds
         if width_first:
             self._set_tip(t, tip_is_endpoint_0=width_total > 0, basis=WIDTH_BASIS)
-        stands = box_holds or width_first
+        tail_total = sum(t.tail_votes)
+        tail_first = (
+            params.line_tail_basis
+            and params.line_tail_over_hand
+            and abs(tail_total) >= params.line_tail_vote_margin
+            and not box_holds
+        )
+        if tail_first:
+            self._set_tip(t, tip_is_endpoint_0=tail_total > 0, basis=TAIL_BASIS)
+        stands = box_holds or width_first or tail_first
         hands = [
             h
             for h in self.live_tracks()
@@ -3160,6 +3423,8 @@ class MultiviewTracker:
                 return
         if stands:
             return
+        if params.line_tail_basis and self._resolve_tip_from_tail(t):
+            return
         counts = [0, 0]
         for v, cam in cams.items():
             pixels = [project(cam, e) for e in t.endpoints_cm]
@@ -3174,6 +3439,63 @@ class MultiviewTracker:
             self._set_tip(t, tip_is_endpoint_0=counts[0] < counts[1], basis="hand_box")
             return
         self._resolve_tip_from_width(t)
+
+    def _accumulate_tail_votes(
+        self, t: Track, cams: dict[str, Camera], mine: dict[str, Obs]
+    ) -> None:
+        """Sep 29 v4, the fifth basis: each view whose row carries a `tip_side` (the axis
+        end with the longer thin tail) names that axis end; it is matched to the track
+        endpoint whose projection lies nearer it (the other end must match the other
+        endpoint) and cast as a vote for the tip end. The wide-tip classes (the 8-channel,
+        whose manifold is its wide end) cast none: the tail rule is unvalidated on them and
+        the class rule of the width basis stands. The frame's net vote joins the window."""
+        assert t.endpoints_cm is not None
+        params = self.params
+        cls = decisive_class(t.class_votes)
+        net = 0
+        for v, o in mine.items():
+            if o.tip_side is None or v not in cams:
+                continue
+            obs_cls = cls or o.colour_class
+            if obs_cls in params.line_wide_tip_classes:
+                self.line_tail_votes_skipped_class += 1
+                continue
+            axis = o.body_axis_px if o.body_axis_px is not None else o.axis_px
+            if axis is None:
+                continue
+            ends = np.asarray(axis, dtype=np.float64)
+            pixels = [project(cams[v], e) for e in t.endpoints_cm]
+            if any(p is None for p in pixels):
+                continue
+            tip_track_end = int(
+                np.argmin([np.linalg.norm(p - ends[o.tip_side]) for p in pixels])  # type: ignore[operator]
+            )
+            butt_track_end = int(
+                np.argmin([np.linalg.norm(p - ends[1 - o.tip_side]) for p in pixels])  # type: ignore[operator]
+            )
+            if tip_track_end == butt_track_end:
+                continue
+            net += 1 if tip_track_end == 0 else -1
+            self.line_tail_votes_cast += 1
+        t.tail_votes.append(net)
+        del t.tail_votes[: -params.line_tail_vote_window]
+
+    def _resolve_tip_from_tail(self, t: Track) -> bool:
+        """The tail basis decides when the window's net vote reaches the margin and nothing
+        stronger stands: a tip box while the state is on, or a hand track that named the
+        ends, keeps its say (the brief's ranking); a track that is unresolved or was named by
+        a hand box or the widths follows the tail. Returns whether the tail basis holds the
+        decision (decided now, or already), so the weaker bases stand down."""
+        if t.tip_is_endpoint_0 is not None:
+            if t.tip_basis == TIP_BASIS and t.tip_attached is True:
+                return False
+            if t.tip_basis == "hand_track" and not self.params.line_tail_over_hand:
+                return False
+        total = sum(t.tail_votes)
+        if abs(total) < self.params.line_tail_vote_margin:
+            return t.tip_basis == TAIL_BASIS and t.tip_is_endpoint_0 is not None
+        self._set_tip(t, tip_is_endpoint_0=total > 0, basis=TAIL_BASIS)
+        return True
 
     def _accumulate_width_votes(
         self, t: Track, cams: dict[str, Camera], mine: dict[str, Obs]
@@ -3231,6 +3553,8 @@ class MultiviewTracker:
             if t.tip_basis == TIP_BASIS and t.tip_attached is True:
                 return
             if t.tip_basis == "hand_track" and not self.params.line_width_over_hand:
+                return
+            if t.tip_basis == TAIL_BASIS:
                 return
         total = sum(t.width_votes)
         if abs(total) < self.params.line_width_vote_margin:
@@ -4218,6 +4542,7 @@ class MultiviewTracker:
             plane_views=cand.line.plane_views,
             clamped=cand.clamped,
         )
+        self._record_length(t, fit)
         assert self.line_prior is not None
         tip_classes = Counter(o.tip_class for o in cand.members.values() if o.tip_class)
         prior_length = self.line_prior.expected_length(
@@ -4336,6 +4661,8 @@ class MultiviewTracker:
                 fields["tip_attached"] = t.tip_attached
                 fields["tip_class"] = t.tip_class
                 fields["tip_basis"] = t.tip_basis if resolved is not None else None
+            if self.params.line_tip_length_rule:
+                fields["tip_rule_length_cm"] = t.tip_rule_length_cm
             distances = self._hand_distances(t)
             if distances is not None:
                 fields["butt_to_hand_cm"] = round(distances[0], 2)
@@ -4528,9 +4855,22 @@ class MultiviewTracker:
                 else None
             ),
             "tip_resolutions_by_basis": dict(sorted(self.line_tip_resolutions.items())),
-            # Sep 29: line rows by the basis that named their tip (the four bases in order of
-            # strength: tip_box, hand_track, hand_box, width; `unresolved` otherwise).
+            # Sep 29: line rows by the basis that named their tip (the five bases in order of
+            # strength: tip_box, hand_track, tail, hand_box, width; `unresolved` otherwise).
             "tip_basis_frames": dict(sorted(self.line_tip_basis_frames.items())),
+            "tail_basis": {
+                "enabled": params.line_tail_basis,
+                "rule": (
+                    "per view, the row's tip_side (the axis end with the longer thin tail) is "
+                    "matched to the track endpoint it projects nearest and cast as a vote; the "
+                    f"net vote over the last {params.line_tail_vote_window} line frames decides "
+                    f"at a margin of {params.line_tail_vote_margin}, under a tip box while the "
+                    "state is on and under a hand track, over a hand box and the widths; no "
+                    f"vote for {list(params.line_wide_tip_classes)} (unvalidated there)"
+                ),
+                "votes_cast": self.line_tail_votes_cast,
+                "votes_skipped_wide_tip_class": self.line_tail_votes_skipped_class,
+            },
             "width_basis": {
                 "rule": (
                     "per view, mask end widths whose ratio reaches "
@@ -4556,16 +4896,51 @@ class MultiviewTracker:
         tip."""
         params = self.params
         ever = [t for t in tracks if t.tip_ever]
-        return {
-            "enabled": params.tip_boxes_on,
-            "tip_classes": dict(params.line_tip_classes),
-            "rule": (
+        if params.line_tip_length_rule:
+            rule = (
+                "the median visible butt-to-tip length over the last "
+                f"{params.line_tip_length_window} measured line fits (at least "
+                f"{params.line_tip_length_min_frames}) against the class's two length modes: "
+                f"on over the midpoint by {params.line_tip_length_hysteresis_cm} cm, off under "
+                f"it by as much, no decision more than {params.line_tip_length_truncated_cm} cm "
+                "under the bare mode (a truncated mask) or on a class without a with-tip mode "
+                "(never on); a *_tip detector box within "
+                f"{params.gates.association_px:.1f} px of the axis line and adjacent to an end "
+                "still extends that view's extent and is reported as corroboration"
+            )
+        else:
+            rule = (
                 f"a *_tip detector box within {params.gates.association_px:.1f} px of the axis "
                 "line, beyond the body end and adjacent to it, extends that view's extent; the "
                 f"state turns on with >= {params.line_tip_on_frames} of the last "
                 f"{params.line_tip_on_window} line frames attached and off after "
                 f"{params.line_tip_off_window} without"
-            ),
+            )
+        modes = None
+        if self.line_prior is not None and params.line_classes:
+            modes = {
+                cls: {"bare": bare, "with_tip": with_tip}
+                for cls in params.line_classes
+                for bare, with_tip in [self.line_prior.modes_for(cls)]
+            }
+        return {
+            "enabled": params.tip_boxes_on,
+            "tip_classes": dict(params.line_tip_classes),
+            "rule": rule,
+            "length_rule": {
+                "enabled": params.line_tip_length_rule,
+                "modes_cm": modes,
+                "window": params.line_tip_length_window,
+                "min_frames": params.line_tip_length_min_frames,
+                "hysteresis_cm": params.line_tip_length_hysteresis_cm,
+                "truncated_cm": params.line_tip_length_truncated_cm,
+                "line_frames_without_a_median": self.line_tip_length_undecided,
+                "line_frames_truncated": self.line_tip_length_truncated,
+                "line_frames_over_bare_without_a_mode": self.line_tip_length_no_mode,
+                # The tip boxes as corroboration: line frames by state and whether a box
+                # attached in some view that frame.
+                "box_corroboration": dict(sorted(self.line_tip_box_corroboration.items())),
+            },
             "line_frames": self.line_tip_line_frames,
             "line_frames_with_attached_tip": self.line_tip_attached_frames,
             "attached_fraction": (
@@ -4871,6 +5246,28 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="Sep 29 variant: a decisive mask-width vote names the tip before the hand does",
     )
+    ext.add_argument(
+        "--no-line-tail-basis",
+        action="store_true",
+        help="Sep 29 v4: do not read the rows' tip_side as a tip / butt basis (the v3 bases)",
+    )
+    ext.add_argument(
+        "--no-line-tip-length-rule",
+        action="store_true",
+        help="Sep 29 v4: read tip_attached from the tip boxes' hysteresis (v3) instead of "
+        "the 3D butt-to-tip length against the class's two modes",
+    )
+    ext.add_argument(
+        "--line-tail-over-hand",
+        action="store_true",
+        help="Sep 29 v4 variant: a decisive tail vote names the tip before the hand track does",
+    )
+    ext.add_argument(
+        "--no-line-birth-tip-slack",
+        action="store_true",
+        help="Sep 29 v4 ablation: a birth pair spans the body plus its tip only with a tip "
+        "box attached (v3), not always",
+    )
     args = parser.parse_args(argv)
 
     if args.fixtures is not None:
@@ -4930,6 +5327,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         line_max_axis_residual_px=args.line_max_axis_residual_px,
         line_tip_boxes=not args.no_line_tip_boxes,
         line_width_over_hand=args.line_width_over_hand,
+        line_tail_basis=not args.no_line_tail_basis,
+        line_tail_over_hand=args.line_tail_over_hand,
+        line_tip_length_rule=not args.no_line_tip_length_rule,
+        line_birth_tip_slack=not args.no_line_birth_tip_slack,
     )
     frames = parse_frames(args.frames, {r.frame_index for r in rows})
     labels = (

@@ -410,6 +410,13 @@ class FineBioObservation(VersionedModel):
     # Sep 29 (tip / butt by the width profile), optional: the median across-axis width over
     # the outer fifth of the axis at each end, in the order of `mask_axis_px`.
     mask_end_widths_px: tuple[float, float] | None = None
+    # Sep 29 (v4, the long-thin-tail rule moved in from `finebio_tipseg`), optional: the
+    # index into `mask_axis_px` of the end with the longer thin tail (the tip of a
+    # single-channel pipette; None when the tails do not differ enough), and the terminal
+    # centroid at each end in the order of `mask_axis_px` (the mask's own end, which sits on
+    # a thin tip where the axis endpoint can be 30 px off it sideways).
+    tip_side: int | None = Field(default=None, ge=0, le=1)
+    body_end_px: tuple[Vec2, Vec2] | None = None
     sam3_object_score: float | None = None
     pose_valid: bool
     source: ObservationSource
@@ -550,11 +557,15 @@ class Track3D(VersionedModel):
     # disposable tip is attached to the pipette (two-state with hysteresis; None while the
     # windows have not decided), the detector class of that tip (`blue_tip`, ...), the views
     # whose `*_tip` box attached to this frame's observation, and the basis of the tip / butt
-    # resolution (`tip_box`, `hand_track`, `hand_box`).
+    # resolution (`tip_box`, `hand_track`, `tail`, `hand_box`, `width`).
     tip_attached: bool | None = None
     tip_class: str | None = None
     tip_attached_views: tuple[str, ...] | None = None
     tip_basis: str | None = None
+    # Sep 29 (v4): the median visible butt-to-tip length (cm) the 3D-length tip rule read on
+    # this frame; None while too few line frames measured one, and on rows of a tracker
+    # without the rule.
+    tip_rule_length_cm: float | None = Field(default=None, ge=0)
 
 
 class TrackEvent(VersionedModel):

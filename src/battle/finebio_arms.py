@@ -1319,11 +1319,29 @@ def _remeasure_chunk(
                     "mask_end_widths_px": (
                         None if axis.end_widths_px is None else list(axis.end_widths_px)
                     ),
+                    "tip_side": axis.tip_side,
+                    "body_end_px": (
+                        None if axis.body_ends_px is None else [list(p) for p in axis.body_ends_px]
+                    ),
                     "provenance": axis.provenance(),
                 },
             )
         )
     return out
+
+
+# The row fields `remeasure` rewrites; a source row that already carries one of them must get
+# the same value back (the v4 pass over the v3 rows adds `tip_side` and `body_end_px` and
+# changes nothing else; the summary counts every field it would have changed).
+REMEASURED_FIELDS: tuple[str, ...] = (
+    "mask_axis_px",
+    "mask_elongation",
+    "mask_width_px",
+    "mask_axis_residual_px",
+    "mask_end_widths_px",
+    "tip_side",
+    "body_end_px",
+)
 
 
 def _mask_index(run_dir: Path) -> dict[tuple[int, str], str]:
@@ -1454,6 +1472,7 @@ def remeasure_observations(
         for task in tasks:
             results.update(_remeasure_chunk(task))
     old_mismatch: Counter[str] = Counter()
+    axis_field_changed: Counter[str] = Counter()
     reserialise_mismatch = 0
     masks_missing: Counter[str] = Counter()
     per_class: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -1503,9 +1522,20 @@ def remeasure_observations(
                         if result.get("mask_end_widths_px") is None
                         else tuple(result["mask_end_widths_px"])
                     ),
+                    "tip_side": result.get("tip_side"),
+                    "body_end_px": (
+                        None
+                        if result.get("body_end_px") is None
+                        else tuple(tuple(p) for p in result["body_end_px"])
+                    ),
                     "provenance": {**model.provenance, **result["provenance"]},
                 }
+                before = model.model_dump(exclude_none=True)
                 model = model.model_copy(update=update)
+                after = model.model_dump(exclude_none=True)
+                for name in REMEASURED_FIELDS:
+                    if name in before and before[name] != after.get(name):
+                        axis_field_changed[name] += 1
             dst.write(model.model_dump_json(exclude_none=True, exclude_defaults=True) + "\n")
             written += 1
             dumped = model.model_dump(exclude_none=True)
@@ -1527,6 +1557,7 @@ def remeasure_observations(
         "masks_unresolved_by_view": dict(unresolved),
         "masks_missing_by_view": dict(masks_missing),
         "old_fields_mismatch_by_view": dict(old_mismatch),
+        "axis_fields_changed_from_source": dict(axis_field_changed),
         "reserialisation_mismatches": reserialise_mismatch,
         "axis_settings": {
             "elongation_threshold": AXIS_ELONGATION_THRESHOLD,
@@ -1560,6 +1591,7 @@ def remeasure_observations(
             "start_frame_by_view",
             "masks_missing_by_view",
             "old_fields_mismatch_by_view",
+            "axis_fields_changed_from_source",
             "reserialisation_mismatches",
             "axis_settings",
         )
@@ -1594,7 +1626,8 @@ def remeasure_markdown(summary: dict[str, Any]) -> str:
         f"{summary['detector_rows_copied']} detector rows copied unchanged; masks missing "
         f"{sum(summary['masks_missing_by_view'].values())}, old fields changed "
         f"{sum(summary['old_fields_mismatch_by_view'].values())}, re-serialisation mismatches "
-        f"{summary['reserialisation_mismatches']}.",
+        f"{summary['reserialisation_mismatches']}, axis fields the source already carried "
+        f"that changed {sum(summary.get('axis_fields_changed_from_source', {}).values())}.",
         "",
         "Elongation is sqrt(largest / smallest second-moment eigenvalue) of the mask (1.0 is "
         f"round); a mask under {summary['axis_settings']['elongation_threshold']} is compact and "

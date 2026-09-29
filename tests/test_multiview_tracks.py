@@ -7,6 +7,7 @@ import hashlib
 import itertools
 import json
 from collections import defaultdict
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -1810,9 +1811,13 @@ def test_o_an_attached_tip_box_extends_the_extent_names_the_tip_and_sets_the_sta
     body mask; T2 and T4 also see a `blue_tip` detector box on the body's end for the first
     25 frames, then the tip is gone. With the tip boxes attached the written segment reaches
     the tip (bare + tip), the tip end is `endpoints_cm[0]` on the box basis with no hand in
-    sight, `tip_attached` turns on after five attached frames and off 15 frames after the
-    last one, the tip class casts a vote, and the rows say which views attached. With the
-    adapter off (the v2 tracker) none of that exists and the segment is the bare body."""
+    sight, the tip class casts a vote, and the rows say which views attached. The state:
+    under the v3 box rule (`line_tip_length_rule=False`) `tip_attached` turns on after five
+    attached frames and off 15 frames after the last one; under the v4 length rule it turns
+    on once five measured fits reach the with-tip length and off once the median of the
+    last 15 falls back to the bare body (frame 32 here), the boxes reported as
+    corroboration. With the adapter off (the v2 tracker) none of that exists and the
+    segment is the bare body."""
     cams, _fpv = rig
     rng = np.random.default_rng(53)
     frames = list(range(43))
@@ -1829,52 +1834,73 @@ def test_o_an_attached_tip_box_extends_the_extent_names_the_tip_and_sets_the_sta
         if f < 25:
             for v in ("T2", "T4"):
                 rows.append(_tip_box_row(cams, v, f, body_end, tip_end, "blue_tip"))
-    params = TrackerParams(observation_source="auto", line_classes=("blue_pipette",))
-    out = run_tracker(rows, cams, lambda f: None, frames, params, line_prior=prior)
-    assert out.metrics["per_class"]["pipette"]["tracks_born"] == 1
-    pipette = {r.frame_index: r for r in out.rows if r.object_class == "pipette"}
-    assert set(pipette) == set(frames)
-    for f in range(25):
-        r = pipette[f]
-        assert r.tip_attached_views == ("T2", "T4"), f
-        assert r.tip_class == "blue_tip", f
-        assert _row_length(r) == pytest.approx(bare + tip_len, abs=1.5), f
-        if f >= 4:
-            # The box names the tip once the state is on (not on one frame's box).
-            assert r.tip_resolved is True and r.tip_basis == "tip_box", f
-            assert np.linalg.norm(np.array(r.endpoints_cm[0]) - tip_end) < 1.5, f
-            assert np.linalg.norm(np.array(r.endpoints_cm[1]) - butt) < 1.5, f
+    for length_rule, off_frame in ((False, 39), (True, 32)):
+        params = TrackerParams(
+            observation_source="auto",
+            line_classes=("blue_pipette",),
+            line_tip_length_rule=length_rule,
+        )
+        out = run_tracker(rows, cams, lambda f: None, frames, params, line_prior=prior)
+        assert out.metrics["per_class"]["pipette"]["tracks_born"] == 1
+        pipette = {r.frame_index: r for r in out.rows if r.object_class == "pipette"}
+        assert set(pipette) == set(frames)
+        for f in range(25):
+            r = pipette[f]
+            assert r.tip_attached_views == ("T2", "T4"), f
+            assert r.tip_class == "blue_tip", f
+            assert _row_length(r) == pytest.approx(bare + tip_len, abs=1.5), f
+            if f >= 4:
+                # The box names the tip once the state is on (not on one frame's box).
+                assert r.tip_resolved is True and r.tip_basis == "tip_box", f
+                assert np.linalg.norm(np.array(r.endpoints_cm[0]) - tip_end) < 1.5, f
+                assert np.linalg.norm(np.array(r.endpoints_cm[1]) - butt) < 1.5, f
+            else:
+                assert r.tip_resolved is False, f
+        # The state: None until the rule's first decision, True from the fifth frame.
+        assert pipette[0].tip_attached is None and pipette[3].tip_attached is None
+        assert all(pipette[f].tip_attached is True for f in range(4, off_frame)), length_rule
+        # No tip box from frame 25: the state holds the tip on the completed extent (the
+        # body masks alone are one tip length short of the expected length) until it flips.
+        for f in range(25, off_frame):
+            assert pipette[f].tip_attached_views is None, f
+            assert _row_length(r := pipette[f]) == pytest.approx(bare + tip_len, abs=1.5), f
+            assert r.tip_class == "blue_tip"
+        # The state is read after the frame's fit, so the flip frame still wrote the tipped
+        # length; then the expected length is the bare body and the blend follows within two.
+        assert pipette[off_frame].tip_attached is False and pipette[off_frame].tip_class is None
+        assert _row_length(pipette[off_frame + 2]) < bare + 0.5 * tip_len
+        assert _row_length(pipette[off_frame + 3]) == pytest.approx(bare, abs=1.0)
+        assert all(pipette[f].tip_attached is False for f in range(off_frame, len(frames)))
+        metrics = _lines_metrics(out)
+        tips = metrics["tips"]
+        assert tips["enabled"] and tips["line_frames_with_attached_tip"] == 25
+        assert tips["attached_by_view"] == {"T2": 25, "T4": 25}
+        assert tips["attached_by_mode"] == {"axis": 50} and tips["attached_by_tip_class"] == {
+            "blue_tip": 50
+        }
+        assert tips["state_transitions"] == {"on": 1, "off": 1}
+        assert tips["tip_class_votes"] == 50 and tips["tracks_ever_attached"] == 1
+        assert metrics["tip_resolutions_by_basis"] == {"tip_box": 1}
+        (votes,) = metrics["class_votes_by_track"].values()
+        assert votes == {"blue_pipette": len(frames) * 4 + 50}
+        assert tips["length_rule"]["enabled"] is length_rule
+        if length_rule:
+            # The median the rule read is on the rows, and the boxes are its corroboration.
+            assert pipette[10].tip_rule_length_cm == pytest.approx(bare + tip_len, abs=1.5)
+            assert pipette[40].tip_rule_length_cm == pytest.approx(bare, abs=1.0)
+            assert pipette[2].tip_rule_length_cm is None
+            corroboration = tips["length_rule"]["box_corroboration"]
+            assert corroboration["on_with_box"] == 21 and corroboration["undecided_with_box"] == 4
+            assert corroboration["on_without_box"] == 7 and corroboration["off_without_box"] == 11
+            assert tips["length_rule"]["modes_cm"]["blue_pipette"] == {
+                "bare": bare,
+                "with_tip": bare + tip_len,
+            }
         else:
-            assert r.tip_resolved is False, f
-    # The state: None until five of eight frames carry a tip, True from the fifth frame.
-    assert pipette[0].tip_attached is None and pipette[3].tip_attached is None
-    assert all(pipette[f].tip_attached is True for f in range(4, 39))
-    # No tip box from frame 25: the state holds the tip on the completed extent (the body
-    # masks alone are one tip length short of the expected length) until 15 frames pass.
-    for f in range(25, 39):
-        assert pipette[f].tip_attached_views is None, f
-        assert _row_length(r := pipette[f]) == pytest.approx(bare + tip_len, abs=1.5), f
-        assert r.tip_class == "blue_tip"
-    # The state is read after the frame's fit, so frame 39 still wrote the tipped length;
-    # from frame 40 the expected length is the bare body and the blend follows within two.
-    assert pipette[39].tip_attached is False and pipette[39].tip_class is None
-    assert _row_length(pipette[41]) < bare + 0.5 * tip_len
-    assert _row_length(pipette[42]) == pytest.approx(bare, abs=1.0)
-    metrics = _lines_metrics(out)
-    tips = metrics["tips"]
-    assert tips["enabled"] and tips["line_frames_with_attached_tip"] == 25
-    assert tips["attached_by_view"] == {"T2": 25, "T4": 25}
-    assert tips["attached_by_mode"] == {"axis": 50} and tips["attached_by_tip_class"] == {
-        "blue_tip": 50
-    }
-    assert tips["state_transitions"] == {"on": 1, "off": 1}
-    assert tips["tip_class_votes"] == 50 and tips["tracks_ever_attached"] == 1
-    assert metrics["tip_resolutions_by_basis"] == {"tip_box": 1}
-    (votes,) = metrics["class_votes_by_track"].values()
-    assert votes == {"blue_pipette": len(frames) * 4 + 50}
-    # The rows round-trip through the schema with the new fields.
-    back = Track3D.model_validate_json(pipette[10].model_dump_json(exclude_none=True))
-    assert back == pipette[10]
+            assert all(r.tip_rule_length_cm is None for r in pipette.values())
+        # The rows round-trip through the schema with the new fields.
+        back = Track3D.model_validate_json(pipette[10].model_dump_json(exclude_none=True))
+        assert back == pipette[10]
     # The adapter off: the v2 tracker. No tip field, no tip vote, the bare body written.
     off = run_tracker(
         rows,
@@ -1898,8 +1924,10 @@ def test_o_an_attached_tip_box_extends_the_extent_names_the_tip_and_sets_the_sta
 def test_o2_a_box_only_view_attaches_a_tip_on_the_track_s_projected_body(rig) -> None:
     """Trial 1's head camera: the blue pipette has no SAM3 slot there, so its observation is
     the detector box alone (no axis), while the `blue_tip` box is seen. Once the track is a
-    line the tip attaches on the track's projected body (`track` mode): it counts for the
-    state, the vote and the tip end, and changes no geometry."""
+    line the tip attaches on the track's projected body (`track` mode) and changes no
+    geometry. Under the v3 box rule it counts for the state, the vote and the tip end;
+    under the v4 length rule the three body masks measure the bare body, so the state
+    stays off and the box is corroboration on record only."""
     cams, _fpv = rig
     rng = np.random.default_rng(59)
     frames = list(range(20))
@@ -1918,7 +1946,9 @@ def test_o2_a_box_only_view_attaches_a_tip_on_the_track_s_projected_body(rig) ->
             _box_row(cams, "T1", f, 0.5 * (butt + body_end), "blue_pipette", size=(260, 40))
         )
         rows.append(_tip_box_row(cams, "T1", f, body_end, tip_end, "blue_tip"))
-    params = TrackerParams(observation_source="auto", line_classes=("blue_pipette",))
+    params = TrackerParams(
+        observation_source="auto", line_classes=("blue_pipette",), line_tip_length_rule=False
+    )
     out = run_tracker(rows, cams, lambda f: None, frames, params, line_prior=prior)
     assert out.metrics["per_class"]["pipette"]["tracks_born"] == 1
     pipette = {r.frame_index: r for r in out.rows if r.object_class == "pipette"}
@@ -1938,6 +1968,22 @@ def test_o2_a_box_only_view_attaches_a_tip_on_the_track_s_projected_body(rig) ->
         "T1": tips["attached_by_mode"]["track"]
     }
     assert pipette[frames[-1]].tip_attached is True
+    # v4: the masks say bare, the box alone does not turn the state on.
+    v4 = run_tracker(
+        rows,
+        cams,
+        lambda f: None,
+        frames,
+        TrackerParams(observation_source="auto", line_classes=("blue_pipette",)),
+        line_prior=prior,
+    )
+    rows_v4 = {r.frame_index: r for r in v4.rows if r.object_class == "pipette"}
+    assert sum(1 for f in frames if rows_v4[f].tip_attached_views == ("T1",)) >= 14
+    assert all(r.tip_attached is not True for r in rows_v4.values())
+    assert rows_v4[frames[-1]].tip_attached is False
+    assert _row_length(rows_v4[frames[-1]]) == pytest.approx(bare, abs=1.0)
+    corroboration = _lines_metrics(v4)["tips"]["length_rule"]["box_corroboration"]
+    assert corroboration.get("off_with_box", 0) >= 10 and "on_with_box" not in corroboration
 
 
 def _end_width_rows(cams, view, frame, a, b, cls, *, rng, wide_at, ratio=3.0):
@@ -2052,6 +2098,265 @@ def test_q_the_width_profile_names_the_tip_by_the_class_rule_and_yields_to_a_han
     for f in frames[2:]:
         assert eight_v[f].tip_basis == "width", f
         assert np.linalg.norm(np.array(eight_v[f].endpoints_cm[0]) - b) < 1.0, f
+
+
+def _tail_row(cams, view, frame, a, b, cls, *, rng, tip_at, visible=(0.0, 1.0)):
+    """An axis row whose `tip_side` (the long-thin-tail rule's answer on the row) is the
+    axis end nearer the 3D point `tip_at`."""
+    row = _axis_row(cams, view, frame, a, b, cls, rng=rng, visible=visible)
+    assert row.mask_axis_px is not None
+    tip_px = cams[view].project(np.asarray(tip_at, dtype=float))[0]
+    ends = np.asarray(row.mask_axis_px)
+    return row.model_copy(
+        update={"tip_side": int(np.argmin(np.linalg.norm(ends - tip_px, axis=1)))}
+    )
+
+
+def test_r_the_rows_tip_side_is_a_basis_under_the_hand_track_and_over_the_hand_box(rig) -> None:
+    """Sep 29 v4, the fifth basis. A blue pipette flat on the bench, five fixed views, every
+    row carrying `tip_side` (the tipseg tail rule: the shaft-and-cone end), no hand, no tip
+    box, no end widths. v3 (rows without the field, or the basis off) leaves the track
+    unresolved; v4 names the tip on the `tail` basis from the first frame after birth (five
+    votes, margin three). The 8-channel casts no tail vote (its tail rule is unvalidated;
+    the class rule stands). The ranking: a hand box over the *tip* end in two views (a wrong
+    reading; v3's hand_box basis would name the butt the tip) loses to the tail, and a hand
+    track at the tip end still wins."""
+    cams, _fpv = rig
+    rng = np.random.default_rng(67)
+    frames = list(range(10))
+    a, b = _segment([5.0, 2.0, -1.0], [1.0, 0.2, 0.0], PRIOR.length_for("blue_pipette"))
+    e0, e1 = _segment([5.0, -8.0, -1.0], [1.0, 0.2, 0.0], PRIOR.length_for("8_channel_pipette"))
+    rows = []
+    for f in frames:
+        for v in FIXED:
+            rows.append(_tail_row(cams, v, f, a, b, "blue_pipette", rng=rng, tip_at=b))
+            rows.append(_tail_row(cams, v, f, e0, e1, "8_channel_pipette", rng=rng, tip_at=e1))
+    params = TrackerParams(
+        observation_source="auto", line_classes=("blue_pipette", "8_channel_pipette")
+    )
+    out = run_tracker(rows, cams, lambda f: None, frames, params)
+    assert out.metrics["per_class"]["pipette"]["tracks_born"] == 2
+    by_class = defaultdict(dict)
+    for r in out.rows:
+        if r.object_class == "pipette":
+            by_class[r.observed_class][r.frame_index] = r
+    blue, eight = by_class["blue_pipette"], by_class["8_channel_pipette"]
+    assert blue[0].tip_resolved is False  # born before any vote
+    for f in frames[1:]:
+        assert blue[f].tip_resolved is True and blue[f].tip_basis == "tail", f
+        assert np.linalg.norm(np.array(blue[f].endpoints_cm[0]) - b) < 1.0, f
+        assert eight[f].tip_resolved is False, f
+    metrics = _lines_metrics(out)
+    assert metrics["tip_resolutions_by_basis"] == {"tail": 1}
+    assert metrics["tip_basis_frames"]["tail"] == len(frames) - 1
+    assert metrics["tail_basis"]["votes_cast"] == 5 * (len(frames) - 1)
+    assert metrics["tail_basis"]["votes_skipped_wide_tip_class"] == 5 * (len(frames) - 1)
+    # v3: the same rows without the field, or the basis switched off, resolve nothing.
+    plain = [r.model_copy(update={"tip_side": None}) for r in rows]
+    for rows_run, run_params in (
+        (plain, params),
+        (rows, TrackerParams(**{**params.__dict__, "line_tail_basis": False})),
+    ):
+        v3 = run_tracker(rows_run, cams, lambda f: None, frames, run_params)
+        assert all(r.tip_resolved is False for r in v3.rows if r.object_class == "pipette")
+        assert _lines_metrics(v3)["tail_basis"]["votes_cast"] == 0
+    # A hand box over the tip end in two views (T2 and T5, where the pipette is longest in
+    # pixels so the box holds one end only): no hand track is born (three fixed views are
+    # needed), the hand box alone would name the butt; the tail outranks it.
+    two_view_hand = [
+        _box_row(cams, v, f, b + np.array([0.0, 0.0, 1.0]), "right_hand", size=(120, 120))
+        for f in frames
+        for v in ("T2", "T5")
+    ]
+    held_params = TrackerParams(
+        observation_source="auto", held=True, line_classes=("blue_pipette", "8_channel_pipette")
+    )
+    with_box = run_tracker(rows + two_view_hand, cams, lambda f: None, frames, held_params)
+    blue_box = {r.frame_index: r for r in with_box.rows if r.observed_class == "blue_pipette"}
+    for f in frames[1:]:
+        assert blue_box[f].tip_basis == "tail", f
+        assert np.linalg.norm(np.array(blue_box[f].endpoints_cm[0]) - b) < 1.0, f
+    v3_box = run_tracker(
+        rows + two_view_hand,
+        cams,
+        lambda f: None,
+        frames,
+        TrackerParams(**{**held_params.__dict__, "line_tail_basis": False}),
+    )
+    blue_v3 = {r.frame_index: r for r in v3_box.rows if r.observed_class == "blue_pipette"}
+    assert any(r.tip_basis == "hand_box" for r in blue_v3.values())
+    assert all(
+        np.linalg.norm(np.array(r.endpoints_cm[0]) - a) < 1.0
+        for r in blue_v3.values()
+        if r.tip_basis == "hand_box"
+    )
+    # A hand track at the tip end (four views) is ranked above the tail and names the butt.
+    four_view_hand = [
+        _box_row(cams, v, f, b + np.array([0.0, 0.0, 1.0]), "right_hand", size=(220, 220))
+        for f in frames
+        for v in FIXED[:4]
+    ]
+    with_track = run_tracker(rows + four_view_hand, cams, lambda f: None, frames, held_params)
+    blue_track = {r.frame_index: r for r in with_track.rows if r.observed_class == "blue_pipette"}
+    for f in frames[2:]:
+        assert blue_track[f].tip_basis == "hand_track", f
+        assert np.linalg.norm(np.array(blue_track[f].endpoints_cm[0]) - a) < 1.0, f
+
+
+MODES_PRIOR = replace(
+    TWO_STATE_PRIOR,
+    modes={"blue_pipette": (22.0, 28.0), "red_pipette": (22.0, None)},
+)
+
+
+def test_s_tip_attached_reads_the_butt_to_tip_length_against_the_two_modes(rig) -> None:
+    """Sep 29 v4, the tipseg finding as the rule. A blue pipette whose masks cover its 6 cm
+    tip in T2, T4 and T5 for 30 frames (no `*_tip` box anywhere), then the bare body: the
+    visible length measures 28 cm, then 22, and `tip_attached` follows the median of the
+    last 15 measured fits with a 1 cm band around the 25 cm midpoint, on from the fifth
+    frame and off eight frames after the tip goes; `tip_rule_length_cm` is on the rows and
+    the tip class is the pipette's own. The v3 box rule never turns on without a box. A red
+    pipette, bare-only in the modes, measuring 26 cm is undecided, never attached; at 22 cm
+    it is bare. The band: a length inside it keeps the state either way."""
+    cams, _fpv = rig
+    rng = np.random.default_rng(71)
+    prior = MODES_PRIOR
+    bare, tip_len = prior.bare_for("blue_pipette"), prior.tip_for("blue_tip")
+    direction = _unit([1.0, 0.15, 0.0])
+    butt = np.array([-12.0, -8.0, -1.0])
+    body_end = butt + direction * bare
+    tip_end = body_end + direction * tip_len
+    frames = list(range(60))
+    rows = []
+    for f in frames:
+        end = tip_end if f < 30 else body_end
+        for v in ("T2", "T4", "T5"):
+            rows.append(_axis_row(cams, v, f, butt, end, "blue_pipette", rng=rng))
+    params = TrackerParams(observation_source="auto", line_classes=("blue_pipette",))
+    out = run_tracker(rows, cams, lambda f: None, frames, params, line_prior=prior)
+    assert out.metrics["per_class"]["pipette"]["tracks_born"] == 1
+    pipette = {r.frame_index: r for r in out.rows if r.object_class == "pipette"}
+    assert set(pipette) == set(frames)
+    assert all(pipette[f].tip_attached is None for f in range(4))
+    on = [f for f in frames if pipette[f].tip_attached is True]
+    off = [f for f in frames if pipette[f].tip_attached is False]
+    assert on and on[0] == 4 and off and 36 <= off[0] <= 39 and on[-1] == off[0] - 1
+    assert all(pipette[f].tip_attached is False for f in range(off[0], len(frames)))
+    for f in on:
+        assert pipette[f].tip_rule_length_cm == pytest.approx(bare + tip_len, abs=1.0), f
+        assert pipette[f].tip_class == "blue_tip" and pipette[f].tip_attached_views is None, f
+        assert _row_length(pipette[f]) == pytest.approx(bare + tip_len, abs=1.5), f
+    assert pipette[off[-1]].tip_rule_length_cm == pytest.approx(bare, abs=1.0)
+    assert pipette[off[-1]].tip_class is None
+    assert _row_length(pipette[off[-1]]) == pytest.approx(bare, abs=1.0)
+    tips = _lines_metrics(out)["tips"]
+    assert tips["line_frames_with_attached_tip"] == 0
+    assert tips["state_transitions"] == {"on": 1, "off": 1}
+    assert tips["length_rule"]["box_corroboration"] == {
+        "undecided_without_box": 4,
+        "on_without_box": len(on),
+        "off_without_box": len(off),
+    }
+    # v3: the tip boxes drove the state; without one it never turns on.
+    v3 = run_tracker(
+        rows,
+        cams,
+        lambda f: None,
+        frames,
+        TrackerParams(**{**params.__dict__, "line_tip_length_rule": False}),
+        line_prior=prior,
+    )
+    assert all(r.tip_attached is not True for r in v3.rows if r.object_class == "pipette")
+    # A bare-only class: long masks decide nothing, bare masks say bare.
+    r0, r1 = _segment([5.0, 6.0, -1.0], [1.0, 0.2, 0.0], 26.0)
+    long_rows = [
+        _axis_row(cams, v, f, r0, r1, "red_pipette", rng=rng) for f in frames for v in FIXED[:4]
+    ]
+    red = run_tracker(
+        long_rows,
+        cams,
+        lambda f: None,
+        frames,
+        TrackerParams(observation_source="auto", line_classes=("red_pipette",)),
+        line_prior=prior,
+    )
+    red_rows = [r for r in red.rows if r.object_class == "pipette"]
+    assert red_rows and all(r.tip_attached is None for r in red_rows)
+    assert _lines_metrics(red)["tips"]["length_rule"]["line_frames_over_bare_without_a_mode"] > 0
+    b0, b1 = _segment([5.0, 6.0, -1.0], [1.0, 0.2, 0.0], 22.0)
+    bare_rows = [
+        _axis_row(cams, v, f, b0, b1, "red_pipette", rng=rng) for f in frames for v in FIXED[:4]
+    ]
+    red_bare = run_tracker(
+        bare_rows,
+        cams,
+        lambda f: None,
+        frames,
+        TrackerParams(observation_source="auto", line_classes=("red_pipette",)),
+        line_prior=prior,
+    )
+    assert any(r.tip_attached is False for r in red_bare.rows if r.object_class == "pipette")
+    assert all(r.tip_attached is not True for r in red_bare.rows if r.object_class == "pipette")
+    # The band: 22 (off), 27 (on), 24.5 (inside the band: stays on), 23 (off).
+    band_frames = list(range(80))
+    band_rows = []
+    for f in band_frames:
+        length = 22.0 if f < 10 else 27.0 if f < 30 else 24.5 if f < 55 else 23.0
+        end = butt + direction * length
+        for v in ("T2", "T4", "T5"):
+            band_rows.append(_axis_row(cams, v, f, butt, end, "blue_pipette", rng=rng))
+    band = run_tracker(band_rows, cams, lambda f: None, band_frames, params, line_prior=prior)
+    states = {r.frame_index: r.tip_attached for r in band.rows if r.object_class == "pipette"}
+    assert states[9] is False and states[25] is True
+    assert all(states[f] is True for f in range(40, 55))  # 24.5 sits inside the band
+    assert states[79] is False and states[54] is True
+    assert _lines_metrics(band)["tips"]["state_transitions"] == {"on": 1, "off": 1}
+
+
+def _short_axis_row(cams, view, frame, a, b, cls, *, rng, short_cm):
+    """An axis row whose fitted axis stops `short_cm` before the end `b` (the band-limited
+    endpoint off a thin tip) while the terminal centroid (`body_end_px`) sits on the end."""
+    direction = _unit(b - a)
+    row = _axis_row(cams, view, frame, a, b - direction * short_cm, cls, rng=rng)
+    assert row.mask_axis_px is not None
+    ends = np.asarray(row.mask_axis_px)
+    pa, pb = cams[view].project(np.stack([a, b]))
+    a_end = int(np.argmin(np.linalg.norm(ends - pa, axis=1)))
+    body_ends = [None, None]
+    body_ends[a_end] = (float(pa[0]), float(pa[1]))
+    body_ends[1 - a_end] = (float(pb[0]), float(pb[1]))
+    return row.model_copy(update={"body_end_px": (body_ends[0], body_ends[1])})
+
+
+def test_t_the_terminal_centroid_is_the_end_observation_for_the_extent(rig) -> None:
+    """Sep 29 v4: a blue pipette whose fitted axis stops 4 cm short of the tip in every view
+    (the axis endpoint is the extreme within a band of the axis line, and a thin tip bends
+    out of it) while `body_end_px` sits on the tip. With the field the visible extent
+    reaches the tip (the length the tip rule reads); without it (the v3 rows) the extent is
+    4 cm short and the prior has to complete it."""
+    cams, _fpv = rig
+    rng = np.random.default_rng(73)
+    frames = list(range(20))
+    length = PRIOR.length_for("blue_pipette")
+    a, b = _segment([5.0, 2.0, -1.0], [1.0, 0.2, 0.0], length)
+    rows = [
+        _short_axis_row(cams, v, f, a, b, "blue_pipette", rng=rng, short_cm=4.0)
+        for f in frames
+        for v in FIXED
+    ]
+    params = TrackerParams(observation_source="auto", line_classes=("blue_pipette",))
+    out = run_tracker(rows, cams, lambda f: None, frames, params)
+    assert out.metrics["per_class"]["pipette"]["tracks_born"] == 1
+    visible = _lines_metrics(out)["length_cm"]["visible"]["median"]
+    assert visible == pytest.approx(length, abs=1.0)
+    ends = [r.endpoints_cm for r in out.rows if r.object_class == "pipette"][-1]
+    assert _endpoint_error(ends, a, b) < 1.0
+    plain = [r.model_copy(update={"body_end_px": None}) for r in rows]
+    v3 = run_tracker(plain, cams, lambda f: None, frames, params)
+    assert _lines_metrics(v3)["length_cm"]["visible"]["median"] == pytest.approx(
+        length - 4.0, abs=1.0
+    )
+    assert _lines_metrics(v3)["frames"]["extended_by_prior"] > 0
 
 
 def test_p_two_state_prior_loads_and_the_old_file_shape_still_does(tmp_path) -> None:

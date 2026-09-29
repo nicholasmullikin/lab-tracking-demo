@@ -208,6 +208,54 @@ def test_end_widths_name_the_wide_end_of_a_shaft_with_a_head():
     assert mask_axis_measurements(_blob(40)).end_widths_px is None
 
 
+def test_tip_side_is_the_end_with_the_longer_thin_tail_and_body_ends_sit_on_the_mask():
+    """Sep 29 v4 (the tipseg tail rule in the observation layer): a pipette-shaped mask, a
+    36 px wide grip with a 130 px thin shaft on one side and a 24 px thin plunger stem on
+    the other, names the shaft's end as `tip_side` whatever the axis order or angle; the
+    thinner end *band* alone would tie them. The terminal centroid at each end sits on the
+    mask's own end. A plain rectangle and a shaft with one head decide nothing or the
+    shaft's end respectively, and a compact blob has neither."""
+    from battle.finebio_observations import tip_side_from_tails
+
+    for angle in (0, 30, 90, -60):
+        u = np.array([np.cos(np.radians(angle)), np.sin(np.radians(angle))])
+        centre = np.array([300.0, 200.0])
+        grip = _rect(angle, 60, 36, centre=tuple(centre))
+        shaft = _rect(angle, 130, 12, centre=tuple(centre + 95.0 * u))
+        stem = _rect(angle, 24, 12, centre=tuple(centre - 42.0 * u))
+        axis = mask_axis_measurements(grip | shaft | stem)
+        assert axis.axis_px is not None and axis.tip_side is not None, angle
+        ends = np.asarray(axis.axis_px)
+        shaft_end = centre + 160.0 * u
+        assert axis.tip_side == int(np.argmin(np.linalg.norm(ends - shaft_end, axis=1))), angle
+        assert axis.tails_px is not None
+        assert axis.tails_px[axis.tip_side] > 3 * axis.tails_px[1 - axis.tip_side]
+        assert axis.body_ends_px is not None
+        for end in (0, 1):
+            assert np.hypot(*(np.asarray(axis.body_ends_px[end]) - ends[end])) < 4.0, (angle, end)
+        assert axis.provenance()["tails_px"] == list(axis.tails_px)
+    plain = mask_axis_measurements(_rect(30, 240, 24))
+    assert plain.tip_side is None and plain.body_ends_px is not None
+    # A body (100 x 56) with a thin shaft (140 x 16) on one side: the shaft's free end.
+    head = mask_axis_measurements(_rect(0, 140, 16, centre=(230.0, 200.0)) | _rect(0, 100, 56))
+    assert head.axis_px is not None and head.tip_side is not None
+    assert head.axis_px[head.tip_side][0] < 200.0
+    # A shaft that is most of the mask (240 x 16 with a 40 x 56 head): the body width is the
+    # shaft's, nothing is a tail, no decision.
+    mostly_shaft = mask_axis_measurements(
+        _rect(0, 240, 16) | _rect(0, 40, 56, centre=(400.0, 200.0))
+    )
+    assert mostly_shaft.tip_side is None and mostly_shaft.tails_px == (0.0, 0.0)
+    blob = mask_axis_measurements(_blob(40))
+    assert blob.tip_side is None and blob.body_ends_px is None and blob.tails_px is None
+    # The rule itself: the longer tail wins by more than the floor and at least 1.5x.
+    assert tip_side_from_tails((30.0, 4.0), 10.0) == 0
+    assert tip_side_from_tails((4.0, 30.0), 10.0) == 1
+    assert tip_side_from_tails((30.0, 22.0), 10.0) is None  # under 1.5x
+    assert tip_side_from_tails((14.0, 6.0), 10.0) is None  # under the floor
+    assert tip_side_from_tails((0.0, 0.0), 10.0) is None
+
+
 def test_round_blob_has_no_axis_but_an_elongation_and_a_width():
     axis = mask_axis_measurements(_blob(40))
     assert axis.axis_px is None and axis.residual_px is None

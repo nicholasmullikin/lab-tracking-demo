@@ -433,7 +433,10 @@ def tip_events(
     `lookback_frames` frames up to the flip is `tip_picked`; on -> off with the tip end within
     `margin_cm` of the trash volume within `lookback_frames` frames of the last frame that
     still attached a tip box (the hysteresis turns the flag off later) is `tip_ejected`. Flips
-    that met neither volume are counted as such, with the nearest volume, and not emitted."""
+    that met neither volume are counted as such, with the nearest volume, and not emitted.
+    Sep 29 v4: the state comes from the 3D length and a box may be long gone or never have
+    attached, so the eject window is centred on the last attached box only when that box
+    lies within `lookback_frames` of the flip, else on the flip itself."""
     by_track: dict[str, list[Track3D]] = defaultdict(list)
     for r in rows:
         if r.tip_attached is not None or r.tip_attached_views:
@@ -464,7 +467,12 @@ def tip_events(
                 last_attached = next(
                     (r for r in reversed(trows[: i + 1]) if r.tip_attached_views), None
                 )
-                centre = last_attached.frame_index if last_attached is not None else row.frame_index
+                centre = row.frame_index
+                if (
+                    last_attached is not None
+                    and row.frame_index - last_attached.frame_index <= lookback_frames
+                ):
+                    centre = last_attached.frame_index
                 window = [
                     r
                     for r in trows

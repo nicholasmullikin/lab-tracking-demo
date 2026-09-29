@@ -24,6 +24,11 @@ and raw frame indices.  Two tools produce the evidence in their own formats:
   axis (two endpoints in pixels, elongation, width, skeleton residual) beside the centroid,
   so the pipettes can be tracked as 3D lines; the old fields are computed by the same code
   as before and a compact mask simply carries no axis.
+  Sep 29 (v4, from `finebio_tipseg`): an elongated mask also carries ``tip_side``, the axis
+  end with the longer thin tail (:func:`tip_side_from_tails`; None when the tails do not
+  differ enough), and ``body_end_px``, the terminal centroid at each end
+  (:func:`terminal_centroids`: the mean of the mask's last pixels along the axis, which sits
+  on a thin tip where the fitted axis endpoint can be 30 px off it sideways).
 
 The fpv observes only with a valid shipped pose: :func:`fpv_pose_validity` (from the trial's
 pose file) or :func:`pose_validity_from_fixture` (from ``fpv_poses.json``) give the lookup,
@@ -34,6 +39,7 @@ to measure them and are never copied (FineBio, non-commercial research).
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -79,6 +85,25 @@ AXIS_WIDTH_MIN_BIN_PIXELS = 3
 # The fraction of the axis length at each end over which the end width is measured.
 AXIS_END_BAND = 0.2
 AXIS_END_MIN_PIXELS = 6
+# Sep 29 (v4): the long-thin-tail tip side, moved here from `finebio_tipseg` so every row
+# carries it. The across-axis width is read every TAIL_STEP_PX along the axis; walked in from
+# each end, the bins under TAIL_FRACTION of the body width (the 75th percentile of the
+# profile) are that end's tail, ending at the first two consecutive bins at or over it. The
+# end with the longer tail is the tip when the tails differ by more than
+# TAIL_MIN_DIFFERENCE_WIDTHS body widths (tipseg asked for 1 cm at the pipette's depth; the
+# observation layer has no depth, and on trial 1's rows 1 cm is 0.28 body widths at the
+# median) and the longer is at least TAIL_SIDE_RATIO times the shorter. The shaft and cone
+# make a long thin run and the plunger stem a short one, so this picks the tip of a pipette
+# resting grip-up where the thinner end band alone picks the plunger. Validated by eye on
+# the single-channel pipettes; the 8-channel's manifold is its wide end and the tracker keeps
+# the class rule for it. The terminal centroid is the mean of the mask pixels within
+# TERMINAL_DEPTH_PX of the far extreme along the axis at each end.
+TAIL_STEP_PX = 2.0
+TAIL_FRACTION = 0.4
+TAIL_MIN_DIFFERENCE_WIDTHS = 0.3
+TAIL_SIDE_RATIO = 1.5
+TAIL_MIN_BIN_PIXELS = 2
+TERMINAL_DEPTH_PX = 3.0
 PoseValidity = Callable[[int], bool]
 
 
@@ -263,11 +288,20 @@ class MaskAxis:
     # `AXIS_END_BAND` of the axis length at each end, in the order of `axis_px`; None on a
     # compact mask or when a band holds too few pixels.
     end_widths_px: tuple[float, float] | None = None
+    # Sep 29 (v4): the axis end (index into `axis_px`) with the longer thin tail, None when
+    # the tails do not differ enough (`tip_side_from_tails`); the terminal centroid at each
+    # end, in the order of `axis_px` (`terminal_centroids`); and the tail lengths behind the
+    # decision (provenance only).
+    tip_side: int | None = None
+    body_ends_px: tuple[Vec2, Vec2] | None = None
+    tails_px: tuple[float, float] | None = None
 
     def provenance(self) -> dict[str, Any]:
         out: dict[str, Any] = {"axis_method": self.method}
         if self.reason is not None:
             out["axis_reason"] = self.reason
+        if self.tails_px is not None:
+            out["tails_px"] = list(self.tails_px)
         return out
 
 
@@ -437,9 +471,120 @@ def mask_axis_measurements(
     width = _width_along_axis(along, across)
     ends = _axis_endpoints(sample, centre, direction, band_px=max(0.75 * width, 1.0))
     end_widths = _end_widths(centre, direction, ends, along, across)
+    # The tail rule and the terminal centroids read every pixel: a thin tip is few pixels.
+    tip_side: int | None = None
+    tails: tuple[float, float] | None = None
+    profile = width_profile_along_axis(points, ends)
+    if profile is not None:
+        widths, step = profile
+        body_width = float(np.percentile(widths, 75))
+        tails = tail_lengths_px(widths, step)
+        tip_side = tip_side_from_tails(tails, TAIL_MIN_DIFFERENCE_WIDTHS * body_width)
     return MaskAxis(
-        ends, round(elongation, 3), round(width, 1), residual, method, end_widths_px=end_widths
+        ends,
+        round(elongation, 3),
+        round(width, 1),
+        residual,
+        method,
+        end_widths_px=end_widths,
+        tip_side=tip_side,
+        body_ends_px=terminal_centroids(points, ends),
+        tails_px=None if tails is None else (round(tails[0], 1), round(tails[1], 1)),
     )
+
+
+def width_profile_along_axis(
+    points: np.ndarray,
+    ends: Sequence[Sequence[float]],
+    step: float = TAIL_STEP_PX,
+    *,
+    min_bin_pixels: int = TAIL_MIN_BIN_PIXELS,
+) -> tuple[np.ndarray, float] | None:
+    """The across-axis extent (max - min + 1 px) of the pixel-centre `points` in bins of
+    `step` px along the axis from `ends[0]` to `ends[1]`, bins with fewer than
+    `min_bin_pixels` dropped: ``(widths, step)``, or None for an axis shorter than a bin
+    (`finebio_tipseg.width_profile`, the same binning)."""
+    ends_arr = np.asarray(ends, dtype=np.float64).reshape(2, 2)
+    segment = ends_arr[1] - ends_arr[0]
+    length = float(np.linalg.norm(segment))
+    if points.size == 0 or length < step:
+        return None
+    unit = segment / length
+    normal = np.array([-unit[1], unit[0]])
+    rel = np.asarray(points, dtype=np.float64) - ends_arr[0]
+    along, across = rel @ unit, rel @ normal
+    count = max(1, int(math.ceil(length / step)))
+    index = np.clip(np.floor(along / step).astype(int), 0, count - 1)
+    low = np.full(count, np.inf)
+    high = np.full(count, -np.inf)
+    filled = np.zeros(count, dtype=np.int64)
+    np.minimum.at(low, index, across)
+    np.maximum.at(high, index, across)
+    np.add.at(filled, index, 1)
+    keep = filled >= min_bin_pixels
+    if not keep.any():
+        return None
+    return high[keep] - low[keep] + 1.0, step
+
+
+def tail_length_px(widths: np.ndarray, step: float, side: int, *, fraction: float) -> float:
+    """The thin run from the profile's end `side` inward: bins under `fraction` of the body
+    width (the 75th percentile of the profile) until the first two consecutive bins at or
+    over it, in px (`finebio_tipseg.junction_from_profile`, the tail alone)."""
+    body = float(np.percentile(widths, 75)) if widths.size else 0.0
+    ordered = widths[::-1] if side == 1 else widths
+    limit = fraction * body
+    tail = 0
+    for i, width in enumerate(ordered):
+        if width >= limit and (i + 1 >= len(ordered) or ordered[i + 1] >= limit):
+            break
+        tail = i + 1
+    return tail * step
+
+
+def tail_lengths_px(
+    widths: np.ndarray, step: float, *, fraction: float = TAIL_FRACTION
+) -> tuple[float, float]:
+    """(tail from end 0, tail from end 1) of a width profile, px."""
+    return (
+        tail_length_px(widths, step, 0, fraction=fraction),
+        tail_length_px(widths, step, 1, fraction=fraction),
+    )
+
+
+def tip_side_from_tails(
+    tails: Sequence[float], min_difference_px: float, *, ratio: float = TAIL_SIDE_RATIO
+) -> int | None:
+    """The long-thin-tail rule (Sep 29, `finebio_tipseg`): the end whose thin tail is longer
+    by more than `min_difference_px` and at least `ratio` times the other's is the tip (the
+    shaft and cone make a long thin run, the plunger stem a short one); None when the tails
+    do not differ enough, so a caller may fall back to a hand box or the lower end."""
+    t0, t1 = float(tails[0]), float(tails[1])
+    longer, shorter = max(t0, t1), min(t0, t1)
+    if longer > 0 and longer - shorter > min_difference_px and longer >= ratio * shorter:
+        return 0 if t0 > t1 else 1
+    return None
+
+
+def terminal_centroids(
+    points: np.ndarray, ends: Sequence[Sequence[float]], depth_px: float = TERMINAL_DEPTH_PX
+) -> tuple[Vec2, Vec2] | None:
+    """The centroid of the pixel-centre `points` within `depth_px` of the far extreme along
+    the axis at each end, in the order of `ends`: the mask's own end on a thin tip, where the
+    fitted axis endpoint (the extreme within a band of the axis line) can sit off it sideways
+    (`finebio_tipseg.terminal_centroid`, both ends). None for a degenerate axis."""
+    ends_arr = np.asarray(ends, dtype=np.float64).reshape(2, 2)
+    segment = ends_arr[1] - ends_arr[0]
+    norm = float(np.linalg.norm(segment))
+    if points.size == 0 or norm < 1e-9:
+        return None
+    unit = segment / norm
+    along = (np.asarray(points, dtype=np.float64) - ends_arr[0]) @ unit
+    out = []
+    for keep in (along <= along.min() + depth_px, along >= along.max() - depth_px):
+        centroid = points[keep].mean(axis=0)
+        out.append((round(float(centroid[0]), 1), round(float(centroid[1]), 1)))
+    return out[0], out[1]
 
 
 def _end_widths(
@@ -626,6 +771,8 @@ def worker_to_observations(
                     mask_width_px=axis.width_px,
                     mask_axis_residual_px=axis.residual_px,
                     mask_end_widths_px=axis.end_widths_px,
+                    tip_side=axis.tip_side,
+                    body_end_px=axis.body_ends_px,
                     sam3_object_score=(
                         None if obj.object_score is None else round(float(obj.object_score), 4)
                     ),

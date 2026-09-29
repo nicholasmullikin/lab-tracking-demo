@@ -85,14 +85,28 @@ class AxisObs:
     centroid_px: np.ndarray
     elongation: float | None = None
     weight: float = 1.0
+    # Sep 29 v4: the end observations for the extent along the line, in the order of
+    # `endpoints_px` (the mask's terminal centroids, which sit on a thin tip where the fitted
+    # axis endpoint can be off it sideways); None means the axis endpoints. The plane and the
+    # residuals always read `endpoints_px`.
+    ends_px: np.ndarray | None = None
 
     def __post_init__(self) -> None:
         if self.endpoints_px is not None:
             ends = np.asarray(self.endpoints_px, dtype=np.float64).reshape(2, 2)
             object.__setattr__(self, "endpoints_px", ends)
+        if self.ends_px is not None:
+            object.__setattr__(
+                self, "ends_px", np.asarray(self.ends_px, dtype=np.float64).reshape(2, 2)
+            )
         object.__setattr__(
             self, "centroid_px", np.asarray(self.centroid_px, dtype=np.float64).reshape(2)
         )
+
+    @property
+    def extent_px(self) -> np.ndarray | None:
+        """The pixels whose rays bound this view's extent on the line."""
+        return self.endpoints_px if self.ends_px is None else self.ends_px
 
     @property
     def axis_midpoint_px(self) -> np.ndarray:
@@ -504,10 +518,11 @@ def line_endpoints(
     merged_factor: float = MERGED_FACTOR,
     clamp: bool = False,
 ) -> Extent | None:
-    """Endpoints on `line` from the elongated views: each axis endpoint's ray gives the closest
-    point on the line, so each view spans an interval of the line parameter; the visible
-    extent is the min/max over views (up to three views) or the 10th/90th percentile of the
-    low and high ends (more). With a `length_prior_cm`: a shorter visible extent is completed
+    """Endpoints on `line` from the elongated views: each end observation's ray (the axis
+    endpoint, or the terminal centroid when the view carries one, `AxisObs.extent_px`) gives
+    the closest point on the line, so each view spans an interval of the line parameter; the
+    visible extent is the min/max over views (up to three views) or the 10th/90th percentile
+    of the low and high ends (more). With a `length_prior_cm`: a shorter visible extent is completed
     to the prior from the end more views reach (both ends by half when tied) and flagged
     `extended` when more than `end_tolerance_cm` was missing; a visible extent over
     `merged_factor` times the prior is flagged `merged` and left as seen, or, with `clamp`,
@@ -518,8 +533,9 @@ def line_endpoints(
     for cam, obs in cams_and_obs:
         if not is_elongated(obs, elongation_threshold):
             continue
-        assert obs.endpoints_px is not None
-        params = [line.parameter_closest_to_ray(*ray_from_point(cam, e)) for e in obs.endpoints_px]
+        extent_px = obs.extent_px
+        assert extent_px is not None
+        params = [line.parameter_closest_to_ray(*ray_from_point(cam, e)) for e in extent_px]
         per_view[obs.view] = (min(params), max(params))
     if not per_view:
         return None

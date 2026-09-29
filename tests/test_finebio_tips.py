@@ -10,6 +10,7 @@ import threading
 import tomllib
 import urllib.error
 import urllib.request
+from collections import Counter
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -136,16 +137,31 @@ def fake_frames(width: int, height: int):
     return frames
 
 
-def make_workspace(tmp_path: Path, *, width: int, height: int, frames: int = 3) -> Path:
+def make_workspace(
+    tmp_path: Path,
+    *,
+    width: int,
+    height: int,
+    frames: int = 3,
+    tail_side: bool = False,
+    **selection: Any,
+) -> Path:
     root = tmp_path / "tips"
     rows = synthetic_rows(width, height)
+    if tail_side:
+        # Sep 29: the rows' long-thin-tail side on the yellow pipette (its tip is the lower
+        # axis end, index 1) with the terminal centroids on the axis ends.
+        for row in rows:
+            if row.get("source") == "sam3_decode" and row["object_class"] == "yellow_pipette":
+                row["tip_side"] = 1
+                row["body_end_px"] = row["mask_axis_px"]
     observations = tmp_path / "observations.jsonl"
     observations.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
     clip = synthetic_clip(width, height)
     clip_path = tmp_path / "clip.json"
     fs_common.write_json(clip_path, clip)
     tables = ft.build_tables(rows, window=(0, 300), fixed_views=clip["fixed_views"])
-    params = ft.SelectionParams(frames=frames, spacing_frames=5)
+    params = ft.SelectionParams(frames=frames, spacing_frames=5, **selection)
     ft.build_workspace(
         clip=clip,
         clip_path=clip_path,
@@ -570,6 +586,129 @@ def test_invalid_changes_are_refused_and_nothing_is_written(served) -> None:
     assert sha256(root / ft.RECORD_NAME) == before
     # Failed validations leave no history behind either.
     assert app.record.history == []
+
+
+def test_no_marker_workspace_shows_the_whole_pipette_and_the_trackers_guess(tmp_path: Path) -> None:
+    """Sep 29 (the re-click): `--no-marker --single-channel-only --event-frames` on the
+    synthetic bench at full size. No cell carries a suggested tip; the zoom crop holds the
+    whole mask box; the rows' tail side is kept apart as `guess_tip_px`; the frames near the
+    event carry the event class as `event` frames and the rest split over the states named;
+    the README gives the new instructions. The served page draws no suggested marker, an
+    arrow labelled "tracker's guess", the `t` / `b` buttons and keys; the label is saved on
+    every view of the pipette, undone in one step, and refused when it is not t / b."""
+    root = make_workspace(
+        tmp_path,
+        width=1920,
+        height=1080,
+        frames=6,
+        tail_side=True,
+        marker=False,
+        single_channel_only=True,
+        event_frames=(150,),
+        event_class="yellow_pipette",
+        event_quota=2,
+        event_radius=30,
+        states=("held", "rest"),
+    )
+    workspace = ft.load_workspace(root)
+    selection = workspace["selection"]
+    assert selection["marker"] is False and selection["single_channel_only"] is True
+    assert selection["classes"] == list(ft.SINGLE_CHANNEL_CLASSES)
+    assert selection["event_frames"] == [150] and selection["event_pool_frames"] > 0
+    assert workspace["tip_label_keys"] == {"t": True, "b": False}
+    states = Counter(f["state"] for f in workspace["frames"])
+    assert states["event"] == 2 and "low" not in states and states["rest"] >= 1
+    for entry in workspace["frames"]:
+        if entry["state"] == "event":
+            assert abs(entry["raw_frame"] - 150) <= 30
+            assert "yellow_pipette" in [s["class"] for s in entry["slots"]]
+            assert "150" in entry["reason"]
+    for cell in workspace["cells"]:
+        assert cell["suggested_tip_px"] is None and cell["tip_rule"] is None
+        zoom = cell["crops"]["zoom"]
+        x0, y0 = zoom["offset"]
+        w, h = zoom["source_size"]
+        bx0, by0, bx1, by1 = cell["mask_bbox_px"]
+        assert x0 <= bx0 and y0 <= by0 and x0 + w >= bx1 and y0 + h >= by1, cell["view"]
+        assert (root / zoom["uri"]).is_file()
+        if cell["class"] == "yellow_pipette":
+            assert cell["tip_side"] == 1 and cell["guess_rule"] == "tail"
+            assert cell["guess_tip_px"] == [round(v, 1) for v in cell["axis_px"][1]]
+        else:
+            assert cell["guess_tip_px"] is None and cell["guess_rule"] is None
+    template = json.loads((root / ft.TEMPLATE_NAME).read_text())
+    assert all(c["tip_attached_label"] is None for c in template["cells"])
+    readme = (root / "README.md").read_text()
+    assert "away from the coloured plunger button" in readme
+    assert "tracker's guess" in readme and "press `t`" in readme and "`b`" in readme
+    assert "dashed marker" not in readme and "15 minutes" in readme
+    # A marker workspace still reads as before.
+    (tmp_path / "plain").mkdir()
+    plain = ft.load_workspace(make_workspace(tmp_path / "plain", width=96, height=64))
+    assert plain["selection"]["marker"] is True
+    assert all(c["suggested_tip_px"] is not None for c in plain["cells"])
+
+    app = ft.TipsApp.open(workspace_dir=root, author="tester")
+    server, base = serve_app(app)
+    try:
+        raw = next(f["raw_frame"] for f in workspace["frames"] if f["state"] == "event")
+        page = get(base, f"/frame/{raw}")[1].decode()
+        assert 'class="marker suggested" style="display:none"' in page
+        assert "suggested" not in re.sub(r'class="marker suggested"', "", page).split("<figure")[1]
+        assert "tracker's guess" in page and 'class="guess"' in page
+        assert 'data-tip-label="true"' in page and "<kbd>t</kbd>" in page and "<kbd>b</kbd>" in page
+        assert (
+            "case 't': tipLabel(cell, true);" in page and "case 'b': tipLabel(cell, false);" in page
+        )
+        assert "undecided" in page
+        index = get(base, "/")[1].decode()
+        assert "away from the coloured plunger button" in index and "tracker's guess" in index
+        yellow = [c for c in app.page_cells[raw] if c["class"] == "yellow_pipette"]
+        slot = yellow[0]["slot"]
+        body = post_json(
+            base, "/api/tip-label", {"raw_frame": raw, "slot": slot, "tip_attached_label": "t"}
+        )
+        assert body["tip_attached_label"] is True and len(body["cells"]) == len(yellow) >= 2
+        assert all(p["cell"]["tip_attached_label"] is True for p in body["cells"])
+        assert body["progress"]["tip_labelled"] == len(yellow)
+        record = json.loads((root / ft.RECORD_NAME).read_text())
+        labelled = [c for c in record["cells"] if c["tip_attached_label"] is True]
+        assert len(labelled) == len(yellow) and {c["slot"] for c in labelled} == {slot}
+        page = get(base, f"/frame/{raw}")[1].decode()
+        assert 'data-tip-label="true" class="active"' in page
+        body = post_json(
+            base, "/api/tip-label", {"raw_frame": raw, "slot": slot, "tip_attached_label": False}
+        )
+        assert body["tip_attached_label"] is False
+        body = post_json(base, "/api/undo", {})
+        assert len(body["cells"]) == len(yellow)
+        assert all(p["cell"]["tip_attached_label"] is True for p in body["cells"])
+        code, error = post_error(
+            base, "/api/tip-label", {"raw_frame": raw, "slot": slot, "tip_attached_label": "maybe"}
+        )
+        assert code == 400 and "tip_attached_label" in error
+        body = post_json(
+            base, "/api/tip-label", {"raw_frame": raw, "slot": slot, "tip_attached_label": None}
+        )
+        assert body["tip_attached_label"] is None
+        # A click still maps through the whole-pipette crop's geometry.
+        cell = yellow[0]
+        body = post_json(
+            base,
+            "/api/cell",
+            {
+                "raw_frame": raw,
+                "view": cell["view"],
+                "slot": slot,
+                "click": {"crop": "zoom", "x": 12, "y": 30},
+            },
+        )
+        expected = ft.crop_to_full((12, 30), cell["crops"]["zoom"])
+        assert body["cell"]["tip_px"] == [round(expected[0], 1), round(expected[1], 1)]
+        assert body["suggested"]["zoom"] is None
+    finally:
+        server.shutdown()
+        server.server_close()
 
 
 def test_existing_record_is_reused_and_completed(tmp_path: Path) -> None:
@@ -1282,6 +1421,77 @@ def test_score_and_export_on_a_served_workspace(tmp_path: Path) -> None:
             repository_root=tmp_path,
         )
 
+    # Sep 29: the t / b label against the tracker's tip_attached, and the tip error on the
+    # labelled anchors alone. Nothing labelled yet: no accuracy, no labelled error.
+    assert arm["tip_label"]["labelled_anchors_with_a_track"] == 0
+    assert arm["tip_label"]["accuracy"] is None and arm["by_tip_label"]["labelled"]["n"] == 0
+    tipped = _write_tracks(
+        tmp_path / "tracks_tipped.jsonl",
+        [{**json.loads(tracks.read_text().splitlines()[0]), "tip_attached": True}],
+    )
+    app.record.set_tip_label(raw, 1, "t")
+    app.record.set_tip_label(raw, 0, "b")  # the hidden blue: labelled but no anchor
+    scored = ft.score_workspace(
+        workspace_dir=root,
+        record_path=root / ft.RECORD_NAME,
+        tracks={"tipped": tipped, "plain": tracks},
+        cameras_at=lambda _frame: cams,
+        repository_root=tmp_path,
+    )
+    assert scored["record_summary"]["with_tip_label"] == len(yellow) + len(blue)
+    assert scored["anchors"]["by_tip_label"] == {"t": 1}
+    assert scored["anchors"]["pipette_frames_labelled"] == 2
+    by_name = {a["tracks"]: a for a in scored["arms"]}
+    label = by_name["tipped"]["tip_label"]
+    assert label["agree"] == 1 and label["differ"] == 0 and label["accuracy"] == 1.0
+    assert label["by_label"]["t"] == {"agree": 1, "differ": 0, "tracker_undecided": 0}
+    assert by_name["tipped"]["by_tip_label"]["labelled"]["n"] == 1
+    assert by_name["tipped"]["by_tip_label"]["t"]["median_cm"] == pytest.approx(0.5, abs=0.05)
+    assert by_name["tipped"]["by_tip_label"]["b"]["n"] == 0
+    # The plain tracks carry no tip_attached: the tracker is undecided there.
+    assert by_name["plain"]["tip_label"]["tracker_undecided"] == 1
+    assert by_name["plain"]["tip_label"]["accuracy"] is None
+    cell = next(c for c in by_name["tipped"]["cells"] if c["class"] == "yellow_pipette")
+    assert cell["tip_attached_label"] is True and cell["tip_label_agreement"] == "agree"
+    markdown = ft.scoreboard_markdown(scored)
+    assert "my t / b label against the tracker's tip_attached" in markdown
+    assert "| tipped | 1 | 1 | 0 | 0 | 1.000 |" in markdown
+    # Relabelled bare: the tracker's True now differs; an inconsistent label counts nowhere.
+    app.record.set_tip_label(raw, 1, "b")
+    scored = ft.score_workspace(
+        workspace_dir=root,
+        record_path=root / ft.RECORD_NAME,
+        tracks={"tipped": tipped},
+        cameras_at=lambda _frame: cams,
+        repository_root=tmp_path,
+    )
+    assert scored["arms"][0]["tip_label"]["differ"] == 1
+    assert scored["arms"][0]["tip_label"]["accuracy"] == 0.0
+    assert scored["arms"][0]["by_tip_label"]["b"]["n"] == 1
+    app.record.update(ft.cell_key(yellow[0]), {"note": "x"})  # keep the lock path exercised
+    record = json.loads((root / ft.RECORD_NAME).read_text())
+    for c in record["cells"]:
+        if c["raw_frame"] == raw and c["slot"] == 1 and c["view"] == yellow[0]["view"]:
+            c["tip_attached_label"] = True  # a hand edit that disagrees with the other views
+    fs_common.write_json(root / ft.RECORD_NAME, record)
+    scored = ft.score_workspace(
+        workspace_dir=root,
+        record_path=root / ft.RECORD_NAME,
+        tracks={"tipped": tipped},
+        cameras_at=lambda _frame: cams,
+        repository_root=tmp_path,
+    )
+    assert scored["anchors"]["pipette_frames_labelled_inconsistently"] == 1
+    assert scored["arms"][0]["tip_label"]["labelled_anchors_with_a_track"] == 0
+    doc = ft.export_record(
+        workspace_dir=root,
+        record_path=root / ft.RECORD_NAME,
+        output=output,
+        repository_root=tmp_path,
+    )
+    assert doc["counts"]["with_tip_label"] == len(yellow) + len(blue)
+    assert {c["tip_attached_label"] for c in doc["clicks"] if c["slot"] == 0} == {False}
+
 
 # --------------------------------------------------------------------------------------------
 # CLI
@@ -1296,6 +1506,36 @@ def test_cli_registration_defaults_and_bind_rules() -> None:
     )
     assert prep.frames == 30 and prep.spacing == 20 and prep.tracks is None
     assert prep.pipettes == ft.DEFAULT_PIPETTES_CONFIG
+    assert prep.no_marker is False and prep.single_channel_only is False
+    assert prep.event_frames is None and prep.event_quota == 10 and prep.states is None
+    reclick = parser.parse_args(
+        [
+            "prepare",
+            "--observations",
+            "obs",
+            "--clip-config",
+            "clip.json",
+            "--output",
+            "out",
+            "--no-marker",
+            "--single-channel-only",
+            "--event-frames",
+            "2180,2330",
+            "--event-class",
+            "blue_pipette",
+            "--event-quota",
+            "10",
+            "--states",
+            "held,rest",
+        ]
+    )
+    assert reclick.no_marker and reclick.single_channel_only
+    assert reclick.event_frames == "2180,2330" and reclick.event_class == "blue_pipette"
+    assert reclick.event_radius == ft.DEFAULT_EVENT_RADIUS_FRAMES and reclick.states == "held,rest"
+    assert ft.validate_tip_label("t") is True and ft.validate_tip_label("b") is False
+    assert ft.validate_tip_label(None) is None and ft.validate_tip_label(False) is False
+    with pytest.raises(ValueError):
+        ft.validate_tip_label("maybe")
     serve = parser.parse_args(["serve", "--workspace", "ws"])
     assert serve.port == 8767 and serve.bind == "127.0.0.1" and serve.tailscale is False
     with pytest.raises(SystemExit):

@@ -183,6 +183,34 @@
   "red_tip": 5.65,
   "yellow_tip": 6.13
  },
+ "length_modes_cm": {
+  "blue_pipette": {
+   "bare": 22.29,
+   "with_tip": 29.54,
+   "frames": [43, 31],
+   "source": "battle-finebio-tipseg score on trial 1: the label-free two-means split of the 3D butt-to-end length of the fused tip end over 74 triangulated frames (runs/finebio-tipseg-P03_03_01-20260929/scoreboard.json, two_state)"
+  },
+  "yellow_pipette": {
+   "bare": 21.72,
+   "with_tip": 28.9,
+   "frames": [260, 77],
+   "source": "bare: tipseg on trial 1 (the yellow pipette rests bare the whole window, 265 frames); with_tip: battle-finebio-stand tips on trial 2, the median extended length over the 77 frames with a yellow_tip box attached in >= 2 views (runs/finebio-lines-P20_03_01-20260928/stand-tips/tip_lengths.json), a detector-box length and not a label-free mode"
+  },
+  "red_pipette": {
+   "bare": 24.49,
+   "with_tip": null,
+   "frames": [325, 4],
+   "source": "tipseg on trial 1: 346 frames, four over the prior by 2 cm (26.8 cm), not a mode; the red_tip length in tip_length_cm is assumed, so no with-tip mode"
+  },
+  "8_channel_pipette": {
+   "bare": 22.38,
+   "with_tip": null,
+   "frames": [184, 2],
+   "source": "tipseg on trial 1: 186 frames, two at 35.7 cm (merged masks), not a mode; the 8_channel_tip length is assumed, so no with-tip mode"
+  },
+  "method": "the tracker's tip_attached (v4) reads the median visible butt-to-tip length of a track's last measured line fits against these modes: on over the midpoint by 1 cm, off under it by 1 cm; a class whose with_tip is null is never called attached. The completion prior still reads bare_length_cm and tip_length_cm.",
+  "claim_boundary": "The blue pipette's modes are a two-means split of one method's triangulated ends on 74 frames of one trial, with the bare cluster inflated by hand-truncated masks and the with-tip cluster by glove merges. The yellow with-tip mode is a detector-box length from the other trial. Nothing is a physical measurement."
+ },
  "two_state_provenance": {
   "method": "battle-finebio-stand tips per trial (the rest measurement split by whether a *_tip detector box attached to the body axis in >= 2 fixed views; the with-tip length re-triangulated from the axes extended to the tip boxes), then battle-finebio-stand tips-config",
   "bare_basis": {

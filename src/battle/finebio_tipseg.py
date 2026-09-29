@@ -47,7 +47,12 @@ import numpy as np
 from . import fs_common
 from .contact_sheet import render_grid
 from .finebio_cameras import Camera
-from .finebio_observations import filter_mask_components, read_mask
+from .finebio_observations import (
+    filter_mask_components,
+    read_mask,
+    terminal_centroids,
+    tip_side_from_tails,
+)
 from .finebio_slice import triangulate_pixels
 from .finebio_tips import (
     HAND_CLASSES,
@@ -273,18 +278,13 @@ def terminal_centroid(
     mask: np.ndarray, axis: Sequence[Sequence[float]], side: int, depth_px: float = 3.0
 ) -> list[float] | None:
     """The centroid of the mask pixels within `depth_px` of the far extreme along the axis
-    on `side`: the body end on the tip itself rather than on the fitted axis line."""
-    ends = np.asarray(axis, dtype=np.float64).reshape(2, 2)
-    unit = ends[side] - ends[1 - side]
-    norm = float(np.linalg.norm(unit))
+    on `side`: the body end on the tip itself rather than on the fitted axis line (v4: the
+    observation layer's `terminal_centroids`, one end of it)."""
     ys, xs = np.nonzero(mask)
-    if xs.size == 0 or norm < 1e-9:
+    if xs.size == 0:
         return None
-    unit /= norm
-    points = np.column_stack([xs + 0.5, ys + 0.5])
-    along = (points - ends[1 - side]) @ unit
-    keep = along >= along.max() - depth_px
-    return _pt(points[keep].mean(axis=0))
+    both = terminal_centroids(np.column_stack([xs + 0.5, ys + 0.5]), axis, depth_px)
+    return None if both is None else list(both[side])
 
 
 def _body_end_estimate(
@@ -569,14 +569,15 @@ def choose_tip_side(
     fraction of the body width, walked in from each end) when the tails differ by more than
     1 cm and one is at least 1.5x the other: the shaft and cone make a long thin run, the
     plunger stem a short one, so the thinner end *band* alone picks the plunger when the
-    pipette rests grip-up (`tail`). Else the end farther from the nearest hand box (`hand`),
-    else the lower end in the image (`lower`)."""
+    pipette rests grip-up (`tail`; v4: the rule itself lives in
+    `finebio_observations.tip_side_from_tails` and every row carries it). Else the end
+    farther from the nearest hand box (`hand`), else the lower end in the image (`lower`)."""
     ends = np.asarray(row.axis, dtype=np.float64)
     if profile is not None and profile.body_width > 0:
         tails = [junction_from_profile(profile, side, min_tail_px=0.0).tail_px for side in (0, 1)]
-        longer, shorter = max(tails), min(tails)
-        if longer > 0 and longer - shorter > px_per_cm and longer >= TAIL_SIDE_RATIO * shorter:
-            return (0 if tails[0] > tails[1] else 1), "tail"
+        side = tip_side_from_tails(tails, px_per_cm, ratio=TAIL_SIDE_RATIO)
+        if side is not None:
+            return side, "tail"
     if hands:
         boxes = [tuple(float(v) for v in h["box_xyxy_px"]) for h in hands]
         far = [min(point_box_distance(tuple(e), b) for b in boxes) for e in ends]

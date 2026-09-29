@@ -55,6 +55,16 @@ under ``runs/`` and never enter the repository.
 Keys on a frame page: click sets the tip (and moves on), ``h`` hidden, ``x`` clear, ``u``
 undo, ``j``/``k`` next/previous cell, ``]``/``[`` next/previous frame, ``1``-``4`` the
 plunger colour seen (blue, yellow, red, 8-channel), ``0`` no identity, ``o`` whole frames.
+
+Sep 29 (the re-click, after `finebio_tipseg` found half the first clicks on the plunger):
+``prepare --no-marker`` draws no suggested marker (the crop shows the whole pipette and a
+small arrow at the crop's edge, labelled "tracker's guess", points at the end the rows'
+long-thin-tail rule names), ``--single-channel-only`` leaves the 8-channel out, and
+``--event-frames 2180,2330 --event-quota 10 --event-class blue_pipette`` weights the frame
+choice to a pipette's tip timeline. Keys ``t`` / ``b`` say a disposable tip IS attached /
+the pipette is bare, per pipette per frame (``tip_attached_label`` on every view cell), and
+``score`` reads them against the tracker's ``tip_attached`` and reports the 3D tip error on
+the consistently labelled frames alone.
 """
 
 from __future__ import annotations
@@ -122,6 +132,19 @@ COLOUR_TO_CLASS: dict[str, str] = {short: cls for cls, short in IDENTITY_SHORT.i
 LINE_CLASS = "pipette"
 HAND_CLASSES: tuple[str, ...] = ("left_hand", "right_hand")
 STATES: tuple[str, ...] = ("rest", "held", "low")
+# The order the states are served in when the frames are split (the thin pools first).
+DEFAULT_STATE_ORDER: tuple[str, ...] = ("low", "held", "rest")
+# Sep 29: a frame chosen for its place in a pipette's tip timeline (`--event-frames`).
+EVENT_STATE = "event"
+ALL_STATES: tuple[str, ...] = (*STATES, EVENT_STATE)
+SINGLE_CHANNEL_CLASSES: tuple[str, ...] = ("blue_pipette", "yellow_pipette", "red_pipette")
+TIP_LABEL_KEYS: dict[str, bool] = {"t": True, "b": False}
+DEFAULT_EVENT_RADIUS_FRAMES = 60
+# The whole-pipette crop (no marker): the mask box padded by this fraction of its long side,
+# at least this many pixels, shown at most this wide.
+PIPETTE_CROP_PAD = 0.3
+PIPETTE_CROP_MIN_PAD_PX = 40
+PIPETTE_CROP_MAX_PX = 720
 FPV_VIEW = "fpv"
 SAM3_SOURCES = ("sam3_decode", "sam3_video")
 VIEW_ORDER: tuple[str, ...] = ("fpv", "T1", "T2", "T3", "T4", "T5")
@@ -243,6 +266,22 @@ class SelectionParams:
     require_hand: bool = True
     # Line-track tip heights beyond this are triangulation failures, not heights.
     max_track_height_cm: float = 100.0
+    # -- Sep 29, the re-click. `marker` False: no suggested tip, the crop shows the whole
+    # pipette (both axis ends inside the frame) with an arrow at its edge for the rows'
+    # tail-rule side. `single_channel_only` leaves the 8-channel out. `event_frames` (raw)
+    # take `event_quota` of the frames, spread within `event_radius` of each, on frames where
+    # `event_class` has a cell; the rest is split over `states` in that order.
+    marker: bool = True
+    single_channel_only: bool = False
+    event_frames: tuple[int, ...] = ()
+    event_radius: int = DEFAULT_EVENT_RADIUS_FRAMES
+    event_class: str | None = None
+    event_quota: int = 0
+    states: tuple[str, ...] = DEFAULT_STATE_ORDER
+
+    @property
+    def classes(self) -> tuple[str, ...]:
+        return SINGLE_CHANNEL_CLASSES if self.single_channel_only else PIPETTE_CLASSES
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -262,6 +301,14 @@ class SelectionParams:
             "active_only_when_moving": self.active_only_when_moving,
             "require_hand": self.require_hand,
             "max_track_height_cm": self.max_track_height_cm,
+            "marker": self.marker,
+            "single_channel_only": self.single_channel_only,
+            "classes": list(self.classes),
+            "event_frames": list(self.event_frames),
+            "event_radius": self.event_radius,
+            "event_class": self.event_class,
+            "event_quota": self.event_quota,
+            "states": list(self.states),
         }
 
 
@@ -549,14 +596,26 @@ def inside_image(point: Point, image_wh: Sequence[int], margin: float) -> bool:
 
 
 def cell_classes(state: FrameState | None, params: SelectionParams) -> tuple[str, ...]:
-    """The pipettes that become cells on a frame: every class, or on a held or low frame
-    only the active ones (`active_only_when_moving`)."""
+    """The pipettes that become cells on a frame: every class (the single-channel ones with
+    `single_channel_only`), or on a held or low frame only the active ones
+    (`active_only_when_moving`); the event class always, on a frame near an event."""
+    classes = params.classes
     if state is None or not params.active_only_when_moving or state.state not in ("held", "low"):
-        return PIPETTE_CLASSES
-    active = [
-        c for c in PIPETTE_CLASSES if c in state.active or c in state.low or c in state.moving
-    ]
-    return tuple(active) or PIPETTE_CLASSES
+        return classes
+    active = [c for c in classes if c in state.active or c in state.low or c in state.moving]
+    return tuple(active) or classes
+
+
+def tail_guess(row: Mapping[str, Any]) -> tuple[Point, str] | None:
+    """Sep 29: the tracker's guess at the tip end from the row's long-thin-tail side
+    (`tip_side`), at the mask's terminal centroid (`body_end_px`) when the row carries it,
+    else the axis end; None when the tail rule did not decide."""
+    side = row.get("tip_side")
+    if side is None:
+        return None
+    ends = row.get("body_end_px") or row["mask_axis_px"]
+    point = ends[int(side)]
+    return (float(point[0]), float(point[1])), "tail"
 
 
 def frame_cells(
@@ -567,11 +626,13 @@ def frame_cells(
     classes: Sequence[str] = PIPETTE_CLASSES,
 ) -> list[dict[str, Any]]:
     """The cells of one frame: per pipette class in `classes` with a mask axis in at least
-    `min_views` views (fpv on valid-pose frames only, the tip end inside the frame), the
-    `views_per_cell` views with the largest mask."""
+    `min_views` views (fpv on valid-pose frames only, the tip end inside the frame; with no
+    marker, both axis ends inside it, since the whole pipette has to show), the
+    `views_per_cell` views with the largest mask. Without a marker a cell carries no
+    `suggested_tip_px`; the rows' tail-rule end is kept apart as `guess_tip_px`."""
     cells: list[dict[str, Any]] = []
     for slot, cls in enumerate(PIPETTE_CLASSES):
-        if cls not in classes:
+        if cls not in classes or cls not in params.classes:
             continue
         candidates: list[dict[str, Any]] = []
         for view in tables.views:
@@ -581,9 +642,20 @@ def frame_cells(
             if row is None or view not in view_sizes:
                 continue
             hands = tables.hands.get((frame, view), [])
-            tip, rule = suggested_tip(row["mask_axis_px"], hands)
-            if not inside_image(tip, view_sizes[view], params.edge_margin_px):
-                continue
+            axis = [list(map(float, p)) for p in row["mask_axis_px"]]
+            guess = tail_guess(row)
+            if params.marker:
+                tip, rule = suggested_tip(row["mask_axis_px"], hands)
+                if not inside_image(tip, view_sizes[view], params.edge_margin_px):
+                    continue
+                suggested: list[float] | None = [round(tip[0], 1), round(tip[1], 1)]
+            else:
+                if not all(
+                    inside_image((p[0], p[1]), view_sizes[view], params.edge_margin_px)
+                    for p in axis
+                ):
+                    continue
+                suggested, rule = None, None
             candidates.append(
                 {
                     "raw_frame": frame,
@@ -595,9 +667,14 @@ def frame_cells(
                     "mask_area_px": int(row.get("mask_area_px") or 0),
                     "mask_width_px": row.get("mask_width_px"),
                     "mask_bbox_px": row.get("mask_bbox_px"),
-                    "axis_px": [list(map(float, p)) for p in row["mask_axis_px"]],
-                    "suggested_tip_px": [round(tip[0], 1), round(tip[1], 1)],
+                    "axis_px": axis,
+                    "suggested_tip_px": suggested,
                     "tip_rule": rule,
+                    "guess_tip_px": None
+                    if guess is None
+                    else [round(guess[0][0], 1), round(guess[0][1], 1)],
+                    "guess_rule": None if guess is None else guess[1],
+                    "tip_side": row.get("tip_side"),
                     "hand_boxes": len(hands),
                 }
             )
@@ -631,21 +708,45 @@ def pick_spread(pool: Sequence[int], count: int, taken: Sequence[int], spacing: 
 
 
 def select_frames(
-    states: Mapping[int, FrameState], eligible: set[int], params: SelectionParams
+    states: Mapping[int, FrameState],
+    eligible: set[int],
+    params: SelectionParams,
+    event_pool: set[int] | None = None,
 ) -> list[dict[str, Any]]:
-    """About `params.frames` eligible frames, a third per state (`low`, `held`, `rest` served
-    in that order, the shortfall of a thin pool topped up from the others), spread over the
-    window with `spacing_frames` between any two."""
-    pools = {state: sorted(f for f in eligible if states[f].state == state) for state in STATES}
-    order = ("low", "held", "rest")
-    base, extra = divmod(params.frames, len(order))
-    quota = {state: base + (1 if i < extra else 0) for i, state in enumerate(order)}
+    """About `params.frames` eligible frames: first `event_quota` of them spread within
+    `event_radius` of each of `params.event_frames` over `event_pool` (the eligible frames
+    where the event class has a cell; the state is then `event`), then the rest split evenly
+    over `params.states` in that order (`low`, `held`, `rest` by default, the shortfall of a
+    thin pool topped up from the others), spread over the window with `spacing_frames`
+    between any two."""
+    order = tuple(s for s in params.states if s in STATES) or DEFAULT_STATE_ORDER
+    pools = {state: sorted(f for f in eligible if states[f].state == state) for state in order}
     chosen: dict[int, str] = {}
+    reasons: dict[int, str] = {}
+    events = tuple(params.event_frames)
+    if events and params.event_quota > 0:
+        pool = sorted(event_pool if event_pool is not None else eligible)
+        base, extra = divmod(params.event_quota, len(events))
+        for i, centre in enumerate(events):
+            near = [f for f in pool if abs(f - centre) <= params.event_radius]
+            picks = pick_spread(
+                near, base + (1 if i < extra else 0), list(chosen), params.spacing_frames
+            )
+            for frame in picks:
+                chosen[frame] = EVENT_STATE
+                reasons[frame] = (
+                    f"{frame - centre:+d} frames from {centre} ({params.event_class or 'event'} "
+                    f"tip timeline); {states[frame].state}: {states[frame].reason}"
+                )
+    remaining = params.frames - len(chosen)
+    base, extra = divmod(max(remaining, 0), len(order))
+    quota = {state: base + (1 if i < extra else 0) for i, state in enumerate(order)}
     for state in order:
-        for frame in pick_spread(pools[state], quota[state], list(chosen), params.spacing_frames):
+        pool = [f for f in pools[state] if f not in chosen]
+        for frame in pick_spread(pool, quota[state], list(chosen), params.spacing_frames):
             chosen[frame] = state
     shortfall = params.frames - len(chosen)
-    for state in ("rest", "held", "low"):
+    for state in reversed(order):
         if shortfall <= 0:
             break
         pool = [f for f in pools[state] if f not in chosen]
@@ -653,7 +754,7 @@ def select_frames(
             chosen[frame] = state
         shortfall = params.frames - len(chosen)
     return [
-        {"raw_frame": frame, "state": state, "reason": states[frame].reason}
+        {"raw_frame": frame, "state": state, "reason": reasons.get(frame, states[frame].reason)}
         for frame, state in sorted(chosen.items())
     ]
 
@@ -681,6 +782,33 @@ def zoom_geometry(
         "scale": float(zoom),
         "source_size": [w, h],
         "size": [w * zoom, h * zoom],
+    }
+
+
+def pipette_geometry(
+    bbox: Sequence[float], *, image_wh: Sequence[int], max_px: int = PIPETTE_CROP_MAX_PX
+) -> dict[str, Any]:
+    """Sep 29 (no marker): a square crop around the whole mask box, padded by
+    `PIPETTE_CROP_PAD` of its long side (at least `PIPETTE_CROP_MIN_PAD_PX`), clamped inside
+    the image, shown at `max_px` at most (a small pipette is scaled up to 2x, a large one
+    down); the same ``offset`` / ``scale`` / ``size`` shape as `zoom_geometry`."""
+    width, height = int(image_wh[0]), int(image_wh[1])
+    x0, y0, x1, y1 = (float(v) for v in bbox)
+    long_side = max(x1 - x0, y1 - y0)
+    pad = max(PIPETTE_CROP_PAD * long_side, PIPETTE_CROP_MIN_PAD_PX)
+    side = int(round(min(long_side + 2 * pad, max(width, height))))
+    w, h = min(side, width), min(side, height)
+    cx, cy = 0.5 * (x0 + x1), 0.5 * (y0 + y1)
+    ox = int(round(min(max(cx - w / 2, 0), width - w)))
+    oy = int(round(min(max(cy - h / 2, 0), height - h)))
+    scale = min(2.0, max_px / max(w, h))
+    scale = float(np.floor(scale * 4) / 4) if scale < 1.0 else min(2.0, float(int(scale)))
+    scale = max(scale, 0.25)
+    return {
+        "offset": [ox, oy],
+        "scale": scale,
+        "source_size": [w, h],
+        "size": [int(round(w * scale)), int(round(h * scale))],
     }
 
 
@@ -787,15 +915,29 @@ def render_crops(
         full_uri = crop_file(raw, view, None)
         cv2.imwrite(str(output / full_uri), small, [cv2.IMWRITE_JPEG_QUALITY, 80])
         for cell in group:
-            zoom = zoom_factor(cell.get("mask_width_px"))
-            geometry = zoom_geometry(
-                cell["suggested_tip_px"], size=params.zoom_size, zoom=zoom, image_wh=(width, height)
-            )
+            if params.marker and cell.get("suggested_tip_px") is not None:
+                zoom = zoom_factor(cell.get("mask_width_px"))
+                geometry = zoom_geometry(
+                    cell["suggested_tip_px"],
+                    size=params.zoom_size,
+                    zoom=zoom,
+                    image_wh=(width, height),
+                )
+            else:
+                # No marker: the whole pipette, so the plunger button and the far end show.
+                bbox = cell.get("mask_bbox_px") or [
+                    min(p[0] for p in cell["axis_px"]),
+                    min(p[1] for p in cell["axis_px"]),
+                    max(p[0] for p in cell["axis_px"]),
+                    max(p[1] for p in cell["axis_px"]),
+                ]
+                geometry = pipette_geometry(bbox, image_wh=(width, height))
             x0, y0 = geometry["offset"]
             w, h = geometry["source_size"]
             crop = image[y0 : y0 + h, x0 : x0 + w]
-            if zoom != 1:
-                crop = cv2.resize(crop, tuple(geometry["size"]), interpolation=cv2.INTER_CUBIC)
+            if tuple(geometry["size"]) != (w, h):
+                interpolation = cv2.INTER_CUBIC if geometry["scale"] > 1 else cv2.INTER_AREA
+                crop = cv2.resize(crop, tuple(geometry["size"]), interpolation=interpolation)
             zoom_uri = crop_file(raw, view, int(cell["slot"]))
             cv2.imwrite(str(output / zoom_uri), crop, [cv2.IMWRITE_JPEG_QUALITY, 90])
             cell["crops"] = {
@@ -844,12 +986,17 @@ def decisions_template(workspace: Mapping[str, Any]) -> dict[str, Any]:
         "reviewed_at": None,
         "how": (
             "One row per (frame, view, pipette). tip_px: the full-frame pixel of the very end of "
-            "the white tip cone, set by a click in battle-finebio-tips serve (the suggested tip "
-            "in cells.json is never copied here); hidden: true when the tip is not visible in "
-            "this view; instance_identity: the pipette colour seen on the plunger (keys 1-4), "
-            "the same value on every view of that pipette on that frame; note: free text."
+            "the pipette, the end away from the coloured plunger button, where a disposable "
+            "tip's point would be, set by a click in battle-finebio-tips serve (no suggestion "
+            "is ever copied here); hidden: true when that end is not visible in this view; "
+            "instance_identity: the pipette colour seen on the plunger (keys 1-4), the same "
+            "value on every view of that pipette on that frame; tip_attached_label: true when "
+            "a disposable tip IS attached (key t), false when the pipette is bare (key b), null "
+            "when not said, the same value on every view of that pipette on that frame; note: "
+            "free text."
         ),
         "identity_values": [*PIPETTE_CLASSES, None],
+        "tip_attached_label_values": [True, False, None],
         "cells": [
             {
                 "raw_frame": cell["raw_frame"],
@@ -862,6 +1009,7 @@ def decisions_template(workspace: Mapping[str, Any]) -> dict[str, Any]:
                 "clicked_in": None,
                 "hidden": False,
                 "instance_identity": None,
+                "tip_attached_label": None,
                 "note": "",
             }
             for cell in workspace["cells"]
@@ -874,14 +1022,17 @@ def decisions_template(workspace: Mapping[str, Any]) -> dict[str, Any]:
 def workspace_readme(workspace: Mapping[str, Any]) -> str:
     counts = workspace["counts"]
     by_state = counts.get("frames_by_state", {})
-    states = ", ".join(f"{by_state.get(s, 0)} {s}" for s in STATES)
+    states = ", ".join(f"{by_state.get(s, 0)} {s}" for s in ALL_STATES if by_state.get(s))
+    selection = workspace.get("selection", {})
+    marker = selection.get("marker", True)
+    minutes = "20" if marker else "15"
     lines = [
         f"# Tip clicks, {workspace['trial']} (p3-tip-anchors, soft gate)",
         "",
-        f"**{counts['frames']} frames, {counts['cells']} cells, about 20 minutes of clicking.** "
-        f"The frames are {states}. Each pipette appears in two or three views per frame, "
-        "so the clicks triangulate to one 3D tip per pipette per frame. Nothing here is a "
-        "label until `decisions.json` exists.",
+        f"**{counts['frames']} frames, {counts['cells']} cells, about {minutes} minutes of "
+        f"clicking.** The frames are {states}. Each pipette appears in two or three views per "
+        "frame, so the clicks triangulate to one 3D tip per pipette per frame. Nothing here "
+        "is a label until `decisions.json` exists.",
         "",
         "## What to do",
         "",
@@ -891,15 +1042,34 @@ def workspace_readme(workspace: Mapping[str, Any]) -> str:
         "uv run battle-finebio-tips serve --workspace <this directory> --tailscale",
         "```",
         "",
-        "On every cell, click the very end of the white tip cone. The faint dashed marker is "
-        "the detector's guess and is never saved; your click replaces it and moves to the "
-        "next cell.",
-        "",
-        "- If the tip is hidden in this view, press `h`.",
+    ]
+    if marker:
+        lines += [
+            "On every cell, click the very end of the white tip cone. The faint dashed marker "
+            "is the detector's guess and is never saved; your click replaces it and moves to "
+            "the next cell.",
+            "",
+            "- If the tip is hidden in this view, press `h`.",
+        ]
+    else:
+        lines += [
+            "On every cell, click the very end of the pipette: the end away from the coloured "
+            "plunger button, where a disposable tip's point would be. If a tip is on, click "
+            "the point of the tip; if the pipette is bare, click the end of the cone. There is "
+            "no suggested marker. The small arrow at the edge of the crop, labelled "
+            '"tracker\'s guess", points at the end the tracker would call the tip; it is a '
+            "guess, not a hint to accept, and is never saved. The click moves to the next cell.",
+            "",
+            "- If that end is hidden in this view, press `h`.",
+            "- Once per pipette per frame, press `t` if a disposable tip IS attached and `b` "
+            "if the pipette is bare. It is saved on every view of that pipette on that frame; "
+            "`-` clears it.",
+        ]
+    lines += [
         "- If the crop shows two pipettes, pick the one whose plunger colour matches the class "
         "in the caption.",
         "- If two cells on a frame show the same pipette (the detector gave one mask two "
-        "classes), click its tip in both and press the colour you see on both. The identity "
+        "classes), click its end in both and press the colour you see on both. The identity "
         "then records which class was wrong.",
         "- Press `1`, `2`, `3` or `4` for the plunger colour you see (blue, yellow, red, "
         "8-channel). It is saved on every view of that pipette on that frame.",
@@ -907,6 +1077,8 @@ def workspace_readme(workspace: Mapping[str, Any]) -> str:
         "move between cells, `]` and `[` between frames.",
         "",
         "Then score whichever tracks exist:",
+    ]
+    lines += [
         "",
         "```bash",
         "uv run battle-finebio-tips score --workspace <this directory> \\",
@@ -920,9 +1092,20 @@ def workspace_readme(workspace: Mapping[str, Any]) -> str:
         "## Files",
         "",
         "- `cells.json`: the chosen frames with their state and reason, and every cell with its "
-        "views, mask axis, suggested tip and crop geometry.",
+        "views, mask axis, "
+        + (
+            "suggested tip"
+            if marker
+            else "the tracker's guess (kept apart, never shown as a marker)"
+        )
+        + " and crop geometry.",
         "- `crops/f<raw>_<view>_full.jpg`: the whole frame at reduced size with the pipette boxes.",
-        "- `crops/f<raw>_<view>_s<slot>_zoom.jpg`: 400 px around the suggested tip, clean pixels.",
+        "- `crops/f<raw>_<view>_s<slot>_zoom.jpg`: "
+        + (
+            "400 px around the suggested tip, clean pixels."
+            if marker
+            else "the whole pipette with a margin, clean pixels."
+        ),
         "- `decisions.template.json`: the empty record; `serve` creates `decisions.json` from it.",
         "",
         "## Claim boundary",
@@ -969,7 +1152,25 @@ def build_workspace(
         for f in range(*tables.window)
     }
     eligible = {f for f, cells in cells_by_frame.items() if cells}
-    chosen = select_frames(states, eligible, params)
+    event_pool: set[int] | None = None
+    if params.event_frames:
+        # Near an event the event class is a cell whatever the frame's state says: the frame
+        # is chosen for that pipette.
+        event_cells = {
+            f: frame_cells(f, tables, view_sizes, params, (params.event_class,))
+            for centre in params.event_frames
+            for f in range(
+                max(tables.window[0], centre - params.event_radius),
+                min(tables.window[1], centre + params.event_radius + 1),
+            )
+            if params.event_class is not None
+        }
+        event_pool = {f for f, cells in event_cells.items() if cells}
+        for f in event_pool:
+            others = [c for c in cells_by_frame[f] if c["class"] != params.event_class]
+            cells_by_frame[f] = sorted(others + event_cells[f], key=lambda c: c["slot"])
+        eligible |= event_pool
+    chosen = select_frames(states, eligible, params, event_pool)
     cells: list[dict[str, Any]] = []
     for entry in chosen:
         for cell in cells_by_frame[entry["raw_frame"]]:
@@ -1009,6 +1210,7 @@ def build_workspace(
         ),
         "view_sizes": {v: list(s) for v, s in view_sizes.items()},
         "identity_keys": IDENTITY_KEYS,
+        "tip_label_keys": TIP_LABEL_KEYS,
         "selection": {
             **params.as_dict(),
             "states": {
@@ -1033,14 +1235,23 @@ def build_workspace(
                 "active pipettes are cells when active_only_when_moving"
             ),
             "suggested_tip": (
-                "the mask-axis end farther from the nearest hand box on that frame and view, else "
-                "the lower end in the image; a suggestion only, never a decision"
+                (
+                    "the mask-axis end farther from the nearest hand box on that frame and view, "
+                    "else the lower end in the image; a suggestion only, never a decision"
+                )
+                if params.marker
+                else (
+                    "none: no marker is drawn; guess_tip_px is the rows' long-thin-tail end "
+                    "(tip_side, at the terminal centroid), shown as an arrow at the crop's edge "
+                    "labelled tracker's guess, never saved"
+                )
             ),
             "window_states": dict(state_counts),
             "eligible_frames": len(eligible),
             "eligible_by_state": {
                 s: sum(1 for f in eligible if states[f].state == s) for s in (*STATES, "transition")
             },
+            "event_pool_frames": None if event_pool is None else len(event_pool),
         },
         "frames": frame_summary(chosen, cells),
         "cells": cells,
@@ -1068,6 +1279,15 @@ def run_prepare(args: argparse.Namespace) -> dict[str, Any]:
     if args.trial and clip["trial"] != args.trial:
         raise ValueError(f"--trial {args.trial} but the clip config is for {clip['trial']}")
     window = (int(clip["window"]["start_frame"]), int(clip["window"]["end_frame_exclusive"]))
+    event_frames = tuple(int(f) for f in (args.event_frames or "").split(",") if f.strip())
+    states = (
+        tuple(s.strip() for s in (args.states or "").split(",") if s.strip()) or DEFAULT_STATE_ORDER
+    )
+    unknown = [s for s in states if s not in STATES]
+    if unknown:
+        raise ValueError(f"--states names {unknown}; choose from {list(STATES)}")
+    if event_frames and args.event_class not in PIPETTE_CLASSES:
+        raise ValueError(f"--event-frames needs --event-class in {list(PIPETTE_CLASSES)}")
     params = SelectionParams(
         frames=args.frames,
         spacing_frames=args.spacing,
@@ -1075,6 +1295,13 @@ def run_prepare(args: argparse.Namespace) -> dict[str, Any]:
         length_cm=pipette_length_cm(args.pipettes),
         views_per_cell=args.views_per_cell,
         active_only_when_moving=not args.all_pipettes,
+        marker=not args.no_marker,
+        single_channel_only=args.single_channel_only,
+        event_frames=event_frames,
+        event_radius=args.event_radius,
+        event_class=args.event_class if event_frames else None,
+        event_quota=args.event_quota if event_frames else 0,
+        states=states,
     )
     rows = read_rows(args.observations, (*PIPETTE_CLASSES, *HAND_CLASSES))
     tables = build_tables(rows, window=window, fixed_views=clip["fixed_views"])
@@ -1123,6 +1350,17 @@ def validate_identity(value: Any) -> str | None:
     raise ValueError(
         f"instance_identity must be one of {list(PIPETTE_CLASSES)} or null; got {value!r}"
     )
+
+
+def validate_tip_label(value: Any) -> bool | None:
+    """`t` / true -> True (a tip is attached), `b` / false -> False (bare), null / "" -> None."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str) and value in TIP_LABEL_KEYS:
+        return TIP_LABEL_KEYS[value]
+    raise ValueError("tip_attached_label must be true (t), false (b) or null")
 
 
 def validate_tip(value: Any, image_size: Sequence[int]) -> list[float]:
@@ -1254,13 +1492,23 @@ class TipRecord:
     def set_identity(self, raw_frame: int, slot: int, value: Any) -> list[dict[str, Any]]:
         """The plunger colour seen, on every view of that pipette on that frame."""
         identity = validate_identity(value)
+        return self._set_on_slot(raw_frame, slot, "instance_identity", identity)
+
+    def set_tip_label(self, raw_frame: int, slot: int, value: Any) -> list[dict[str, Any]]:
+        """Sep 29: whether a disposable tip is attached (key `t`, true), the pipette is bare
+        (`b`, false) or nothing is said (null), on every view of that pipette on that frame."""
+        return self._set_on_slot(raw_frame, slot, "tip_attached_label", validate_tip_label(value))
+
+    def _set_on_slot(
+        self, raw_frame: int, slot: int, name: str, value: Any
+    ) -> list[dict[str, Any]]:
         with self.lock:
             keys = [k for k in self.cells if k[0] == int(raw_frame) and k[2] == int(slot)]
             if not keys:
                 raise KeyError(f"no cells for frame {raw_frame} slot {slot}")
             self._remember(keys)
             for key in keys:
-                self.cells[key]["instance_identity"] = identity
+                self.cells[key][name] = value
             self._save()
             return [dict(self.cells[k]) for k in keys]
 
@@ -1294,6 +1542,7 @@ class TipRecord:
                 "decided": sum(1 for c in cells if decided(c)),
                 "clicked": sum(1 for c in cells if c.get("tip_px") is not None),
                 "hidden": sum(1 for c in cells if c.get("hidden")),
+                "tip_labelled": sum(1 for c in cells if c.get("tip_attached_label") is not None),
                 "total": len(cells),
             }
 
@@ -1373,12 +1622,17 @@ class TipsApp:
     def page_progress(self, raw: int) -> dict[str, int]:
         return self.record.progress(cell_key(c) for c in self.page_cells[raw])
 
+    @property
+    def marker(self) -> bool:
+        return bool(self.workspace.get("selection", {}).get("marker", True))
+
     def _cell_payload(self, record_cell: Mapping[str, Any]) -> dict[str, Any]:
         workspace_cell = self.record.workspace_cells[cell_key(record_cell)]
+        suggested = workspace_cell.get("suggested_tip_px") if self.marker else None
         return {
             "cell": dict(record_cell),
             "markers": markers_for(workspace_cell, record_cell.get("tip_px")),
-            "suggested": markers_for(workspace_cell, workspace_cell["suggested_tip_px"]),
+            "suggested": markers_for(workspace_cell, suggested),
         }
 
     def state(self) -> dict[str, Any]:
@@ -1430,6 +1684,19 @@ class TipsApp:
             "updated_at": self.record.doc.get("updated_at"),
         }
 
+    def set_tip_label(self, body: Mapping[str, Any]) -> dict[str, Any]:
+        try:
+            raw, slot = int(body["raw_frame"]), int(body["slot"])
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError(f"tip label needs raw_frame and slot ({error})") from None
+        cells = self.record.set_tip_label(raw, slot, body.get("tip_attached_label"))
+        return {
+            "cells": [self._cell_payload(c) for c in cells],
+            "tip_attached_label": cells[0]["tip_attached_label"],
+            "progress": self.record.progress(),
+            "updated_at": self.record.doc.get("updated_at"),
+        }
+
     def undo(self) -> dict[str, Any]:
         restored = self.record.undo()
         frames = sorted({int(c["raw_frame"]) for c in restored})
@@ -1465,6 +1732,25 @@ class TipsApp:
                 f"<td>{_e(pipettes)}</td>"
                 f'<td class="progress">{page["decided"]} / {page["total"]}</td></tr>'
             )
+        if self.marker:
+            instructions = (
+                "Click the very end of the white tip cone in every crop. The dashed marker is "
+                "the detector's guess and is never saved; your click replaces it. Press "
+                "<kbd>h</kbd> when the tip is hidden in that view, <kbd>t</kbd> / <kbd>b</kbd> "
+                "for a disposable tip on / a bare pipette, and <kbd>1</kbd>-<kbd>4</kbd> for the "
+                "plunger colour you see."
+            )
+        else:
+            instructions = (
+                "Click the very end of the pipette in every crop: the end away from the "
+                "coloured plunger button, where a disposable tip's point would be (the point "
+                "of the tip when one is on, the end of the cone when bare). There is no "
+                "suggested marker; the small arrow at the crop's edge is the tracker's guess "
+                "and is never saved. Press <kbd>h</kbd> when that end is hidden in that view, "
+                "<kbd>t</kbd> once per pipette per frame when a disposable tip IS attached and "
+                "<kbd>b</kbd> when it is bare, and <kbd>1</kbd>-<kbd>4</kbd> for the plunger "
+                "colour you see."
+            )
         return INDEX_TEMPLATE.format(
             style=STYLE + TIPS_STYLE,
             script=SCRIPT,
@@ -1475,6 +1761,7 @@ class TipsApp:
             author=_e(self.record.doc.get("author") or ""),
             updated=_e(self.record.doc.get("updated_at") or ""),
             rows="".join(rows),
+            instructions=instructions,
             keys=KEYS_HTML,
             first_url=page_url(self.frames[0]) if self.frames else "/",
             page_data=_script_json(
@@ -1548,6 +1835,16 @@ class TipsApp:
             f'<button data-identity="" class="{"active" if identity is None else ""}" title="0">'
             "none <kbd>0</kbd></button>"
         )
+        label = self.record.cells[cell_key(group[0])].get("tip_attached_label")
+        tip_buttons = "".join(
+            f'<button data-tip-label="{value}" class="{"active" if label is state else ""}" '
+            f'title="{key}">{text} <kbd>{key}</kbd></button>'
+            for value, state, key, text in (
+                ("true", True, "t", "tip on"),
+                ("false", False, "b", "bare"),
+                ("", None, "-", "unsaid"),
+            )
+        )
         colour = CLASS_COLOURS_BGR.get(cls, (200, 200, 200))
         swatch = f"rgb({colour[2]},{colour[1]},{colour[0]})"
         cells = "".join(self._cell_html(cell) for cell in group)
@@ -1556,24 +1853,60 @@ class TipsApp:
             f'<div class="slothead"><span class="swatch" style="background:{swatch}"></span>'
             f"<b>{_e(IDENTITY_SHORT.get(cls, cls))}</b> "
             f'<span class="cls">{_e(cls)} &middot; slot {slot} &middot; {len(group)} views</span>'
+            f'<span class="tiplabel">disposable tip: {tip_buttons}</span>'
             f'<span class="identity">plunger colour seen: {"".join(buttons)}</span></div>'
             f'<div class="cells">{cells}</div></section>'
+        )
+
+    @staticmethod
+    def _guess_html(cell: Mapping[str, Any], name: str, crop: Mapping[str, Any]) -> str:
+        """Sep 29 (no marker): a small arrow at the crop's edge pointing from the crop's
+        centre towards the rows' tail-rule end, labelled "tracker's guess"; nothing when the
+        rule did not decide or the guess lies outside the crop."""
+        guess = cell.get("guess_tip_px")
+        if guess is None:
+            return ""
+        point = markers_for(cell, guess).get(name)
+        if point is None:
+            return ""
+        w, h = float(crop["size"][0]), float(crop["size"][1])
+        dx, dy = point[0] - w / 2, point[1] - h / 2
+        norm = math.hypot(dx, dy)
+        if norm < 1e-6:
+            return ""
+        # Where the ray from the centre through the guess leaves the crop, inset a little.
+        scale = min(
+            (w / 2 - 14) / abs(dx) if abs(dx) > 1e-6 else math.inf,
+            (h / 2 - 14) / abs(dy) if abs(dy) > 1e-6 else math.inf,
+        )
+        x, y = w / 2 + dx * scale, h / 2 + dy * scale
+        angle = math.degrees(math.atan2(dy, dx))
+        return (
+            f'<div class="guess" style="left:{100 * x / w:.2f}%;top:{100 * y / h:.2f}%;'
+            f'transform:translate(-50%,-50%) rotate({angle:.1f}deg)" '
+            f"title=\"tracker's guess ({_e(cell.get('guess_rule') or '')}): the end it would "
+            'call the tip. A guess, never saved.">&#10148;</div>'
+            f'<div class="guesslabel" style="left:{100 * x / w:.2f}%;top:{100 * y / h:.2f}%">'
+            "tracker's guess</div>"
         )
 
     def _cell_html(self, cell: dict[str, Any]) -> str:
         record_cell = self.record.cells[cell_key(cell)]
         tip = record_cell.get("tip_px")
         hidden = bool(record_cell.get("hidden"))
+        marker = self.marker
         classes = "cell"
         if tip is not None or hidden:
             classes += " decided"
         if hidden:
             classes += " hidden"
-        state_text = "hidden" if hidden else ("tip set" if tip is not None else "suggested")
+        undecided = "suggested" if marker else "undecided"
+        state_text = "hidden" if hidden else ("tip set" if tip is not None else undecided)
         pics = []
         for name in ("zoom", "full"):
             crop = cell["crops"][name]
-            point = tip if tip is not None else (None if hidden else cell["suggested_tip_px"])
+            suggested = cell.get("suggested_tip_px") if marker else None
+            point = tip if tip is not None else (None if hidden else suggested)
             marker_class = "marker set" if tip is not None else "marker suggested"
             position = markers_for(cell, point).get(name) if point is not None else None
             style = (
@@ -1582,12 +1915,13 @@ class TipsApp:
                 if position is not None
                 else "display:none"
             )
+            guess = "" if marker or name != "zoom" else self._guess_html(cell, name, crop)
             pics.append(
                 f'<div class="pic {name}" data-w="{crop["size"][0]}" data-h="{crop["size"][1]}">'
                 f'<img src="/files/{_e(crop["uri"])}" data-crop="{name}" '
                 f'width="{crop["size"][0]}" height="{crop["size"][1]}" '
                 f'alt="{name} crop {_e(cell["view"])}">'
-                f'<div class="{marker_class}" style="{style}"></div></div>'
+                f'<div class="{marker_class}" style="{style}"></div>{guess}</div>'
             )
         return (
             f'<figure class="{classes}" id="cell-{_e(cell["view"])}-{int(cell["slot"])}" '
@@ -1628,12 +1962,20 @@ body.show-full .pic.full{display:block}
 .marker.suggested{border-style:dashed;border-color:#9cf;opacity:.6}
 .marker.set{border-color:#fc3;background:rgba(255,204,51,.2)}
 .swatch{display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:middle}
+.slothead .tiplabel{display:flex;gap:4px;align-items:center;color:#aaa;font-size:12px}
+.slothead .tiplabel button.active,.slothead .identity button.active{outline:2px solid #fc3}
+.guess{position:absolute;color:#9cf;font-size:18px;line-height:1;pointer-events:none;
+  text-shadow:0 0 2px #000,0 0 2px #000;opacity:.85}
+.guesslabel{position:absolute;color:#9cf;font-size:10px;pointer-events:none;
+  transform:translate(-50%,12px);white-space:nowrap;text-shadow:0 0 2px #000,0 0 2px #000}
 """
 
 KEYS_HTML = (
-    '<div class="keys"><b>click</b> sets the tip and moves on &nbsp; <kbd>h</kbd> hidden &nbsp; '
+    '<div class="keys"><b>click</b> sets the end and moves on &nbsp; <kbd>h</kbd> hidden &nbsp; '
     "<kbd>x</kbd> clear &nbsp; <kbd>u</kbd> undo &nbsp; <kbd>j</kbd>/<kbd>k</kbd> cell &nbsp; "
-    "<kbd>]</kbd>/<kbd>[</kbd> frame &nbsp; <kbd>1</kbd> blue <kbd>2</kbd> yellow <kbd>3</kbd> red "
+    "<kbd>]</kbd>/<kbd>[</kbd> frame &nbsp; <kbd>t</kbd> a disposable tip IS attached "
+    "<kbd>b</kbd> bare <kbd>-</kbd> unsaid (per pipette per frame, saved on every view) &nbsp; "
+    "<kbd>1</kbd> blue <kbd>2</kbd> yellow <kbd>3</kbd> red "
     "<kbd>4</kbd> 8-channel <kbd>0</kbd> none (plunger colour seen, saved on every view of the "
     "pipette) &nbsp; <kbd>o</kbd> whole frames</div>"
 )
@@ -1654,9 +1996,7 @@ INDEX_TEMPLATE = """<!doctype html>
 <table><thead><tr><th>#</th><th>frame</th><th>proxy</th><th>state</th><th>pipettes (views)</th>
 <th>decided</th></tr></thead><tbody>{rows}</tbody></table>
 {keys}
-<p class="muted">Click the very end of the white tip cone in every crop. The dashed marker is
-the detector's guess and is never saved; your click replaces it. Press <kbd>h</kbd> when the tip
-is hidden in that view, and <kbd>1</kbd>-<kbd>4</kbd> for the plunger colour you see.</p>
+<p class="muted">{instructions}</p>
 </main>
 <script id="page-data" type="application/json">{page_data}</script>
 <script>{script}</script>
@@ -1774,6 +2114,11 @@ SCRIPT = r"""
       b.classList.toggle('active',
         (b.dataset.identity || null) === (rec.instance_identity || null));
     });
+    var label = rec.tip_attached_label === true ? 'true'
+      : rec.tip_attached_label === false ? 'false' : '';
+    slot.querySelectorAll('button[data-tip-label]').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.tipLabel === label);
+    });
   }
   function applyProgress(body) {
     if (body.page) {
@@ -1812,6 +2157,17 @@ SCRIPT = r"""
         ' views', 'ok');
     }).catch(function (e) { status(e.message, 'error'); });
   }
+  function tipLabel(cell, value) {
+    return postJson('/api/tip-label', {
+      raw_frame: data.raw_frame, slot: Number(cell.dataset.slot), tip_attached_label: value
+    }).then(function (body) {
+      body.cells.forEach(applyCell);
+      applyProgress(body);
+      var said = body.tip_attached_label === true ? 'tip attached'
+        : body.tip_attached_label === false ? 'bare' : 'unsaid';
+      status('disposable tip: ' + said + ' saved on ' + body.cells.length + ' views', 'ok');
+    }).catch(function (e) { status(e.message, 'error'); });
+  }
   function undo() {
     return postJson('/api/undo', {}).then(function (body) {
       body.cells.forEach(applyCell);
@@ -1845,6 +2201,9 @@ SCRIPT = r"""
       case '[': if (data.prev) location.href = data.prev; break;
       case '1': case '2': case '3': case '4': identity(cell, e.key); break;
       case '0': identity(cell, null); break;
+      case 't': tipLabel(cell, true); break;
+      case 'b': tipLabel(cell, false); break;
+      case '-': tipLabel(cell, null); break;
       case 'o': toggleFull(); break;
       default: return;
     }
@@ -1878,6 +2237,13 @@ SCRIPT = r"""
       b.addEventListener('click', function () {
         var first = slot.querySelector('.cell');
         identity(first, b.dataset.identity || null);
+      });
+    });
+    slot.querySelectorAll('button[data-tip-label]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var first = slot.querySelector('.cell');
+        var v = b.dataset.tipLabel;
+        tipLabel(first, v === 'true' ? true : v === 'false' ? false : null);
       });
     });
   });
@@ -1941,6 +2307,8 @@ def make_tips_handler(app: TipsApp) -> type[BaseHTTPRequestHandler]:
                     _json(self, HTTPStatus.OK, app.update_cell(body))
                 elif path == "/api/identity":
                     _json(self, HTTPStatus.OK, app.set_identity(body))
+                elif path == "/api/tip-label":
+                    _json(self, HTTPStatus.OK, app.set_tip_label(body))
                 elif path == "/api/undo":
                     _json(self, HTTPStatus.OK, app.undo())
                 elif path == "/api/author":
@@ -2033,6 +2401,12 @@ class TipAnchor:
     residual_px: dict[str, float] = field(default_factory=dict)
     dropped_view: str | None = None
     hidden_views: list[str] = field(default_factory=list)
+    # Sep 29: the `t` / `b` label (None when not said) and whether every view cell of the
+    # pipette-frame carries that same value (the label is written on all of them, so a
+    # disagreement means a hand-edited record).
+    tip_label: bool | None = None
+    tip_label_consistent: bool = False
+    tip_label_inconsistent: bool = False
 
     @property
     def views(self) -> list[str]:
@@ -2045,6 +2419,8 @@ class TipAnchor:
             "class": self.cls,
             "state": self.state,
             "instance_identity": self.identity,
+            "tip_attached_label": self.tip_label if self.tip_label_consistent else None,
+            "tip_label_consistent": self.tip_label_consistent,
             "views": self.views,
             "n_views": len(self.residual_px) if self.residual_px else len(self.pixels),
             "hidden_views": self.hidden_views,
@@ -2096,9 +2472,11 @@ def triangulate_clicks(
         hidden: list[str] = []
         identity = None
         no_camera: list[str] = []
+        tip_labels: list[bool | None] = []
         for cell in cells:
             entry = decisions.get(cell_key(cell), {})
             identity = identity or entry.get("instance_identity")
+            tip_labels.append(entry.get("tip_attached_label"))
             if entry.get("hidden"):
                 hidden.append(str(cell["view"]))
             tip = entry.get("tip_px")
@@ -2112,6 +2490,12 @@ def triangulate_clicks(
             raw, slot, cells[0]["class"], cells[0]["state"], identity, labels, pixels
         )
         anchor.hidden_views = hidden
+        said = {label for label in tip_labels if label is not None}
+        if len(said) == 1 and all(label is not None for label in tip_labels):
+            anchor.tip_label = said.pop()
+            anchor.tip_label_consistent = True
+        elif said:
+            anchor.tip_label_inconsistent = True
         if len(pixels) < 2:
             reason = (
                 "no click"
@@ -2433,6 +2817,7 @@ def score_tracks_file(
     cells: list[dict[str, Any]] = []
     by_state: dict[str, list[dict[str, Any]]] = defaultdict(list)
     by_class: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    by_label: dict[str, list[dict[str, Any]]] = defaultdict(list)
     measures: Counter[str] = Counter()
     identity_pairs: list[tuple[str, str | None]] = []
     class_pairs: list[tuple[str, str | None]] = []
@@ -2446,26 +2831,48 @@ def score_tracks_file(
         "observed_class": Counter(),
         "track_class": Counter(),
     }
+    # Sep 29: my `t` / `b` label against the tracker's `tip_attached` on the matched row.
+    label_agreement: Counter[str] = Counter()
     for anchor in anchors:
         row, match_by = match_track(
             anchor, rows_by_frame.get(anchor.raw_frame, []), gate_cm=gate_cm
         )
         entry: dict[str, Any] = {**anchor.as_dict(), "match": match_by, "track_id": None}
+        entry["tracker_tip_attached"] = None
+        entry["tip_label_agreement"] = None
         if row is not None:
             colour = colours.get((anchor.raw_frame, str(row.get("track_id"))))
             if colour and row.get("colour_identity") is None:
                 row = {**row, **colour}
             entry["track_id"] = row.get("track_id")
+            entry["tracker_tip_attached"] = row.get("tip_attached")
+            if anchor.tip_label_consistent:
+                tracker = row.get("tip_attached")
+                verdict = (
+                    "tracker_undecided"
+                    if tracker is None
+                    else "agree"
+                    if bool(tracker) == anchor.tip_label
+                    else "differ"
+                )
+                entry["tip_label_agreement"] = verdict
+                label_agreement[verdict] += 1
+                label_agreement[f"{'t' if anchor.tip_label else 'b'}_{verdict}"] += 1
             if anchor.tip_cm is not None:
                 entry.update(tip_error(anchor, row))
                 by_state[anchor.state].append(entry)
                 by_class[anchor.cls].append(entry)
                 measures[entry["measure"]] += 1
                 _agreement(row, anchor.cls, class_agreement)
+                if anchor.tip_label_consistent:
+                    by_label["labelled"].append(entry)
+                    by_label["t" if anchor.tip_label else "b"].append(entry)
             else:
                 entry["measure"] = None
             if anchor.identity:
                 _agreement(row, anchor.identity, agreement)
+        elif anchor.tip_label_consistent:
+            label_agreement["no_track"] += 1
         if anchor.identity:
             identity_pairs.append((anchor.identity, entry["track_id"]))
         if anchor.tip_cm is not None:
@@ -2475,6 +2882,7 @@ def score_tracks_file(
     matched = [c for c in cells if c.get("tip_error_cm") is not None]
     summary = _error_summary(matched)
     across = summary["across"]["median_cm"]
+    labelled_total = sum(label_agreement[k] for k in ("agree", "differ", "tracker_undecided"))
     return {
         "tracks": name,
         "path": fs_common.relative_uri(Path(path), repository_root),
@@ -2491,8 +2899,35 @@ def score_tracks_file(
         "attached_fraction": summary["attached_fraction"],
         "attached_along_cm": ATTACHED_ALONG_CM,
         "other_end_nearer": summary["other_end_nearer"],
-        "by_state": {state: _error_summary(by_state.get(state, [])) for state in STATES},
+        "by_state": {state: _error_summary(by_state.get(state, [])) for state in ALL_STATES},
         "by_class": {cls: _error_summary(by_class.get(cls, [])) for cls in PIPETTE_CLASSES},
+        # Sep 29: the anchors whose pipette-frame I labelled t or b on every view.
+        "by_tip_label": {
+            key: _error_summary(by_label.get(key, [])) for key in ("labelled", "t", "b")
+        },
+        "tip_label": {
+            "labelled_anchors_with_a_track": labelled_total,
+            "agree": label_agreement.get("agree", 0),
+            "differ": label_agreement.get("differ", 0),
+            "tracker_undecided": label_agreement.get("tracker_undecided", 0),
+            "no_track": label_agreement.get("no_track", 0),
+            "accuracy": (
+                round(
+                    label_agreement.get("agree", 0)
+                    / (label_agreement.get("agree", 0) + label_agreement.get("differ", 0)),
+                    3,
+                )
+                if label_agreement.get("agree", 0) + label_agreement.get("differ", 0)
+                else None
+            ),
+            "by_label": {
+                label: {
+                    verdict: label_agreement.get(f"{label}_{verdict}", 0)
+                    for verdict in ("agree", "differ", "tracker_undecided")
+                }
+                for label in ("t", "b")
+            },
+        },
         "measures": dict(measures),
         "tips_unresolved": measures.get("nearer_endpoint_unresolved", 0),
         "point_tracks": measures.get("point_to_midpoint", 0),
@@ -2553,11 +2988,22 @@ def score_workspace(
             "clicked": sum(1 for c in cells if c.get("tip_px") is not None),
             "hidden": sum(1 for c in cells if c.get("hidden")),
             "with_identity": sum(1 for c in cells if c.get("instance_identity")),
+            "with_tip_label": sum(1 for c in cells if c.get("tip_attached_label") is not None),
         },
         "anchors": {
             "count": len(with_tip),
             "by_state": dict(Counter(a.state for a in with_tip)),
             "by_class": dict(Counter(a.cls for a in with_tip)),
+            "by_tip_label": dict(
+                Counter(
+                    ("t" if a.tip_label else "b") if a.tip_label_consistent else "unsaid"
+                    for a in with_tip
+                )
+            ),
+            "pipette_frames_labelled": sum(1 for a in anchors if a.tip_label_consistent),
+            "pipette_frames_labelled_inconsistently": sum(
+                1 for a in anchors if a.tip_label_inconsistent
+            ),
             "views_per_anchor": dict(Counter(len(a.views) for a in with_tip)),
             "reprojection_residual_px": {
                 "median": round(float(np.median(residuals)), 2) if residuals else None,
@@ -2642,7 +3088,8 @@ def scoreboard_markdown(report: dict[str, Any]) -> str:
         f"{kinds.get('single_view', 0)} with one clicked view, {kinds.get('no_click', 0)} with "
         f"none, {kinds.get('clicks_disagree', 0)} whose clicks disagree beyond the gate. "
         f"{summary['hidden']} cells marked h (see the note below), {summary['with_identity']} "
-        "with an identity key.",
+        f"with an identity key, {summary.get('with_tip_label', 0)} with a t / b tip label "
+        f"(anchors by label: {json.dumps(anchors.get('by_tip_label', {}))}).",
         "",
     ]
     if anchors["count"] == 0:
@@ -2733,6 +3180,41 @@ def scoreboard_markdown(report: dict[str, Any]) -> str:
                 f"| {arm['other_end_nearer']} |"
             )
         lines.append("")
+    if any(
+        (arm.get("tip_label") or {}).get("labelled_anchors_with_a_track") for arm in report["arms"]
+    ):
+        lines.append("## Disposable tip: my t / b label against the tracker's tip_attached")
+        lines.append("")
+        lines.append(
+            "| tracks | labelled pipette-frames with a track | agree | differ | tracker undecided "
+            "| accuracy (agree / decided) | t: agree / differ / undecided | b: agree / differ / "
+            "undecided | tip error median cm on labelled anchors (n) | on t anchors (n) | on b "
+            "anchors (n) |"
+        )
+        lines.append("|" + "---|" * 11)
+        for arm in report["arms"]:
+            label = arm.get("tip_label") or {}
+            by = label.get("by_label") or {}
+            errors = arm.get("by_tip_label") or {}
+
+            def err(key: str) -> str:
+                block = errors.get(key) or {}
+                return f"{_fmt(block.get('median_cm'))} ({block.get('n', 0)})"
+
+            lines.append(
+                f"| {arm['tracks']} | {label.get('labelled_anchors_with_a_track', 0)} | "
+                f"{label.get('agree', 0)} | {label.get('differ', 0)} | "
+                f"{label.get('tracker_undecided', 0)} | {_fmt(label.get('accuracy'), 3)} | "
+                + " / ".join(
+                    str(by.get("t", {}).get(k, 0)) for k in ("agree", "differ", "tracker_undecided")
+                )
+                + " | "
+                + " / ".join(
+                    str(by.get("b", {}).get(k, 0)) for k in ("agree", "differ", "tracker_undecided")
+                )
+                + f" | {err('labelled')} | {err('t')} | {err('b')} |"
+            )
+        lines.append("")
     if anchors.get("dropped"):
         lines.append("## Pipette-frames without an anchor")
         lines.append("")
@@ -2788,7 +3270,11 @@ def scoreboard_markdown(report: dict[str, Any]) -> str:
         "distance from the anchor to that axis. pipette IDF1 keys = identity F1 between the "
         "plunger colour I named and the track ids over the named pipette-frames; by cell class = "
         "the same with the detector's class of the clicked cell standing in for my key, which "
-        "inherits the detector's class confusions. " + report["claim_boundary"]
+        "inherits the detector's class confusions. t / b label = my key per pipette per frame "
+        "(a disposable tip IS attached / bare), read against the tracker's tip_attached on the "
+        "matched row; a pipette-frame counts only when every view cell carries the same label; "
+        "the labelled tip error is the same raw error over those anchors alone, split by the "
+        "label. " + report["claim_boundary"]
     )
     lines.append("")
     return "\n".join(lines)
@@ -2850,6 +3336,7 @@ def export_record(
                 "clicked_in": entry.get("clicked_in"),
                 "hidden": bool(entry.get("hidden", False)),
                 "instance_identity": entry.get("instance_identity"),
+                "tip_attached_label": entry.get("tip_attached_label"),
                 "note": entry.get("note") or "",
             }
         )
@@ -2859,6 +3346,7 @@ def export_record(
         "hidden": sum(1 for e in entries if e["hidden"]),
         "undecided": sum(1 for e in entries if e["tip_px"] is None and not e["hidden"]),
         "with_identity": sum(1 for e in entries if e["instance_identity"]),
+        "with_tip_label": sum(1 for e in entries if e["tip_attached_label"] is not None),
         "frames": len({e["raw_frame"] for e in entries}),
         "frames_by_state": dict(Counter(f["state"] for f in workspace["frames"])),
     }
@@ -2936,6 +3424,33 @@ def build_parser() -> argparse.ArgumentParser:
         "--all-pipettes",
         action="store_true",
         help="cells for every pipette on held and low frames too (default: the active ones)",
+    )
+    prep.add_argument(
+        "--no-marker",
+        action="store_true",
+        help="Sep 29: no suggested marker; the crop shows the whole pipette and an arrow at "
+        "its edge, labelled tracker's guess, points at the rows' long-thin-tail end",
+    )
+    prep.add_argument(
+        "--single-channel-only",
+        action="store_true",
+        help="Sep 29: cells for the blue, yellow and red pipettes only (no 8-channel)",
+    )
+    prep.add_argument(
+        "--event-frames",
+        default=None,
+        help="Sep 29: comma-separated raw frames of a pipette's tip events; --event-quota "
+        "frames are chosen within --event-radius of them, on frames where --event-class "
+        "has a cell",
+    )
+    prep.add_argument("--event-class", default=None, help="the pipette of --event-frames")
+    prep.add_argument("--event-quota", type=int, default=10)
+    prep.add_argument("--event-radius", type=int, default=DEFAULT_EVENT_RADIUS_FRAMES)
+    prep.add_argument(
+        "--states",
+        default=None,
+        help="Sep 29: comma-separated states that share the frames left after the event "
+        "quota, in order (default low,held,rest)",
     )
 
     serve = sub.add_parser("serve", help="Serve the click pages (headless; loopback or tailnet).")
