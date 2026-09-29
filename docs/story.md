@@ -72,13 +72,13 @@ and [tracker diagnostics](archive/method-ledger.md#sep-13-evening-tracker-score-
 ## Sep 14: no text prompt finds the black base
 
 **Five text prompts for the black toy base all failed, one of them on an unrelated black
-fixture, so the base was seeded from a mask one reviewer picked among the decoder's
+fixture, so the base was seeded from a mask I picked among the decoder's
 candidates.** The static camera's hybrid run kept text prompts for both hands and the yellow
 top and used that one reviewed mask for the base, over all 5,400 frames. Reviewing the toy piece
 by piece then showed the composite names were wrong for the task. The vocabulary narrowed to
 four physical parts: chassis, interior, rear body and cabin.
 
-![No text prompt finds the black base; one reviewer picks its frame-0 mask from decoder candidates](../media/story/2026-09-14-black-base-candidates.png)
+![No text prompt finds the black base; I pick its frame-0 mask from decoder candidates](../media/story/2026-09-14-black-base-candidates.png)
 
 The number that changed: text prompts tried for the black base, 5, accepted 0; the target list
 went from 2 composite names to 4 physical parts.
@@ -128,15 +128,15 @@ Evidence: `runs/grounding-dino-sam2-open-vocabulary-four-part-20s-20260916t1004z
 
 **The first close review of the minute named the failures the metrics had not: the interior
 leaks into the chassis as the part turns, and the two labels swap as a hand sweeps past.** An
-automatic correction at frame 1172 landed inside the swap and did not undo it; a correction the
-reviewer picked at 1235 did. A correction at the leak onset (frame 1020) did not hold either.
+automatic correction at frame 1172 landed inside the swap and did not undo it; a correction I
+picked at 1235 did. A correction at the leak onset (frame 1020) did not hold either.
 The first minute became the comparison unit, DAM4SAM ran over it, and a per-part reference took
 DAM4SAM's chassis inside the failing interval. Label-free review metrics ranked 198 episodes for
 the next review.
 
 ![Interior leaks into the chassis from 1020 and the labels swap; a human correction at 1235 undoes it](../media/story/2026-09-17-human-flags-swap.gif)
 
-![The v4 review's pinned moments: swap, leaks and hand drop-outs one reviewer was asked to judge](../media/story/2026-09-17-v4-review-sheet.png)
+![The v4 review's pinned moments: swap, leaks and hand drop-outs I was asked to judge](../media/story/2026-09-17-v4-review-sheet.png)
 
 The number that changed: the comparison unit shrank from 92.7 s to the first 60 s, and the
 interior was marked hidden over frames 1024 to 1172.
@@ -168,14 +168,14 @@ and [visual hulls](archive/method-ledger.md#sep-18-track-5-of-the-overnight-mult
 
 ## Sep 19: anchors become the yardstick
 
-**One reviewer's 52 anchor masks replaced self-consistency as the yardstick, and the first
-thing they showed was the swap window.** Chassis and interior fell to 0.0 to 0.6 IoU on frames
+**My 52 anchor masks replaced self-consistency as the yardstick, and the first thing they
+showed was the swap window.** Chassis and interior fell to 0.0 to 0.6 IoU on frames
 1050 to 1150 for the reference and the best arm alike. The label-free proxies had also been
 wrong about resolution: 1280 px beat 720 px on the anchors and 1920 px saturated. Appending
 corrections to SAM3's prompt memory was the one memory change that helped. DAM4SAM under the
 same schedule tied SAM3 at 1280 px (0.715 against 0.724). Nineteen arms went into one table.
 
-![Against one reviewer's anchors, chassis and interior fall to 0.0-0.6 IoU on frames 1050-1150](../media/story/2026-09-19-anchors-swap-window.png)
+![Against my anchors, chassis and interior fall to 0.0-0.6 IoU on frames 1050-1150](../media/story/2026-09-19-anchors-swap-window.png)
 
 The number that changed: the best arm scored 0.743 mean IoU on the 52 anchor cells against the
 old reference's 0.668.
@@ -187,20 +187,20 @@ and [anchor scoreboard](archive/method-ledger.md#sep-19-anchor-scoreboard-over-e
 
 ## Sep 20: other cameras detect the failure and cannot fix it
 
-**Corrections proposed by the other cameras reached the seed-only floor and never the
-reviewer's level, so multicam is a detector, not yet a corrector.** SAM3's own object score
+**Corrections proposed by the other cameras reached the seed-only floor and never the level
+of my corrections, so multicam is a detector, not yet a corrector.** SAM3's own object score
 ranked its failures (AUROC 0.91 to 0.96) but no threshold transferred. Seeds for the rear body
 and cabin transferred from other cameras; the chassis and interior did not. On the interior
-window the consensus corrections scored 0.29 and 0.32 IoU against the anchors, where one
-reviewer's scored 0.64 and 0.59. A second recording ran with zero human input and stayed
+window the consensus corrections scored 0.29 and 0.32 IoU against the anchors, where mine
+scored 0.64 and 0.59. A second recording ran with zero human input and stayed
 unscored, and the review surface became one recording with three presets.
 
-![Interior stays human: consensus corrections from the other cameras reach 0.29-0.32 IoU, one reviewer's 0.59-0.64](../media/story/2026-09-20-interior-stays-human.gif)
+![Interior stays human: consensus corrections from the other cameras reach 0.29-0.32 IoU, mine 0.59-0.64](../media/story/2026-09-20-interior-stays-human.gif)
 
 ![The v6 review recording under its segmentation preset: reference, provenance and six candidate arms](../media/story/2026-09-20-v6-review.png)
 
 The number that changed: corrections from the other cameras reached 0.659 mean IoU against
-0.743 with one reviewer's corrections, and 0.288 against 0.585 on the interior.
+0.743 with my corrections, and 0.288 against 0.585 on the interior.
 
 Evidence: `runs/multiview-reprompt-20260920/` and `runs/interaction-review-first-minute-v6/`;
 archive entries [the consensus re-prompt loop run](archive/method-ledger.md#sep-20-b4-arms-on-c10379-the-consensus-re-prompt-loop-run-multicam-plan-headline-commits-78f2eca-21da378-cf8007e)
@@ -291,8 +291,8 @@ and [second trial with zero tuning](archive/method-ledger.md#sep-25-second-trial
 
 ## Sep 26: gate 1 rejects six seeds
 
-**One reviewer accepted 52 of the 60 detector seeds, rejected 6 and left 2 undecided, and the
-arithmetic said the verdicts would not move.** Three rejects were two objects under one box, one
+**I accepted 52 of the 60 detector seeds, rejected 6 and left 2 undecided, and the arithmetic
+said the verdicts would not move.** Three rejects were two objects under one box, one
 had a glove inside the mask, one caught the table edge, and one was hidden by a hand on its seed
 frame. The six slots were 9% of the SAM3 rows; removing them would lift per-frame box decode
 from 99.1% to about 99.4% and video memory from 79.3% to about 81.4%. The same day the gate 2
@@ -311,8 +311,8 @@ and [gate 2 web workspace](archive/method-ledger.md#sep-26-gate-2-web-workspace-
 
 ## Sep 27: gate 2 rejects 30 masks and the redo holds
 
-**On 337 anchor cells one reviewer took per-frame box decode's own mask 307 times and rejected
-it on 30, almost all pipettes in a hand; the ranking held with a smaller gap.** Against the
+**On 337 anchor cells I took per-frame box decode's own mask 307 times and rejected it on 30,
+almost all pipettes in a hand; the ranking held with a smaller gap.** Against the
 accepted masks, per-frame box decode scored 0.984 mean IoU and 98.8% at 0.5 or above, video
 memory 0.897 and 93.5%. The 20-point label-free gap became 5 points, because the 18 frames
 sample video memory's dead slots instead of counting every frame of them. Video memory won
@@ -324,7 +324,7 @@ were deleted.
 ![Gate 2 rejects arm b's mask on 30 of 337 cells: pipettes in the hand, a hidden object, a wider fit](../media/story/2026-09-27-gate2-rejected-masks.png)
 
 The number that changed: the gap between per-frame box decode and video memory on masks at 0.5
-IoU or above, 20 points against the detector's box to 5 points against one reviewer's choice.
+IoU or above, 20 points against the detector's box to 5 points against my choice.
 
 Evidence: `runs/finebio-anchors-P03_03_01-20260925/scoreboard/` and
 `runs/finebio-arms-P03_03_01-filtered-20260927/`; archive entries

@@ -10,7 +10,7 @@ numbers. The glossary that maps the lab's shorthand to plain words is in `writin
 |---|---|
 | [`../README.md`](../README.md) | What the lab built in 20 days, the five numbers that matter, what is real and what is not, and how to set up |
 | [`story.md`](story.md) | One section per active day, each with a GIF, a headline and the number that changed |
-| [`results.md`](results.md) | The goals scorecard in the founder's words, the two-trial FineBio table, the numbers anchored on one reviewer's masks, the Assembly101 headline, the claim boundaries |
+| [`results.md`](results.md) | The goals scorecard in the founder's words, the two-trial FineBio table, the numbers anchored on the masks I chose, the Assembly101 headline, the claim boundaries |
 | [`pipeline.md`](pipeline.md) | Setup, the FineBio pipeline one command per stage, the two gates, the recordings, the Assembly101 review package, tests, the GPU queue, pruning |
 | [`review-guide-2026-09-25-finebio-3d.md`](review-guide-2026-09-25-finebio-3d.md) | The 20-minute route through the FineBio recordings: presets, storyboard, cross-checks, key numbers |
 | [`writing-style.md`](writing-style.md) | The ten rules the live pages follow, the [glossary](writing-style.md#glossary), and one before-and-after |

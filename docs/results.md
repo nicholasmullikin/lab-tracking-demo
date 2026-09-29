@@ -59,10 +59,10 @@ close-out).
 
 ## After the two human gates
 
-**Both gates were held on trial 1, and neither moved a verdict.** At gate 1 one reviewer accepted 52
-seed tiles, rejected 6 and left 2 undecided out of 60; the rejects were pipettes under the wrong
-colour word and a tube group under one mask. At gate 2 the same reviewer labelled 337 of the 440
-anchor cells, every cell that had a detector box. Trial 1 was then redone downstream of both gates.
+**Both gates were held on trial 1, and neither moved a verdict.** At gate 1 I accepted 52 seed
+tiles, rejected 6 and left 2 undecided out of 60; the rejects were pipettes under the wrong colour
+word and a tube group under one mask. At gate 2 I labelled 337 of the 440 anchor cells, every cell
+that had a detector box. Trial 1 was then redone downstream of both gates.
 The per-frame decode is a row filter of its own masks, so it changed only by arithmetic. Video
 memory was re-run per camera on the filtered seeds, 1.26 h of GPU.
 
@@ -84,7 +84,7 @@ Evidence: `runs/finebio-arms-P03_03_01-filtered-20260927/README.md`,
 `qa/finebio-P03_03_01-seed-decisions.human-record.json`, archive entries 'p2-gate1' (gate 1 held)
 and 'post-gate' (the redo).
 
-## What one reviewer's masks say
+## What the masks I chose say
 
 **On human-chosen masks the ranking holds: per-frame box decode first, video memory second,
 re-seeding third, with a 5-point gap instead of 20.** The 18 anchor frames sample video memory's
@@ -95,7 +95,7 @@ objects and lose on the tubes and the held pipettes.
 
 | Arm | Mask IoU vs accepted mask, mean | Masks at 0.5 or above | Pooled IDF1 on six named objects | Measured against | Where |
 |---|---|---|---|---|---|
-| Per-frame box decode | 0.984 | 98.8% | 0.921 | 325 cells, one reviewer's choice among SAM3 decoder masks on 18 frames of trial 1 | `runs/finebio-anchors-P03_03_01-20260925/scoreboard/anchor_scoreboard.md` |
+| Per-frame box decode | 0.984 | 98.8% | 0.921 | 325 cells, my choice among SAM3 decoder masks on 18 frames of trial 1 | `runs/finebio-anchors-P03_03_01-20260925/scoreboard/anchor_scoreboard.md` |
 | Video memory | 0.897 | 93.5% | 0.962 | same | same |
 | Video memory plus re-seeds | 0.871 | 91.7% | 0.950 | same | same |
 | Boxes only (no masks) | box IoU 0.903 mean, 0.929 median | not measured | 0.956 | the detector box vs the accepted mask's box, 307 cells | same |
@@ -114,8 +114,8 @@ archive entry 'p6-anchors' (gate 2 held).
 
 **SAM3 at 1280 px with an appended prompt memory is the best arm on the toy car, DAM4SAM ties it,
 and other cameras detect its failures without fixing them.** The yardstick is 52 anchor cells on 13
-frames of the static camera C10379. Each cell is one reviewer's choice of a SAM3 decoder mask for
-one visible part: 51 masks and one hidden mark.
+frames of the static camera C10379. Each cell is my choice of a SAM3 decoder mask for one visible
+part: 51 masks and one hidden mark.
 
 | Arm or question | Value | Measured against | Where |
 |---|---|---|---|
@@ -170,7 +170,7 @@ verdict. Test counts are at the close of the phase.
 | FineBio: multi-camera, one world frame, segmentation from multiple angles to keep track | **Done with its limits named.** Static objects one id each in both rooms; births down 40%, ambiguities down two thirds; the held pipette fragments | the tracker's own counts | `<arm>/tracks-ext/identity_metrics.json` |
 | FineBio: compelling demo | **Done as a review surface, not judged by a viewer.** Four recordings with World, Cameras and Evidence presets, a storyboard and a negative control, all `rerun rrd verify` clean | the Rerun CLI | `runs/finebio-review-*/review_index.json` |
 | FineBio: generalises to a second room with zero tuning | **Done.** The same verdicts in room 2; three things named as overfit, one stop rule fired | the same measures | `runs/finebio-arms-P20_03_01-20260925/README.md` |
-| FineBio: the two soft human gates | **Both held on trial 1.** 52 / 6 / 2 seeds; 337 of 440 anchor cells; trial 1 redone on the filtered seeds; trial 2 has no gate | one reviewer | `qa/finebio-P03_03_01-*.human-record.json` |
+| FineBio: the two soft human gates | **Both held on trial 1.** 52 / 6 / 2 seeds; 337 of 440 anchor cells; trial 1 redone on the filtered seeds; trial 2 has no gate | my decisions at both gates | `qa/finebio-P03_03_01-*.human-record.json` |
 | Audio | **Deferred by plan, never revisited.** | nothing | the Assembly101 close |
 
 Evidence: the "Goals scorecard" table in [`archive/method-ledger.md`](archive/method-ledger.md),
@@ -184,8 +184,8 @@ among that model's masks. None is accuracy against ground truth.** The boundarie
 - The FineBio detector was trained on FineBio's own objects and on frames from these cameras. Every
   "IoU vs detector box" is agreement between two models. Its seeding quality is an upper bound for a
   new lab's bench.
-- The anchors are 337 cells on 18 frames of one trial, one reviewer's choice among SAM3 decoder
-  masks. They rank arms against each other and are not a dataset. No tube or held pipette was named,
+- The anchors are 337 cells on 18 frames of one trial, my choice among SAM3 decoder masks. They
+  rank arms against each other and are not a dataset. No tube or held pipette was named,
   so per-tube identity and the pipette's fragmentation have no human-anchored reading. The 103 cells
   without a detector box were left unlabelled, so false positives on detector-less frames are
   unmeasured.
@@ -193,7 +193,7 @@ among that model's masks. None is accuracy against ground truth.** The boundarie
   numbers rest on the detector's own seeds.
 - Identity metrics against the SAM3 per-camera slots are a proxy. Confidence ranks rows within one
   arm and is not a probability. Events are geometry on model output.
-- The pipette in the hand fragments in both rooms (blue 59, yellow 48 ids with the extensions). We
+- The pipette in the hand fragments in both rooms (blue 59, yellow 48 ids with the extensions). I
   read it as an observation problem: a long object seen from one or two cameras has no single 3D
   point in its box centre. The fix (a tip or handle keypoint) is named, not built.
 - Proximity events are zero by protocol: no pipette comes near the plate in either window. The

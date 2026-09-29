@@ -14,7 +14,7 @@ lab record, and its prose stays exactly as written.
 4. **Provenance lives at the end.** One `Evidence:` line per section names the run directory and the archive entry.
    No commit hashes, ledger anchors or dates inside sentences.
 5. **Plain names, defined once.** The glossary below maps the lab's words to plain ones. After the first use, write the plain name.
-6. **Named actors, active voice.** Write "we", "the tracker", "SAM3", "the detector". Never "the human", "the user" or "the agent".
+6. **Named actors, active voice.** Write "I", "the tracker", "SAM3", "the detector". The one person who drew the seeds and held both gates is "I". Never "the human", "the user" or "the agent".
 7. **Headings are topics.** Dates appear only in `docs/story.md`, where the date is the topic.
 8. **Caveats once.** The claim boundaries live in one section of the README and one of `docs/results.md`.
    A number elsewhere gets at most one clause, such as "against the detector's box, not ground truth".
@@ -52,7 +52,7 @@ lab record, and its prose stays exactly as written.
 | trial 2 | recording `P20_03_01`, room 2. The same build with nothing tuned and no human gate |
 | DINO | FineBio's shipped detector, trained on these cameras. It supplies every box |
 | DDETR | FineBio's second shipped detector, used only to flag disagreement with DINO |
-| MuggledSAM / SAM3.1 | the wrapper we run / the mask model inside it |
+| MuggledSAM / SAM3.1 | the wrapper I run / the mask model inside it |
 | video memory vs per-frame box decode | the two ways SAM3 makes masks. Memory carries a mask across frames (arm (c)). Box decode starts fresh from the box on each frame (arm (b)) |
 | negative control | the same checks run on a camera pose known to be wrong, to show the checks can fail |
 | claim boundary | what a number is measured against, and what it does not show |
@@ -63,7 +63,7 @@ From the scorecard row on multi-camera tracking.
 
 > Before: "Done with its limits named. Per-trial camera solve (camera 6 re-solved in room 1, cameras 1-4 in room 2, 0.7-2.1 px; no view dropped), rig gates as formulas (association 30.1 / 27.5 px), the seven cross-checks and a negative control on every build; a new 3D tracker (birth by triangulation, predict-project-gate, coasting / lost, confirmed re-acquisition, hand-off re-seed) plus four extensions on inventory evidence: tracks born 285 / 308 / 270 -> 191 / 186 / 147 and ambiguities 126 / 158 / 133 -> 33 / 54 / 22 on trial 1 [...] **the in-hand pipette fragments in both rooms** (41 / 59 / 20 and 24 / 48 / 21 ids with the motion model) [...]"
 
-> After: "**Every static object on the bench gets one 3D identity, in both rooms.** Six cameras are solved into one world frame to within 2 px, and any object two cameras see is triangulated and tracked. Four tracker extensions (motion model, containers, groups, held objects) cut spurious track births by 40% (308 to 186) and identity ambiguities by two thirds (158 to 54). A tube keeps its identity through a closed centrifuge lid. The one failure is the pipette in the hand, which splits into about 60 identities over two minutes; we read that as an observation problem, not a tracking one. Evidence: `runs/finebio-arms-P03_03_01-filtered-20260927/scoreboard/`, archive entry 'p3-tracker-ext'."
+> After: "**Every static object on the bench gets one 3D identity, in both rooms.** Six cameras are solved into one world frame to within 2 px, and any object two cameras see is triangulated and tracked. Four tracker extensions (motion model, containers, groups, held objects) cut spurious track births by 40% (308 to 186) and identity ambiguities by two thirds (158 to 54). A tube keeps its identity through a closed centrifuge lid. The one failure is the pipette in the hand, which splits into about 60 identities over two minutes; I read that as an observation problem, not a tracking one. Evidence: `runs/finebio-arms-P03_03_01-filtered-20260927/scoreboard/`, archive entry 'p3-tracker-ext'."
 
 ## Checks
 

@@ -136,11 +136,12 @@ source of every file. They are the first pixels from either dataset committed to
 The Assembly101 frames are covered by `CC BY-NC 4.0` (Sener et al., CVPR 2022) and are
 attributed to the dataset. The FineBio frames come from a gated dataset whose licence
 agreement limits use to non-commercial research and requires citation of Yagi et al.,
-IJCV 2025. This repository is private and has no remote, which is the only reason these
-files are in it. Before any redistribution, sharing of the repository, publication of a
-clone or push to a remote, every file under `media/story/` must be removed from the tree
-and from history, or a rights determination obtained for each dataset. Committing them
-makes no sharing determination and does not change the terms above.
+IJCV 2025. This repository is a private GitHub repository (`origin` is
+`github.com/nicholasmullikin/lab-tracking-demo`), which is the only reason these files are
+in it. Before the repository is made public, or a clone, an archive or any of these files is
+otherwise redistributed, every file under `media/story/` must be removed from the tree and
+from history, or a rights determination obtained for each dataset. Committing them makes no
+sharing determination and does not change the terms above.
 
 ## Dependency and future-model review
 
