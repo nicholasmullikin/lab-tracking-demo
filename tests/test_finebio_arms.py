@@ -13,6 +13,8 @@ import pytest
 from finebio_fixtures import FIXTURE_DIR, load_preflight_fixtures
 
 from battle.finebio_arms import (
+    LINES_TRACKER_FLAGS,
+    PIPETTE_CLASSES,
     Episode,
     annotate_episodes,
     area_stability,
@@ -1065,6 +1067,40 @@ def test_arm_a_pipeline_on_the_preflight_fixtures(tmp_path: Path, fixtures):
         ]
     )
     assert rc == 0 and "| (a-ext) |" in (tmp_path / "board" / "scoreboard.md").read_text()
+    # `--lines` adds `--line-classes pipette` to the extension flags and writes beside the
+    # ext outputs under a `-lines` suffix; the ext and core files are untouched.
+    ext_bytes = (output / "tracks-ext" / "tracks.jsonl").read_bytes()
+    rc = main(
+        [
+            "run",
+            "--clip-config",
+            str(clip_path),
+            "--detections",
+            str(detections),
+            "--arm",
+            "a",
+            "--gates",
+            str(gates),
+            "--output",
+            str(output),
+            "--fpv-poses",
+            str(FIXTURE_DIR / "fpv_poses.json"),
+            "--reuse-observations",
+            "--lines",
+        ]
+    )
+    assert rc == 0
+    for name in ("tracks-lines/tracks.jsonl", "measures-lines.json", "measures-lines.md"):
+        assert (output / name).is_file(), name
+    assert (output / "tracks-ext" / "tracks.jsonl").read_bytes() == ext_bytes
+    assert (output / "measures.json").read_bytes() == core_measures
+    lines_measures = json.loads((output / "measures-lines.json").read_text())
+    assert lines_measures["tracks_dir"] == "tracks-lines" and lines_measures["tracker_extensions"]
+    lines_ext = lines_measures["identity"]["extensions"]["lines"]
+    assert lines_ext["enabled"] is True and lines_ext["geometric_class"] == "pipette"
+    assert LINES_TRACKER_FLAGS == ("--line-classes", "pipette")
+    assert lines_ext["classes"] == list(PIPETTE_CLASSES)
+    assert lines_measures["tracker_params"]["extensions"]["line_classes"] == list(PIPETTE_CLASSES)
     # The arm (b) worker root is required.
     with pytest.raises(ValueError, match="worker-root"):
         from battle.finebio_arms import build_observations

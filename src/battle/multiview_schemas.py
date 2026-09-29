@@ -511,6 +511,21 @@ class Track3D(VersionedModel):
     split_from: str | None = None
     container_id: str | None = None
     held_by: str | None = None
+    # Sep 28 (p2-tracker-lines), None unless the track is a line track of the `--line-classes`
+    # extension: the unit direction from `endpoints_cm[0]` to `endpoints_cm[1]`; the two
+    # endpoints in cm (`endpoints_cm[0]` is the tip when `tip_resolved`, else the order is the
+    # track's internal one); the plurality of the per-view observed classes (the geometric
+    # class is `object_class`); the per-view perpendicular residual of the fitted line this
+    # frame (undistorted px); the views dropped from this frame's fit as merged masks; and the
+    # colour vote's identity and confidence (p2-colour-vote, filled by `finebio_colour`).
+    direction: Vec3 | None = None
+    endpoints_cm: tuple[Vec3, Vec3] | None = None
+    tip_resolved: bool | None = None
+    observed_class: str | None = None
+    line_residual_px: dict[str, float] | None = None
+    merged_views: tuple[str, ...] | None = None
+    colour_identity: str | None = None
+    colour_confidence: float | None = Field(default=None, ge=0, le=1)
 
 
 class TrackEvent(VersionedModel):

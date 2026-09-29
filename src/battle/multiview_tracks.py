@@ -86,14 +86,26 @@ above reproduces byte for byte). Each was added on the occlusion inventory of ar
   that hand's live track at a fixed offset, times out as coasting does, and resumes under the
   core rule. Evidence: 5-19 episodes per arm inside a hand box in every projecting view
   (89-166 by the two-view test, most of them occlusion by a hand rather than carrying).
+* `--line-classes pipette` (`p2-tracker-lines`, Sep 28): the four pipette classes are one
+  geometric class of 3D line segments fitted from the per-view mask axes
+  (`multiview_lines`), the observed class kept as a per-track vote (`observed_class`) and the
+  colour vote as a hook (`colour_identity`). Birth pairs views on line plausibility and fits
+  the clique's line; association gates each view on the perpendicular distance of its axis to
+  the projected predicted line and the multi-view fit on `line_distance`; the endpoints come
+  from the soft length prior (`configs/finebio/pipettes.json`); a mask wider than the track's
+  running width, longer than the prior or too rough is dropped as merged; with
+  `--motion-model` both endpoints carry a velocity; with `--held` the hand holds the butt.
+  Evidence: 61 blue-pipette ids on trial 1 from box centres that are different places on a
+  23 cm shaft in T1, T4 and the head camera.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from itertools import combinations
@@ -110,6 +122,20 @@ from .finebio_slice import (
     parse_frames,
     resolve_fpv_source,
     triangulate_pixels,
+)
+from .multiview_lines import (
+    END_TOLERANCE_CM,
+    AxisObs,
+    Line3D,
+    axis_residual,
+    fit_line,
+    is_elongated,
+    line_distance,
+    line_endpoints,
+    loo_residual,
+    plane_from_axis,
+    point_residual,
+    ray_from_point,
 )
 from .multiview_schemas import (
     FINEBIO_FPV_VIEW,
@@ -155,6 +181,23 @@ DEFAULT_CONTAINER_HEIGHTS_CM = (
     ("trash_can", 25.0),
 )
 DEFAULT_CONTAINER_HEIGHT_CM = 10.0
+# p2-tracker-lines: the pipette classes `--line-classes pipette` expands to, the length prior
+# the stand slice wrote, and the per-frame process noise on a line's direction (high: a held
+# pipette swings between the tube and the plate, so the measured direction is trusted over the
+# predicted one; a measured direction is worth about `LINE_DIRECTION_MEAS_DEG`).
+LINE_CLASS_SHORTHANDS: dict[str, tuple[str, ...]] = {
+    "pipette": ("blue_pipette", "yellow_pipette", "red_pipette", "8_channel_pipette"),
+}
+DEFAULT_LINE_PRIOR_PATH = "configs/finebio/pipettes.json"
+LINE_DIRECTION_NOISE_DEG = 20.0
+LINE_DIRECTION_MEAS_DEG = 2.0
+# A hand resolves tip and butt when it is within this of one end and that end is nearer than
+# the other by the margin.
+LINE_HAND_REACH_CM = 15.0
+LINE_HAND_MARGIN_CM = 3.0
+# A pipette seen by a compact view alone gives a ray, not an extent; a view's extent shorter
+# than this is not used to decide which end the prior reconstructs.
+LINE_MIN_VIEW_EXTENT_CM = 1.0
 
 
 # --------------------------------------------------------------------------- parameters
@@ -218,6 +261,23 @@ class TrackerParams:
     held: bool = False
     held_min_views: int = 2
     hand_classes: tuple[str, ...] = HAND_CLASSES
+    # -- p2-tracker-lines (Sep 28): the classes tracked as one geometric class of 3D line
+    # segments (empty = off, no code path changes), the name of that class, the length prior
+    # file, the line gates (angle between the predicted and the fitted line; perpendicular
+    # distance at the midpoint, inflated by the track's uncertainty as `gate_px` is), the
+    # smallest plane-pair angle a fit accepts, and the merged-mask rejections: a view whose mask
+    # width exceeds the factor times the track's running median width in that view, whose own
+    # extent on the line exceeds the factor times the prior, or whose skeleton residual exceeds
+    # the maximum, is dropped from that frame's fit.
+    line_classes: tuple[str, ...] = ()
+    line_geometric_class: str = "pipette"
+    line_prior_path: str = DEFAULT_LINE_PRIOR_PATH
+    line_gate_deg: float = 15.0
+    line_gate_cm: float = 6.0
+    line_min_pair_angle_deg: float = 5.0
+    line_merged_width_factor: float = 1.6
+    line_merged_extent_factor: float = 1.2
+    line_max_axis_residual_px: float = 25.0
 
     def as_dict(self) -> dict[str, Any]:
         out = {k: getattr(self, k) for k in CORE_PARAM_KEYS}
@@ -232,10 +292,19 @@ class TrackerParams:
 
     @property
     def any_extension(self) -> bool:
-        return bool(self.motion_model or self.containers or self.group_tracks or self.held)
+        return bool(
+            self.motion_model
+            or self.containers
+            or self.group_tracks
+            or self.held
+            or self.line_classes
+        )
 
     def container_height(self, cls: str) -> float:
         return dict(self.container_heights_cm).get(cls, self.default_container_height_cm)
+
+    def is_line_class(self, cls: str) -> bool:
+        return bool(self.line_classes) and cls in self.line_classes
 
 
 CORE_PARAM_KEYS = (
@@ -256,6 +325,71 @@ CORE_PARAM_KEYS = (
 )
 
 
+# --------------------------------------------------------------------------- line prior
+
+
+@dataclass(frozen=True)
+class LinePrior:
+    """The soft length prior of the line classes (`configs/finebio/pipettes.json`, written by
+    the stand slice): the shared length, the spread that serves as its tolerance, and the
+    per-class medians where the stand measured a class (the median over the trials that did).
+    `length_for(cls)` is the class median when the class is known, else the shared value."""
+
+    length_cm: float
+    spread_cm: float
+    per_class: dict[str, float] = field(default_factory=dict)
+    source: str = "default"
+
+    def length_for(self, cls: str | None) -> float:
+        if cls is not None and cls in self.per_class:
+            return self.per_class[cls]
+        return self.length_cm
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "length_cm": self.length_cm,
+            "spread_cm": self.spread_cm,
+            "per_class": dict(sorted(self.per_class.items())),
+            "source": self.source,
+        }
+
+
+def load_line_prior(path: str | Path) -> LinePrior:
+    """Read the pipettes config; a relative path that is not found from the working directory
+    is tried from the repository root, so tests and the CLI resolve the default alike."""
+    candidate = Path(path)
+    if not candidate.is_file() and not candidate.is_absolute():
+        from_root = Path(__file__).resolve().parents[2] / candidate
+        if from_root.is_file():
+            candidate = from_root
+    doc = json.loads(candidate.read_text(encoding="utf-8"))
+    per_trial = (doc.get("provenance") or {}).get("per_trial") or {}
+    medians: dict[str, list[float]] = defaultdict(list)
+    for trial in per_trial.values():
+        for cls, value in (trial.get("per_pipette_median_cm") or {}).items():
+            medians[cls].append(float(value))
+    return LinePrior(
+        length_cm=float(doc["length_cm"]),
+        spread_cm=float(doc.get("length_spread_cm", 0.0)),
+        per_class={cls: float(np.median(v)) for cls, v in medians.items()},
+        source=str(path),
+    )
+
+
+def parse_line_classes(spec: str | None) -> tuple[str, ...]:
+    """`--line-classes`: a comma-separated class list; `pipette` expands to the four pipette
+    classes (`LINE_CLASS_SHORTHANDS`)."""
+    if not spec:
+        return ()
+    out: list[str] = []
+    for item in spec.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        out.extend(LINE_CLASS_SHORTHANDS.get(item, (item,)))
+    return tuple(dict.fromkeys(out))
+
+
 # --------------------------------------------------------------------------- observations
 
 
@@ -271,12 +405,30 @@ class Obs:
     box: tuple[float, float, float, float] | None
     confirmed: bool
     index: int = -1
+    # -- p2-tracker-lines: the mask axis fields as the row carries them (None without a mask
+    # axis), and the row's own class when `object_class` was rewritten to the geometric class.
+    axis_px: tuple[tuple[float, float], tuple[float, float]] | None = None
+    elongation: float | None = None
+    width_px: float | None = None
+    axis_residual_px: float | None = None
+    colour_class: str | None = None
 
     @property
     def extent(self) -> tuple[float, float] | None:
         if self.box is None:
             return None
         return (self.box[2] - self.box[0], self.box[3] - self.box[1])
+
+    def axis_obs(self, weight: float = 1.0) -> AxisObs:
+        """The `multiview_lines` record of this observation: the mask axis as the plane
+        constraint when elongated, the centroid's ray otherwise."""
+        return AxisObs(
+            self.view,
+            None if self.axis_px is None else np.asarray(self.axis_px, dtype=np.float64),
+            self.point,
+            self.elongation,
+            weight,
+        )
 
 
 @dataclass
@@ -298,7 +450,20 @@ def _obs(row: FineBioObservation) -> Obs:
         sam3_score=row.sam3_object_score,
         box=box,
         confirmed=row.source == "detector",
+        axis_px=row.mask_axis_px,
+        elongation=row.mask_elongation,
+        width_px=row.mask_width_px,
+        axis_residual_px=row.mask_axis_residual_px,
     )
+
+
+def _to_geometric_class(items: Iterable[Obs], params: TrackerParams) -> None:
+    """Line classes become the geometric class; the row's own class is kept as the colour
+    attribute. Applied after the source rule, which still runs per original class."""
+    for o in items:
+        if params.is_line_class(o.object_class) and o.colour_class is None:
+            o.colour_class = o.object_class
+            o.object_class = params.line_geometric_class
 
 
 def select_observations(
@@ -339,6 +504,11 @@ def select_observations(
     for view, items in tracked.items():
         for i, obs in enumerate(items):
             obs.index = i
+    if params.line_classes:
+        for items in tracked.values():
+            _to_geometric_class(items, params)
+        for items in detector.values():
+            _to_geometric_class(items, params)
     return FrameObservations(frame=frame, tracked=dict(tracked), detector=dict(detector))
 
 
@@ -453,6 +623,58 @@ class Track:
     group_size: int | None = None
     group_container: str | None = None
     split_from: str | None = None
+    # -- p2-tracker-lines (None / empty unless the track is a line track): unit direction from
+    # endpoints_cm[0] to endpoints_cm[1]; the endpoints (2x3, cm; `position` is their
+    # midpoint); their velocities (2x3) under the motion model; the direction's scalar
+    # uncertainty (deg); the accumulated per-view observed classes; the colour vote's
+    # histogram (p2-colour-vote fills it); which end is the tip once a hand resolved it; the
+    # running median mask width per view (merged-mask check); this frame's line residuals and
+    # dropped views; whether this frame's update was a line fit or the point fallback.
+    direction: np.ndarray | None = None
+    endpoints_cm: np.ndarray | None = None
+    endpoint_velocity: np.ndarray | None = None
+    direction_uncertainty_deg: float = 0.0
+    class_votes: Counter = field(default_factory=Counter)
+    colour_hist: dict[str, float] | None = None
+    tip_is_endpoint_0: bool | None = None
+    last_observed_endpoints: np.ndarray | None = None
+    last_endpoints_frame: int | None = None
+    width_history: dict[str, list[float]] = field(default_factory=dict)
+    line_residuals: dict[str, float] = field(default_factory=dict)
+    merged_views: tuple[str, ...] = ()
+    line_this_frame: bool | None = None
+
+    @property
+    def is_line(self) -> bool:
+        return self.direction is not None and self.endpoints_cm is not None
+
+    def line(self) -> Line3D:
+        assert self.direction is not None and self.endpoints_cm is not None
+        return Line3D(point=self.position, direction=self.direction, endpoints=self.endpoints_cm)
+
+    @property
+    def observed_class(self) -> str | None:
+        """The plurality of the observed classes (ties broken alphabetically)."""
+        if not self.class_votes:
+            return None
+        top = max(self.class_votes.values())
+        return min(cls for cls, n in self.class_votes.items() if n == top)
+
+    def set_endpoints(self, endpoints: np.ndarray) -> None:
+        """Endpoints define the line: position at the midpoint, direction along them."""
+        ends = np.asarray(endpoints, dtype=np.float64).reshape(2, 3)
+        self.endpoints_cm = ends
+        self.position = ends.mean(axis=0)
+        span = ends[1] - ends[0]
+        norm = float(np.linalg.norm(span))
+        if norm > 1e-9:
+            self.direction = span / norm
+
+    def tip_and_butt(self) -> tuple[np.ndarray, np.ndarray] | None:
+        if self.endpoints_cm is None or self.tip_is_endpoint_0 is None:
+            return None
+        tip = 0 if self.tip_is_endpoint_0 else 1
+        return self.endpoints_cm[tip], self.endpoints_cm[1 - tip]
 
 
 def pixels_per_cm(cam: Camera, point: np.ndarray) -> float:
@@ -481,6 +703,10 @@ def project(cam: Camera, point: np.ndarray) -> np.ndarray | None:
 
 def _in_image(pixel: np.ndarray, cam: Camera) -> bool:
     return bool(0 <= pixel[0] < cam.size[0] and 0 <= pixel[1] < cam.size[1])
+
+
+def _pixel_in_box(pixel: np.ndarray, box: tuple[float, float, float, float]) -> bool:
+    return bool(box[0] <= pixel[0] <= box[2] and box[1] <= pixel[1] <= box[3])
 
 
 def ray_point(cam: Camera, pixel: np.ndarray, near: np.ndarray) -> np.ndarray:
@@ -774,6 +1000,14 @@ class Candidate:
     residuals: dict[str, float]
     fpv_rule: bool = False
     group_size: int | None = None
+    # -- p2-tracker-lines: the fitted line and its prior-completed endpoints (None on a point
+    # candidate, including a line class whose fit was degenerate), the views dropped as merged,
+    # the visible length before the prior and whether the prior reconstructed an end.
+    line: Line3D | None = None
+    endpoints: np.ndarray | None = None
+    merged_views: tuple[str, ...] = ()
+    visible_length_cm: float | None = None
+    extended: bool = False
 
 
 def _pair_cost(cam_a: Camera, obs_a: Obs, cam_b: Camera, obs_b: Obs) -> float:
@@ -915,6 +1149,432 @@ def birth_candidates(
     return born
 
 
+# --------------------------------------------------------------------------- lines
+#
+# p2-tracker-lines (Sep 28). A line class observation is a plane (elongated mask axis) or a
+# ray (compact mask, detector box) through its camera; `multiview_lines.fit_line` turns two or
+# more of them into a 3D line. Two planes always meet in a line, so a two-view fit carries no
+# residual: pairs are gated on plausibility (the two views' extents on the line overlap or fit
+# within one pipette length; a ray meets the plane along the other view's axis), and the
+# residual check runs once a clique has three or more views, as the point birth's clique
+# prune does. Endpoints come from `line_endpoints` with the soft prior: a visible extent
+# shorter than the class prior by more than the spread is completed to the prior at the tip
+# end when the track knows its tip (the tip, the white cone away from the hand, is
+# systematically the shorter end of a SAM3 mask), else from the end more views reach; within
+# the spread it is left as seen. The coloured part of a pipette is the plunger button at the
+# butt, where the hand is: the end nearer a hand is the butt, the tip the other end, and
+# `endpoints_cm[0]` is the tip in the output once known. A view is dropped from a frame's fit
+# as *merged* when its mask width exceeds the track's running median width in that view by the
+# factor, its own extent on the line exceeds the factor times the prior, or its skeleton
+# residual exceeds the maximum.
+
+
+@dataclass
+class LineFit:
+    """One frame's line fit over a track's (or clique's) members: the line, the endpoints
+    after the soft prior, the members kept, their perpendicular residuals (undistorted px)
+    against the line, the views dropped as merged, the visible length before the prior and
+    whether the prior reconstructed an end."""
+
+    line: Line3D
+    endpoints: np.ndarray
+    members: dict[str, Obs]
+    residuals: dict[str, float]
+    merged_views: tuple[str, ...]
+    visible_length_cm: float
+    extended: bool
+    plane_views: tuple[str, ...]
+    # True when the direction came from the prediction (one plane plus rays), not the views.
+    aided: bool = False
+
+
+def _view_weight(view: str, params: TrackerParams) -> float:
+    return params.fpv_weight if view == FINEBIO_FPV_VIEW else 1.0
+
+
+def _view_gate_px(view: str, params: TrackerParams) -> float:
+    return params.gates.handoff_px if view == FINEBIO_FPV_VIEW else params.gates.association_px
+
+
+def _cams_and_obs(
+    members: dict[str, Obs], cams: dict[str, Camera], params: TrackerParams
+) -> list[tuple[Camera, AxisObs]]:
+    return [(cams[v], o.axis_obs(_view_weight(v, params))) for v, o in members.items()]
+
+
+def _line_view_residual(cam: Camera, o: Obs, line: Line3D) -> float:
+    """One observation against a line in its view: the mean distance of the undistorted axis
+    endpoints to the projected line (an elongated mask), else the centroid's distance (px;
+    NaN when the line does not project)."""
+    axis = o.axis_obs()
+    if is_elongated(axis):
+        assert axis.endpoints_px is not None
+        return axis_residual(cam, axis.endpoints_px, line)[0]
+    return point_residual(cam, o.point, line)
+
+
+def _along_line_interval(cam: Camera, o: Obs, line: Line3D) -> tuple[float, float]:
+    """The interval of the line parameter the observation covers: its axis endpoints' rays'
+    closest points (an elongated mask), else the centroid ray's."""
+    axis = o.axis_obs()
+    pixels = axis.endpoints_px if is_elongated(axis) else o.point.reshape(1, 2)
+    assert pixels is not None
+    params = [line.parameter_closest_to_ray(*ray_from_point(cam, p)) for p in pixels]
+    return min(params), max(params)
+
+
+def _interval_gap(a: tuple[float, float], b: tuple[float, float]) -> float:
+    return max(0.0, max(a[0], b[0]) - min(a[1], b[1]))
+
+
+def _line_pair_cost(
+    cam_a: Camera,
+    a: Obs,
+    cam_b: Camera,
+    b: Obs,
+    params: TrackerParams,
+    prior_length_cm: float,
+) -> float:
+    """Plausibility of two line-class observations in two views being one object, in cm
+    (`HUNGARIAN_FORBIDDEN` when implausible). Two planes: their line must lie in front of
+    both cameras and the two extents on it must overlap within `line_gate_cm` and fit within
+    `line_merged_extent_factor` times the prior; a plane and a ray: the ray meets the plane
+    along the axis (within the gate plus the length the axis view does not see); two rays:
+    the centroid pair residual under the association gate. A colour mismatch adds one cm so
+    same-colour pairs win ties, no more."""
+    axis_a, axis_b = (
+        a.axis_obs(_view_weight(a.view, params)),
+        b.axis_obs(_view_weight(b.view, params)),
+    )
+    plane_a, plane_b = is_elongated(axis_a), is_elongated(axis_b)
+    colour_penalty = 1.0 if a.colour_class != b.colour_class else 0.0
+    if plane_a and plane_b:
+        line = fit_line(
+            [(cam_a, axis_a), (cam_b, axis_b)], min_pair_angle_deg=params.line_min_pair_angle_deg
+        )
+        if line is None:
+            return _ray_pair_cost_cm(cam_a, a, cam_b, b, params) + colour_penalty
+        if depth_cm(cam_a, line.midpoint) <= 0 or depth_cm(cam_b, line.midpoint) <= 0:
+            return HUNGARIAN_FORBIDDEN
+        ia, ib = _along_line_interval(cam_a, a, line), _along_line_interval(cam_b, b, line)
+        gap = _interval_gap(ia, ib)
+        union = max(ia[1], ib[1]) - min(ia[0], ib[0])
+        if gap > params.line_gate_cm or union > params.line_merged_extent_factor * prior_length_cm:
+            return HUNGARIAN_FORBIDDEN
+        return gap + max(0.0, union - prior_length_cm) + colour_penalty
+    if plane_a or plane_b:
+        cam_p, p, cam_r, r = (cam_a, a, cam_b, b) if plane_a else (cam_b, b, cam_a, a)
+        cost = _plane_ray_cost_cm(cam_p, p, cam_r, r, params, prior_length_cm)
+        return cost if cost >= HUNGARIAN_FORBIDDEN else cost + colour_penalty
+    cost = _ray_pair_cost_cm(cam_a, a, cam_b, b, params)
+    return cost if cost >= HUNGARIAN_FORBIDDEN else cost + colour_penalty
+
+
+def _ray_pair_cost_cm(cam_a: Camera, a: Obs, cam_b: Camera, b: Obs, params: TrackerParams) -> float:
+    """The point birth's pair cost on the centroids, gated as there and converted to cm at the
+    triangulated point."""
+    px = _pair_cost(cam_a, a, cam_b, b)
+    if px > min(_view_gate_px(a.view, params), _view_gate_px(b.view, params)):
+        return HUNGARIAN_FORBIDDEN
+    point = triangulate_pixels([cam_a, cam_b], [a.point, b.point])
+    scale = 0.5 * (pixels_per_cm(cam_a, point) + pixels_per_cm(cam_b, point))
+    return px / max(scale, 1e-6)
+
+
+def _plane_ray_cost_cm(
+    cam_p: Camera, p: Obs, cam_r: Camera, r: Obs, params: TrackerParams, prior_length_cm: float
+) -> float:
+    """A compact view's centroid ray against an axis view: the ray's point on the axis plane
+    must project onto the axis segment, allowing the length the axis view may not see."""
+    assert p.axis_px is not None
+    try:
+        normal, offset = plane_from_axis(cam_p, np.asarray(p.axis_px, dtype=np.float64))
+    except ValueError:
+        return HUNGARIAN_FORBIDDEN
+    origin, direction = ray_from_point(cam_r, r.point)
+    denominator = float(normal @ direction)
+    if abs(denominator) < math.sin(math.radians(params.line_min_pair_angle_deg)):
+        return HUNGARIAN_FORBIDDEN
+    t = (offset - float(normal @ origin)) / denominator
+    if t <= 0:
+        return HUNGARIAN_FORBIDDEN
+    point = origin + t * direction
+    if depth_cm(cam_p, point) <= 0:
+        return HUNGARIAN_FORBIDDEN
+    pixel = project(cam_p, point)
+    if pixel is None:
+        return HUNGARIAN_FORBIDDEN
+    ends = np.asarray(p.axis_px, dtype=np.float64)
+    segment = ends[1] - ends[0]
+    length_px = float(np.linalg.norm(segment))
+    unit = segment / max(length_px, 1e-9)
+    along = float((pixel - ends[0]) @ unit)
+    across = abs(float((pixel - ends[0]) @ np.array([-unit[1], unit[0]])))
+    scale = pixels_per_cm(cam_p, point)
+    if across / scale > params.line_gate_cm:
+        return HUNGARIAN_FORBIDDEN
+    overshoot_cm = max(0.0, -along, along - length_px) / scale
+    slack = max(0.0, prior_length_cm - length_px / scale)
+    if overshoot_cm > slack + params.line_gate_cm:
+        return HUNGARIAN_FORBIDDEN
+    return overshoot_cm + across / scale
+
+
+def complete_extent(
+    line: Line3D,
+    cams_and_obs: Sequence[tuple[Camera, AxisObs]],
+    params: TrackerParams,
+    prior_length_cm: float,
+    prior_spread_cm: float,
+    tip_hint: np.ndarray | None = None,
+) -> tuple[np.ndarray, float, bool] | None:
+    """The soft prior on a fitted line's visible extent: ``(endpoints, visible length,
+    extended)``. The visible extent is the axis views' (`line_endpoints`) widened by the
+    compact views' centroid rays (their closest points on the line are on the shaft too).
+    Within `prior_spread_cm` of the prior it is left as seen; shorter, it is completed to the
+    prior at the tip end (the visible end nearer `tip_hint`, the track's predicted tip) unless
+    every view reaches that end and not the other, in which case the other end is the one the
+    masks missed; without a hint, from the end more views reach, both ends by half when tied.
+    None when no view is elongated."""
+    extent = line_endpoints(line, cams_and_obs)
+    if extent is None:
+        return None
+    lo, hi = line.parameter(extent.visible[0]), line.parameter(extent.visible[1])
+    support = list(extent.support)
+    n_views = len(extent.per_view)
+    for cam, obs in cams_and_obs:
+        if is_elongated(obs):
+            continue
+        parameter = line.parameter_closest_to_ray(*ray_from_point(cam, obs.centroid_px))
+        n_views += 1
+        if parameter < lo:
+            lo, support[0] = parameter, 1
+        elif parameter <= lo + END_TOLERANCE_CM:
+            support[0] += 1
+        if parameter > hi:
+            hi, support[1] = parameter, 1
+        elif parameter >= hi - END_TOLERANCE_CM:
+            support[1] += 1
+    visible = hi - lo
+    if visible >= prior_length_cm - prior_spread_cm:
+        return np.stack([line.point_at(lo), line.point_at(hi)]), visible, False
+    missing = prior_length_cm - visible
+    extend_end: int | None = None
+    if tip_hint is not None:
+        ends = np.stack([line.point_at(lo), line.point_at(hi)])
+        tip_end = int(
+            np.argmin(np.linalg.norm(ends - np.asarray(tip_hint, dtype=np.float64), axis=1))
+        )
+        tip_reached_by_all = support[tip_end] >= n_views and support[1 - tip_end] < n_views
+        extend_end = 1 - tip_end if tip_reached_by_all else tip_end
+    elif support[1] > support[0]:
+        extend_end = 0
+    elif support[0] > support[1]:
+        extend_end = 1
+    if extend_end == 0:
+        lo = hi - prior_length_cm
+    elif extend_end == 1:
+        hi = lo + prior_length_cm
+    else:
+        lo, hi = lo - missing / 2, hi + missing / 2
+    endpoints = np.stack([line.point_at(lo), line.point_at(hi)])
+    return endpoints, visible, missing > END_TOLERANCE_CM
+
+
+def fit_line_members(
+    members: dict[str, Obs],
+    cams: dict[str, Camera],
+    params: TrackerParams,
+    prior_length_cm: float,
+    prior_spread_cm: float,
+    width_medians: dict[str, float] | None = None,
+    predicted: Line3D | None = None,
+    uncertainty_cm: float = 0.0,
+    tip_hint: np.ndarray | None = None,
+) -> tuple[LineFit | None, tuple[str, ...]]:
+    """The line fit over a set of members (one per view), with the merged-mask rejections,
+    the residual prune (a member over its gate is dropped while three or more remain) and,
+    against a `predicted` line, the line gate (angle and perpendicular offset at the
+    midpoint, the latter inflated by `uncertainty_cm`; the member whose view disagrees most
+    with the prediction is dropped and the fit repeated). Returns ``(fit, merged views)``;
+    the fit is None when no line can be fitted from the members that survive (fewer than
+    two, no plane, degenerate, a two-member fit over its gate), the merged views are
+    reported either way."""
+    members = dict(members)
+    merged: list[str] = []
+    for v, o in list(members.items()):
+        too_rough = (
+            o.axis_residual_px is not None and o.axis_residual_px > params.line_max_axis_residual_px
+        )
+        too_wide = (
+            width_medians is not None
+            and v in width_medians
+            and o.width_px is not None
+            and o.width_px > params.line_merged_width_factor * width_medians[v]
+        )
+        if too_rough or too_wide:
+            merged.append(v)
+            del members[v]
+    while len(members) >= 2:
+        cams_and_obs = _cams_and_obs(members, cams, params)
+        line = fit_line(cams_and_obs, min_pair_angle_deg=params.line_min_pair_angle_deg)
+        if line is None or any(depth_cm(cams[v], line.midpoint) <= 0 for v in members):
+            return None, tuple(sorted(merged))
+        residuals = {
+            v: (r.perpendicular_px if np.isfinite(r.perpendicular_px) else float("inf"))
+            for v, r in line.residuals.items()
+        }
+        extent = line_endpoints(line, cams_and_obs)
+        assert extent is not None
+        too_long = [
+            v
+            for v, (lo, hi) in extent.per_view.items()
+            if hi - lo > params.line_merged_extent_factor * prior_length_cm
+        ]
+        if too_long:
+            for v in too_long:
+                merged.append(v)
+                del members[v]
+            continue
+        if extent.visible_length_cm > params.line_merged_extent_factor * prior_length_cm:
+            # The views' extents together span more than one pipette: two objects, or one view
+            # on the wrong one. With three or more, the odd interval goes; with two, no fit.
+            if len(extent.per_view) < 3:
+                return None, tuple(sorted(merged))
+            centres = {v: 0.5 * (lo + hi) for v, (lo, hi) in extent.per_view.items()}
+            median = float(np.median(list(centres.values())))
+            del members[max(centres, key=lambda v: abs(centres[v] - median))]
+            continue
+        if predicted is not None:
+            angle, perpendicular, _ = line_distance(predicted, line)
+            if angle > params.line_gate_deg or perpendicular > params.line_gate_cm + uncertainty_cm:
+                worst = max(
+                    members, key=lambda v: _line_view_residual(cams[v], members[v], predicted)
+                )
+                del members[worst]
+                continue
+        over = {v: r for v, r in residuals.items() if r > _view_gate_px(v, params)}
+        if over and len(members) >= 3:
+            del members[max(over, key=over.get)]
+            continue
+        if over:
+            return None, tuple(sorted(merged))
+        completed = complete_extent(
+            line, cams_and_obs, params, prior_length_cm, prior_spread_cm, tip_hint
+        )
+        assert completed is not None
+        endpoints, visible, extended = completed
+        fit = LineFit(
+            line=line,
+            endpoints=endpoints,
+            members=members,
+            residuals=residuals,
+            merged_views=tuple(sorted(merged)),
+            visible_length_cm=visible,
+            extended=extended,
+            plane_views=line.plane_views,
+        )
+        return fit, fit.merged_views
+    return None, tuple(sorted(merged))
+
+
+def decisive_class(votes: Counter) -> str | None:
+    """The plurality class when it holds more than half of the votes, else None."""
+    if not votes:
+        return None
+    cls, top = max(sorted(votes.items()), key=lambda kv: kv[1])
+    return cls if top * 2 > sum(votes.values()) else None
+
+
+def line_birth_candidates(
+    unassigned: dict[str, list[Obs]],
+    cams: dict[str, Camera],
+    params: TrackerParams,
+    prior: LinePrior,
+) -> list[Candidate]:
+    """Birth candidates of the geometric class: pairwise plausibility (`_line_pair_cost`)
+    across every view with a pose, Hungarian per view pair, cliques as the point birth forms
+    them, then `fit_line_members` per clique with the class prior when the members' colour
+    vote is decisive; a clique whose fit is degenerate falls back to the point birth's
+    triangulation of its centroids. The birth rule (fixed views, or fixed views plus the fpv)
+    is the core's."""
+    cls = params.line_geometric_class
+    per_view = {
+        v: [o for o in unassigned.get(v, ()) if o.object_class == cls] for v in sorted(cams)
+    }
+    per_view = {v: items for v, items in per_view.items() if items}
+    born: list[Candidate] = []
+    if len(per_view) < min(
+        params.gates.birth_min_fixed_views, params.gates.birth_fixed_views_with_fpv
+    ):
+        return born
+    edges: dict[tuple[str, int, str, int], float] = {}
+    for u, v in combinations(sorted(per_view), 2):
+        cost = np.full((len(per_view[u]), len(per_view[v])), HUNGARIAN_FORBIDDEN)
+        for i, a in enumerate(per_view[u]):
+            for j, b in enumerate(per_view[v]):
+                cost[i, j] = _line_pair_cost(cams[u], a, cams[v], b, params, prior.length_cm)
+        for i, j in hungarian(cost):
+            if cost[i, j] < HUNGARIAN_FORBIDDEN:
+                edges[(u, i, v, j)] = float(cost[i, j])
+    used: set[tuple[str, int]] = set()
+    for (u, i, v, j), _cost in sorted(edges.items(), key=lambda kv: kv[1]):
+        if (u, i) in used or (v, j) in used:
+            continue
+        clique = {u: i, v: j}
+        for w in sorted(per_view):
+            if w in clique:
+                continue
+            best, best_cost = None, float("inf")
+            for k in range(len(per_view[w])):
+                if (w, k) in used:
+                    continue
+                total = 0.0
+                for cv, ci in clique.items():
+                    key = (cv, ci, w, k) if cv < w else (w, k, cv, ci)
+                    if key not in edges:
+                        total = float("inf")
+                        break
+                    total += edges[key]
+                if total < best_cost:
+                    best, best_cost = k, total
+            if best is not None:
+                clique[w] = best
+        members = {w: per_view[w][k] for w, k in clique.items()}
+        votes = Counter(o.colour_class for o in members.values() if o.colour_class)
+        fit, _merged = fit_line_members(
+            members, cams, params, prior.length_for(decisive_class(votes)), prior.spread_cm
+        )
+        if fit is not None and len(fit.members) >= 2:
+            kept = fit.members
+            cand = Candidate(
+                cls,
+                fit.endpoints.mean(axis=0),
+                kept,
+                {w: round(fit.residuals[w], 2) for w in kept},
+                line=fit.line,
+                endpoints=fit.endpoints,
+                merged_views=fit.merged_views,
+                visible_length_cm=fit.visible_length_cm,
+                extended=fit.extended,
+            )
+        else:
+            point, kept, residuals = _prune_clique(members, cams, params)
+            if len(kept) < 2:
+                continue
+            cand = Candidate(cls, point, kept, {w: residuals[w] for w in kept})
+        for w in kept:
+            used.add((w, clique[w]))
+        n_fixed = sum(1 for w in kept if w != FINEBIO_FPV_VIEW)
+        has_fpv = FINEBIO_FPV_VIEW in kept
+        if n_fixed >= params.gates.birth_min_fixed_views:
+            born.append(cand)
+        elif has_fpv and n_fixed >= params.gates.birth_fixed_views_with_fpv:
+            cand.fpv_rule = True
+            born.append(cand)
+    return born
+
+
 # --------------------------------------------------------------------------- the tracker
 
 
@@ -933,11 +1593,15 @@ class MultiviewTracker:
         fpv_source: FpvCameraSource,
         params: TrackerParams | None = None,
         volumes: Sequence[ContainerVolume] = (),
+        line_prior: LinePrior | None = None,
     ) -> None:
         self.fixed_cams = dict(fixed_cams)
         self.fixed_views = tuple(fixed_cams)
         self.fpv_source = fpv_source
         self.params = params or TrackerParams()
+        self.line_prior = line_prior
+        if self.params.line_classes and self.line_prior is None:
+            self.line_prior = load_line_prior(self.params.line_prior_path)
         self.volumes = list(volumes)
         self.volume_by_id = {v.container_id: v for v in self.volumes}
         self.tracks: dict[str, Track] = {}
@@ -970,8 +1634,31 @@ class MultiviewTracker:
         self.candidates_merged_into_groups = 0
         self.absorbed_observations = 0
         self.max_group_size: dict[str, int] = defaultdict(int)
+        # -- p2-tracker-lines counters (all zero / empty with the extension off)
+        self.line_births = 0
+        self.line_point_births = 0
+        self.line_frames = 0
+        self.line_aided_frames = 0
+        self.line_point_frames = 0
+        self.line_single_view_frames = 0
+        self.line_degenerate_fits = 0
+        self.line_loo_px: list[float] = []
+        self.line_loo_deg: list[float] = []
+        self.line_lengths: list[tuple[str | None, float, float]] = []
+        self.line_merged_by_view: dict[str, int] = defaultdict(int)
+        self.line_extended_frames = 0
+        self.line_track_frames = 0
+        self.line_tip_resolved_frames = 0
+        self.line_tip_resolutions: dict[str, int] = defaultdict(int)
 
     # -- helpers
+
+    def _is_geometric(self, t: Track) -> bool:
+        return bool(self.params.line_classes) and t.object_class == self.params.line_geometric_class
+
+    def _prior_length(self, t: Track) -> float:
+        assert self.line_prior is not None
+        return self.line_prior.length_for(decisive_class(t.class_votes))
 
     def _new_id(self, cls: str) -> str:
         self._next_id += 1
@@ -1040,10 +1727,24 @@ class MultiviewTracker:
         unassigned = {
             v: [o for o in items if (v, o.index) not in taken] for v, items in obs.tracked.items()
         }
+        if params.line_classes:
+            geometric = params.line_geometric_class
+            lines = {
+                v: [o for o in items if o.object_class == geometric]
+                for v, items in unassigned.items()
+            }
+            unassigned = {
+                v: [o for o in items if o.object_class != geometric]
+                for v, items in unassigned.items()
+            }
+            assert self.line_prior is not None
+            line_candidates = line_birth_candidates(lines, cams, params, self.line_prior)
+        else:
+            line_candidates = []
         candidates = birth_candidates(unassigned, cams, self.fixed_views, params)
         if params.group_tracks:
             candidates = self._merge_group_candidates(candidates, cams)
-        self._births_and_reacquisitions(frame, candidates, cams)
+        self._births_and_reacquisitions(frame, candidates + line_candidates, cams)
 
         duplicates = self._near_duplicates()
         live_by_class: dict[str, int] = defaultdict(int)
@@ -1064,12 +1765,38 @@ class MultiviewTracker:
             return
         noise = params.process_noise_cm * dt
         if params.motion_model and t.mover and t.state in (*LOCALISED_STATES, "coasting"):
-            t.position = t.position + t.velocity * dt
+            if t.is_line:
+                # Constant velocity on both endpoints: the segment translates and turns; its
+                # length is a property of the object and is kept.
+                assert t.endpoints_cm is not None
+                endpoint_velocity = (
+                    t.endpoint_velocity
+                    if t.endpoint_velocity is not None
+                    else np.stack([t.velocity, t.velocity])
+                )
+                length = float(np.linalg.norm(t.endpoints_cm[1] - t.endpoints_cm[0]))
+                moved = t.endpoints_cm + endpoint_velocity * dt
+                span = moved[1] - moved[0]
+                norm = float(np.linalg.norm(span))
+                if norm > 1e-9:
+                    midpoint = moved.mean(axis=0)
+                    moved = np.stack(
+                        [midpoint - span / norm * length / 2, midpoint + span / norm * length / 2]
+                    )
+                t.set_endpoints(moved)
+                if t.state == "coasting":
+                    t.endpoint_velocity = endpoint_velocity * params.mover_coast_damping**dt
+            else:
+                t.position = t.position + t.velocity * dt
             speed = float(np.linalg.norm(t.velocity))
             noise = float(np.hypot(noise, params.mover_noise_factor * speed * dt))
             if t.state == "coasting":
                 t.velocity = t.velocity * params.mover_coast_damping**dt
             self.mover_frames += 1
+        if t.is_line:
+            t.direction_uncertainty_deg = float(
+                np.hypot(t.direction_uncertainty_deg, LINE_DIRECTION_NOISE_DEG * dt)
+            )
         t.uncertainty_cm = min(params.max_uncertainty_cm, float(np.hypot(t.uncertainty_cm, noise)))
 
     def _associate(
@@ -1077,7 +1804,7 @@ class MultiviewTracker:
     ) -> dict[tuple[str, str], Obs]:
         pairs: list[tuple[float, str, str, Obs]] = []
         for t in self.live_tracks():
-            if t.state not in LOCALISED_STATES or t.group_container is not None:
+            if t.state not in LOCALISED_STATES or t.group_container is not None or t.is_line:
                 continue
             for v, cam in cams.items():
                 pixel = project(cam, t.position)
@@ -1097,6 +1824,65 @@ class MultiviewTracker:
                 continue
             assigned[(tid, v)] = o
             used_obs.add((v, o.index))
+        if self.params.line_classes:
+            assigned.update(self._associate_lines(cams, obs, used_obs))
+        return assigned
+
+    def _line_view_cost(self, t: Track, cam: Camera, o: Obs) -> float:
+        """A line track against one observation in one view: the perpendicular distance of
+        the observed axis (or centroid) to the projected predicted line, gated by `gate_px`,
+        plus the along-line check that the observation's extent on the line overlaps the
+        track's within the line gate and the uncertainty (`HUNGARIAN_FORBIDDEN` outside). An
+        observation whose class differs from the track's decisive plurality costs half the
+        gate more, so two pipettes side by side in the stand keep their own masks when both
+        are within reach; the colour never bars an association."""
+        line = t.line()
+        residual = _line_view_residual(cam, o, line)
+        gate = gate_px(t, cam, self.params)
+        if not np.isfinite(residual) or residual > gate:
+            return HUNGARIAN_FORBIDDEN
+        assert t.endpoints_cm is not None
+        mine = (line.parameter(t.endpoints_cm[0]), line.parameter(t.endpoints_cm[1]))
+        gap = _interval_gap((min(mine), max(mine)), _along_line_interval(cam, o, line))
+        if gap > self.params.line_gate_cm + t.uncertainty_cm:
+            return HUNGARIAN_FORBIDDEN
+        plurality = decisive_class(t.class_votes)
+        if plurality is not None and o.colour_class is not None and o.colour_class != plurality:
+            residual += 0.5 * gate
+        return residual
+
+    def _associate_lines(
+        self, cams: dict[str, Camera], obs: FrameObservations, used_obs: set[tuple[str, int]]
+    ) -> dict[tuple[str, str], Obs]:
+        """Per view, Hungarian assignment of the localised line tracks to the geometric
+        class's observations on `_line_view_cost`."""
+        tracks = [
+            t
+            for t in self.live_tracks()
+            if t.state in LOCALISED_STATES and t.group_container is None and t.is_line
+        ]
+        assigned: dict[tuple[str, str], Obs] = {}
+        if not tracks:
+            return assigned
+        cls = self.params.line_geometric_class
+        for v, cam in cams.items():
+            items = [
+                o
+                for o in obs.tracked.get(v, ())
+                if o.object_class == cls and (v, o.index) not in used_obs
+            ]
+            if not items:
+                continue
+            cost = np.full((len(tracks), len(items)), HUNGARIAN_FORBIDDEN)
+            for i, t in enumerate(tracks):
+                if depth_cm(cam, t.position) <= 0:
+                    continue
+                for j, o in enumerate(items):
+                    cost[i, j] = self._line_view_cost(t, cam, o)
+            for i, j in hungarian(cost):
+                if cost[i, j] < HUNGARIAN_FORBIDDEN:
+                    assigned[(tracks[i].track_id, v)] = items[j]
+                    used_obs.add((v, items[j].index))
         return assigned
 
     def _update(
@@ -1117,6 +1903,9 @@ class MultiviewTracker:
         if disagreement:
             t.slot_disagreements += len(disagreement)
         t.slot_disagreement_views = tuple(sorted(disagreement))
+        if self._is_geometric(t):
+            self._update_line(t, mine, cams, frame, dt, obs)
+            return
         if len(mine) >= 2:
             point, kept, residuals = _prune_clique(mine, cams, params)
             if len(kept) >= 2:
@@ -1162,15 +1951,397 @@ class MultiviewTracker:
         for v, o in mine.items():
             self._record_support(t, v, o, cams[v], frame)
 
-    def _update_velocity(self, t: Track, frame: int) -> None:
+    # -- line tracks (p2-tracker-lines)
+
+    def _width_medians(self, t: Track, cams: dict[str, Camera]) -> dict[str, float]:
+        """Running median mask width per view once five samples exist (the merged check), in
+        pixels at the track's current depth in that view (the history is kept in cm so a
+        pipette carried towards a camera does not look merged)."""
+        return {
+            v: float(np.median(widths)) * pixels_per_cm(cams[v], t.position)
+            for v, widths in t.width_history.items()
+            if len(widths) >= 5 and v in cams
+        }
+
+    def _record_line_support(self, t: Track, mine: dict[str, Obs], cams: dict[str, Camera]) -> None:
+        for v, o in mine.items():
+            if o.colour_class is not None:
+                t.class_votes[o.colour_class] += 1
+            if o.width_px is not None and o.axis_px is not None and v in cams:
+                history = t.width_history.setdefault(v, [])
+                history.append(float(o.width_px) / pixels_per_cm(cams[v], t.position))
+                del history[:-60]
+
+    def _update_line(
+        self,
+        t: Track,
+        mine: dict[str, Obs],
+        cams: dict[str, Camera],
+        frame: int,
+        dt: int,
+        obs: FrameObservations | None,
+    ) -> None:
+        """The geometric class's update: with two or more views the line fit
+        (`fit_line_members` with the merged checks and the line gate against the prediction),
+        falling back to the point path when no line can be fitted; with one view a lateral
+        update as the core's, on the axis plane for a line track; class votes, mask widths and
+        the tip / butt resolution afterwards."""
+        params = self.params
+        assert self.line_prior is not None
+        t.line_residuals = {}
+        t.merged_views = ()
+        t.line_this_frame = None
+        if len(mine) >= 2:
+            resolved = t.tip_and_butt()
+            fit, merged = fit_line_members(
+                mine,
+                cams,
+                params,
+                self._prior_length(t),
+                self.line_prior.spread_cm,
+                width_medians=self._width_medians(t, cams),
+                predicted=t.line() if t.is_line else None,
+                uncertainty_cm=t.uncertainty_cm,
+                tip_hint=None if resolved is None else resolved[0],
+            )
+            for v in merged:
+                self.line_merged_by_view[v] += 1
+            t.merged_views = merged
+            remaining = {v: o for v, o in mine.items() if v not in merged} or mine
+            if fit is None and t.is_line:
+                fit = self._aided_line_fit(t, remaining, cams)
+                if fit is not None:
+                    self.line_aided_frames += 1
+            if fit is not None:
+                self._apply_line_fit(t, fit, cams, frame)
+                mine = fit.members
+            else:
+                self.line_degenerate_fits += 1
+                point, kept, residuals = _prune_clique(remaining, cams, params)
+                if len(kept) >= 2:
+                    self._apply_point_fit(t, point, kept, residuals, cams, frame)
+                    mine = kept
+                    t.line_this_frame = False
+                    self.line_point_frames += 1
+                else:
+                    best = min(
+                        remaining,
+                        key=lambda v: self._single_view_residual(t, cams[v], remaining[v]),
+                    )
+                    mine = {best: remaining[best]}
+        if len(mine) == 1:
+            (v, o) = next(iter(mine.items()))
+            residual = self._single_view_residual(t, cams[v], o)
+            t.residuals = {v: round(residual, 2)} if np.isfinite(residual) else {}
+            if params.motion_model and t.mover:
+                self._lateral_line_update(t, cams[v], o)
+                self.single_view_ray_updates += 1
+            t.state = "single_view"
+            t.frames_unobserved = 0
+            t.last_observed_frame = frame
+            self.line_single_view_frames += 1
+        elif not mine:
+            self._start_coasting(t, frame, dt, cams, obs)
+            return
+        t.support_views = tuple(sorted(mine))
+        t.support_slots = {v: o.slot for v, o in mine.items()}
+        for v, o in mine.items():
+            self._record_support(t, v, o, cams[v], frame)
+        self._record_line_support(t, mine, cams)
+        if t.is_line and obs is not None:
+            self._resolve_tip(t, cams, obs)
+
+    def _single_view_residual(self, t: Track, cam: Camera, o: Obs) -> float:
+        if t.is_line:
+            return _line_view_residual(cam, o, t.line())
+        pixel = project(cam, t.position)
+        return float("inf") if pixel is None else float(np.linalg.norm(pixel - o.point))
+
+    def _apply_point_fit(
+        self,
+        t: Track,
+        point: np.ndarray,
+        kept: dict[str, Obs],
+        residuals: dict[str, float],
+        cams: dict[str, Camera],
+        frame: int,
+    ) -> None:
+        """The core's >= 2-view position update; a line track's endpoints move with it."""
+        params = self.params
+        depth = np.median([depth_cm(cams[v], point) for v in kept])
+        f = np.median([cams[v].K[0, 0] for v in kept])
+        meas_cm = max(
+            params.base_uncertainty_cm, float(np.median(list(residuals.values()))) * depth / f
+        )
+        prior_var = t.uncertainty_cm**2
+        gain = prior_var / (prior_var + meas_cm**2)
+        new_position = t.position + gain * (point - t.position)
+        if t.is_line:
+            # Centroids of different visible portions carry no along-shaft information: only
+            # the component across the line moves the segment.
+            assert t.endpoints_cm is not None and t.direction is not None
+            delta = new_position - t.position
+            delta = delta - float(delta @ t.direction) * t.direction
+            t.set_endpoints(t.endpoints_cm + delta)
+        else:
+            t.position = new_position
+        t.uncertainty_cm = float(np.sqrt((1 - gain) * prior_var))
+        t.state = "observed"
+        if params.motion_model:
+            self._update_velocity(t, frame)
+        t.last_observed_frame = frame
+        t.frames_unobserved = 0
+        t.residuals = {v: round(residuals[v], 2) for v in kept}
+
+    def _apply_line_fit(self, t: Track, fit: LineFit, cams: dict[str, Camera], frame: int) -> None:
+        """Blend the fitted line into the track: the midpoint and the length by the scalar
+        Kalman gain the core uses for a position, the direction by its own gain (its process
+        noise is `LINE_DIRECTION_NOISE_DEG` per frame, a measurement is worth
+        `LINE_DIRECTION_MEAS_DEG`, so it follows the measurement while pipetting); a point
+        track of the geometric class is promoted to a line track."""
+        params = self.params
+        measured = fit.endpoints
+        direction = fit.line.direction
+        kept = fit.members
+        depth = np.median([depth_cm(cams[v], fit.line.midpoint) for v in kept])
+        f = np.median([cams[v].K[0, 0] for v in kept])
+        finite = [r for r in fit.residuals.values() if np.isfinite(r)]
+        meas_cm = max(
+            params.base_uncertainty_cm, float(np.median(finite)) * depth / f if finite else 0.0
+        )
+        prior_var = t.uncertainty_cm**2
+        gain = prior_var / (prior_var + meas_cm**2)
+        if t.is_line:
+            assert t.direction is not None and t.endpoints_cm is not None
+            if float(direction @ t.direction) < 0:
+                direction, measured = -direction, measured[::-1]
+            midpoint = t.position + gain * (measured.mean(axis=0) - t.position)
+            if fit.aided:
+                # The direction is the prediction's, corrected onto the plane: nothing was
+                # measured about it in the plane, so its uncertainty stays.
+                blended = direction
+            else:
+                var_dir = t.direction_uncertainty_deg**2
+                gain_dir = var_dir / (var_dir + LINE_DIRECTION_MEAS_DEG**2)
+                blended = (1.0 - gain_dir) * t.direction + gain_dir * direction
+                blended /= np.linalg.norm(blended)
+                t.direction_uncertainty_deg = float(np.sqrt((1 - gain_dir) * var_dir))
+            length_p = float(np.linalg.norm(t.endpoints_cm[1] - t.endpoints_cm[0]))
+            length_m = float(np.linalg.norm(measured[1] - measured[0]))
+            length = length_p + gain * (length_m - length_p)
+            ends = np.stack([midpoint - blended * length / 2, midpoint + blended * length / 2])
+        else:
+            midpoint = t.position + gain * (measured.mean(axis=0) - t.position)
+            ends = measured - measured.mean(axis=0) + midpoint
+            t.direction_uncertainty_deg = LINE_DIRECTION_MEAS_DEG
+        t.set_endpoints(ends)
+        t.uncertainty_cm = float(np.sqrt((1 - gain) * prior_var))
+        t.state = "observed"
+        if params.motion_model:
+            self._update_velocity(t, frame, endpoints=not fit.aided)
+        t.last_observed_frame = frame
+        t.frames_unobserved = 0
+        t.residuals = {v: round(fit.residuals[v], 2) for v in kept}
+        t.line_residuals = dict(t.residuals)
+        t.line_this_frame = True
+        self.line_frames += 1
+        self._record_line_metrics(t, fit, cams, self._prior_length(t))
+
+    def _record_line_metrics(
+        self, t: Track, fit: LineFit, cams: dict[str, Camera], prior_length: float
+    ) -> None:
+        self.line_lengths.append(
+            (
+                decisive_class(t.class_votes),
+                fit.visible_length_cm,
+                fit.visible_length_cm - prior_length,
+            )
+        )
+        if fit.extended:
+            self.line_extended_frames += 1
+        if len(fit.plane_views) >= 3:
+            for record in loo_residual(
+                _cams_and_obs(fit.members, cams, self.params),
+                min_pair_angle_deg=self.params.line_min_pair_angle_deg,
+            ):
+                if record["fitted"] and np.isfinite(record["perpendicular_px"]):
+                    self.line_loo_px.append(float(record["perpendicular_px"]))
+                    if record["angle_deg"] is not None and np.isfinite(record["angle_deg"]):
+                        self.line_loo_deg.append(float(record["angle_deg"]))
+
+    def _lateral_line_update(self, t: Track, cam: Camera, o: Obs) -> None:
+        """A moving line track seen in one view: an elongated mask moves each endpoint onto
+        the plane through the camera and the observed axis (the perpendicular correction, the
+        length kept, the depth along the view kept); a compact one moves the midpoint along
+        the centroid's ray as the core does for a point."""
+        assert t.endpoints_cm is not None
+        axis = o.axis_obs()
+        if is_elongated(axis):
+            assert axis.endpoints_px is not None
+            try:
+                normal, offset = plane_from_axis(cam, axis.endpoints_px)
+            except ValueError:
+                return
+            feet = t.endpoints_cm - ((t.endpoints_cm @ normal) - offset)[:, None] * normal
+            length = float(np.linalg.norm(t.endpoints_cm[1] - t.endpoints_cm[0]))
+            span = feet[1] - feet[0]
+            norm = float(np.linalg.norm(span))
+            if norm < 1e-9:
+                return
+            midpoint = feet.mean(axis=0)
+            ends = np.stack(
+                [midpoint - span / norm * length / 2, midpoint + span / norm * length / 2]
+            )
+        else:
+            ends = t.endpoints_cm + (ray_point(cam, o.point, t.position) - t.position)
+        t.set_endpoints(ends)
+
+    def _aided_line_fit(
+        self, t: Track, members: dict[str, Obs], cams: dict[str, Camera]
+    ) -> LineFit | None:
+        """The fit `fit_line` cannot make on its own: one plane (or planes meeting under the
+        pair angle) plus rays to one spot of the shaft. The predicted direction projected
+        onto the plane gives the direction; the line runs through the mean of the ray-plane
+        intersections (the rays' points on the shaft), else through the foot of the predicted
+        midpoint. Members over their view gate against that line are left out; the extent
+        and the prior follow as for a full fit. None without a plane in front of its camera."""
+        params = self.params
+        assert t.direction is not None and self.line_prior is not None
+        planes: list[tuple[str, np.ndarray, float]] = []
+        rays: list[tuple[str, np.ndarray, np.ndarray]] = []
+        for v, o in members.items():
+            axis = o.axis_obs()
+            if is_elongated(axis):
+                assert axis.endpoints_px is not None
+                try:
+                    normal, offset = plane_from_axis(cams[v], axis.endpoints_px)
+                except ValueError:
+                    continue
+                planes.append((v, normal, offset))
+            else:
+                rays.append((v, *ray_from_point(cams[v], o.point)))
+        if not planes:
+            return None
+        _, normal, offset = planes[0]
+        direction = t.direction - float(t.direction @ normal) * normal
+        if np.linalg.norm(direction) < 1e-6:
+            return None
+        direction /= np.linalg.norm(direction)
+        foot = t.position - (float(normal @ t.position) - offset) * normal
+        across = np.cross(normal, direction)
+        hits = []
+        min_sine = math.sin(math.radians(params.line_min_pair_angle_deg))
+        for _, origin, ray_direction in rays:
+            denominator = float(normal @ ray_direction)
+            if abs(denominator) < min_sine:
+                continue
+            s = (offset - float(normal @ origin)) / denominator
+            if s > 0:
+                hits.append(origin + s * ray_direction)
+        if hits:
+            foot = foot + float(np.mean([(h - foot) @ across for h in hits])) * across
+        line = Line3D(point=foot, direction=direction)
+        kept = {}
+        residuals = {}
+        for v, o in members.items():
+            residual = _line_view_residual(cams[v], o, line)
+            if np.isfinite(residual) and residual <= _view_gate_px(v, params):
+                kept[v] = o
+                residuals[v] = residual
+        if not any(is_elongated(o.axis_obs()) for o in kept.values()):
+            return None
+        cams_and_obs = _cams_and_obs(kept, cams, params)
+        resolved = t.tip_and_butt()
+        completed = complete_extent(
+            line,
+            cams_and_obs,
+            params,
+            self._prior_length(t),
+            self.line_prior.spread_cm,
+            None if resolved is None else resolved[0],
+        )
+        if completed is None:
+            return None
+        endpoints, visible, extended = completed
+        return LineFit(
+            line=line,
+            endpoints=endpoints,
+            members=kept,
+            residuals=residuals,
+            merged_views=(),
+            visible_length_cm=visible,
+            extended=extended,
+            plane_views=tuple(v for v, _, _ in planes if v in kept),
+            aided=True,
+        )
+
+    def _resolve_tip(self, t: Track, cams: dict[str, Camera], obs: FrameObservations) -> None:
+        """The end nearer a hand is the butt (the plunger button, the coloured part), the
+        other end the tip: the nearest live hand track within `LINE_HAND_REACH_CM` of one end
+        and `LINE_HAND_MARGIN_CM` nearer to it than to the other decides; without a hand
+        track, an end whose projection lies inside a hand box in >= `held_min_views` views
+        while the other end's does not. Otherwise the ordering is kept by direction
+        continuity (the update orients the measured direction along the predicted one)."""
+        assert t.endpoints_cm is not None
+        params = self.params
+        hands = [
+            h
+            for h in self.live_tracks()
+            if h.object_class in params.hand_classes and h.state in LOCALISED_STATES
+        ]
+        for hand in sorted(
+            hands, key=lambda h: float(np.linalg.norm(t.endpoints_cm - h.position, axis=1).min())
+        ):
+            d0, d1 = np.linalg.norm(t.endpoints_cm - hand.position, axis=1)
+            if min(d0, d1) <= LINE_HAND_REACH_CM and abs(d0 - d1) >= LINE_HAND_MARGIN_CM:
+                self._set_tip(t, tip_is_endpoint_0=bool(d0 > d1), basis="hand_track")
+                return
+        counts = [0, 0]
+        for v, cam in cams.items():
+            pixels = [project(cam, e) for e in t.endpoints_cm]
+            for d in obs.detector.get(v, ()):
+                if d.object_class not in params.hand_classes or d.box is None:
+                    continue
+                for k, pixel in enumerate(pixels):
+                    if pixel is not None and _pixel_in_box(pixel, d.box):
+                        counts[k] += 1
+                        break
+        if max(counts) >= params.held_min_views and counts[0] != counts[1]:
+            self._set_tip(t, tip_is_endpoint_0=counts[0] < counts[1], basis="hand_box")
+
+    def _set_tip(self, t: Track, *, tip_is_endpoint_0: bool, basis: str) -> None:
+        if t.tip_is_endpoint_0 != tip_is_endpoint_0:
+            self.line_tip_resolutions[basis] += 1
+        t.tip_is_endpoint_0 = tip_is_endpoint_0
+
+    def _update_velocity(self, t: Track, frame: int, *, endpoints: bool = True) -> None:
         """Smoothed finite difference of the filtered position over >= 2-view updates; the
-        mover flag switches on above `mover_speed_cm_per_frame` and off below half of it."""
+        mover flag switches on above `mover_speed_cm_per_frame` and off below half of it. A
+        line track's endpoint velocities follow the same rule when `endpoints` (a full fit);
+        after a prediction-aided fit they are left as they were, so a direction nobody
+        measured cannot feed its own velocity."""
         params = self.params
         if t.last_observed_position is not None and frame > t.last_observed_frame:
             v_new = (t.position - t.last_observed_position) / (frame - t.last_observed_frame)
             alpha = params.velocity_smoothing
             t.velocity = (1.0 - alpha) * t.velocity + alpha * v_new
+        if (
+            t.is_line
+            and endpoints
+            and t.last_observed_endpoints is not None
+            and t.last_endpoints_frame is not None
+            and frame > t.last_endpoints_frame
+        ):
+            assert t.endpoints_cm is not None
+            previous = t.endpoint_velocity if t.endpoint_velocity is not None else np.zeros((2, 3))
+            step = (t.endpoints_cm - t.last_observed_endpoints) / (frame - t.last_endpoints_frame)
+            alpha = params.velocity_smoothing
+            t.endpoint_velocity = (1.0 - alpha) * previous + alpha * step
         t.last_observed_position = t.position.copy()
+        if t.is_line and (endpoints or t.last_observed_endpoints is None):
+            assert t.endpoints_cm is not None
+            t.last_observed_endpoints = t.endpoints_cm.copy()
+            t.last_endpoints_frame = frame
         speed = float(np.linalg.norm(t.velocity))
         # Symmetric confirmation: on after `mover_confirm_frames` updates above the threshold,
         # off after as many below half of it (a turning point is one or two slow frames, not
@@ -1182,6 +2353,7 @@ class MultiviewTracker:
                     t.mover = False
                     t.mover_frames = 0
                     t.velocity = np.zeros(3)
+                    t.endpoint_velocity = None
             else:
                 t.mover_frames = 0
         elif speed > params.mover_speed_cm_per_frame:
@@ -1257,7 +2429,15 @@ class MultiviewTracker:
                 hand_class, hand_track, views = hand
                 t.state = "held"
                 t.held_by = hand_track.track_id if hand_track is not None else None
-                t.held_offset = t.position - hand_track.position if hand_track is not None else None
+                if hand_track is None:
+                    t.held_offset = None
+                elif t.is_line:
+                    # The hand holds the butt: the offset is measured from the hand to it
+                    # (the end nearer the hand, resolved now if it was not).
+                    anchor = self._butt_anchor(t, hand_track.position, resolve=True)
+                    t.held_offset = anchor - hand_track.position
+                else:
+                    t.held_offset = t.position - hand_track.position
                 self.held_by_hand[hand_class] += 1
                 self._event(
                     frame,
@@ -1286,14 +2466,15 @@ class MultiviewTracker:
         not tracked)."""
         params = self.params
         views_by_hand: dict[str, list[str]] = defaultdict(list)
+        # A line track is inside the hand box when its midpoint or either end is.
+        points = [t.position, *t.endpoints_cm] if t.is_line else [t.position]
         for v, cam in cams.items():
-            pixel = project(cam, t.position)
-            if pixel is None:
+            pixels = [p for p in (project(cam, x) for x in points) if p is not None]
+            if not pixels:
                 continue
             for d in obs.detector.get(v, ()):
                 if d.object_class in params.hand_classes and d.box is not None:
-                    box = d.box
-                    if box[0] <= pixel[0] <= box[2] and box[1] <= pixel[1] <= box[3]:
+                    if any(_pixel_in_box(pixel, d.box) for pixel in pixels):
                         views_by_hand[d.object_class].append(v)
         if not views_by_hand:
             return None
@@ -1330,7 +2511,13 @@ class MultiviewTracker:
         if t.state == "held":
             hand = self.tracks.get(t.held_by or "")
             if hand is not None and hand.state in LOCALISED_STATES and t.held_offset is not None:
-                t.position = hand.position + t.held_offset
+                if t.is_line:
+                    # The butt follows the hand; the segment keeps its direction and length.
+                    assert t.endpoints_cm is not None
+                    anchor = self._butt_anchor(t, hand.position)
+                    t.set_endpoints(t.endpoints_cm + (hand.position + t.held_offset - anchor))
+                else:
+                    t.position = hand.position + t.held_offset
             elif t.held_by is not None:
                 # The hand track is gone or not localised: back to plain coasting.
                 t.state = "coasting"
@@ -1342,6 +2529,20 @@ class MultiviewTracker:
         )
         if t.frames_unobserved > params.coast_timeout_frames:
             self._lose(t, frame, from_state=t.state)
+
+    def _butt_anchor(
+        self, t: Track, hand_position: np.ndarray, *, resolve: bool = False
+    ) -> np.ndarray:
+        """The butt end of a line track (with `resolve`, tip / butt are first decided from the
+        hand's position when it is nearer one end by the margin); the midpoint when nothing
+        is resolved."""
+        assert t.endpoints_cm is not None
+        if resolve:
+            d0, d1 = np.linalg.norm(t.endpoints_cm - hand_position, axis=1)
+            if abs(d0 - d1) >= LINE_HAND_MARGIN_CM:
+                self._set_tip(t, tip_is_endpoint_0=bool(d0 > d1), basis="hand_track")
+        ends = t.tip_and_butt()
+        return t.position.copy() if ends is None else ends[1].copy()
 
     def _lose(self, t: Track, frame: int, *, from_state: str) -> None:
         extra = {} if from_state == "coasting" else {"from_state": from_state}
@@ -1788,6 +2989,13 @@ class MultiviewTracker:
             if volume is not None and volume.contains(cand.point):
                 return len(cand.members)
         hits = 0
+        if t.is_line:
+            for v, o in cand.members.items():
+                if depth_cm(cams[v], t.position) > 0 and (
+                    self._line_view_cost(t, cams[v], o) < HUNGARIAN_FORBIDDEN
+                ):
+                    hits += 1
+            return hits
         for v, o in cand.members.items():
             pixel = project(cams[v], t.position)
             if pixel is not None and np.linalg.norm(pixel - o.point) <= gate_px(
@@ -1879,6 +3087,17 @@ class MultiviewTracker:
             extra["split_from"] = source.track_id
         if self.params.motion_model:
             t.last_observed_position = t.position.copy()
+        if self._is_geometric(t):
+            if cand.line is not None:
+                self._apply_candidate_line(t, cand, cams)
+                self.line_births += 1
+                extra["line"] = True
+                extra["merged_views"] = list(cand.merged_views)
+                extra["visible_length_cm"] = round(float(cand.visible_length_cm or 0.0), 2)
+                extra["extended_by_prior"] = cand.extended
+            else:
+                self.line_point_births += 1
+                extra["line"] = False
         self._attach(t, cand, cams, frame)
         self.tracks[t.track_id] = t
         self.class_births[cand.object_class] += 1
@@ -1908,7 +3127,12 @@ class MultiviewTracker:
     def _resume(self, frame: int, t: Track, cand: Candidate, cams: dict[str, Camera]) -> None:
         latency = frame - t.last_observed_frame
         from_state = t.state
-        t.position = cand.point.copy()
+        if t.is_line and cand.line is None:
+            # A point candidate returns a line track: the segment moves with its midpoint.
+            assert t.endpoints_cm is not None
+            t.set_endpoints(t.endpoints_cm + (cand.point - t.position))
+        else:
+            t.position = cand.point.copy()
         t.uncertainty_cm = self.params.base_uncertainty_cm
         t.state = "observed"
         t.last_observed_frame = frame
@@ -1925,6 +3149,10 @@ class MultiviewTracker:
             t.velocity = np.zeros(3)
             t.mover = False
             t.last_observed_position = t.position.copy()
+            t.endpoint_velocity = None
+        if cand.line is not None:
+            self._apply_candidate_line(t, cand, cams)
+            extra["line"] = True
         if cand.group_size is not None and cand.group_size >= 2:
             t.group_size = cand.group_size
             extra["group_size"] = cand.group_size
@@ -1948,6 +3176,37 @@ class MultiviewTracker:
         t.slot_disagreement_views = ()
         for v, o in cand.members.items():
             self._record_support(t, v, o, cams[v], frame)
+        if self._is_geometric(t):
+            self._record_line_support(t, cand.members, cams)
+
+    def _apply_candidate_line(self, t: Track, cand: Candidate, cams: dict[str, Camera]) -> None:
+        """A line candidate's geometry onto a (new or returning) track."""
+        assert cand.line is not None and cand.endpoints is not None
+        t.set_endpoints(cand.endpoints)
+        t.direction_uncertainty_deg = LINE_DIRECTION_MEAS_DEG
+        t.line_residuals = {v: round(r, 2) for v, r in cand.residuals.items()}
+        t.merged_views = cand.merged_views
+        t.line_this_frame = True
+        t.endpoint_velocity = None
+        t.last_observed_endpoints = t.endpoints_cm.copy() if t.endpoints_cm is not None else None
+        t.last_endpoints_frame = t.last_observed_frame
+        for v in cand.merged_views:
+            self.line_merged_by_view[v] += 1
+        self.line_frames += 1
+        votes = Counter(o.colour_class for o in cand.members.values() if o.colour_class)
+        fit = LineFit(
+            line=cand.line,
+            endpoints=cand.endpoints,
+            members=cand.members,
+            residuals=cand.residuals,
+            merged_views=cand.merged_views,
+            visible_length_cm=float(cand.visible_length_cm or 0.0),
+            extended=cand.extended,
+            plane_views=cand.line.plane_views,
+        )
+        assert self.line_prior is not None
+        prior_length = self.line_prior.length_for(decisive_class(t.class_votes + votes))
+        self._record_line_metrics(t, fit, cams, prior_length)
 
     # -- rows and metrics
 
@@ -1978,7 +3237,19 @@ class MultiviewTracker:
         for a, b in combinations(live, 2):
             if a.object_class != b.object_class:
                 continue
-            if np.linalg.norm(a.position - b.position) <= self.params.duplicate_distance_cm:
+            if a.is_line and b.is_line:
+                # Pipettes in the stand sit 2.9 cm apart: two lines are one object only when
+                # nearly coincident, half the point distance and within the angle gate.
+                angle, perpendicular, _ = line_distance(a.line(), b.line())
+                duplicate = (
+                    perpendicular <= 0.5 * self.params.duplicate_distance_cm
+                    and angle <= self.params.line_gate_deg
+                )
+            else:
+                duplicate = bool(
+                    np.linalg.norm(a.position - b.position) <= self.params.duplicate_distance_cm
+                )
+            if duplicate:
                 near[a.track_id].add(b.track_id)
                 near[b.track_id].add(a.track_id)
                 self.duplicate_pair_frames += 1
@@ -1989,6 +3260,7 @@ class MultiviewTracker:
     ) -> Track3D:
         confidence, abstain = self._confidence(t, cams)
         possibly = tuple(sorted(set(t.possibly_same_as) | set(duplicates)))
+        extra = self._line_row_fields(t) if self._is_geometric(t) else {}
         return Track3D(
             frame_index=frame,
             track_id=t.track_id,
@@ -2008,7 +3280,41 @@ class MultiviewTracker:
             split_from=t.split_from,
             container_id=t.container_id if t.state == "contained" else None,
             held_by=t.held_by if t.state == "held" else None,
+            **extra,
         )
+
+    def _line_row_fields(self, t: Track) -> dict[str, Any]:
+        """The p2-tracker-lines fields: endpoints tip first when the tip is known, the
+        direction from the first endpoint to the second, the class plurality, this frame's
+        line residuals and merged views. `colour_identity` / `colour_confidence` are written
+        only when `colour_hist` holds a histogram (the plurality bin and its share); the
+        tracker leaves it empty and `battle-finebio-colour annotate` fills the fields on the
+        rows afterwards from the plunger button at the butt end."""
+        fields: dict[str, Any] = {"observed_class": t.observed_class}
+        if t.is_line:
+            assert t.endpoints_cm is not None
+            resolved = t.tip_and_butt()
+            ends = np.stack(resolved) if resolved is not None else t.endpoints_cm
+            span = ends[1] - ends[0]
+            norm = float(np.linalg.norm(span))
+            direction = span / norm if norm > 1e-9 else np.asarray(t.direction)
+            fields["direction"] = tuple(round(float(x), 4) for x in direction)
+            fields["endpoints_cm"] = tuple(tuple(round(float(x), 3) for x in e) for e in ends)
+            fields["tip_resolved"] = resolved is not None
+            self.line_track_frames += 1
+            if resolved is not None:
+                self.line_tip_resolved_frames += 1
+            if t.state in LOCALISED_STATES:
+                fields["line_residual_px"] = dict(t.line_residuals) or None
+                fields["merged_views"] = t.merged_views or None
+        if t.colour_hist:
+            identity = max(sorted(t.colour_hist), key=t.colour_hist.__getitem__)
+            total = sum(t.colour_hist.values())
+            fields["colour_identity"] = identity
+            fields["colour_confidence"] = (
+                round(float(t.colour_hist[identity] / total), 3) if total > 0 else None
+            )
+        return fields
 
     def identity_metrics(self, reference_labels: dict[str, str] | None = None) -> dict[str, Any]:
         """Id switches against a reference labelling (`"view/slot" -> identity`) when given,
@@ -2043,6 +3349,8 @@ class MultiviewTracker:
                     1 for t in self.tracks.values() if t.object_class == cls and t.state == "lost"
                 ),
             }
+        if self.params.line_classes:
+            per_class.update(self._observed_class_metrics())
         latencies = self.reacquisition_latencies
         return {
             "tracks_born": len(self.tracks),
@@ -2070,6 +3378,105 @@ class MultiviewTracker:
             "events": dict(sorted(self._event_counts().items())),
             "params": self.params.as_dict(),
             "extensions": self.extension_metrics(),
+        }
+
+    def _observed_class_metrics(self) -> dict[str, dict[str, Any]]:
+        """The geometric class's tracks counted per original class by their final plurality
+        `observed_class`, so the per-pipette id numbers stay comparable with the point
+        tracker's; `max_simultaneous` counts the live rows per frame and plurality class."""
+        geometric = self.params.line_geometric_class
+        tracks = [t for t in self.tracks.values() if t.object_class == geometric]
+        out: dict[str, dict[str, Any]] = {}
+        simultaneous: dict[tuple[int, str], int] = defaultdict(int)
+        for row in self.rows:
+            if row.object_class == geometric and row.state != "lost" and row.observed_class:
+                simultaneous[(row.frame_index, row.observed_class)] += 1
+        max_simultaneous: dict[str, int] = defaultdict(int)
+        for (_frame, cls), n in simultaneous.items():
+            max_simultaneous[cls] = max(max_simultaneous[cls], n)
+        for cls in sorted(self.params.line_classes):
+            mine = [t for t in tracks if t.observed_class == cls]
+            if not mine and cls not in max_simultaneous:
+                continue
+            out[cls] = {
+                "tracks_born": len(mine),
+                "max_simultaneous": max_simultaneous.get(cls, 0),
+                "fragmentation": max(0, len(mine) - max_simultaneous.get(cls, 0)),
+                "tracks_lost": sum(1 for t in mine if t.state == "lost"),
+                "counted_by": f"plurality observed_class of the {geometric} tracks",
+            }
+        return out
+
+    def _line_metrics(self) -> dict[str, Any]:
+        params = self.params
+        if not params.line_classes:
+            return {"enabled": False}
+        geometric = params.line_geometric_class
+        tracks = [t for t in self.tracks.values() if t.object_class == geometric]
+
+        def summary(values: Sequence[float]) -> dict[str, Any]:
+            arr = np.asarray(values, dtype=np.float64)
+            if arr.size == 0:
+                return {"n": 0, "median": None, "p90": None}
+            return {
+                "n": int(arr.size),
+                "median": round(float(np.median(arr)), 3),
+                "p90": round(float(np.percentile(arr, 90)), 3),
+            }
+
+        visible = [length for _, length, _ in self.line_lengths]
+        deviation = [abs(d) for _, _, d in self.line_lengths]
+        by_class_length: dict[str, list[float]] = defaultdict(list)
+        for cls, length, _ in self.line_lengths:
+            by_class_length[cls or "undecided"].append(length)
+        agree = sum(max(t.class_votes.values()) for t in tracks if t.class_votes)
+        total = sum(sum(t.class_votes.values()) for t in tracks)
+        multi_view_frames = self.line_frames + self.line_point_frames
+        return {
+            "enabled": True,
+            "geometric_class": geometric,
+            "classes": list(params.line_classes),
+            "prior": self.line_prior.as_dict() if self.line_prior is not None else None,
+            "tracks": len(tracks),
+            "line_tracks": sum(1 for t in tracks if t.is_line),
+            "line_births": self.line_births,
+            "point_births": self.line_point_births,
+            "frames": {
+                "line": self.line_frames,
+                "line_prediction_aided": self.line_aided_frames,
+                "point_fallback": self.line_point_frames,
+                "line_fraction": (
+                    round(self.line_frames / multi_view_frames, 4) if multi_view_frames else None
+                ),
+                "single_view": self.line_single_view_frames,
+                "degenerate_fits": self.line_degenerate_fits,
+                "extended_by_prior": self.line_extended_frames,
+            },
+            "loo_residual_px": summary(self.line_loo_px),
+            "loo_angle_deg": summary(self.line_loo_deg),
+            "length_cm": {
+                "visible": summary(visible),
+                "visible_spread_p10_p90": (
+                    round(float(np.percentile(visible, 90) - np.percentile(visible, 10)), 3)
+                    if visible
+                    else None
+                ),
+                "deviation_from_prior": summary(deviation),
+                "by_class_median": {
+                    cls: round(float(np.median(v)), 3) for cls, v in sorted(by_class_length.items())
+                },
+            },
+            "merged_views_by_view": dict(sorted(self.line_merged_by_view.items())),
+            "tip_resolved_fraction": (
+                round(self.line_tip_resolved_frames / self.line_track_frames, 4)
+                if self.line_track_frames
+                else None
+            ),
+            "tip_resolutions_by_basis": dict(sorted(self.line_tip_resolutions.items())),
+            "class_agreement": round(agree / total, 4) if total else None,
+            "class_votes_by_track": {
+                t.track_id: dict(sorted(t.class_votes.items())) for t in tracks if t.class_votes
+            },
         }
 
     def extension_metrics(self) -> dict[str, Any]:
@@ -2113,6 +3520,7 @@ class MultiviewTracker:
                 "observations_absorbed": self.absorbed_observations,
                 "max_group_size_by_class": dict(sorted(self.max_group_size.items())),
             },
+            "lines": self._line_metrics(),
         }
 
     def _event_counts(self) -> dict[str, int]:
@@ -2130,11 +3538,13 @@ def run_tracker(
     params: TrackerParams | None = None,
     reference_labels: dict[str, str] | None = None,
     rig_static: dict[str, Sequence[float]] | None = None,
+    line_prior: LinePrior | None = None,
 ) -> TrackerOutput:
     """Run the tracker over `frames` (default: every frame with a row). With
     `params.containers` set, the container volumes are built from the detector rows first
     (`build_container_volumes`; `rig_static` = class -> point_cm from the rig, optional) and
-    their report lands in `metrics["extensions"]["contained"]`."""
+    their report lands in `metrics["extensions"]["contained"]`. With `params.line_classes`
+    set, the length prior is `line_prior` or read from `params.line_prior_path`."""
     params = params or TrackerParams()
     by_frame: dict[int, list[FineBioObservation]] = defaultdict(list)
     for row in rows:
@@ -2150,7 +3560,7 @@ def run_tracker(
             params,
             rig_static,
         )
-    tracker = MultiviewTracker(fixed_cams, fpv_source, params, volumes)
+    tracker = MultiviewTracker(fixed_cams, fpv_source, params, volumes, line_prior=line_prior)
     for frame in frame_list:
         tracker.step(frame, by_frame.get(frame, []))
     metrics = tracker.identity_metrics(reference_labels)
@@ -2304,6 +3714,46 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="support 0 inside a hand box in >= --held-min-views views -> held, follows the hand",
     )
     ext.add_argument("--held-min-views", type=int, default=TrackerParams.held_min_views)
+    ext.add_argument(
+        "--line-classes",
+        default=None,
+        help="comma-separated classes tracked as 3D line segments of one geometric class "
+        "(p2-tracker-lines); `pipette` expands to the four pipette classes",
+    )
+    ext.add_argument(
+        "--line-geometric-class",
+        default=TrackerParams.line_geometric_class,
+        help="the class name the line classes are tracked under",
+    )
+    ext.add_argument(
+        "--line-prior",
+        default=TrackerParams.line_prior_path,
+        help="pipettes config with length_cm / length_spread_cm (the soft length prior)",
+    )
+    ext.add_argument("--line-gate-deg", type=float, default=TrackerParams.line_gate_deg)
+    ext.add_argument(
+        "--line-gate-cm",
+        type=float,
+        default=TrackerParams.line_gate_cm,
+        help="perpendicular distance at the midpoint between the predicted and fitted line, "
+        "plus the track's uncertainty",
+    )
+    ext.add_argument(
+        "--line-min-pair-angle-deg", type=float, default=TrackerParams.line_min_pair_angle_deg
+    )
+    ext.add_argument(
+        "--line-merged-width-factor", type=float, default=TrackerParams.line_merged_width_factor
+    )
+    ext.add_argument(
+        "--line-merged-extent-factor",
+        type=float,
+        default=TrackerParams.line_merged_extent_factor,
+    )
+    ext.add_argument(
+        "--line-max-axis-residual-px",
+        type=float,
+        default=TrackerParams.line_max_axis_residual_px,
+    )
     args = parser.parse_args(argv)
 
     if args.fixtures is not None:
@@ -2352,6 +3802,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         group_split_radius_cm=args.group_split_radius_cm,
         held=args.held,
         held_min_views=args.held_min_views,
+        line_classes=parse_line_classes(args.line_classes),
+        line_geometric_class=args.line_geometric_class,
+        line_prior_path=args.line_prior,
+        line_gate_deg=args.line_gate_deg,
+        line_gate_cm=args.line_gate_cm,
+        line_min_pair_angle_deg=args.line_min_pair_angle_deg,
+        line_merged_width_factor=args.line_merged_width_factor,
+        line_merged_extent_factor=args.line_merged_extent_factor,
+        line_max_axis_residual_px=args.line_max_axis_residual_px,
     )
     frames = parse_frames(args.frames, {r.frame_index for r in rows})
     labels = (

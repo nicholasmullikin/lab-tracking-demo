@@ -89,6 +89,10 @@ SCHEMA = "battle-finebio-arms/1"
 # the measures / inventory with an `-ext` suffix, so the core results stay as written.
 EXT_SUFFIX = "ext"
 EXT_TRACKER_FLAGS = ("--motion-model", "--group-tracks", "--held")
+# `run --lines` (p2-tracker-lines, Sep 28): the ext flags plus the pipettes as one geometric
+# class of 3D lines, into tracks-lines/ with measures-lines.* beside the ext outputs.
+LINES_SUFFIX = "lines"
+LINES_TRACKER_FLAGS = ("--line-classes", "pipette")
 ARMS = ("a", "b", "c", "d")
 ARM_NAMES = {
     "a": "boxes-only control (detector + 3D tracker on box centres, no SAM3)",
@@ -1608,6 +1612,7 @@ def run_arm(
     fpv_poses: Path | None = None,
     reuse_observations: bool = False,
     ext: bool = False,
+    lines: bool = False,
 ) -> dict[str, Any]:
     """observations -> tracker -> measures + inventory under `output`. With
     `reuse_observations` an existing `observations.jsonl` (and its summary) is read back instead
@@ -1615,13 +1620,17 @@ def run_arm(
     With `ext` the tracker runs with the p3-tracker-ext flags (`--motion-model --containers
     <the clip's containers> --group-tracks --held`, plus `tracker_extra`) into `tracks-ext/`
     beside `tracks/`, and the measures and inventory are written with an `-ext` suffix, so the
-    core results are never overwritten."""
+    core results are never overwritten. With `lines` (which implies `ext`) the p2-tracker-lines
+    flags (`LINES_TRACKER_FLAGS`) are added and the suffix is `-lines`, so a lines run sits
+    beside an earlier ext run of the same arm."""
     output = Path(output)
-    suffix = EXT_SUFFIX if ext else None
+    ext = ext or lines
+    suffix = (LINES_SUFFIX if lines else EXT_SUFFIX) if ext else None
     if ext:
         tracker_extra = [
             *EXT_TRACKER_FLAGS,
             *(["--containers", ",".join(clip.containers)] if clip.containers else []),
+            *(LINES_TRACKER_FLAGS if lines else ()),
             *tracker_extra,
         ]
     output.mkdir(parents=True, exist_ok=True)
@@ -2185,6 +2194,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="tracker extensions on (--motion-model --containers <clip> --group-tracks --held) "
         "into <output>/tracks-ext/ with measures-ext.* and occlusion_inventory-ext.*",
     )
+    run.add_argument(
+        "--lines",
+        action="store_true",
+        help="the extensions plus --line-classes pipette (pipettes as 3D lines) into "
+        "<output>/tracks-lines/ with measures-lines.* and occlusion_inventory-lines.*",
+    )
 
     sanity = sub.add_parser("sanity", help="first-view check of a worker run")
     sanity.add_argument("--run", type=Path, required=True, help="worker run dir or its root")
@@ -2276,6 +2291,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             fpv_poses=args.fpv_poses,
             reuse_observations=args.reuse_observations,
             ext=args.ext,
+            lines=args.lines,
         )
         print(
             json.dumps(

@@ -12,18 +12,21 @@ import numpy as np
 import pytest
 from finebio_fixtures import FIXTURE_DIR, load_preflight_fixtures
 
-from battle.finebio_slice import leave_one_out_residuals, run_slice
+from battle.finebio_slice import depth_cm, leave_one_out_residuals, run_slice
 from battle.multiview_schemas import FineBioObservation, Track3D, TrackEvent, read_jsonl
 from battle.multiview_tracks import (
+    LINE_CLASS_SHORTHANDS,
     Gates,
     TrackerParams,
     build_container_volumes,
     convex_hull,
     hungarian,
     inside_convex_polygon,
+    load_line_prior,
     main,
     parse_container_classes,
     parse_heights,
+    parse_line_classes,
     ray_point,
     run_tracker,
     select_observations,
@@ -878,3 +881,468 @@ def test_held_track_follows_the_hand_and_resumes(rig) -> None:
     no_hand = [r for r in rows if r.object_class != "left_hand"]
     plain = run_tracker(no_hand, cams, lambda f: None, frames, params)
     assert not _events(plain, "held") and _events(plain, "coasting")
+
+
+# --------------------------------------------------------------------------- lines (p2)
+
+PRIOR = load_line_prior("configs/finebio/pipettes.json")
+LINE_P = dict(observation_source="auto", coast_timeout_frames=10, motion_model=True)
+
+
+def _unit(v):
+    v = np.asarray(v, dtype=float)
+    return v / np.linalg.norm(v)
+
+
+def _segment(mid, direction, length: float) -> tuple[np.ndarray, np.ndarray]:
+    mid, direction = np.asarray(mid, dtype=float), _unit(direction)
+    return mid - direction * length / 2, mid + direction * length / 2
+
+
+def _axis_row(
+    cams,
+    view: str,
+    frame: int,
+    a,
+    b,
+    cls: str,
+    *,
+    rng,
+    visible=(0.0, 1.0),
+    width_cm: float = 2.0,
+    width_scale: float = 1.0,
+    residual_px: float = 5.0,
+    noise_px: float = 0.5,
+    slot: str | None = None,
+) -> FineBioObservation:
+    """A SAM3 row of the part `visible` of segment a->b as `test_multiview_lines` case (i)
+    builds its views: the projected axis endpoints plus noise, the centroid of the visible
+    part, the elongation and width a `width_cm` shaft shows at that depth."""
+    cam = cams[view]
+    lo, hi = visible
+    p0, p1 = a + lo * (b - a), a + hi * (b - a)
+    pixels = cam.project(np.stack([p0, p1])) + rng.normal(0.0, noise_px, (2, 2))
+    mid = 0.5 * (p0 + p1)
+    width_px = width_cm * cam.K[0, 0] / depth_cm(cam, mid) * width_scale
+    length_px = float(np.linalg.norm(pixels[1] - pixels[0]))
+    centroid = cam.project(mid)[0] + rng.normal(0.0, noise_px, 2)
+    x0, y0 = pixels.min(axis=0) - width_px / 2
+    x1, y1 = pixels.max(axis=0) + width_px / 2
+    box = (float(x0), float(y0), float(x1), float(y1))
+    return FineBioObservation(
+        view=view,
+        frame_index=frame,
+        slot=slot or f"{cls}#0",
+        object_class=cls,
+        detector_score=0.8,
+        box_xyxy_px=box,
+        mask_bbox_px=box,
+        mask_centroid_px=(float(centroid[0]), float(centroid[1])),
+        mask_area_px=int(length_px * width_px),
+        mask_axis_px=(
+            (float(pixels[0, 0]), float(pixels[0, 1])),
+            (float(pixels[1, 0]), float(pixels[1, 1])),
+        ),
+        mask_elongation=float(max(1.0, length_px / width_px)),
+        mask_width_px=float(width_px),
+        mask_axis_residual_px=float(residual_px),
+        sam3_object_score=0.9,
+        pose_valid=True,
+        source="sam3_decode",
+    )
+
+
+def _endpoint_error(endpoints, a, b) -> float:
+    e = np.asarray(endpoints, dtype=float)
+    same = max(np.linalg.norm(e[0] - a), np.linalg.norm(e[1] - b))
+    swapped = max(np.linalg.norm(e[0] - b), np.linalg.norm(e[1] - a))
+    return float(min(same, swapped))
+
+
+def _lines_metrics(out) -> dict:
+    return out.metrics["extensions"]["lines"]
+
+
+def test_line_classes_flag_parsing_and_prior() -> None:
+    assert parse_line_classes("pipette") == LINE_CLASS_SHORTHANDS["pipette"]
+    assert parse_line_classes("blue_pipette, red_pipette") == ("blue_pipette", "red_pipette")
+    assert parse_line_classes(None) == () and parse_line_classes("") == ()
+    assert TrackerParams().line_classes == () and not TrackerParams().any_extension
+    assert TrackerParams(line_classes=("blue_pipette",)).any_extension
+    assert PRIOR.length_cm == pytest.approx(23.21) and PRIOR.spread_cm == pytest.approx(2.49)
+    # Class medians where the stand measured a class (the median over trials), else shared.
+    assert PRIOR.length_for("blue_pipette") == pytest.approx(21.7)
+    assert PRIOR.length_for("red_pipette") == pytest.approx(24.46)
+    assert PRIOR.length_for("yellow_pipette") == pytest.approx(0.5 * (21.97 + 22.77))
+    assert PRIOR.length_for("8_channel_pipette") == PRIOR.length_for(None) == PRIOR.length_cm
+
+
+def test_b_moving_pipette_seen_as_different_portions_is_one_line_track(rig) -> None:
+    """A blue pipette carried 2 cm per frame across the bench, re-gripped every 15 frames:
+    for three frames every view sees the whole shaft, then T1 sees the top 45%, T4 the bottom
+    45% and the head camera the tip, nothing else (`test_multiview_lines` case (i) portions).
+    The line tracker keeps one id with a line on every multi-view frame; the point tracker
+    on the same rows sits on the visible centroids, 6 cm off the shaft's middle, loses its
+    3D support on most gripped frames and, without the motion model, fragments."""
+    cams, fpv = rig
+    all_cams = {**cams, "fpv": fpv}
+    rng = np.random.default_rng(2)
+    frames = list(range(60))
+    length = PRIOR.length_for("blue_pipette")
+    direction = _unit([0.3, 0.2, -1.0])
+
+    def mid_at(f: int) -> np.ndarray:
+        # Back and forth along y at x = 25 (inside all six frames): 2 cm per frame.
+        phase = (2.0 * f) % 70.0
+        return np.array([25.0, -10.0 + (phase if phase <= 35.0 else 70.0 - phase), -14.0])
+
+    rows = []
+    for f in frames:
+        a, b = _segment(mid_at(f), direction, length)
+        if f % 15 < 3:
+            seen = {v: (0.0, 1.0) for v in ("T1", "T2", "T4", "fpv")}
+        else:
+            seen = {"T1": (0.0, 0.45), "T4": (0.55, 1.0), "fpv": (0.65, 1.0)}
+        for v, vis in seen.items():
+            rows.append(_axis_row(all_cams, v, f, a, b, "blue_pipette", rng=rng, visible=vis))
+    gripped = [f for f in frames if f % 15 >= 3]
+    line = run_tracker(
+        rows, cams, lambda f: fpv, frames, TrackerParams(**LINE_P, line_classes=("blue_pipette",))
+    )
+    assert line.metrics["per_class"]["pipette"]["tracks_born"] == 1
+    assert line.metrics["per_class"]["blue_pipette"]["tracks_born"] == 1
+    pipette = [r for r in line.rows if r.object_class == "pipette"]
+    assert [r.frame_index for r in pipette] == frames
+    assert all(r.observed_class == "blue_pipette" for r in pipette)
+    assert sum(1 for r in pipette if r.state == "observed") >= 55
+    assert all(r.endpoints_cm is not None and r.direction is not None for r in pipette)
+    errors = [
+        _endpoint_error(r.endpoints_cm, *_segment(mid_at(r.frame_index), direction, length))
+        for r in pipette
+    ]
+    assert np.median(errors) < 3.5 and max(errors) < 12.0
+    mid_errors = [
+        np.linalg.norm(np.array(r.position_cm) - mid_at(r.frame_index))
+        for r in pipette
+        if r.frame_index in gripped
+    ]
+    assert np.median(mid_errors) < 3.0
+    lengths = [np.linalg.norm(np.subtract(*r.endpoints_cm)) for r in pipette]
+    assert np.median(lengths) == pytest.approx(length, abs=0.5)
+    metrics = _lines_metrics(line)
+    assert metrics["enabled"] and metrics["line_births"] == 1 and metrics["point_births"] == 0
+    assert metrics["frames"]["line_fraction"] == 1.0 and metrics["frames"]["point_fallback"] == 0
+    # The gripped frames leave one plane (T1) and two rays to the tip: the prediction-aided
+    # fit carries them; the full-view frames measure the direction again.
+    assert metrics["frames"]["line_prediction_aided"] >= 20
+    assert metrics["frames"]["line"] >= 55
+    assert metrics["loo_residual_px"]["n"] > 0 and metrics["loo_residual_px"]["median"] < 3.0
+    assert metrics["class_agreement"] == 1.0
+    # The point tracker on the same rows: same params, no line classes.
+    point = run_tracker(rows, cams, lambda f: fpv, frames, TrackerParams(**LINE_P))
+    point_rows = [r for r in point.rows if r.object_class == "blue_pipette"]
+    assert sum(1 for r in point_rows if r.state == "observed") < 45
+    point_errors = [
+        np.linalg.norm(np.array(r.position_cm) - mid_at(r.frame_index))
+        for r in point_rows
+        if r.frame_index in gripped
+    ]
+    assert np.median(point_errors) > 4.0
+    stationary = run_tracker(
+        rows,
+        cams,
+        lambda f: fpv,
+        frames,
+        TrackerParams(observation_source="auto", coast_timeout_frames=10),
+    )
+    assert stationary.metrics["per_class"]["blue_pipette"]["tracks_born"] >= 2
+    # The row-level fields round-trip through JSON with the tracker's writer.
+    text = pipette[10].model_dump_json(exclude_none=True)
+    back = Track3D.model_validate_json(text)
+    assert back.endpoints_cm == pipette[10].endpoints_cm and back.observed_class == "blue_pipette"
+
+
+def test_c_two_flat_parallel_pipettes_stay_two_tracks_and_a_merged_mask_is_dropped(rig) -> None:
+    cams, _fpv = rig
+    rng = np.random.default_rng(3)
+    frames = list(range(20))
+    la, lb = PRIOR.length_for("yellow_pipette"), PRIOR.length_for("red_pipette")
+    # Flat on the bench (1 cm up), along x, 3 cm apart in y: the stand's spacing is 2.9 cm.
+    a0, a1 = _segment([0.0, -10.0, -1.0], [1.0, 0.0, 0.0], la)
+    b0, b1 = _segment([0.0, -7.0, -1.0], [1.0, 0.0, 0.0], lb)
+    rows = []
+    for f in frames:
+        for v in FIXED:
+            if f == 12 and v == "T3":
+                # T3's yellow mask covers both pipettes: twice the width, 1.9x the extent, and
+                # no separate red mask in that view.
+                rows.append(
+                    _axis_row(
+                        cams,
+                        v,
+                        f,
+                        a0,
+                        a1,
+                        "yellow_pipette",
+                        rng=rng,
+                        visible=(-0.45, 1.45),
+                        width_scale=2.0,
+                    )
+                )
+                continue
+            rows.append(_axis_row(cams, v, f, a0, a1, "yellow_pipette", rng=rng))
+            rows.append(_axis_row(cams, v, f, b0, b1, "red_pipette", rng=rng))
+    params = TrackerParams(
+        observation_source="auto",
+        coast_timeout_frames=10,
+        line_classes=("yellow_pipette", "red_pipette"),
+    )
+    out = run_tracker(rows, cams, lambda f: None, frames, params)
+    assert out.metrics["per_class"]["pipette"]["tracks_born"] == 2
+    assert out.metrics["per_class"]["yellow_pipette"]["tracks_born"] == 1
+    assert out.metrics["per_class"]["red_pipette"]["tracks_born"] == 1
+    # 3 cm apart is not a near duplicate for two lines (the stand's spacing).
+    assert out.metrics["duplicate_pair_frames"] == 0 and out.metrics["ambiguities"] == 0
+    assert all(r.possibly_same_as == () for r in out.rows)
+    by_frame = defaultdict(dict)
+    for r in out.rows:
+        by_frame[r.frame_index][r.observed_class] = r
+    for f in frames:
+        assert set(by_frame[f]) == {"yellow_pipette", "red_pipette"}
+        assert by_frame[f]["yellow_pipette"].state == "observed"
+        assert by_frame[f]["red_pipette"].state == "observed"
+    yellow_12 = by_frame[12]["yellow_pipette"]
+    assert yellow_12.merged_views == ("T3",) and "T3" not in yellow_12.support_views
+    assert yellow_12.support_views == ("T1", "T2", "T4", "T5")
+    assert by_frame[11]["yellow_pipette"].merged_views is None
+    assert by_frame[12]["red_pipette"].support_views == ("T1", "T2", "T4", "T5")
+    assert by_frame[13]["yellow_pipette"].support_views == FIXED
+    metrics = _lines_metrics(out)
+    assert metrics["merged_views_by_view"] == {"T3": 1}
+    assert metrics["frames"]["line_fraction"] == 1.0 and metrics["class_agreement"] == 1.0
+    for f in (11, 12, 19):
+        assert _endpoint_error(by_frame[f]["yellow_pipette"].endpoints_cm, a0, a1) < 0.5
+        assert _endpoint_error(by_frame[f]["red_pipette"].endpoints_cm, b0, b1) < 0.5
+    # The two lines lie flat: about 90 degrees from the bench normal.
+    for r in out.rows:
+        assert abs(np.degrees(np.arccos(abs(r.direction[2])))) > 88.0
+
+
+def test_d_tip_and_butt_resolved_by_a_hand_track_and_held_at_the_butt(rig) -> None:
+    cams, _fpv = rig
+    rng = np.random.default_rng(4)
+    frames = list(range(30))
+    length = PRIOR.length_for("red_pipette")
+    tip = np.array([-10.0, 5.0, -3.0])
+    direction = _unit([0.5, 0.3, -1.0])
+    butt = tip + direction * length
+    hand = butt + np.array([0.0, 0.0, 1.0])  # the hand around the plunger end
+    rows = []
+    for f in frames:
+        for v in FIXED[:4]:
+            rows.append(_box_row(cams, v, f, hand, "right_hand", size=(220, 220)))
+        if f < 15 or f >= 25:
+            for v in FIXED:
+                rows.append(_axis_row(cams, v, f, tip, butt, "red_pipette", rng=rng))
+    params = TrackerParams(
+        observation_source="auto",
+        coast_timeout_frames=15,
+        held=True,
+        line_classes=("red_pipette",),
+    )
+    out = run_tracker(rows, cams, lambda f: None, frames, params)
+    assert out.metrics["per_class"]["pipette"]["tracks_born"] == 1
+    pipette = {r.frame_index: r for r in out.rows if r.object_class == "pipette"}
+    assert set(pipette) == set(frames)
+    # Frame 0 is born unresolved; from frame 1 the hand track at the butt names the ends, and
+    # endpoints_cm[0] is the tip from then on.
+    assert pipette[0].tip_resolved is False
+    for f in frames[1:]:
+        assert pipette[f].tip_resolved is True, f
+        assert np.linalg.norm(np.array(pipette[f].endpoints_cm[0]) - tip) < 1.0, f
+        assert np.linalg.norm(np.array(pipette[f].endpoints_cm[1]) - butt) < 1.0, f
+        assert np.dot(pipette[f].direction, direction) > 0.99
+    # Occluded from frame 15 with the hand box over it in four views: held, following the
+    # hand at the butt; the segment keeps its direction and length; resumed at 25.
+    assert pipette[14].state == "observed" and pipette[15].state == "held"
+    assert pipette[24].state == "held" and pipette[25].state == "observed"
+    hand_id = next(r.track_id for r in out.rows if r.object_class == "right_hand")
+    assert all(pipette[f].held_by == hand_id for f in range(15, 25))
+    held = out.metrics["extensions"]["held"]
+    assert held["episodes"] == 1 and held["reacquired"] == 1
+    metrics = _lines_metrics(out)
+    assert metrics["tip_resolved_fraction"] == pytest.approx(29 / 30, abs=1e-4)
+    assert metrics["tip_resolutions_by_basis"] == {"hand_track": 1}
+    # Without the hand the ends stay in the order the geometry gave, unresolved.
+    no_hand = [r for r in rows if r.object_class != "right_hand"]
+    plain = run_tracker(no_hand, cams, lambda f: None, frames, params)
+    plain_rows = [r for r in plain.rows if r.object_class == "pipette"]
+    assert all(r.tip_resolved is False for r in plain_rows)
+    assert _lines_metrics(plain)["tip_resolved_fraction"] == 0.0
+
+
+def test_e_soft_prior_completes_a_truncated_extent_and_reports_the_deviation(rig) -> None:
+    cams, _fpv = rig
+    rng = np.random.default_rng(5)
+    frames = list(range(10))
+    length = PRIOR.length_for("yellow_pipette")
+    a, b = _segment([5.0, 0.0, -12.0], [0.2, 0.1, -1.0], length)
+    # Every view sees the middle 60%: the visible extent is 0.6 of the prior, both ends
+    # equally supported, so the prior completes both ends by half.
+    rows = [
+        _axis_row(cams, v, f, a, b, "yellow_pipette", rng=rng, visible=(0.2, 0.8))
+        for f in frames
+        for v in FIXED
+    ]
+    params = TrackerParams(observation_source="auto", line_classes=("yellow_pipette",))
+    out = run_tracker(rows, cams, lambda f: None, frames, params)
+    assert out.metrics["per_class"]["pipette"]["tracks_born"] == 1
+    for r in out.rows:
+        e = np.asarray(r.endpoints_cm)
+        assert np.linalg.norm(e[1] - e[0]) == pytest.approx(length, abs=0.5)
+        assert _endpoint_error(e, a, b) < 0.5
+    metrics = _lines_metrics(out)
+    assert metrics["length_cm"]["visible"]["median"] == pytest.approx(0.6 * length, abs=0.5)
+    assert metrics["length_cm"]["deviation_from_prior"]["median"] == pytest.approx(
+        0.4 * length, abs=0.5
+    )
+    assert metrics["frames"]["extended_by_prior"] == len(frames)
+    assert _events(out, "birth")[0].payload["extended_by_prior"] is True
+    # A hand at one end names the tip; the truncated extent is then completed at the tip
+    # end, not split between both ends.
+    hand_rows = [
+        _box_row(cams, v, f, b, "left_hand", size=(220, 220)) for f in frames for v in FIXED[:4]
+    ]
+    held = run_tracker(
+        rows + hand_rows,
+        cams,
+        lambda f: None,
+        frames,
+        TrackerParams(observation_source="auto", held=True, line_classes=("yellow_pipette",)),
+    )
+    resolved = [r for r in held.rows if r.object_class == "pipette" and r.tip_resolved]
+    assert len(resolved) >= len(frames) - 1
+    visible_butt_end = a + 0.8 * (b - a)
+    # Born symmetric before the hand named the ends; the Kalman blend (gain about 0.8 a
+    # frame) moves the state onto the tip-side completion within a few frames.
+    for r in resolved:
+        if r.frame_index < 4:
+            continue
+        e = np.asarray(r.endpoints_cm)
+        assert np.linalg.norm(e[1] - e[0]) == pytest.approx(length, abs=0.5)
+        # The butt end stays where the masks end (0.8), the tip is reconstructed L away.
+        assert np.linalg.norm(e[1] - visible_butt_end) < 0.7, r.frame_index
+        assert np.linalg.norm(e[0] - (visible_butt_end - _unit(b - a) * length)) < 0.7
+    # A full extent within the spread is left as seen and not flagged.
+    full = run_tracker(
+        [_axis_row(cams, v, f, a, b, "yellow_pipette", rng=rng) for f in frames for v in FIXED],
+        cams,
+        lambda f: None,
+        frames,
+        params,
+    )
+    assert _lines_metrics(full)["frames"]["extended_by_prior"] == 0
+    assert _lines_metrics(full)["length_cm"]["deviation_from_prior"]["median"] < 0.5
+
+
+def test_f_class_votes_give_the_plurality_and_the_agreement(rig) -> None:
+    cams, _fpv = rig
+    rng = np.random.default_rng(6)
+    frames = list(range(6))
+    a, b = _segment([5.0, 0.0, -12.0], [0.2, 0.1, -1.0], 22.0)
+    rows = [
+        _axis_row(cams, v, f, a, b, cls, rng=rng)
+        for f in frames
+        for v, cls in (("T1", "blue_pipette"), ("T3", "blue_pipette"), ("T2", "red_pipette"))
+    ]
+    params = TrackerParams(observation_source="auto", line_classes=("blue_pipette", "red_pipette"))
+    out = run_tracker(rows, cams, lambda f: None, frames, params)
+    assert out.metrics["per_class"]["pipette"]["tracks_born"] == 1
+    assert out.metrics["per_class"]["blue_pipette"]["tracks_born"] == 1
+    assert "red_pipette" not in out.metrics["per_class"]
+    rows_out = [r for r in out.rows if r.object_class == "pipette"]
+    assert all(r.observed_class == "blue_pipette" for r in rows_out)
+    assert all(r.support_views == ("T1", "T2", "T3") for r in rows_out)
+    metrics = _lines_metrics(out)
+    assert metrics["class_agreement"] == pytest.approx(2 / 3, abs=1e-4)
+    (votes,) = metrics["class_votes_by_track"].values()
+    assert votes == {"blue_pipette": 12, "red_pipette": 6}
+    # A track id carries the geometric class, not a colour.
+    assert rows_out[0].track_id.startswith("pipette-")
+
+
+def test_g_track3d_line_fields_round_trip_and_old_rows_validate(tmp_path) -> None:
+    row = Track3D(
+        frame_index=3,
+        track_id="pipette-001",
+        object_class="pipette",
+        position_cm=(1.0, 2.0, -3.0),
+        uncertainty_cm=1.0,
+        state="observed",
+        confidence=0.8,
+        abstain=False,
+        direction=(0.0, 0.0, -1.0),
+        endpoints_cm=((1.0, 2.0, 8.0), (1.0, 2.0, -14.0)),
+        tip_resolved=True,
+        observed_class="blue_pipette",
+        line_residual_px={"T1": 0.4, "T4": 1.2},
+        merged_views=("T3",),
+        colour_identity="blue_pipette",
+        colour_confidence=0.9,
+    )
+    back = Track3D.model_validate_json(row.model_dump_json(exclude_none=True))
+    assert back == row
+    old = {
+        "schema_version": "1.0",
+        "frame_index": 0,
+        "track_id": "blue_pipette-001",
+        "object_class": "blue_pipette",
+        "position_cm": [0.0, 0.0, -1.0],
+        "uncertainty_cm": 1.0,
+        "state": "observed",
+        "confidence": 0.5,
+        "abstain": False,
+    }
+    old_row = Track3D.model_validate(old)
+    assert old_row.direction is None and old_row.endpoints_cm is None
+    assert old_row.observed_class is None and old_row.colour_identity is None
+    assert old_row.merged_views is None and old_row.line_residual_px is None
+    with pytest.raises(ValueError):
+        Track3D.model_validate({**old, "colour_confidence": 1.5})
+    # The CLI accepts the shorthand and writes the fields; with the flag off no line field
+    # appears (the golden test above holds the bytes).
+    out = tmp_path / "lines"
+    assert (
+        main(
+            [
+                "--fixtures",
+                str(FIXTURE_DIR),
+                "--output",
+                str(out),
+                "--frames",
+                "1798:5",
+                "--motion-model",
+                "--held",
+                "--line-classes",
+                "pipette",
+            ]
+        )
+        == 0
+    )
+    metrics = json.loads((out / "identity_metrics.json").read_text())
+    assert metrics["params"]["extensions"]["line_classes"] == list(LINE_CLASS_SHORTHANDS["pipette"])
+    lines = metrics["extensions"]["lines"]
+    assert lines["enabled"] is True and lines["prior"]["length_cm"] == pytest.approx(23.21)
+    assert metrics["extensions"]["enabled"] == {
+        "motion_model": True,
+        "containers": False,
+        "group_tracks": False,
+        "held": True,
+    }
+    rows = list(read_jsonl(out / "tracks.jsonl", Track3D))
+    assert rows and all(r.object_class not in LINE_CLASS_SHORTHANDS["pipette"] for r in rows)
+    geometric = [r for r in rows if r.object_class == "pipette"]
+    assert geometric and all(
+        r.observed_class in LINE_CLASS_SHORTHANDS["pipette"] for r in geometric
+    )
+    assert "pipette" in metrics["per_class"]
