@@ -2,7 +2,7 @@
 
 This page is how to run the lab: set up the three environments, run the FineBio pipeline one
 stage at a time, hold the two human gates, open the recordings, rebuild the Assembly101 review
-package, run the tests, queue GPU jobs and prune old runs. Every flag below was checked against the
+package, run the tests, queue GPU jobs and prune old runs. I checked every flag below against the
 tool's `--help`, and every tool answers `uv run battle-<name> --help` on the CPU. The numbers these
 commands produced are in [`results.md`](results.md); the words are in the
 [glossary](writing-style.md#glossary).
@@ -28,11 +28,11 @@ SAM3 tool takes `--external-python` and `--model` to point elsewhere. The FineBi
 for sm_120. CUDA 13.2's `nvcc` refuses GCC 16 as host compiler, so the script passes `CC=gcc-15
 CXX=g++-15` to the mmcv build (`FINEBIO_HOST_CC` and `FINEBIO_HOST_CXX` override it). Torch 2.6 and
 later load checkpoints weights-only and the authors' `.pth` files carry mmengine buffers, so the
-detector worker sets `TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1` for its own process. The script is
-idempotent; `--skip-verify` and `--skip-weights` shorten a re-run.
+detector worker sets `TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1` for its own process. The script can be
+run again safely, and `--skip-verify` and `--skip-weights` shorten a re-run.
 
 Raw FineBio videos sit under `data/raw/finebio/`, the window proxies under
-`data/derived/finebio/<trial>/600-4200/`, and every run under `runs/`. All three are gitignored.
+`data/derived/finebio/<trial>/600-4200/`, and every run under `runs/`. All three are ignored by Git.
 
 ## FineBio, one command per stage
 
@@ -50,10 +50,11 @@ uv run battle-finebio-rig --config configs/finebio/cameras/${T}_600-4200.json --
 uv run battle-detector-seed run --trial $T --detections $D --start 600 --end 4200 --output runs/finebio-seeds-$T   # slots, seeds (GPU decode) and the gate 1 sheets
 ```
 
-The camera solve keeps a shipped pose that fits the markers within 10 px and re-solves the rest by
-PnP; no camera is ever faked. The rig writes its gates as formulas into `rig.json`. The seed rule
-opens a slot for what moves or sits in a hand. The arms ran on a second seed set, `with-plate/`,
-which adds the cell culture plate as a landmark slot and caps each camera at 11 slots:
+The camera solve keeps a shipped pose that fits the markers within 10 px and re-solves the rest
+from the marker corners by PnP (perspective-n-point); no camera is ever faked. The rig writes its
+gates as formulas into `rig.json`. The seed rule opens a slot for what moves or sits in a hand.
+The arms ran on a second seed set, `with-plate/`, which adds the cell culture plate as a landmark
+slot and caps each camera at 11 slots:
 
 ```bash
 S=runs/finebio-seeds-$T/with-plate
@@ -100,8 +101,8 @@ uv run battle-finebio-viewer --clip-config $C --arm-dirs a=$A/a-boxes-only,b=$A/
 uv run rerun rrd verify runs/finebio-review-$T-ext/review.rrd
 ```
 
-The recording takes 6 to 8 minutes to build and lands near 900 MB. One trial's two mask arms cost
-about 2.3 h of GPU; the detector pass for both trials and both detectors cost 65 minutes.
+The recording takes six to eight minutes to build and lands near 900 MB. One trial's two mask
+arms cost about 2.3 h of GPU; the detector pass for both trials and both detectors cost 65 minutes.
 
 ## Opening the recordings
 
@@ -159,7 +160,7 @@ uv run battle-finebio-anchors export --workspace $W --record $W/decisions.json -
 
 **One recording carries the whole Assembly101 phase, and three presets switch every panel at
 once.** `segmentation.rbl` shows the reference beside the candidate arms with the anchor marks;
-`hands.rbl` shows every hand source in 2D and world millimetres; `multiview.rbl` shows nine camera
+`hands.rbl` shows every hand source in 2D and world millimeters; `multiview.rbl` shows nine camera
 tiles, the consensus markers, the hull and the 3D rig. The builder takes `--candidate-arm
 NAME=RUN_DIR` once per arm; the nine-camera recording it merges with comes from
 `battle-build-multiview-static-comparison` with the same application and recording id.
@@ -209,7 +210,7 @@ uv run ruff check . && uv run ruff format --check .
 **One process touches the GPU at a time, and only committed code reaches it.** `battle-code-snapshot`
 archives `src/battle` at a commit into `<root>/code-snapshot-<sha>/` and prints the `PYTHONPATH` line
 every job carries, so working-tree edits cannot reach a running job. The queue runs a JSON job list
-strictly serially under `systemd-inhibit`, checks `nvidia-smi`, the kernel log and the card's headroom
+one job at a time under `systemd-inhibit`, checks `nvidia-smi`, the kernel log and the card's headroom
 before every job, kills a job past its timeout with its whole process group, and stops at the first
 failure unless told otherwise. Events go to the log as JSON lines and each job's output to
 `logs/<index>_<name>.log` beside it. A SAM3 worker whose run manifest records a failure exits 3, so

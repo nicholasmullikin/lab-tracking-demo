@@ -17,8 +17,8 @@ draw boxes, inspect what the decoder returns for them, stop prompting with words
 
 ![Text prompts fail: 'toy wheel' never appears and the ego view finds only the hand](../media/story/2026-09-08-text-prompts-fail.gif)
 
-The number that changed: concepts started by text, 2 of 3 on the static camera and 1 of 3 on
-the head camera.
+The number that changed: concepts started by text, two of three on the static camera and one of
+three on the head camera.
 
 Evidence: `runs/muggledsam-sam3-smoke-static-c10379-20260909t025854z/` and
 `runs/muggledsam-sam3-smoke-ego-hmc21110305-20260909t025910z/`; archive entries
@@ -29,14 +29,14 @@ and [ego monochrome diagnostic](archive/method-ledger.md#sep-8-late-evening-mugg
 
 **Boxes drawn on frame 0 gave the head camera both hands and both toy parts, and then the first
 frame proved a poor seed.** A browser workspace replaced an OpenCV prompt tool within an hour,
-and a second head camera (e4) was picked because it started every concept. Four seeded targets
+and I picked a second head camera (e4) because it started every concept. Four seeded targets
 covered 98 to 100% of the 5,400 frames. Watching the result beside the static camera showed the
 tracked "toy wheel" was the wrong part, so the vocabulary changed. A seed drawn on one frame
 does not describe a part that turns, which is what the next run addressed.
 
 ![Text prompts gave one hand; human box seeds on frame 0 give both hands and both toy parts](../media/story/2026-09-09-box-seed-fix.gif)
 
-The number that changed: targets tracked on the head camera, 1 to 4, at 98 to 100% frame
+The number that changed: targets tracked on the head camera, one to four, at 98 to 100% frame
 coverage over 180 s.
 
 Evidence: `runs/muggledsam-sam3-full-ego-manual-seed-multiplexed-ego-hmc21179183-20260910t024052z/`;
@@ -45,7 +45,7 @@ and [the head-camera screen](archive/run-report-assembly101-ego-viewpoint-screen
 
 ## Sep 10 to 12: no runs
 
-- Sep 10: the labelling workspace's two-step flow became one "Finalize tracking plan" action. No run.
+- Sep 10: the labeling workspace's two-step flow became one "Finalize tracking plan" action. No run.
 - Sep 11: no work.
 - Sep 12: no work.
 
@@ -72,7 +72,7 @@ and [tracker diagnostics](archive/method-ledger.md#sep-13-evening-tracker-score-
 ## Sep 14: no text prompt finds the black base
 
 **Five text prompts for the black toy base all failed, one of them on an unrelated black
-fixture, so the base was seeded from a mask I picked among the decoder's
+fixture, so I seeded the base from a mask picked among the decoder's
 candidates.** The static camera's hybrid run kept text prompts for both hands and the yellow
 top and used that one reviewed mask for the base, over all 5,400 frames. Reviewing the toy piece
 by piece then showed the composite names were wrong for the task. The vocabulary narrowed to
@@ -80,8 +80,8 @@ four physical parts: chassis, interior, rear body and cabin.
 
 ![No text prompt finds the black base; I pick its frame-0 mask from decoder candidates](../media/story/2026-09-14-black-base-candidates.png)
 
-The number that changed: text prompts tried for the black base, 5, accepted 0; the target list
-went from 2 composite names to 4 physical parts.
+The number that changed: text prompts tried for the black base, five, accepted none; the target
+list went from two composite names to four physical parts.
 
 Evidence: `runs/muggledsam-sam3-static-black-toy-top-base-calibration-20260914t022125z/` and
 `runs/muggledsam-sam3-g3-full-hybrid-static-static-c10379-20260915t005919z/`; archive entry
@@ -115,8 +115,8 @@ method, and one review recording gathered everything.
 
 ![Grounded-SAM-2 and SAMURAI drift off the parts; SAM3 with reviewed seeds holds](../media/story/2026-09-16-exploratory-arms.gif)
 
-The number that changed: methods attempted, 1 to 10 in one day; on the shared 20 s, 1 of 3
-challengers stayed on all four parts.
+The number that changed: methods attempted, one to ten in one day; on the shared 20 s, one of
+three challengers stayed on all four parts.
 
 Evidence: `runs/grounding-dino-sam2-open-vocabulary-four-part-20s-20260916t1004z/`,
 `runs/samurai-four-part-reviewed-seed-20s-20260916t1007z/` and
@@ -126,20 +126,20 @@ Evidence: `runs/grounding-dino-sam2-open-vocabulary-four-part-20s-20260916t1004z
 
 ## Sep 17: the first human review finds the swap
 
-**The first close review of the minute named the failures the metrics had not: the interior
+**The first close review of the minute named the failures the measures had not: the interior
 leaks into the chassis as the part turns, and the two labels swap as a hand sweeps past.** An
 automatic correction at frame 1172 landed inside the swap and did not undo it; a correction I
 picked at 1235 did. A correction at the leak onset (frame 1020) did not hold either.
 The first minute became the comparison unit, DAM4SAM ran over it, and a per-part reference took
-DAM4SAM's chassis inside the failing interval. Label-free review metrics ranked 198 episodes for
+DAM4SAM's chassis inside the failing interval. Label-free review measures ranked 198 episodes for
 the next review.
 
 ![Interior leaks into the chassis from 1020 and the labels swap; a human correction at 1235 undoes it](../media/story/2026-09-17-human-flags-swap.gif)
 
 ![The v4 review's pinned moments: swap, leaks and hand drop-outs I was asked to judge](../media/story/2026-09-17-v4-review-sheet.png)
 
-The number that changed: the comparison unit shrank from 92.7 s to the first 60 s, and the
-interior was marked hidden over frames 1024 to 1172.
+The number that changed: the comparison unit shrank from 92.7 s to the first 60 s, and I marked
+the interior hidden over frames 1024 to 1172.
 
 Evidence: `runs/interaction-review-first-minute-v4/` and
 `runs/muggledsam-sam3-four-part-static-focused-reassembly-static-c10379-20260918t001210z/`;
@@ -149,8 +149,8 @@ and [leak onset](archive/method-ledger.md#sep-1718-leak-onset-correction-attempt
 ## Sep 18: eight cameras disagree
 
 **Eight static cameras on one rig flagged the chassis failure by disagreeing about it, and
-fixed nothing.** Overnight, the seven other static views were fetched, their clocks and cameras
-fitted, and SAM3 run on each from seeds transferred by geometry. A cross-view consensus and a
+fixed nothing.** Overnight, a queue fetched the seven other static views, fitted their clocks and
+cameras, and ran SAM3 on each from seeds transferred by geometry. A cross-view consensus and a
 carved visual hull both threw C10379's chassis out over frames 1620 to 1700, and both flagged
 the swap window the review had named. ATHENA triangulated hands against the dataset's, Kineo ran
 on all eight cameras, and LM-EEC mapped parts into the head camera. Every number from that
@@ -212,8 +212,8 @@ and [v6 review surface](archive/method-ledger.md#sep-20-v6-review-surface-one-re
 rack, and FineBio's shipped detector boxed both on every frame.** One 20 s head-camera clip and
 five prompts: three concepts started at frame 0, the plate and the racks found nothing, and the
 pipette was lost at frame 106. The detector, run on the CPU beside it, put `cell_culture_plate`
-on all 600 frames and six rack classes on the racks. The box became the way in. The same night
-the Assembly101 labelling sessions were acted on and a distractor guard added.
+on all 600 frames and six rack classes on the racks. The box became the way in. The same night I
+acted on the Assembly101 labeling sessions and added a distractor guard.
 
 ![SAM3's text prompt never finds the transparent 6-well plate and loses the pipette at frame 106](../media/story/2026-09-21-text-fails-on-plate.gif)
 
@@ -235,12 +235,12 @@ and [FineBio shipped detector](archive/method-ledger.md#sep-21-finebio-shipped-d
 
 **The preflight found the top-down camera's shipped pose 94 px off the bench markers, and
 re-solving it from the markers brought it to 0.7 px.** The Assembly101 phase closed first,
-tagged, with 3.67 GB of unreferenced runs deleted. Then every assumption behind the FineBio plan
-was checked before anything ran: the camera mapping, synchronisation within one frame, static
+tagged, with 3.67 GB of unreferenced runs deleted. Then I checked every assumption behind the
+FineBio plan before anything ran: the camera mapping, synchronization within one frame, static
 objects triangulated to half their heights, and the transparent plate masked in all six views
-from the detector's box. The in-hand object was the weakest detection in every fixed view. The
-plan was rewritten on what the preflight found, the trial windows chosen, and the detector built
-for the GPU.
+from the detector's box. The in-hand object was the weakest detection in every fixed view. I
+rewrote the plan on what the preflight found, chose the trial windows and built the detector for
+the GPU.
 
 ![Camera 6's shipped pose (green) sits 94 px off the markers (red); marker PnP re-solves it to 0.7 px](../media/story/2026-09-24-camera6-pose.png)
 
@@ -259,7 +259,7 @@ Cameras, rig, proxies, seeds, detector runs on 86,400 frames, four arms and the 
 from fixtures to a review recording in one day. A fresh mask decoded from the detector's box on
 every frame agreed with the box on 99.1% of masks; video memory, seeded once, on 79.3%, and
 re-seeding it made it worse. Four extensions (motion model, containers, groups, held objects)
-cut spurious track births by 40% (308 to 186) and identity ambiguities by two thirds (158 to
+cut spurious track births by 40% (308 to 186) and identity ambiguities by two-thirds (158 to
 54). A micro tube kept one identity through both closed-lid spins. The blue pipette in the hand
 split into 59 identities in two minutes.
 
@@ -314,17 +314,17 @@ and [gate 2 web workspace](archive/method-ledger.md#sep-26-gate-2-web-workspace-
 **On 337 anchor cells I took per-frame box decode's own mask 307 times and rejected it on 30,
 almost all pipettes in a hand; the ranking held with a smaller gap.** Against the
 accepted masks, per-frame box decode scored 0.984 mean IoU and 98.8% at 0.5 or above, video
-memory 0.897 and 93.5%. The 20-point label-free gap became 5 points, because the 18 frames
-sample video memory's dead slots instead of counting every frame of them. Video memory won
+memory 0.897 and 93.5%. The label-free gap of 20 percentage points became 5, because the 18
+frames sample video memory's dead slots instead of counting every frame of them. Video memory won
 identity through the centrifuge lid, one id where the per-frame decode had two. Trial 1 was then
 redone on the seeds gate 1 kept: per-frame decode 0.928 and 99.3%, video memory 0.915 and
-80.4%, its drift moved between slots rather than removed. Finally, 270 GB of re-seed checkpoints
-were deleted.
+80.4%, its drift moved between slots rather than removed. Finally, I deleted 270 GB of re-seed
+checkpoints.
 
 ![Gate 2 rejects arm b's mask on 30 of 337 cells: pipettes in the hand, a hidden object, a wider fit](../media/story/2026-09-27-gate2-rejected-masks.png)
 
 The number that changed: the gap between per-frame box decode and video memory on masks at 0.5
-IoU or above, 20 points against the detector's box to 5 points against my choice.
+IoU or above, 20 percentage points against the detector's box to 5 against my choice.
 
 Evidence: `runs/finebio-anchors-P03_03_01-20260925/scoreboard/` and
 `runs/finebio-arms-P03_03_01-filtered-20260927/`; archive entries

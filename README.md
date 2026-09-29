@@ -1,17 +1,17 @@
 # Battle
 A 3D object tracker for a wet-lab bench made with SAM3, six cameras and no training
 
-This is a method lab that went from SAM3 smoke tests on a toy car assembly (Assembly101) to a six
-camera 3D object tracker on a wet-lab bench (FineBio) in 20 days. Nothing was trained and no
-ground truth was annotated, so every number on this page says what it was measured against. This
-page is the five minute version. The day by day is in [`docs/story.md`](docs/story.md), the
+This is a method lab that went from SAM3 smoke tests on a toy car assembly (Assembly101) to a
+six-camera 3D object tracker on a wet-lab bench (FineBio) in 20 days. I trained nothing and
+annotated no ground truth, so every number on this page says what it was measured against. This
+page is the five-minute version. The day by day is in [`docs/story.md`](docs/story.md), the
 numbers are in [`docs/results.md`](docs/results.md), the commands are in
 [`docs/pipeline.md`](docs/pipeline.md) and the lab's shorthand is translated in the
 [glossary](docs/writing-style.md#glossary).
 
 ![One tube, one identity, through a closed centrifuge lid](media/story/2026-09-25-finebio-3d.gif)
 
-The six cameras on the bench and the tracker's top down view of them. The highlighted micro tube
+The six cameras on the bench and the tracker's top-down view of them. The highlighted micro tube
 keeps the same identity while the centrifuge lid is closed over it.
 
 ## What it does
@@ -28,7 +28,7 @@ worked in both rooms I tried. The pipeline has six parts.
   frame and tracked by predict, project and gate. The gates are formulas on each trial's own data.
 - Containers, held objects, groups: four opt-in extensions keep a tube's identity inside a closed
   centrifuge, follow an object in a hand and hold a rack of identical tubes as one group. They cut
-  spurious track births by 40% and identity ambiguities by two thirds.
+  spurious track births by 40% and identity ambiguities by two-thirds.
 - Confidence and events: every track row gets a label-free confidence rank or an abstention.
   `contained`, `held` and `proximity` episodes are just geometry on the tracks against the rig's
   volumes.
@@ -66,10 +66,10 @@ accepted or rejected each seed box. At gate 2 I picked the right mask on a sampl
 | [Sep 20](docs/story.md#sep-20-other-cameras-detect-the-failure-and-cannot-fix-it) | Corrections from the other cameras got to the floor and never to the level of mine. A detector, not yet a corrector | <a href="docs/story.md#sep-20-other-cameras-detect-the-failure-and-cannot-fix-it"><img src="media/story/2026-09-20-interior-stays-human.gif" width="140" alt="Interior stays human"></a> |
 | [Sep 21](docs/story.md#sep-21-finebio-arrives-and-text-fails-on-the-plate) | On the bench, text never found the transparent plate. The shipped detector boxed it on every frame | <a href="docs/story.md#sep-21-finebio-arrives-and-text-fails-on-the-plate"><img src="media/story/2026-09-21-text-fails-on-plate.gif" width="140" alt="Text prompts miss the transparent plate"></a> |
 | [Sep 22 and 23](docs/story.md#sep-22-and-23-cleanup-then-nothing) | Cleanup, then nothing | |
-| [Sep 24](docs/story.md#sep-24-camera-6-is-94-px-off-its-shipped-pose) | The top down camera's shipped pose was 94 px off the markers. The preflight re-solved it and rewrote the plan | [still](docs/story.md#sep-24-camera-6-is-94-px-off-its-shipped-pose) |
+| [Sep 24](docs/story.md#sep-24-camera-6-is-94-px-off-its-shipped-pose) | The top-down camera's shipped pose was 94 px off the markers. The preflight re-solved it and rewrote the plan | [still](docs/story.md#sep-24-camera-6-is-94-px-off-its-shipped-pose) |
 | [Sep 25](docs/story.md#sep-25-the-3d-tracker-runs-in-both-rooms) | The tracker ran in both rooms. Video memory drifted and the pipette in the hand fragmented into 59 identities | <a href="docs/story.md#sep-25-the-3d-tracker-runs-in-both-rooms"><img src="media/story/2026-09-25-pipette-fragments.gif" width="140" alt="The pipette in the hand fragments"></a> |
 | [Sep 26](docs/story.md#sep-26-gate-1-rejects-six-seeds) | Gate 1 rejected six seeds (two objects under one box, a glove, a table edge) and no verdict moved | [still](docs/story.md#sep-26-gate-1-rejects-six-seeds) |
-| [Sep 27](docs/story.md#sep-27-gate-2-rejects-30-masks-and-the-redo-holds) | Gate 2 rejected 30 of 337 masks, almost all pipettes in a hand. The label-free gap shrank from 20 points to 5 | [still](docs/story.md#sep-27-gate-2-rejects-30-masks-and-the-redo-holds) |
+| [Sep 27](docs/story.md#sep-27-gate-2-rejects-30-masks-and-the-redo-holds) | Gate 2 rejected 30 of 337 masks, almost all pipettes in a hand. The label-free gap shrank from 20 percentage points to 5 | [still](docs/story.md#sep-27-gate-2-rejects-30-masks-and-the-redo-holds) |
 
 ## Recordings
 
@@ -84,15 +84,15 @@ uv run rerun runs/finebio-review-P03_03_01-20260925/review.rrd runs/finebio-revi
 uv run rerun runs/finebio-review-P20_03_01-20260925-ext/review.rrd runs/finebio-review-P20_03_01-20260925-ext/world.rbl             # trial 2, with the extensions
 ```
 
-The 20 minute route through both trials is in the
+The 20-minute route through both trials is in the
 [review guide](docs/review-guide-2026-09-25-finebio-3d.md#what-to-look-at-first-20-minutes-both-trials).
 It covers the negative control, the centrifuge story three ways, the transparent plate, the object
 in the hand, a confidence drop that is a real failure, the decision and what did not transfer.
 
 ## Notes
 
-Every number here is one model compared to another, or a model compared to one person's choice
-among that model's masks. None of them are accuracy against ground truth. The long version is in
+Every number here is one model compared with another, or a model compared with my choice among
+that model's masks. None of them is accuracy against ground truth. The long version is in
 [`docs/results.md`](docs/results.md#claim-boundaries).
 
 - The FineBio detector was trained on FineBio's own objects and on frames from these same cameras.
@@ -100,27 +100,27 @@ among that model's masks. None of them are accuracy against ground truth. The lo
   upper bound for a new bench.
 - The anchors are 337 cells on 18 frames of one trial, my pick among SAM3's decoder masks. They
   rank the arms against each other and are not a dataset. The 103 cells with no
-  detector box were left unlabelled.
+  detector box were left unlabeled.
 - Three things are overfit to trial 1: the rig's witness class list (it put room 2's hand-off gate
   at its 80 px cap), the slot cap (it handed a rack the plate's slot) and the viewer's negative
   control (drawn for camera 6 only).
 - The pipette in the hand fragments in both rooms (59 identities for blue and 48 for yellow, with
   the extensions on). I read it as an observation problem, since a long object seen from one or two
-  cameras has no single 3D point at its box centre.
+  cameras has no single 3D point at its box center.
 - Proximity events are zero by protocol, because no pipette comes near the plate in either window.
   The mechanism has only been tested on synthetic tracks.
 - Trial 2 has no human gate. Its 66 seed tiles are undecided, no anchor set was chosen and its
   numbers rest on the detector's own seeds.
 
-Licence: FineBio is gated, non-commercial research data and Assembly101 is CC BY-NC 4.0. Nothing
-under `data/` or `runs/` is committed. The only dataset pixels in git are the story media under
+License: FineBio is gated, non-commercial research data and Assembly101 is CC BY-NC 4.0. Nothing
+under `data/` or `runs/` is committed. The only dataset pixels in Git are the story media under
 `media/story/`, and the repo is private. [`docs/LICENSES.md`](docs/LICENSES.md#committed-media-sep-27)
 has the terms they carry and says they must be removed before any redistribution.
 
 ## Open problems
 
 - The pipette in the hand. The tracker needs an observation that is one 3D point, a tip or handle
-  keypoint per camera instead of a box centre. Named, not built.
+  keypoint per camera instead of a box center. Named, not built.
 - Room 2 has no human gate. Gate 2 was only run on trial 1, so room 2 has no number anchored on
   my choices. The web workspace for it exists and the sitting would take about 1.5 h.
 - Nothing was swept. Frames before a re-seed, the memory write threshold, the hysteresis widths, the
@@ -128,12 +128,12 @@ has the terms they carry and says they must be removed before any redistribution
 - Cost per trial. About 2.3 h of GPU for the two mask arms on one RTX 5070 Ti, 25 minutes for the
   detector pass, 8 minutes of CPU for the recording and about 2 h of my time for the two gates.
 
-Productising this would start with the three things the lab took from the dataset: a detector
-trained on the target bench's objects, printed markers to solve the cameras and a list of
-containers with their heights for each bench. The camera solve, the rig check, the tracker and the
-review recording all moved to a second room with the trial id as the only change, and the three
-overfit items above are the first patches. The two review gates would have to become routine
-instead of a sitting.
+Turning this into a product would start with the three things the lab took from the dataset: a
+detector trained on the target bench's objects, printed markers to solve the cameras and a list
+of containers with their heights for each bench. The camera solve, the rig check, the tracker and
+the review recording all moved to a second room with the trial id as the only change, and the
+three overfit items above are the first patches. The two review gates would have to become
+routine instead of a sitting.
 
 ## Structure
 

@@ -12,9 +12,9 @@ numbers. The glossary that maps the lab's shorthand to plain words is in `writin
 | [`story.md`](story.md) | One section per active day, each with a GIF, a headline and the number that changed |
 | [`results.md`](results.md) | The goals scorecard in the founder's words, the two-trial FineBio table, the numbers anchored on the masks I chose, the Assembly101 headline, the claim boundaries |
 | [`pipeline.md`](pipeline.md) | Setup, the FineBio pipeline one command per stage, the two gates, the recordings, the Assembly101 review package, tests, the GPU queue, pruning |
-| [`review-guide-2026-09-25-finebio-3d.md`](review-guide-2026-09-25-finebio-3d.md) | The 20-minute route through the FineBio recordings: presets, storyboard, cross-checks, key numbers |
-| [`writing-style.md`](writing-style.md) | The ten rules the live pages follow, the [glossary](writing-style.md#glossary), and one before-and-after |
-| [`LICENSES.md`](LICENSES.md) | The licence and handling policy for every input, and the terms the committed story media carry |
+| [`review-guide-2026-09-25-finebio-3d.md`](review-guide-2026-09-25-finebio-3d.md) | The 20-minute route through the FineBio recordings: presets, storyboard, cross-checks, the numbers |
+| [`writing-style.md`](writing-style.md) | The ten rules the live pages follow, the house style taken from The Economist Style Guide, the [glossary](writing-style.md#glossary) and one before-and-after |
+| [`LICENSES.md`](LICENSES.md) | The license and handling policy for every input, and the terms the committed story media carry |
 | [`SOURCES.md`](SOURCES.md) | The source and provenance record for every dataset, model and external repository used |
 | [`qa/README.md`](qa/README.md) | The review records: gate decisions, review anchors and QA files, tracked as numbers and hashes without pixels |
 
@@ -35,13 +35,13 @@ toy-car phase), **FineBio** (the wet-lab phase) and **cross-cutting** (records t
 | [`archive/review-guide-2026-09-18-multicam.md`](archive/review-guide-2026-09-18-multicam.md) | Assembly101 | The guide to the overnight eight-camera pass: consensus and visual hull on the v4 recording |
 | [`archive/review-guide-2026-09-20-ensemble-v2.md`](archive/review-guide-2026-09-20-ensemble-v2.md) | Assembly101 | The guide to the ensemble reference v2 candidate on the v5 recording |
 | [`archive/review-guide-2026-09-20-multiview-presets.md`](archive/review-guide-2026-09-20-multiview-presets.md) | Assembly101 | The guide to the v6 package: one recording, three presets, nine camera tiles |
-| [`archive/labeling-sessions-2026-09-20.md`](archive/labeling-sessions-2026-09-20.md) | Assembly101 | The briefs for the five anchor-labelling sessions on the Assembly101 cameras |
+| [`archive/labeling-sessions-2026-09-20.md`](archive/labeling-sessions-2026-09-20.md) | Assembly101 | The briefs for the five anchor-labeling sessions on the Assembly101 cameras |
 | [`archive/athena_hf_calibration_probe.json`](archive/athena_hf_calibration_probe.json) | Assembly101 | The HTTP range probe of Assembly101's pose archive: no intrinsics ship in it |
-| [`archive/frame-rate-comparison-2026-09-13.json`](archive/frame-rate-comparison-2026-09-13.json) | Assembly101 | The 30 fps against 60 fps comparison of SAM3 arms on the head camera |
-| [`archive/qa/anchor-scoreboard-c10119-20260920.md`](archive/qa/anchor-scoreboard-c10119-20260920.md) | Assembly101 | Arm ranking on the top-down camera C10119, first labelling |
+| [`archive/frame-rate-comparison-2026-09-13.json`](archive/frame-rate-comparison-2026-09-13.json) | Assembly101 | The comparison of 30 fps against 60 fps SAM3 arms on the head camera |
+| [`archive/qa/anchor-scoreboard-c10119-20260920.md`](archive/qa/anchor-scoreboard-c10119-20260920.md) | Assembly101 | Arm ranking on the top-down camera C10119, first labeling |
 | [`archive/qa/anchor-scoreboard-c10119-20260921.md`](archive/qa/anchor-scoreboard-c10119-20260921.md) | Assembly101 | The same camera after the four-part rerun and the guarded re-prompt |
 | [`archive/qa/anchor-scoreboard-c10379-arms-20260921.md`](archive/qa/anchor-scoreboard-c10379-arms-20260921.md) | Assembly101 | Arm ranking on the static camera C10379: `pm-append` 0.743 and the DAM4SAM tie |
-| [`archive/qa/anchor-scoreboard-e4-20260920.md`](archive/qa/anchor-scoreboard-e4-20260920.md) | Assembly101 | Arm ranking on the head camera e4, first labelling |
+| [`archive/qa/anchor-scoreboard-e4-20260920.md`](archive/qa/anchor-scoreboard-e4-20260920.md) | Assembly101 | Arm ranking on the head camera e4, first labeling |
 | [`archive/qa/anchor-scoreboard-e4-20260921.md`](archive/qa/anchor-scoreboard-e4-20260921.md) | Assembly101 | The same camera after the four-part rerun |
 | [`archive/qa/runs-archive-list-2026-09-24.md`](archive/qa/runs-archive-list-2026-09-24.md) | Assembly101 | The listing of `runs/` at the phase close: sizes, what was archived, what was deleted |
 | [`archive/plan-2026-09-24-finebio-detector-seeded-lab.md`](archive/plan-2026-09-24-finebio-detector-seeded-lab.md) | FineBio | The first FineBio plan, detector-seeded and objects only, written before the preflight |

@@ -12,18 +12,18 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
 - License or dataset-agreement version
 - Attribution/citation text
 - Intended use and display scope
-- Redistribution, derivative-work, and noncommercial constraints
+- Redistribution, derivative-work and non-commercial constraints
 - Local storage class (outside Git) and checksum
-- Reviewer, review date, and approval status
+- Reviewer, review date and approval status
 
 ## Approved local source: Assembly101 G2 clip
 
-- Status: `approved` for the user-frozen G1/G2 local smoke inputs documented in
+- Status: `approved` for the G1/G2 local smoke inputs I froze, documented in
   `configs/clips/assembly101_nusar_9033_g2.json`.
 - Clip ID: `assembly101-nusar-9033-g2`; dataset: `cvml-nus/assembly101`; pinned
   revision: `bfc15ea5e3f0bc8f8c232af6c1b45aa137a9d967`.
 - Approved assets: static `C10379_rgb` and ego `HMC_21110305_mono10bit`, plus the
-  timestamp-exact, audio-free 30 FPS proxies for source interval 215.000–395.000 s.
+  timestamp-exact, audio-free 30 fps proxies for source interval 215.000–395.000 s.
 - Stated license: `CC BY-NC 4.0`; local acquisition facts are in
   `data/raw/assembly101/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532/acquisition_report.md`.
 - Smoke display/processing scope: first 10.0 seconds (proxy frames 0–299) of each
@@ -32,10 +32,10 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
   run artifacts used the same approved ego proxy. One deterministically transformed only
   its decoded grayscale representation (p1–p99 normalization plus CLAHE, then
   three-channel replication); the other used original decoded BGR with a human-recorded
-  frame-0 box. Neither condition downloaded an asset, weight, annotation, or additional
+  frame-0 box. Neither condition downloaded an asset, weight, annotation or additional
   video, and neither changes the preserved three-text-concept zero-shot baseline.
 - Unresolved use decision: the G1/G2 approval does not determine whether job-seeking,
-  private demos, or public displays satisfy CC BY-NC 4.0 or dataset-specific terms.
+  private demos or public displays satisfy CC BY-NC 4.0 or dataset-specific terms.
   Obtain a rights-holder or institutional determination before sharing beyond the
   approved local procedure.
 - Repository policy: raw recordings, proxies, annotations, masks, model checkpoints,
@@ -48,15 +48,14 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
   copy that source file.
 - SAM3.1 checkpoint status: already available locally for the smoke run; MuggledSAM
   documents separate agreement requirements for SAM3 weights. Battle did not download,
-  modify, bundle, or redistribute that checkpoint. Acquisition authorization and
+  modify, bundle or redistribute that checkpoint. Acquisition authorization and
   sharing rights were not independently verified.
 
 ## Model source: MediaPipe Hand Landmarker
 
 - MediaPipe package/source: `mediapipe` 1.0.1 /
   `https://github.com/google-ai-edge/mediapipe`; source repository declares Apache-2.0.
-- Task model: official Hand Landmarker float16 bundle, version `1`, retrieved Sep 15,
-  2026 from
+- Task model: official Hand Landmarker float16 bundle, version `1`, retrieved Sep 15 2026 from
   `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`.
 - Local ignored path: `models/mediapipe/hand_landmarker_float16_v1.task`; SHA-256
   `fbc2a30080c3c557093b5ddfc334698132eb341044ccee322ccf8bcf3607cde1`.
@@ -110,23 +109,23 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
   from and does not alter the original static/e3 G2 pair.
 - Dataset/revision: `cvml-nus/assembly101` at
   `bfc15ea5e3f0bc8f8c232af6c1b45aa137a9d967`; selected source interval
-  215.000–395.000 seconds / raw `[12900,23700)` at 60 FPS / proxy `[0,5400)` at 30 FPS.
+  215.000–395.000 seconds / raw `[12900,23700)` at 60 fps / proxy `[0,5400)` at 30 fps.
 - Assets: only `HMC_21176875_mono10bit`, `HMC_21176623_mono10bit`, and
   `HMC_21179183_mono10bit` were selectively downloaded. Their acquisition facts and
   checksums are recorded in the separate ignored local report
   `data/raw/assembly101/nusar-2021_action_both_9033-c02a_9033_user_id_2021-02-04_140532/
   ego_viewpoint_screen_acquisition_report.md`.
-- Processing/display scope: audio-free 954×720 CFR 30-FPS proxies; a sequential
+- Processing/display scope: audio-free 954×720 CFR 30 fps proxies; a sequential
   first-300-frame/10.0-second SAM3 smoke per new view; original decoded BGR input and
   the fixed three text concepts only. The preserved e3 original zero-shot smoke is
   review-only comparison evidence and was not altered or rerun.
 - Unresolved use decision: as for the original G2 pair, G1/G2 operational approval
-  does not decide whether job-seeking, private demos, or public display satisfy CC
+  does not decide whether job-seeking, private demos or public display satisfy CC
   BY-NC 4.0 or dataset-specific terms.
 
 ## Approved local source: Assembly101 poses, extrinsics and fine-grained annotations
 
-- Status: acquired Sep 17 at the user's explicit request for this recording only; this
+- Status: acquired Sep 17 at my explicit request for this recording only; this
   crosses the earlier "no annotations / no poses" gate. Same dataset/revision
   (`cvml-nus/assembly101` @ `bfc15ea5e3f0bc8f8c232af6c1b45aa137a9d967`), CC BY-NC 4.0.
 - Assets: the ten `AssemblyPoses.zip` members for the recording, range-extracted from the
@@ -138,7 +137,7 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
 - Derived, checked in: `configs/assembly101/c10379_camera_estimate.json`, a Brown camera
   model for C10379 fitted to the dataset's own 2D/3D landmark pairs through its shipped
   camera-to-world pose (fit RMS 5e-5 px, 4,388 points). It reproduces the dataset's
-  internal projection and is labelled `estimated_from_dataset_landmark_projection`; the
+  internal projection and is labeled `estimated_from_dataset_landmark_projection`; the
   archive ships no intrinsics.
 - Derived, ignored: `runs/assembly101-reference-first-minute-v1/` from
   `battle-build-assembly101-reference` (first-minute window, static clock offset +9 pose
@@ -184,7 +183,7 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
 - Derived, checked in: `configs/assembly101/<view>_camera_estimate.json` for all eight static
   and four ego views (estimates of the dataset's internal projection, provenance
   `estimated_from_dataset_landmark_projection`) and `configs/assembly101/clock_rules.json`
-  (per-view video-vs-pose offsets measured by `battle-assembly101-clock-offset`). Review
+  (per-view video-to-pose offsets measured by `battle-assembly101-clock-offset`). Review
   context only; no accuracy claim rests on any of it.
 
 ## Approved local source: Assembly101 recording 2 (`nusar_9061`), 80 s window (Track C1, Sep 20)
@@ -197,8 +196,8 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
   the original G2 pair. Choice and rejected candidates with reasons:
   `configs/assembly101/nusar_9061/recording_selection.json`; registry entry:
   `configs/assembly101/recordings.json`.
-- Window: source 374.000-454.000 s (raw 60 fps frames `[22440, 27240)`, 4,800 trim / 2,400
-  proxy frames); the 60 s analysis span is 384.000-444.000 s = proxy frames `[300, 2100)`,
+- Window: source 374.000–454.000 s (raw 60 fps frames `[22440, 27240)`, 4,800 trim / 2,400
+  proxy frames); the 60 s analysis span is 384.000–444.000 s = proxy frames `[300, 2100)`,
   10 s of margin each side. Coarse actions inside the span (dataset labels, 30 fps): attach
   interior, screw chassis, attach body, attempt to attach bumper, screw chassis, attach bumper,
   attempt to attach cabin, unscrew chassis, detach interior, attach interior, attach cabin.
@@ -223,7 +222,7 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
   | HMC_21110305 (e3) | 86,372,095 | `c76029bcf45c5bc9ba6f97b032189eb6a81bb8a1deeb9d77c5dd400fbd448301` | 56,827,782 | 16,777,216 |
   | HMC_21179183 (e4) | 99,072,741 | `8dbd3891590993757f2bd05a6f87b0091bd9c9de4e50bf29e9714351cfbce0e4` | 65,384,074 | 19,922,944 |
 
-  Video total 1,870,659,584 B (14-20 % of each file). The two ego views are the e3/e4 camera
+  Video total 1,870,659,584 B (14–20% of each file). The two ego views are the e3/e4 camera
   ids Track 6 found useful on recording 1; recording 2 uses the same headset serials, so the
   choice transferred by camera id (the visibility audit needs hulls that do not exist yet).
   HMC_21176623 and HMC_21176875 exist on the Hub and were not fetched. Trim and proxy
@@ -247,7 +246,7 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
 - Derived, checked in: `configs/assembly101/nusar_9061/<view>_camera_estimate.json` for the
   ten fetched views (estimates of the dataset's internal projection, provenance
   `estimated_from_dataset_landmark_projection`) and `configs/assembly101/clock_rules_nusar_9061.json`
-  (per-view video-vs-pose offsets measured by `battle-assembly101-clock-offset`). Review
+  (per-view video-to-pose offsets measured by `battle-assembly101-clock-offset`). Review
   context only; no accuracy claim rests on any of it.
 
 ## External source: Grounded-SAM-2
@@ -266,7 +265,7 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
 - Legacy one-frame external JSON (un-pinned HF revision, no video propagation) remains under
   `runs/grounded-sam2-static-frame0-smoke-20260916t0450z/` and is imported by
   `battle-import-external-smoke grounded-sam2`.
-- Install note: local Grounding DINO CUDA extension build failed (CUDA 13.2 vs torch 12.8);
+- Install note: local Grounding DINO CUDA extension build failed (CUDA 13.2 against torch 12.8);
   smoke uses HF detector path only. This is not the vendor CUDA Grounded-SAM-2 extension.
 
 ## External source: SAMURAI
@@ -326,7 +325,7 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
 - Wrapper: `uv run battle-kineo-nlf --seconds 20`.
 - Fused-crop wrapper: `CUDA_VISIBLE_DEVICES=0 uv run battle-kineo-fusion`. It consumes only the
   approved static-view, source/time-aligned native Kineo and BoxMOT runs; its per-frame source,
-  gate measurements, and bounded residual inference are recorded in `box_fusion.json`.
+  gate measurements and bounded residual inference are recorded in `box_fusion.json`.
 - Native PKLs under ignored `runs/kineo/infer_nlf_headless_only/`; normalized runs under
   `runs/kineo-nlf-headless-*` and `runs/kineo-nlf-fused-*`. Both remain NLF-only partial evidence,
   not a full Kineo integration.
@@ -355,7 +354,7 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
   install with `SAM2_BUILD_CUDA=0`, plus `timm`, `matplotlib`, `scikit-learn`, `networkx`,
   `natsort`, `pycocotools`, `opencv-python-headless`), created by `scripts/install_lm_eec.sh`.
   The battle env is untouched.
-- Weights (retrieved Sep 18, 2026 with `gdown` from the authors' Google Drive folder
+- Weights (retrieved Sep 18 2026 with `gdown` from the authors' Google Drive folder
   `1tc5HNWl0j7BcJE4uX0Bzb6PiYdlIWvXx`, linked from the README; not on Hugging Face):
   `checkpoints/LM-EEC-checkpoint/ExoEgo_checkpoint.pt` SHA-256
   `b3130bcbb8c907bf86a0c3afa321aa9d31c74ae64b842c71e1503ffba83dcd9c` (1,003,932,430 B) and
@@ -368,13 +367,13 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
   not read at inference.
 - Battle-owned glue: `src/battle/egoexo_correspondence.py`, `scripts/lm_eec_driver.py` (run
   under the LM-EEC interpreter), `scripts/install_lm_eec.sh`. Inputs: the C10379 and
-  HMC_21110305 G1 proxies (twelve keyframes each), the ensemble reference masks, the Sep 16 ego
+  HMC_21110305 G1 proxies (12 keyframes each), the ensemble reference masks, the Sep 16 ego
   SAM3 masks, the Track 5 hull voxels (fingerprints in `pairs.json`).
 - Fallback not exercised: `/home/nick/src/ObjectRelator` (cloned earlier, not installed) and
   the `wangzeze/ObjectRelator-Exo2Ego-Small` checkpoint were not needed because LM-EEC installed
   and constructed on CPU within the 90 min box.
 
-## Approved local source: FineBio (Sep 21, 2026)
+## Approved local source: FineBio (Sep 21 2026)
 
 - Status: `access granted`; local handling approved for the non-commercial research
   smoke recorded in `docs/archive/method-ledger.md` ("Sep 21: FineBio first look"). No
@@ -383,15 +382,15 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
 - Dataset: FineBio, "FineBio: A Fine-Grained Video Dataset of Biological Experiments with
   Hierarchical Annotation", Takuma Yagi, Misaki Ohashi, Yifei Huang, Ryosuke Furuta, Shungo
   Adachi, Toutai Mitsuyama, Yoichi Sato; International Journal of Computer Vision 133,
-  7352-7367 (2025), `https://doi.org/10.1007/s11263-025-02523-2`; arXiv 2402.00293. Data
-  release and licence form via the AIST repository `https://github.com/aistairc/FineBio`
+  7352–7367 (2025), `https://doi.org/10.1007/s11263-025-02523-2`; arXiv 2402.00293. Data
+  release and license form through the AIST repository `https://github.com/aistairc/FineBio`
   (the code there is MIT; the videos, metadata and annotations are not).
-- Access: by signed FineBio licence agreement submitted through the form linked from that
-  repository; the dataset link and credentials were sent to the user by email after approval.
+- Access: by signed FineBio license agreement submitted through the form linked from that
+  repository; the dataset link and credentials were sent to me by email after approval.
   Terms as stated there: non-commercial research/development use only; citation of the IJCV
-  paper required. The signed agreement and the download date are the user's records; the
+  paper required. The signed agreement and the download date are my records; the
   repository holds no copy of either.
-- Downloaded and extracted under `data/raw/finebio/` (gitignored), with the `7z` extraction
+- Downloaded and extracted under `data/raw/finebio/` (not committed), with the `7z` extraction
   logs beside each directory: `finebio_videos_fpv_test` (35 first-person MP4s at 1920x1440,
   5.8 GB), `finebio_videos_fpv_all_w640` (226 first-person MP4s downscaled to 640 px wide,
   6.3 GB), `finebio_videos_tpv_test` (12 GB) and `finebio_videos_tpv_valid` (14 GB)
@@ -399,7 +398,7 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
   were read by the Sep 21 smoke.
 - Clip handled so far: `finebio_videos_fpv_test/finebio_videos/P03_01_01.mp4` (SHA-256
   `cfa11f06333cb00aaca4b348aaa9f405fb633741bd913939012fe5a2f2f1e896`), source interval
-  60.000-80.000 s, as the 600-frame 1280x960 30 fps proxy
+  60.000–80.000 s, as the 600-frame 1280x960 30 fps proxy
   `data/derived/finebio/P03_01_01/P03_01_01_060.000-080.000_1280x960_30fps.mp4` (SHA-256
   `0691edeb48312d563c3cd55498c749219b6bf0fb74f3257cc8a1736a6811fddf`). The proxy, masks,
   contact sheet and RRD under `runs/finebio-sam3-smoke-20260921/` are derivatives under the
@@ -411,7 +410,7 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
   (detections, contact sheets, RRD carrying the video and the SAM3 smoke's masks) from the
   FineBio shipped detector below; same terms, outside Git.
 
-## External source: MMDetection and the FineBio shipped detector weights (Sep 21, 2026)
+## External source: MMDetection and the FineBio shipped detector weights (Sep 21 2026)
 
 - Code: MMDetection, `https://github.com/open-mmlab/mmdetection`, Apache-2.0. Checkout
   `/home/nick/src/finebio-detector/mmdetection` pinned at tag `v3.3.0`
@@ -431,36 +430,36 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
   `bbox_head.num_classes=35` over the MMDetection COCO base configs and list the 35 classes.
   Their two custom metric files (`AP_manipulated`, `AP_affected`) are not installed; they are
   evaluation-only.
-- Weights (the authors' released checkpoints, retrieved Sep 21, 2026 with `gdown` from the
+- Weights (the authors' released checkpoints, retrieved Sep 21 2026 with `gdown` from the
   Google Drive links in the FineBio README's 2025-12-15 update; the
   `finebio.s3.abci.ai/ckpts/` host named in the object_detection README no longer resolves):
   `checkpoints/dino.pth` SHA-256
   `e63995318ac28e230105f61f3e1db6c5de40748cb73850576f7c75cfc8029d94` (579,232,009 B; DINO
-  4-scale R50, epoch 12, 47.7 M parameters, full training checkpoint with optimizer state,
+  4-scale R50, epoch 12, 47.7m parameters, full training checkpoint with optimizer state,
   `dataset_meta` carries the 35 classes; the authors report AP 53.3 / AP50 77.4 on their test
   split) and `checkpoints/deformable-detr.pth` SHA-256
   `35982a45a17b4c7abf09f894feee8c43fd20413d105d9b984c1ff45be85bd6c3` (515,194,905 B;
-  two-stage Deformable DETR with refinement, R50, epoch 50, 41.2 M parameters; AP 56.1 /
+  two-stage Deformable DETR with refinement, R50, epoch 50, 41.2m parameters; AP 56.1 /
   78.5). Both are fine-tuned from the OpenMMLab COCO checkpoints named in the configs. The
-  weights are research artefacts trained on FineBio annotations and are treated under the
-  FineBio licence (non-commercial research); nothing is redistributed.
+  weights are research artifacts trained on FineBio annotations and are treated under the
+  FineBio license (non-commercial research); nothing is redistributed.
 - Not on this machine: `finebio_coco_annotations.zip`, so no AP can be computed here; the
   Sep 21 run is qualitative.
 - Battle-owned glue: `scripts/finebio_dino_detect.py` (detect phase under the detector
   interpreter, export under Battle), `scripts/install_finebio_detector.sh`.
 
-## Approved local source: FineBio camera poses and shipped checkpoints (Sep 24, 2026)
+## Approved local source: FineBio camera poses and shipped checkpoints (Sep 24 2026)
 
-- Status: `access granted` under the same signed FineBio licence agreement as the videos
+- Status: `access granted` under the same signed FineBio license agreement as the videos
   above (non-commercial research/development, citation of Yagi et al., IJCV 2025); local
   handling approved for the 3D object tracking plan
   ([`docs/archive/plan-2026-09-25-finebio-3d-tracking.md`](archive/plan-2026-09-25-finebio-3d-tracking.md)). No
   determination has been made about any display beyond the local procedure. The dataset
-  README (`github.com/aistairc/FineBio`, read Sep 24) notes the licence agreement was updated
-  on 2026-09-10; which version the user signed is the user's record, not the repository's.
-- Retrieved Sep 24, 2026 (files placed 21:04-21:05 local) from the dataset release's `misc/`
+  README (`github.com/aistairc/FineBio`, read Sep 24) notes the license agreement was updated
+  on 2026-09-10; which version I signed is my record, not the repository's.
+- Retrieved Sep 24 2026 (files placed 21:04–21:05 local) from the dataset release's `misc/`
   and `ckpts/` directories, the same gated download as the videos; the server mtimes
-  (2024-06-27) are preserved on the files. Stored under `data/raw/finebio/` (gitignored).
+  (2024-06-27) are preserved on the files. Stored under `data/raw/finebio/` (not committed).
 - **Camera poses**: `misc/finebio_camera_poses.zip`, 64,013,894 B, SHA-256
   `ee8ee467804d84ff8584565155a81b95322f66d3559014c7548752597a217c3a`, extracted beside it to
   `misc/finebio_camera_poses/` (291 files, 77,073,685 B): `intrinsic_parameters/` with two
@@ -472,7 +471,7 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
   `third_person_camera_poses/<yymmdd>/`
   for the ten recording days `221013, 221021, 221109, 221110, 221117, 221118, 221124, 221125,
   221207, 221208`, each with `extrinsics/{1,2,3,4,6}_board.npz` (rotation and translation
-  vectors from `cv2.calibrateCamera` on a checkerboard at the table centre, origin at its
+  vectors from `cv2.calibrateCamera` on a checkerboard at the table center, origin at its
   top-left corner) and `params/marker_points.npy` (AR marker positions by PnP from those
   extrinsics); `first_person_camera_poses/` with 226 per-trial `.npz` files (`rets`, `rots`,
   `trans`, one row per video frame, obtained by the authors from the markers); the authors'
@@ -491,10 +490,10 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
 - **Checkpoints** (`ckpts/`, the seven files the release ships; SHA-256, bytes, what each is
   per the dataset README and the benchmark READMEs):
   `dino.pth` `e63995318ac28e230105f61f3e1db6c5de40748cb73850576f7c75cfc8029d94`, 579,232,009 B
-  (object detection, MMDetection DINO 4-scale R50, identical to the Sep 21 `gdown` copy in the
+  (object detection, MMDetection DINO 4-scale R50, identical with the Sep 21 `gdown` copy in the
   detector venv); `deformable-detr.pth`
   `35982a45a17b4c7abf09f894feee8c43fd20413d105d9b984c1ff45be85bd6c3`, 515,194,905 B (object
-  detection, two-stage Deformable DETR, identical to the Sep 21 copy); `dino_checkpoint_e30.pth`
+  detection, two-stage Deformable DETR, identical with the Sep 21 copy); `dino_checkpoint_e30.pth`
   `70558986bc02324f95c6c3c383c085ba6ba7dc54dfe7224dfc88b64da474497d`, 561,278,348 B (the
   IDEA-Research DINO codebase object detector, 30 epochs, used frozen inside the
   manipulated/affected object detection benchmark); `handobj_checkpoint_e5.pth`
@@ -510,7 +509,7 @@ permitted use. Raw inputs and generated experiment outputs remain outside Git.
   segmentation, MS-TCN++ on I3D). Only `dino.pth` and `deformable-detr.pth` are used (through
   the detector venv, see above); the other five are inventoried, not loaded, and the atomic
   operation and step segmentation models are out of the plan's scope. All seven are the
-  authors' research artefacts trained on FineBio annotations, carry no licence file of their
+  authors' research artifacts trained on FineBio annotations, carry no license file of their
   own and are treated under the FineBio agreement; the FineBio README asks that the underlying
   methods (DINO, Deformable DETR, Hand Object Detector, ActionFormer, ASFormer, MS-TCN++, I3D,
   RAFT) be cited if the baselines are used.
