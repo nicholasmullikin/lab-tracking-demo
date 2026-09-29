@@ -42,21 +42,24 @@ import argparse
 import json
 import sys
 from collections import Counter, defaultdict
-from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
 from .finebio_cameras import Camera, cameras_from_config, read_camera_config
-from .finebio_slice import triangulate_pixels
+from .finebio_slice import resolve_fpv_source, triangulate_pixels
+from .multiview_lines import attach_tip_box
 from .multiview_schemas import (
     FINEBIO_FIXED_VIEWS,
+    FINEBIO_FPV_VIEW,
     FineBioObservation,
     Track3D,
     read_jsonl,
 )
+from .multiview_tracks import LINE_TIP_CLASSES
 
 SCHEMA = "battle-finebio-stand/1"
 CONFIG_KIND = "finebio_pipettes"
@@ -517,6 +520,533 @@ def resting_segments(
 ) -> dict[str, list[Segment]]:
     """The segments within the rest gates (endpoint residual, end height), per class."""
     return {cls: [s for s in segs if s.at_rest(settings)] for cls, segs in segments.items()}
+
+
+# --------------------------------------------------------------------------- disposable tips
+#
+# Sep 29: a disposable tip is attached to the pipette, picked from a rack and ejected into the
+# trash, so a pipette's length is two-state (bare body, body plus tip); SAM3's body mask stops
+# at the cone, so the resting lengths above are body lengths whatever the tip state, and the
+# detector's `*_tip` boxes are the only sign of the tip. `tip_length_report` re-runs the rest
+# measurement with every resting frame split by whether a tip box was attached to the body
+# axis (`multiview_lines.attach_tip_box`) in at least `min_attached_views` fixed views, and
+# measures the segment twice on the attached frames: from the body axes, and from the axes
+# extended to the tip boxes' far edges. The bare mode is the body length on the unattached
+# frames; the with-tip mode is the extended length on the attached ones; their difference is
+# the tip length. `two_state_config` writes the modes into `configs/finebio/pipettes.json`
+# (`bare_length_cm`, `tip_length_cm`) beside the old keys, which stay as they were.
+
+TIP_MIN_FRAMES = 30
+# The all-frames (moving) population is small on the fixed views: a tip estimate needs this
+# many attached frames, and says how many it had.
+TIP_MIN_ATTACHED_FRAMES = 10
+TIP_DETECTOR_MIN_SCORE = 0.3
+
+
+def tip_boxes_by_view_and_frame(
+    rows: Iterable[FineBioObservation],
+    settings: StandSettings,
+    *,
+    tip_classes: Sequence[tuple[str, str]] = LINE_TIP_CLASSES,
+    min_score: float = TIP_DETECTOR_MIN_SCORE,
+) -> dict[tuple[str, int], list[FineBioObservation]]:
+    """(fixed view, frame) -> the `*_tip` detector rows at or above `min_score`."""
+    wanted = {tip for tip, _ in tip_classes}
+    out: dict[tuple[str, int], list[FineBioObservation]] = defaultdict(list)
+    for r in rows:
+        if r.source != "detector" or r.view not in settings.fixed_views:
+            continue
+        if r.object_class not in wanted or r.box_xyxy_px is None:
+            continue
+        if (r.detector_score or 0.0) < min_score:
+            continue
+        out[(r.view, r.frame_index)].append(r)
+    return dict(out)
+
+
+def attach_tips_to_frame(
+    per_view: Mapping[str, FineBioObservation],
+    tips: Mapping[tuple[str, int], Sequence[FineBioObservation]],
+    frame: int,
+    gate_px: float,
+) -> dict[str, tuple[FineBioObservation, str]]:
+    """Per fixed view with an axis, the row with the axis extended to the nearest attached
+    tip box and that box's class; views without an attachment are absent."""
+    out: dict[str, tuple[FineBioObservation, str]] = {}
+    for view, row in per_view.items():
+        if row.mask_axis_px is None:
+            continue
+        axis = np.asarray(row.mask_axis_px, dtype=np.float64)
+        best = None
+        for tip in tips.get((view, frame), ()):
+            assert tip.box_xyxy_px is not None
+            attachment = attach_tip_box(axis, tip.box_xyxy_px, gate_px)
+            if attachment is None:
+                continue
+            if best is None or attachment.across_px < best[0].across_px:
+                best = (attachment, tip.object_class)
+        if best is None:
+            continue
+        attachment, tip_class = best
+        extended = row.model_copy(
+            update={"mask_axis_px": tuple(tuple(float(x) for x in e) for e in attachment.axis_px)}
+        )
+        out[view] = (extended, tip_class)
+    return out
+
+
+def _tip_mode(values: Sequence[float], *, min_frames: int) -> dict[str, Any]:
+    block = _pct(values)
+    block["enough_frames"] = block["n"] >= min_frames
+    return block
+
+
+def tip_differences_on_all_frames(
+    axis_rows: Mapping[tuple[str, int], Mapping[str, FineBioObservation]],
+    tips: Mapping[tuple[str, int], Sequence[FineBioObservation]],
+    cams: Mapping[str, Camera],
+    settings: StandSettings,
+    *,
+    gate_px: float,
+    min_attached_views: int,
+    fpv_source: Callable[[int], Camera | None] | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    """Per class, every frame (static or not) where a tip box attached in at least
+    `min_attached_views` views: the body segment and the extended segment triangulated from
+    the same views, both within the endpoint residual gate, and their length difference (the
+    tip length on that frame; the hand's truncation of the body cancels in it). With
+    `fpv_source` the head camera joins on the frames where its shipped pose is valid (the
+    view that sees most tip boxes)."""
+    out: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for (cls, frame), per_view in sorted(axis_rows.items()):
+        frame_cams = dict(cams)
+        if fpv_source is not None:
+            fpv = fpv_source(frame)
+            if fpv is not None:
+                frame_cams[FINEBIO_FPV_VIEW] = fpv
+        per_view = {v: r for v, r in per_view.items() if v in frame_cams}
+        attached = attach_tips_to_frame(per_view, tips, frame, gate_px)
+        if len(attached) < min_attached_views:
+            continue
+        views = {v: per_view[v] for v in attached}
+        body = segment_from_views(
+            frame, cls, frame_cams, views, min_views=min_attached_views, rest_residual_px=None
+        )
+        extended = segment_from_views(
+            frame,
+            cls,
+            frame_cams,
+            {v: row for v, (row, _) in attached.items()},
+            min_views=min_attached_views,
+            rest_residual_px=None,
+        )
+        if body is None or extended is None:
+            continue
+        if max(body.max_residual_px, extended.max_residual_px) > settings.rest_residual_px:
+            continue
+        out[cls].append(
+            {
+                "frame_index": frame,
+                "views": sorted(attached),
+                "tip_classes": sorted({c for _, c in attached.values()}),
+                "body_length_cm": round(body.length_cm, 3),
+                "extended_length_cm": round(extended.length_cm, 3),
+                "difference_cm": round(extended.length_cm - body.length_cm, 3),
+                "max_residual_px": round(max(body.max_residual_px, extended.max_residual_px), 2),
+            }
+        )
+    return dict(out)
+
+
+def tip_length_report(
+    rows: Sequence[FineBioObservation],
+    cams: Mapping[str, Camera],
+    *,
+    trial: str,
+    settings: StandSettings | None = None,
+    gate_px: float = 30.0,
+    min_attached_views: int = 2,
+    min_frames: int = TIP_MIN_FRAMES,
+    tip_classes: Sequence[tuple[str, str]] = LINE_TIP_CLASSES,
+    fpv_source: Callable[[int], Camera | None] | None = None,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """The two-state rest measurement of one trial (module comment above). Returns the
+    report and one record per resting frame per class (the body length, the extended length
+    when a tip attached, the attached views and tip classes). The rest population uses the
+    fixed views, as the stand slice does; the all-frames population adds the head camera
+    when `fpv_source` is given (its rows count only with a valid pose)."""
+    settings = settings or StandSettings()
+    static = static_frames(rows, settings)
+    resting = resting_segments(segments_on_static_frames(rows, cams, static, settings), settings)
+    axis_rows = sam3_axis_rows(rows, settings)
+    tips = tip_boxes_by_view_and_frame(rows, settings, tip_classes=tip_classes)
+    if fpv_source is not None:
+        with_fpv = replace(settings, fixed_views=(*settings.fixed_views, FINEBIO_FPV_VIEW))
+        valid = [r for r in rows if r.view != FINEBIO_FPV_VIEW or r.pose_valid]
+        moving_axis_rows = sam3_axis_rows(valid, with_fpv)
+        moving_tips = tip_boxes_by_view_and_frame(valid, with_fpv, tip_classes=tip_classes)
+    else:
+        moving_axis_rows, moving_tips = axis_rows, tips
+    all_frames = tip_differences_on_all_frames(
+        moving_axis_rows,
+        moving_tips,
+        cams,
+        settings,
+        gate_px=gate_px,
+        min_attached_views=min_attached_views,
+        fpv_source=fpv_source,
+    )
+    records: list[dict[str, Any]] = []
+    per_class: dict[str, Any] = {}
+    for cls, segs in sorted(resting.items()):
+        bare_lengths: list[float] = []
+        body_with_tip: dict[int, list[float]] = {1: [], min_attached_views: []}
+        extended_with_tip: dict[int, list[float]] = {1: [], min_attached_views: []}
+        attached_views: Counter = Counter()
+        attached_classes: Counter = Counter()
+        frames_attached = {1: 0, min_attached_views: 0}
+        extended_failed_rest = 0
+        for seg in segs:
+            per_view = axis_rows.get((cls, seg.frame_index), {})
+            attached = attach_tips_to_frame(per_view, tips, seg.frame_index, gate_px)
+            n_attached = len(attached)
+            record: dict[str, Any] = {
+                "object_class": cls,
+                "frame_index": seg.frame_index,
+                "body_length_cm": round(seg.length_cm, 3),
+                "views": list(seg.views),
+                "attached_views": sorted(attached),
+                "tip_classes": sorted({c for _, c in attached.values()}),
+                "extended_length_cm": None,
+                "extended_at_rest": None,
+            }
+            if n_attached == 0:
+                bare_lengths.append(seg.length_cm)
+            else:
+                for v, (_, tip_class) in attached.items():
+                    attached_views[v] += 1
+                    attached_classes[tip_class] += 1
+                extended_rows = {
+                    v: (attached[v][0] if v in attached else r) for v, r in per_view.items()
+                }
+                ext = segment_from_views(
+                    seg.frame_index,
+                    cls,
+                    cams,
+                    extended_rows,
+                    min_views=settings.min_axis_views,
+                    rest_residual_px=settings.rest_residual_px,
+                )
+                at_rest = ext is not None and ext.at_rest(settings)
+                if ext is not None:
+                    record["extended_length_cm"] = round(ext.length_cm, 3)
+                    record["extended_at_rest"] = at_rest
+                if not at_rest:
+                    extended_failed_rest += 1
+                for threshold in (1, min_attached_views):
+                    if n_attached >= threshold:
+                        frames_attached[threshold] += 1
+                        body_with_tip[threshold].append(seg.length_cm)
+                        if ext is not None and at_rest:
+                            extended_with_tip[threshold].append(ext.length_cm)
+            records.append(record)
+        bare = _tip_mode(bare_lengths, min_frames=min_frames)
+        with_tip = _tip_mode(extended_with_tip[min_attached_views], min_frames=min_frames)
+        with_tip_any = _tip_mode(extended_with_tip[1], min_frames=min_frames)
+        moving = all_frames.get(cls, [])
+        moving_diff = _tip_mode(
+            [d["difference_cm"] for d in moving], min_frames=TIP_MIN_ATTACHED_FRAMES
+        )
+        moving_ext = _tip_mode(
+            [d["extended_length_cm"] for d in moving], min_frames=TIP_MIN_ATTACHED_FRAMES
+        )
+        moving_classes = Counter(c for d in moving for c in d["tip_classes"])
+        tip_estimate = None
+        tip_basis = None
+        if bare["enough_frames"] and with_tip["enough_frames"]:
+            tip_estimate = round(with_tip["median"] - bare["median"], 2)
+            tip_basis = (
+                f"rest frames: extended length on frames attached in >= {min_attached_views} "
+                "views minus the bare mode"
+            )
+        elif bare["enough_frames"] and moving_ext["enough_frames"]:
+            tip_estimate = round(float(moving_ext["median"]) - bare["median"], 2)
+            tip_basis = (
+                f"all frames attached in >= {min_attached_views} views: the extended length's "
+                "median minus the rest bare mode (the tracker measures the tip the same way; "
+                "biased long by the detector box's slack beyond the tip)"
+            )
+        elif moving_diff["enough_frames"]:
+            tip_estimate = round(float(moving_diff["median"]), 2)
+            tip_basis = (
+                f"all frames attached in >= {min_attached_views} views: median of the extended "
+                "minus the body segment, frame by frame; a lower bound where a view's mask "
+                "already covers the tip"
+            )
+        elif bare["enough_frames"] and with_tip_any["enough_frames"]:
+            tip_estimate = round(with_tip_any["median"] - bare["median"], 2)
+            tip_basis = "rest frames attached in >= 1 view (fewer than the asked views)"
+        tip_class = None
+        if attached_classes:
+            tip_class = attached_classes.most_common(1)[0][0]
+        elif moving_classes:
+            tip_class = moving_classes.most_common(1)[0][0]
+        per_class[cls] = {
+            "all_frames_with_tip": {
+                "frames": len(moving),
+                "difference_cm": moving_diff,
+                "body_length_cm": _tip_mode(
+                    [d["body_length_cm"] for d in moving], min_frames=min_frames
+                ),
+                "extended_length_cm": _tip_mode(
+                    [d["extended_length_cm"] for d in moving], min_frames=min_frames
+                ),
+                "views": dict(sorted(Counter(v for d in moving for v in d["views"]).items())),
+                "tip_classes": dict(moving_classes.most_common()),
+            },
+            "resting_frames": len(segs),
+            "frames_with_tip_attached": {
+                "ge_1_view": frames_attached[1],
+                f"ge_{min_attached_views}_views": frames_attached[min_attached_views],
+            },
+            "attached_views": dict(sorted(attached_views.items())),
+            "attached_tip_classes": dict(attached_classes.most_common()),
+            "bare_body_length_cm": bare,
+            "body_length_with_tip_cm": {
+                "ge_1_view": _tip_mode(body_with_tip[1], min_frames=min_frames),
+                f"ge_{min_attached_views}_views": _tip_mode(
+                    body_with_tip[min_attached_views], min_frames=min_frames
+                ),
+            },
+            "extended_length_with_tip_cm": {
+                "ge_1_view": with_tip_any,
+                f"ge_{min_attached_views}_views": with_tip,
+            },
+            "extended_segments_failed_rest_gate": extended_failed_rest,
+            "tip_length_estimate_cm": tip_estimate,
+            "tip_length_basis": tip_basis,
+            "tip_class": tip_class,
+        }
+    for cls, moving in sorted(all_frames.items()):
+        # A class with attached frames but no resting frame still reports its tip length.
+        if cls in per_class:
+            continue
+        moving_diff = _tip_mode(
+            [d["difference_cm"] for d in moving], min_frames=TIP_MIN_ATTACHED_FRAMES
+        )
+        moving_classes = Counter(c for d in moving for c in d["tip_classes"])
+        per_class[cls] = {
+            "all_frames_with_tip": {
+                "frames": len(moving),
+                "difference_cm": moving_diff,
+                "body_length_cm": _tip_mode(
+                    [d["body_length_cm"] for d in moving], min_frames=min_frames
+                ),
+                "extended_length_cm": _tip_mode(
+                    [d["extended_length_cm"] for d in moving], min_frames=min_frames
+                ),
+                "views": dict(sorted(Counter(v for d in moving for v in d["views"]).items())),
+                "tip_classes": dict(moving_classes.most_common()),
+            },
+            "resting_frames": 0,
+            "frames_with_tip_attached": {"ge_1_view": 0, f"ge_{min_attached_views}_views": 0},
+            "attached_views": {},
+            "attached_tip_classes": {},
+            "bare_body_length_cm": _tip_mode([], min_frames=min_frames),
+            "body_length_with_tip_cm": {},
+            "extended_length_with_tip_cm": {},
+            "extended_segments_failed_rest_gate": 0,
+            "tip_length_estimate_cm": (
+                round(float(moving_diff["median"]), 2) if moving_diff["enough_frames"] else None
+            ),
+            "tip_length_basis": (
+                f"all frames attached in >= {min_attached_views} fixed views: median of the "
+                "extended minus the body segment length, frame by frame"
+                if moving_diff["enough_frames"]
+                else None
+            ),
+            "tip_class": moving_classes.most_common(1)[0][0] if moving_classes else None,
+        }
+    report = {
+        "schema": SCHEMA,
+        "kind": "two_state_rest_lengths",
+        "trial": trial,
+        "settings": settings.as_dict(),
+        "gate_px": gate_px,
+        "min_attached_views": min_attached_views,
+        "min_frames": min_frames,
+        "tip_classes": dict(tip_classes),
+        "tip_detector_rows_by_view": dict(
+            sorted(Counter(v for (v, _f), items in tips.items() for _ in items).items())
+        ),
+        "per_class": per_class,
+        "all_frames_records": {cls: items for cls, items in sorted(all_frames.items())},
+        "method": (
+            "the stand slice's resting segments (static detector box, axes in >= 2 fixed views, "
+            "endpoint residual and rest height gates), each frame split by whether a *_tip "
+            "detector box attached to the body axis (within the gate of the axis line, beyond "
+            "and adjacent to an end) in the fixed views; the bare mode is the body length on "
+            "frames with no attachment, the with-tip mode the length re-triangulated from the "
+            "axes extended to the tip boxes' far edges on the attached frames; tip length = "
+            "with-tip median - bare median on the rest frames, else, on every frame (moving "
+            "too) where a tip attached in the asked number of fixed views, the median of the "
+            "extended minus the body segment triangulated from the same views (the hand's "
+            "truncation of the body cancels in the difference)"
+        ),
+        "claim_boundary": (
+            "Tip boxes are the detector's; a tip the detector never labels (the red tip in "
+            "trial 1) leaves that class in one state. " + CLAIM_BOUNDARY
+        ),
+        "licence_note": LICENCE_NOTE,
+    }
+    return report, records
+
+
+def tip_report_markdown(report: dict[str, Any]) -> str:
+    n = report["min_attached_views"]
+    lines = [
+        f"# Two-state rest lengths, {report['trial']}",
+        "",
+        f"Resting frames split by whether a `*_tip` detector box attached to the body axis in "
+        f"at least {n} fixed views (gate {report['gate_px']:.0f} px). Tip detector rows by "
+        "view: "
+        + (", ".join(f"{v} {c}" for v, c in report["tip_detector_rows_by_view"].items()) or "none")
+        + ".",
+        "",
+        f"| class | resting frames | rest frames attached >= 1 / >= {n} views | bare body cm "
+        f"(n) | extended cm with tip at rest, >= {n} views (n) | all frames attached in >= {n} "
+        "views | extended - body cm on those (n) | body cm on those | tip length cm | tip "
+        "class | measured against |",
+        "|---|---|---|---|---|---|---|---|---|---|---|",
+    ]
+    for cls, block in report["per_class"].items():
+        bare = block["bare_body_length_cm"]
+        ext = (block["extended_length_with_tip_cm"] or {}).get(f"ge_{n}_views") or {}
+        att = block["frames_with_tip_attached"]
+        moving = block["all_frames_with_tip"]
+        diff = moving["difference_cm"]
+        lines.append(
+            f"| {cls} | {block['resting_frames']} | {att['ge_1_view']} / {att[f'ge_{n}_views']} | "
+            f"{_pct_cell(bare)} ({bare['n']}) | {_pct_cell(ext)} ({ext.get('n', 0)}) | "
+            f"{moving['frames']} | {_pct_cell(diff)} ({diff['n']}) | "
+            f"{_pct_cell(moving['body_length_cm'])} | {_fmt(block['tip_length_estimate_cm'])} | "
+            f"{_fmt(block['tip_class'])} | the detector's tip boxes and SAM3's body axes |"
+        )
+    lines += [
+        "",
+        f"Method: {report['method']}.",
+        "",
+        f"Claim boundary: {report['claim_boundary']}",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def two_state_config(
+    config: dict[str, Any],
+    tip_reports: Sequence[dict[str, Any]],
+    *,
+    tip_classes: Sequence[tuple[str, str]] = LINE_TIP_CLASSES,
+    report_paths: Sequence[str] = (),
+) -> dict[str, Any]:
+    """The pipettes config with `bare_length_cm` (per pipette class) and `tip_length_cm` (per
+    tip class) added from one or more trials' two-state reports; every old key stays. The
+    bare length of a class is the median over the trials whose bare mode has enough frames;
+    a class no trial measured bare keeps its single-state prior (the per-pipette median, else
+    the shared length) and is named as such. The tip length of a tip class is the median
+    over the trials and classes that estimated it; a tip class none estimated takes the
+    median of the estimated ones and is named as assumed."""
+    tip_of = dict(tip_classes)
+    pipette_of = {p: t for t, p in tip_classes}
+    bare_samples: dict[str, list[float]] = defaultdict(list)
+    tip_samples: dict[str, list[tuple[float, int]]] = defaultdict(list)
+    per_trial: dict[str, Any] = {}
+    for rep, path in zip(tip_reports, [*report_paths, *([None] * len(tip_reports))]):
+        trial_block: dict[str, Any] = {"report": path, "per_class": {}}
+        for cls, block in rep["per_class"].items():
+            bare = block["bare_body_length_cm"]
+            if bare["enough_frames"]:
+                bare_samples[cls].append(float(bare["median"]))
+            estimate = block.get("tip_length_estimate_cm")
+            tip_class = block.get("tip_class") or pipette_of.get(cls)
+            frames = int((block.get("all_frames_with_tip") or {}).get("frames") or 0)
+            if estimate is not None and tip_class is not None and estimate > 0:
+                tip_samples[tip_class].append((float(estimate), frames))
+            trial_block["per_class"][cls] = {
+                "bare_median_cm": bare["median"],
+                "bare_frames": bare["n"],
+                "tip_length_estimate_cm": estimate,
+                "tip_length_basis": block.get("tip_length_basis"),
+                "tip_class": block.get("tip_class"),
+                "frames_with_tip_attached": block["frames_with_tip_attached"],
+                "all_frames_with_tip": frames,
+                "difference_lower_bound_cm": (
+                    (block.get("all_frames_with_tip") or {}).get("difference_cm") or {}
+                ).get("median"),
+            }
+        per_trial[rep["trial"]] = trial_block
+    old_per_class: dict[str, list[float]] = defaultdict(list)
+    for trial in ((config.get("provenance") or {}).get("per_trial") or {}).values():
+        for cls, value in (trial.get("per_pipette_median_cm") or {}).items():
+            old_per_class[cls].append(float(value))
+    shared = float(config["length_cm"])
+    bare_out: dict[str, float] = {}
+    bare_basis: dict[str, str] = {}
+    classes = sorted({*old_per_class, *bare_samples, *pipette_of})
+    for cls in classes:
+        if bare_samples.get(cls):
+            # The shortest resting mode across the trials: at rest the body is fully seen, and
+            # a mask can only be lengthened (a merge, a tip the detector missed), not shortened.
+            bare_out[cls] = round(float(min(bare_samples[cls])), 2)
+            bare_basis[cls] = (
+                f"the shortest bare (no tip attached) rest mode over {len(bare_samples[cls])} "
+                f"trial(s): {sorted(round(v, 2) for v in bare_samples[cls])}"
+            )
+        elif old_per_class.get(cls):
+            bare_out[cls] = round(float(np.median(old_per_class[cls])), 2)
+            bare_basis[cls] = "single-state rest median (no trial measured this class bare)"
+        else:
+            bare_out[cls] = round(shared, 2)
+            bare_basis[cls] = "shared length (the stand never measured this class at rest)"
+    tip_out: dict[str, float] = {}
+    tip_basis: dict[str, str] = {}
+    estimated = [v for values in tip_samples.values() for v, _ in values]
+    for tip_class in sorted(tip_of):
+        if tip_samples.get(tip_class):
+            values = [v for v, _ in tip_samples[tip_class]]
+            frames = sum(n for _, n in tip_samples[tip_class])
+            tip_out[tip_class] = round(float(np.median(values)), 2)
+            tip_basis[tip_class] = (
+                f"median of {len(values)} estimate(s) over {frames} attached frames: "
+                f"{[round(v, 2) for v in values]}"
+            )
+        elif estimated:
+            tip_out[tip_class] = round(float(np.median(estimated)), 2)
+            tip_basis[tip_class] = (
+                "assumed: the median of the tip classes that were estimated (the detector "
+                "never labelled this tip class on a pipette in either trial)"
+            )
+    out = dict(config)
+    out["bare_length_cm"] = bare_out
+    out["tip_length_cm"] = tip_out
+    out["two_state_provenance"] = {
+        "method": (
+            "battle-finebio-stand tips per trial (the rest measurement split by whether a "
+            "*_tip detector box attached to the body axis in >= 2 fixed views; the with-tip "
+            "length re-triangulated from the axes extended to the tip boxes), then "
+            "battle-finebio-stand tips-config"
+        ),
+        "bare_basis": bare_basis,
+        "tip_basis": tip_basis,
+        "per_trial": per_trial,
+        "claim_boundary": (
+            "The tip state comes from the detector's *_tip boxes on the fixed views; a class "
+            "whose tip the detector never labels is measured in one state only and its bare "
+            "length may be a body-plus-tip length. Tip lengths are differences of medians of "
+            "SAM3 axis extents extended to detector boxes, not physical measurements."
+        ),
+    }
+    return out
 
 
 # --------------------------------------------------------------------------- statistics
@@ -1032,6 +1562,36 @@ def build_parser() -> argparse.ArgumentParser:
         help="stand_report.json (first = primary trial); repeat for a second trial",
     )
     cfg.add_argument("--output", type=Path, required=True)
+    tips = sub.add_parser(
+        "tips", help="the rest lengths split by an attached *_tip detector box (two states)"
+    )
+    tips.add_argument(
+        "--observations", type=Path, required=True, help="remeasured observations.jsonl"
+    )
+    tips.add_argument("--cameras", type=Path, required=True, help="FineBioCameraConfig JSON")
+    tips.add_argument("--output", type=Path, required=True)
+    tips.add_argument("--frames", default=None, help="a-b raw frame range (inclusive)")
+    tips.add_argument("--gate-px", type=float, default=30.0, help="the rig's association gate")
+    tips.add_argument("--min-attached-views", type=int, default=2)
+    tips.add_argument(
+        "--with-fpv",
+        action="store_true",
+        help="let the head camera (shipped per-frame pose) join the all-frames population",
+    )
+    tips.add_argument("--fpv-poses", type=Path, default=None, help="fixtures-shaped poses")
+    tips.add_argument("--min-run-frames", type=int, default=StandSettings.min_run_frames)
+    tips.add_argument("--max-step-px", type=float, default=StandSettings.max_step_px)
+    tips.add_argument("--min-static-views", type=int, default=StandSettings.min_static_views)
+    tips.add_argument("--min-axis-views", type=int, default=StandSettings.min_axis_views)
+    tcfg = sub.add_parser(
+        "tips-config",
+        help="add bare_length_cm / tip_length_cm to an existing pipettes.json from tips reports",
+    )
+    tcfg.add_argument("--config", type=Path, required=True, help="pipettes.json to update")
+    tcfg.add_argument(
+        "--tips", action="append", required=True, help="tip_lengths.json; repeat per trial"
+    )
+    tcfg.add_argument("--output", type=Path, default=None, help="default: overwrite --config")
     return parser
 
 
@@ -1080,6 +1640,66 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(doc, indent=1) + "\n", encoding="utf-8")
         print(json.dumps(doc, indent=1))
+        return 0
+    if args.command == "tips":
+        config = read_camera_config(args.cameras)
+        cams = cameras_from_config(config)
+        rows = list(read_jsonl(args.observations, FineBioObservation))
+        if args.frames:
+            a, b = (int(x) for x in args.frames.split("-"))
+            wanted = set(range(a, b + 1))
+            rows = [r for r in rows if r.frame_index in wanted]
+        settings = StandSettings(
+            min_run_frames=args.min_run_frames,
+            max_step_px=args.max_step_px,
+            min_static_views=args.min_static_views,
+            min_axis_views=args.min_axis_views,
+            fixed_views=tuple(config.fixed),
+        )
+        fpv_source = resolve_fpv_source(config, args.fpv_poses) if args.with_fpv else None
+        report, records = tip_length_report(
+            rows,
+            cams,
+            trial=config.trial,
+            settings=settings,
+            gate_px=args.gate_px,
+            min_attached_views=args.min_attached_views,
+            fpv_source=fpv_source,
+        )
+        report["inputs"] = {
+            "observations": str(args.observations),
+            "cameras": str(args.cameras),
+            "with_fpv": bool(args.with_fpv),
+        }
+        args.output.mkdir(parents=True, exist_ok=True)
+        (args.output / "tip_lengths.json").write_text(
+            json.dumps(report, indent=1) + "\n", encoding="utf-8"
+        )
+        with (args.output / "tip_frames.jsonl").open("w", encoding="utf-8") as handle:
+            for record in records:
+                handle.write(json.dumps(record) + "\n")
+        markdown = tip_report_markdown(report)
+        (args.output / "tip_lengths.md").write_text(markdown, encoding="utf-8")
+        print(markdown)
+        return 0
+    if args.command == "tips-config":
+        config_doc = json.loads(Path(args.config).read_text(encoding="utf-8"))
+        reports = [json.loads(Path(p).read_text(encoding="utf-8")) for p in args.tips]
+        doc = two_state_config(config_doc, reports, report_paths=[str(p) for p in args.tips])
+        output = args.output or args.config
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(doc, indent=1) + "\n", encoding="utf-8")
+        print(
+            json.dumps(
+                {
+                    "bare_length_cm": doc["bare_length_cm"],
+                    "tip_length_cm": doc["tip_length_cm"],
+                    "bare_basis": doc["two_state_provenance"]["bare_basis"],
+                    "tip_basis": doc["two_state_provenance"]["tip_basis"],
+                },
+                indent=1,
+            )
+        )
         return 0
     return 1
 

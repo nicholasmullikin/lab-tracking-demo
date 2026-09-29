@@ -14,6 +14,7 @@ from battle.finebio_slice import depth_cm
 from battle.multiview_lines import (
     AxisObs,
     Line3D,
+    attach_tip_box,
     axis_residual,
     centroid_loo_residual,
     centroid_point,
@@ -524,3 +525,56 @@ def test_l_view_angle_to_line_names_the_camera_looking_along_the_shaft(rig) -> N
     # The angle is sign-free: the reversed direction reads the same.
     reversed_ = Line3D(point=mid, direction=mid - cams["T2"].centre)
     assert view_angle_to_line_deg(cams["T2"], reversed_) < 1e-6
+
+
+def test_m_attach_tip_box_extends_the_axis_only_for_a_box_on_the_end() -> None:
+    """Sep 29, disposable tips: a `*_tip` detector box beyond one end of the mask axis,
+    within the gate of the axis line and adjacent to the end, is attached and the axis is
+    extended to the box's far edge along it; a box beside the shaft, off the line, or a loose
+    tip further along the line is not, and `side` refuses the wrong end."""
+    axis = np.array([[100.0, 100.0], [300.0, 100.0]])  # 200 px along +x
+    # A 40 x 16 px tip box whose near edge sits 4 px beyond the far end.
+    on_end = (304.0, 92.0, 344.0, 108.0)
+    hit = attach_tip_box(axis, on_end, 30.0)
+    assert hit is not None and hit.end == 1
+    assert np.allclose(hit.axis_px[0], axis[0]) and np.allclose(hit.axis_px[1], [344.0, 100.0])
+    assert hit.gap_px == pytest.approx(4.0) and hit.beyond_px == pytest.approx(24.0)
+    assert hit.across_px == pytest.approx(0.0)
+    # The same box at the other end, and the extension goes the other way.
+    at_start = (56.0, 92.0, 96.0, 108.0)
+    hit0 = attach_tip_box(axis, at_start, 30.0)
+    assert hit0 is not None and hit0.end == 0
+    assert np.allclose(hit0.axis_px[0], [56.0, 100.0]) and np.allclose(hit0.axis_px[1], axis[1])
+    # `side` names the end a tip may sit on: the wrong end is refused.
+    assert attach_tip_box(axis, at_start, 30.0, side=1) is None
+    assert attach_tip_box(axis, on_end, 30.0, side=1) is not None
+    # A box whose centre lies deep within the body is a mask overlap, not a tip on its end.
+    assert attach_tip_box(axis, (200.0, 92.0, 240.0, 108.0), 30.0) is None
+    assert attach_tip_box(axis, (240.0, 92.0, 280.0, 108.0), 30.0) is None  # centre 40 px in
+    # A box on the end with its centre 10 px inside (the mask covered the tip, as T5's do)
+    # attaches with a negative `beyond` and extends the axis to the box's far edge.
+    inside = attach_tip_box(axis, (270.0, 92.0, 310.0, 108.0), 30.0)
+    assert inside is not None and inside.end == 1 and inside.beyond_px == pytest.approx(-10.0)
+    assert np.allclose(inside.axis_px[1], [310.0, 100.0])
+    # ... and one wholly inside the end does not move the axis at all.
+    covered = attach_tip_box(axis, (262.0, 92.0, 298.0, 108.0), 30.0)
+    assert covered is not None and np.allclose(covered.axis_px, axis)
+    # Off the line by more than the gate: another object.
+    assert attach_tip_box(axis, (304.0, 140.0, 344.0, 156.0), 30.0) is None
+    # A loose tip 60 px beyond the end along the same line is not adjacent.
+    assert attach_tip_box(axis, (360.0, 92.0, 400.0, 108.0), 30.0) is None
+    # A box that already overlaps the end (the detector's box covers the cone too) attaches
+    # with a negative gap and extends to its far edge.
+    overlap = attach_tip_box(axis, (280.0, 92.0, 330.0, 108.0), 30.0)
+    assert overlap is not None and overlap.gap_px == pytest.approx(-20.0)
+    assert np.allclose(overlap.axis_px[1], [330.0, 100.0])
+    # A tilted axis: the box is tested in the axis frame, not the image axes.
+    tilted = np.array([[100.0, 100.0], [100.0 + 200.0 * np.cos(0.6), 100.0 + 200.0 * np.sin(0.6)]])
+    unit = (tilted[1] - tilted[0]) / 200.0
+    centre = tilted[1] + 24.0 * unit
+    box = (centre[0] - 20.0, centre[1] - 8.0, centre[0] + 20.0, centre[1] + 8.0)
+    hit_t = attach_tip_box(tilted, box, 30.0)
+    assert hit_t is not None and hit_t.end == 1 and hit_t.across_px < 1e-9
+    assert np.linalg.norm(hit_t.axis_px[1] - tilted[1]) > 24.0
+    # A degenerate axis attaches nothing.
+    assert attach_tip_box(np.array([[1.0, 1.0], [1.0, 1.0]]), on_end, 30.0) is None

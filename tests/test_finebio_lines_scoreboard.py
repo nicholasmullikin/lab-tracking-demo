@@ -507,6 +507,115 @@ def test_scoreboard_cli_writes_json_and_markdown_with_the_rule(synthetic, tmp_pa
     assert "Both trials" in scoreboard_markdown(second)
 
 
+def test_tips_summary_reads_the_state_the_modes_the_bases_and_the_events(synthetic):
+    """Sep 29: rows that carry the tip fields give the attached fraction, the state by
+    tracker state, the written length by state against the two-state prior, the bases and
+    the tip events; a v2 board (no tip fields, no metrics block) says the adapter was off."""
+    from battle.finebio_lines_scoreboard import tips_summary
+    from battle.multiview_tracks import LinePrior
+
+    a = np.array([0.0, 0.0, -1.0])
+    rows = []
+    for f in range(20):
+        attached = f >= 10
+        b = a + np.array([22.0 + (5.0 if attached else 0.0), 0.0, 0.0])
+        rows.append(
+            _line_row(
+                "pipette-001",
+                f,
+                a,
+                b,
+                "blue_pipette",
+                ("T1", "T4", "T5"),
+                tip_attached=attached if f >= 4 else None,
+                tip_class="blue_tip" if attached else None,
+                tip_attached_views=("T4",) if attached else None,
+                tip_basis="tip_box" if attached else "width",
+            )
+        )
+    prior = LinePrior(
+        22.0, 1.0, {"blue_pipette": 22.0}, bare={"blue_pipette": 22.0}, tip={"blue_tip": 5.0}
+    )
+    metrics = _metrics(
+        {"pipette": {"tracks_born": 1}},
+        lines={
+            "enabled": True,
+            "tips": {
+                "enabled": True,
+                "rule": "r",
+                "line_frames": 20,
+                "line_frames_with_attached_tip": 10,
+                "attached_fraction": 0.5,
+                "attached_by_view": {"T4": 10},
+                "attached_by_mode": {"axis": 10},
+                "attached_by_tip_class": {"blue_tip": 10},
+                "state_transitions": {"on": 1, "off": 0},
+                "tip_class_votes": 10,
+                "tracks_ever_attached": 1,
+            },
+            "tip_basis_frames": {"tip_box": 10, "width": 10},
+            "tip_resolutions_by_basis": {"width": 1, "tip_box": 1},
+            "width_basis": {"rule": "w", "votes_cast": 30},
+        },
+    )
+    events = {
+        "counts": {"tip_picked": 1, "tip_ejected": 0},
+        "unmatched_flips": {"tip_picked": 0, "tip_ejected": 1},
+        "events": [
+            {
+                "kind": "tip_picked",
+                "track_id": "pipette-001",
+                "frame_index": 10,
+                "target": "blue_tip_rack",
+                "tip_class": "blue_tip",
+                "object_class": "blue_pipette",
+                "from_state": False,
+            }
+        ],
+        "volumes_from_rig": ["blue_tip_rack", "trash_can"],
+        "volumes_from_boxes": [],
+        "volumes_skipped": {"red_tip_rack": "no box"},
+        "rule": "e",
+    }
+    block = tips_summary(rows, metrics, prior, events)
+    assert block["enabled"] and block["attached_fraction"] == 0.5
+    assert block["rows_with_attached_views_fraction"] == 0.5
+    assert block["tip_attached_by_tracker_state"] == {
+        "observed": {"attached": 10, "bare": 6, "undecided": 4}
+    }
+    modes = block["written_length_by_class_and_state"]["blue_pipette"]
+    assert modes["prior_bare_cm"] == 22.0 and modes["prior_with_tip_cm"] == 27.0
+    assert modes["written_length_bare_cm"]["median"] == 22.0
+    assert modes["written_length_attached_cm"]["median"] == 27.0
+    assert modes["written_length_attached_cm"]["n"] == 10
+    assert block["tip_basis_frames"] == {"tip_box": 10, "width": 10}
+    assert block["events"]["counts"] == {"tip_picked": 1, "tip_ejected": 0}
+    assert block["events"]["frames"][0]["frame_index"] == 10
+    assert block["events"]["volumes_skipped"] == {"red_tip_rack": "no box"}
+    # The v2 case: nothing in the metrics, no fields on the rows.
+    off = tips_summary(synthetic["lines_rows"], synthetic["lines_metrics"], PRIOR, None)
+    assert off["enabled"] is False and off["events"] is None
+    board = {
+        **build_scoreboard(
+            lines_tracks_dir=synthetic["lines_dir"],
+            ext_tracks_dir=synthetic["ext_dir"],
+            baseline_tracks_dir=synthetic["base_dir"],
+            observations=synthetic["obs_dir"],
+            camera_config=FIXTURE_DIR / "cameras.json",
+            window=(FRAMES[0], FRAMES[-1] + 1),
+            rig=json.loads((synthetic["root"] / "rig.json").read_text()),
+            prior=PRIOR,
+            trial="P03_01_01",
+            fpv_poses=FIXTURE_DIR / "fpv_poses.json",
+        )
+    }
+    text = scoreboard_markdown(board)
+    assert "## Disposable tips" in text and "not attached on this run" in text
+    board["tips"] = block
+    text = scoreboard_markdown(board)
+    assert "tip_picked **1**" in text and "| blue_pipette | 22.00 (6) | 27.00 (10) |" in text
+
+
 def _clip_for(root: Path) -> Path:
     path = root / "clip.json"
     if not path.exists():

@@ -706,6 +706,32 @@ def test_clicks_triangulate_to_the_known_tip_on_the_real_rig() -> None:
     if "fpv" in views:
         assert all("fpv" not in a.views for a in anchors)
 
+    # Two views that disagree beyond the gate (a butt-end click in one of them) cannot say
+    # which click is wrong: no 3D tip, the reason names the residual, the identity survives.
+    # (Two views split the disagreement between them, so 150 px here is about 50 px each;
+    # an error along the epipolar line would pass the gate and move the point instead.)
+    two_bad = {
+        "cells": [
+            {"raw_frame": frame, "view": views[0], "slot": 1, "tip_px": list(pixels[views[0]])},
+            {
+                "raw_frame": frame,
+                "view": views[1],
+                "slot": 1,
+                "tip_px": [pixels[views[1]][0] + 150.0, pixels[views[1]][1]],
+                "instance_identity": "yellow_pipette",
+            },
+        ]
+    }
+    anchors, dropped = ft.triangulate_clicks(workspace, two_bad, lambda _f: cams)
+    assert [a.tip_cm for a in anchors if a.slot == 1] == [None]
+    disagree = next(d for d in dropped if d["slot"] == 1)
+    assert disagree["reason"].startswith("clicks disagree: residual ")
+    assert f"over the {ft.RESIDUAL_GATE_PX:g} px gate" in disagree["reason"]
+    assert set(disagree["views"]) == set(views[:2]) and disagree["dropped_view"] is None
+    assert max(disagree["residual_px"].values()) > ft.RESIDUAL_GATE_PX
+    named = next(a for a in anchors if a.slot == 1)
+    assert named.identity == "yellow_pipette" and named.residual_px and named.tip_cm is None
+
 
 def _write_tracks(path: Path, rows: list[dict[str, Any]]) -> Path:
     path.write_text("".join(json.dumps(r, separators=(",", ":")) + "\n" for r in rows))
@@ -903,6 +929,233 @@ def test_tip_error_against_line_tracks_and_the_point_baseline(tmp_path: Path) ->
     }
     with pytest.raises(ValueError, match="two tracks files"):
         ft.parse_tracks(["a/tracks.jsonl", "b/a/tracks.jsonl"])
+
+
+def _line_row(
+    frame: int,
+    track_id: str,
+    tip_end: np.ndarray,
+    other_end: np.ndarray,
+    *,
+    tip_resolved: bool = True,
+    observed_class: str = "yellow_pipette",
+    support: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    ends = [tip_end, other_end]
+    span = other_end - tip_end
+    return {
+        "schema_version": "1.0",
+        "frame_index": frame,
+        "track_id": track_id,
+        "object_class": "pipette",
+        "position_cm": ((tip_end + other_end) / 2).tolist(),
+        "uncertainty_cm": 1.0,
+        "state": "observed",
+        "confidence": 0.9,
+        "abstain": False,
+        "endpoints_cm": [e.tolist() for e in ends],
+        "direction": (span / np.linalg.norm(span)).tolist(),
+        "tip_resolved": tip_resolved,
+        "observed_class": observed_class,
+        "support_slots": support or {},
+    }
+
+
+def test_along_across_split_of_the_tip_error(tmp_path: Path) -> None:
+    """(anchor - tip end) split along the track's axis (positive = anchor beyond the end, the
+    mask stopped short) and across it; the bands, the attached fraction, the by-class and
+    by-state summaries, the across reading of the clause, and the colour file join."""
+    outward = np.array([0.0, 0.0, -1.0])  # butt to tip along the pipette's axis
+    perp = np.array([1.0, 0.0, 0.0])
+    anchor_tip = np.array([20.0, 10.0, -3.0])
+
+    # Pure geometry first: the track's axis is shifted 1 cm across, its end 5 cm short.
+    split = ft.along_across(
+        anchor_tip, anchor_tip - 5 * outward + perp, anchor_tip - 28 * outward + perp
+    )
+    assert split == pytest.approx((5.0, 1.0))
+    assert ft.along_across(anchor_tip, anchor_tip + 3 * outward, anchor_tip - 20 * outward) == (
+        pytest.approx((-3.0, 0.0))
+    )
+    assert ft.along_across(anchor_tip, anchor_tip, anchor_tip) is None
+    assert ft.along_band(5.0) == "beyond" and ft.along_band(-3.0) == "behind"
+    assert ft.along_band(2.0) == "within" and ft.along_band(-2.0) == "within"
+    assert ft.along_band(None) is None
+
+    def anchor(frame: int, slot: int, cls: str, state: str, tip: np.ndarray) -> ft.TipAnchor:
+        return ft.TipAnchor(
+            raw_frame=frame,
+            slot=slot,
+            cls=cls,
+            state=state,
+            identity=None,
+            labels={"T4": f"{cls}#0", "T5": f"{cls}#0"},
+            pixels={"T4": (1.0, 1.0), "T5": (2.0, 2.0)},
+            tip_cm=tip,
+            residual_px={"T4": 1.0, "T5": 1.0},
+        )
+
+    anchors = [
+        # yellow at rest: the track's end stops 5 cm short of the click, 1 cm off axis.
+        anchor(100, 1, "yellow_pipette", "rest", anchor_tip),
+        # blue held: the track overshoots the click by 3 cm.
+        anchor(200, 0, "blue_pipette", "held", anchor_tip + [30, 0, 0]),
+        # red low, unresolved: the nearer endpoint is the tip candidate; 1 cm short, on axis.
+        anchor(300, 2, "red_pipette", "low", anchor_tip + [60, 0, 0]),
+        # 8-channel rest: 6 cm short, 0.5 cm across.
+        anchor(400, 3, "8_channel_pipette", "rest", anchor_tip + [90, 0, 0]),
+    ]
+    rows = [
+        _line_row(
+            100,
+            "pipette-001",
+            anchor_tip - 5 * outward + perp,
+            anchor_tip - 28 * outward + perp,
+            support={"T4": "yellow_pipette#0", "T5": "yellow_pipette#0"},
+        ),
+        _line_row(
+            200,
+            "pipette-002",
+            anchor_tip + [30, 0, 0] + 3 * outward,
+            anchor_tip + [30, 0, 0] - 20 * outward,
+            observed_class="blue_pipette",
+            support={"T4": "blue_pipette#0", "T5": "blue_pipette#0"},
+        ),
+        _line_row(
+            300,
+            "pipette-003",
+            anchor_tip + [60, 0, 0] - 22 * outward,  # butt first: unresolved
+            anchor_tip + [60, 0, 0] - 1 * outward,
+            tip_resolved=False,
+            observed_class="red_pipette",
+            support={"T4": "red_pipette#0", "T5": "red_pipette#0"},
+        ),
+        _line_row(
+            400,
+            "pipette-004",
+            anchor_tip + [90, 0, 0] - 6 * outward + 0.5 * perp,
+            anchor_tip + [90, 0, 0] - 30 * outward + 0.5 * perp,
+            observed_class="8_channel_pipette",
+            support={"T4": "8_channel_pipette#0", "T5": "8_channel_pipette#0"},
+        ),
+    ]
+    run = tmp_path / "tracks-lines"
+    run.mkdir()
+    tracks = _write_tracks(run / "tracks.jsonl", rows)
+    # The colour vote lives beside the tracks, on the same rows (written with spaces after
+    # the colons, as the annotator does), names a colour rather than a class, and is joined
+    # by (frame, track id); the tracks file itself carries no colour_identity.
+    coloured = [
+        {**r, "colour_identity": c, "colour_confidence": 0.8}
+        for r, c in zip(rows, ["yellow", "yellow", None, "8-channel"])
+    ]
+    (run / ft.COLOUR_TRACKS_NAME).write_text(
+        "".join(json.dumps(r) + "\n" for r in coloured), encoding="utf-8"
+    )
+
+    arm = ft.score_tracks_file("lines", tracks, anchors, repository_root=tmp_path)
+    assert arm["colour_tracks"] == "tracks-lines/tracks_colour.jsonl"
+    yellow, blue, red, eight = arm["cells"]
+    assert yellow["tip_error_cm"] == pytest.approx(math.sqrt(26.0), abs=1e-3)
+    assert yellow["along_cm"] == pytest.approx(5.0) and yellow["across_cm"] == pytest.approx(1.0)
+    assert yellow["along_band"] == "beyond" and yellow["colour_identity"] == "yellow_pipette"
+    assert yellow["other_end_nearer"] is False and yellow["colour_confidence"] == 0.8
+    assert blue["along_cm"] == pytest.approx(-3.0) and blue["across_cm"] == pytest.approx(0.0)
+    assert blue["along_band"] == "behind" and blue["tip_error_cm"] == pytest.approx(3.0)
+    assert red["measure"] == "nearer_endpoint_unresolved" and red["other_end_nearer"] is None
+    assert red["along_cm"] == pytest.approx(1.0) and red["along_band"] == "within"
+    assert red["other_end_cm"] == pytest.approx(22.0) and red["colour_identity"] is None
+    assert eight["along_cm"] == pytest.approx(6.0) and eight["across_cm"] == pytest.approx(0.5)
+    assert eight["colour_identity"] == "8_channel_pipette"
+    assert arm["other_end_nearer"] == 0
+
+    # A resolved track whose named tip is the far end from the anchor (the track named the
+    # butt, or the clicks sit at the butt): along is about minus the pipette's length and
+    # the cell is flagged.
+    flipped = ft.tip_error(
+        anchors[0],
+        _line_row(100, "pipette-009", anchor_tip - 23 * outward, anchor_tip - 0.5 * outward),
+    )
+    assert flipped["other_end_nearer"] is True and flipped["measure"] == "tip_endpoint"
+    assert flipped["tip_error_cm"] == pytest.approx(23.0) and flipped["other_end_cm"] == 0.5
+    assert flipped["along_cm"] == pytest.approx(-23.0) and flipped["along_band"] == "behind"
+
+    assert arm["tip_error"]["n"] == 4 and arm["along"]["n"] == 4 and arm["across"]["n"] == 4
+    assert arm["along"]["median_cm"] == pytest.approx(3.0)  # median of 5, -3, 1, 6
+    assert arm["across"]["median_cm"] == pytest.approx(0.25)  # median of 1, 0, 0, 0.5
+    assert arm["along_bands"] == {"beyond": 2, "within": 1, "behind": 1}
+    assert arm["attached_fraction"] == pytest.approx(0.5)
+    assert arm["median_under_threshold"] is False  # raw median (3 + sqrt 26) / 2 = 4.05
+    assert arm["median_across_under_threshold"] is True
+    rest = arm["by_state"]["rest"]
+    assert rest["n"] == 2 and rest["median_cm"] == rest["raw"]["median_cm"]
+    assert rest["along"]["median_cm"] == pytest.approx(5.5) and rest["along_bands"]["beyond"] == 2
+    assert arm["by_state"]["held"]["along"]["median_cm"] == pytest.approx(-3.0)
+    assert arm["by_state"]["low"]["attached_fraction"] == 0.0
+    assert arm["by_class"]["yellow_pipette"]["along"]["median_cm"] == pytest.approx(5.0)
+    assert arm["by_class"]["blue_pipette"]["along_bands"] == {"beyond": 0, "within": 0, "behind": 1}
+    assert arm["by_class"]["red_pipette"]["across"]["median_cm"] == pytest.approx(0.0)
+    assert arm["by_class"]["8_channel_pipette"]["attached_fraction"] == 1.0
+
+    # No identity key pressed: the keyed IDF1 is null and the cell-class fallback carries
+    # one cell per anchor; the colour vote is read against the cell class, and the blue
+    # anchor's vote (yellow) differs.
+    identity = arm["identity"]
+    assert identity["pipette_idf1"]["cells"] == 0 and identity["pipette_idf1"]["idf1"] is None
+    assert identity["pipette_idf1_by_cell_class"]["cells"] == 4
+    assert identity["pipette_idf1_by_cell_class"]["idf1"] == pytest.approx(1.0)
+    assert identity["agreement_by_cell_class"]["observed_class"] == {"agree": 4}
+    assert identity["agreement_by_cell_class"]["colour_identity"] == {
+        "agree": 2,
+        "differ": 1,
+        "absent": 1,
+    }
+    assert identity["agreement"] == {
+        "colour_identity": {},
+        "observed_class": {},
+        "track_class": {},
+    }
+
+    # A point track has no tip end: the split stays empty and only the axis distance is set.
+    point_anchor = anchors[0]
+    point = ft.tip_error(
+        point_anchor,
+        {
+            "track_id": "yellow_pipette-1",
+            "object_class": "yellow_pipette",
+            "position_cm": (anchor_tip - 11.5 * outward + 2 * perp).tolist(),
+            "direction": outward.tolist(),
+        },
+    )
+    assert point["along_cm"] is None and point["across_cm"] is None
+    assert point["along_band"] is None and point["axis_distance_cm"] == pytest.approx(2.0)
+    empty = ft._error_summary([])
+    assert empty["along"]["n"] == 0 and empty["attached_fraction"] is None
+    assert ft.colour_tracks_beside(tmp_path / "nowhere" / "tracks.jsonl") is None
+
+    # The markdown carries the split table and the along / across columns.
+    report = {
+        "anchors": {
+            "count": 4,
+            "by_state": {},
+            "by_class": {},
+            "views_per_anchor": {2: 4},
+            "reprojection_residual_px": {"median": 1.0, "p90": 1.0, "max": 1.0},
+            "views_dropped_by_residual_gate": 0,
+            "residual_gate_px": ft.RESIDUAL_GATE_PX,
+            "dropped_by_kind": {"single_view": 1, "no_click": 0, "clicks_disagree": 2},
+            "dropped": [{"raw_frame": 1, "class": "blue_pipette", "reason": "no click"}],
+        },
+        "record_summary": {"clicked": 8, "hidden": 0, "with_identity": 0},
+        "arms": [arm],
+        "claim_boundary": ft.CLAIM_BOUNDARY,
+    }
+    markdown = ft.scoreboard_markdown(report)
+    assert "## Tip error split: raw / along / across medians in cm (n)" in markdown
+    assert "| 2 / 1 / 1 |" in markdown and "attached (along > 2 cm)" in markdown
+    assert "1 with one clicked view, 0 with none, 2 whose clicks disagree" in markdown
+    assert "## Pipette-frames without an anchor" in markdown
+    assert "| along cm | across cm |" in markdown
 
 
 def test_score_and_export_on_a_served_workspace(tmp_path: Path) -> None:

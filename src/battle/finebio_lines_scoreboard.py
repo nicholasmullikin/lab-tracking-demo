@@ -934,6 +934,96 @@ def line_frames_summary(metrics: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+# --------------------------------------------------------------------------- disposable tips
+
+
+def tips_summary(
+    lines_rows: Sequence[Track3D],
+    metrics: Mapping[str, Any],
+    prior: LinePrior,
+    tip_events: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Sep 29: how often a `*_tip` box attached (per line frame and view, from the tracker's
+    metrics), the `tip_attached` state by tracker state over the rows, the written segment
+    length per class split by the state against the two-state prior (bare, bare plus tip),
+    the tip / butt bases, and the tip events when `battle-finebio-events --tip-events` ran."""
+    lines = metrics.get("extensions", {}).get("lines", {})
+    tips = lines.get("tips") or {}
+    by_state: dict[str, Counter] = defaultdict(Counter)
+    lengths: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
+    attached_views_rows = 0
+    line_rows = 0
+    for row in lines_rows:
+        if row.object_class != GEOMETRIC_CLASS or row.endpoints_cm is None:
+            continue
+        state_key = {True: "attached", False: "bare", None: "undecided"}[row.tip_attached]
+        by_state[row.state][state_key] += 1
+        if row.state in LOCALISED_STATES:
+            line_rows += 1
+            if row.tip_attached_views:
+                attached_views_rows += 1
+            cls = row.observed_class or "undecided"
+            ends = np.asarray(row.endpoints_cm, dtype=np.float64)
+            lengths[cls][state_key].append(float(np.linalg.norm(ends[1] - ends[0])))
+    modes: dict[str, Any] = {}
+    for cls in sorted(lengths):
+        pipette = cls if cls in PIPETTE_CLASSES else None
+        bare = prior.bare_for(pipette)
+        tip_class = prior.tip_class_for(pipette)
+        expected_tip = bare + prior.tip_for(tip_class)
+        block: dict[str, Any] = {
+            "prior_bare_cm": round(bare, 2),
+            "prior_with_tip_cm": round(expected_tip, 2),
+            "tip_class": tip_class,
+        }
+        for key in ("bare", "attached", "undecided"):
+            block[f"written_length_{key}_cm"] = _percentiles(lengths[cls][key])
+        modes[cls] = block
+    out: dict[str, Any] = {
+        "enabled": bool(tips.get("enabled")),
+        "rule": tips.get("rule"),
+        "line_frames": tips.get("line_frames"),
+        "line_frames_with_attached_tip": tips.get("line_frames_with_attached_tip"),
+        "attached_fraction": tips.get("attached_fraction"),
+        "attached_by_view": tips.get("attached_by_view"),
+        "attached_by_mode": tips.get("attached_by_mode"),
+        "attached_by_tip_class": tips.get("attached_by_tip_class"),
+        "state_transitions": tips.get("state_transitions"),
+        "tip_class_votes": tips.get("tip_class_votes"),
+        "tracks_ever_attached": tips.get("tracks_ever_attached"),
+        "rows_with_attached_views_fraction": (
+            round(attached_views_rows / line_rows, 4) if line_rows else None
+        ),
+        "tip_attached_by_tracker_state": {
+            state: dict(counter) for state, counter in sorted(by_state.items())
+        },
+        "written_length_by_class_and_state": modes,
+        "tip_basis_frames": lines.get("tip_basis_frames"),
+        "tip_resolutions_by_basis": lines.get("tip_resolutions_by_basis"),
+        "width_basis": lines.get("width_basis"),
+        "prior": {
+            "two_state": prior.two_state,
+            "bare_length_cm": dict(sorted(prior.bare.items())),
+            "tip_length_cm": dict(sorted(prior.tip.items())),
+        },
+        "events": None,
+    }
+    if tip_events:
+        out["events"] = {
+            "counts": tip_events.get("counts"),
+            "unmatched_flips": tip_events.get("unmatched_flips"),
+            "frames": [
+                {k: e.get(k) for k in ("kind", "track_id", "frame_index", "target", "tip_class")}
+                for e in tip_events.get("events", [])
+            ],
+            "volumes_from_rig": tip_events.get("volumes_from_rig"),
+            "volumes_from_boxes": tip_events.get("volumes_from_boxes"),
+            "volumes_skipped": tip_events.get("volumes_skipped"),
+            "rule": tip_events.get("rule"),
+        }
+    return out
+
+
 # --------------------------------------------------------------------------- rule
 
 
@@ -1031,6 +1121,7 @@ def build_scoreboard(
     other_trial: Mapping[str, Any] | None = None,
     fpv_poses: Path | None = None,
     inputs: Mapping[str, Any] | None = None,
+    tip_events: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     lines_rows = load_tracks(lines_tracks_dir)
     lines_metrics = load_metrics(lines_tracks_dir)
@@ -1110,6 +1201,7 @@ def build_scoreboard(
         "plausibility": plausibility(lines_rows, prior),
         "ambiguities": ambiguities(lines_rows, rest_frames, lines_metrics),
         "colour": colour_summary(colour_rows, lines_rows),
+        "tips": tips_summary(lines_rows, lines_metrics, prior, tip_events),
         "negative_controls": [dict(nc) for nc in negative_controls] if negative_controls else None,
         "gates": params.get("gates"),
         "claim_boundary": CLAIM_BOUNDARY,
@@ -1374,6 +1466,105 @@ def scoreboard_markdown(board: Mapping[str, Any]) -> str:
             f"{veto.get('observations_refused')} / {veto.get('splits')} | {veto.get('rule')} |",
         ]
     lines += [""]
+    tips = board.get("tips") or {}
+    lines += ["## Disposable tips", ""]
+    if not tips.get("enabled"):
+        lines += ["The tip boxes were not attached on this run (a v1 / v2 board).", ""]
+    else:
+        by_view = tips.get("attached_by_view") or {}
+        by_mode = tips.get("attached_by_mode") or {}
+        transitions = tips.get("state_transitions") or {}
+        lines += [
+            f"Rule: {tips.get('rule')}.",
+            "",
+            "| measure | value | measured against |",
+            "|---|---|---|",
+            f"| line frames with an attached tip box | {tips.get('line_frames_with_attached_tip')} "
+            f"of {tips.get('line_frames')} ({_fmt(tips.get('attached_fraction'), 4)}) | the "
+            "detector's *_tip boxes on the mask axis |",
+            "| attachments by view | "
+            + (", ".join(f"{v} {n}" for v, n in by_view.items()) or "none")
+            + " | same |",
+            "| attachments by mode (axis: the observation's own axis; track: the projected "
+            "body of a box-only view) | "
+            + (", ".join(f"{k} {n}" for k, n in by_mode.items()) or "none")
+            + " | same |",
+            f"| tip state turned on / off | {transitions.get('on')} / {transitions.get('off')} | "
+            "the hysteresis |",
+            f"| tip class votes cast / tracks that ever carried a tip | "
+            f"{tips.get('tip_class_votes')} / {tips.get('tracks_ever_attached')} | the class "
+            "vote |",
+            "",
+            "`tip_attached` by tracker state (rows):",
+            "",
+            "| tracker state | attached | bare | undecided |",
+            "|---|---|---|---|",
+        ]
+        for state, counter in (tips.get("tip_attached_by_tracker_state") or {}).items():
+            lines.append(
+                f"| {state} | {counter.get('attached', 0)} | {counter.get('bare', 0)} | "
+                f"{counter.get('undecided', 0)} |"
+            )
+        lines += [
+            "",
+            "Written segment length by class and tip state, against the two-state prior:",
+            "",
+            "| class | bare rows median cm (n) | attached rows median cm (n) | undecided rows "
+            "median cm (n) | prior bare cm | prior with tip cm | measured against |",
+            "|---|---|---|---|---|---|---|",
+        ]
+        for cls, block in (tips.get("written_length_by_class_and_state") or {}).items():
+            cells = []
+            for key in ("bare", "attached", "undecided"):
+                b = block[f"written_length_{key}_cm"]
+                cells.append(f"{_fmt(b.get('median'))} ({b.get('n', 0)})")
+            lines.append(
+                f"| {cls} | {' | '.join(cells)} | {_fmt(block['prior_bare_cm'])} | "
+                f"{_fmt(block['prior_with_tip_cm'])} | `configs/finebio/pipettes.json` |"
+            )
+        basis = tips.get("tip_basis_frames") or {}
+        flips = tips.get("tip_resolutions_by_basis") or {}
+        lines += [
+            "",
+            "Tip / butt bases over the line rows: "
+            + (", ".join(f"{k} {n}" for k, n in basis.items()) or "none")
+            + "; decisions (changes of the flag) by basis: "
+            + (", ".join(f"{k} {n}" for k, n in flips.items()) or "none")
+            + f". Width basis: {(tips.get('width_basis') or {}).get('rule')}; votes cast "
+            f"{(tips.get('width_basis') or {}).get('votes_cast')}.",
+            "",
+        ]
+        events = tips.get("events")
+        if events:
+            counts = events.get("counts") or {}
+            unmatched = events.get("unmatched_flips") or {}
+            lines += [
+                f"Tip events (`battle-finebio-events --tip-events`): tip_picked "
+                f"**{counts.get('tip_picked')}**, tip_ejected **{counts.get('tip_ejected')}**; "
+                f"flips that met no volume: {unmatched.get('tip_picked')} on, "
+                f"{unmatched.get('tip_ejected')} off. Volumes from the rig: "
+                + (", ".join(events.get("volumes_from_rig") or []) or "none")
+                + "; from detector boxes: "
+                + (", ".join(events.get("volumes_from_boxes") or []) or "none")
+                + "; skipped: "
+                + (
+                    ", ".join(
+                        f"{k} ({v})" for k, v in (events.get("volumes_skipped") or {}).items()
+                    )
+                    or "none"
+                )
+                + ".",
+                "",
+            ]
+            for e in events.get("frames") or []:
+                lines.append(
+                    f"- {e['kind']} `{e['track_id']}` at frame {e['frame_index']} in "
+                    f"{e['target']} ({e['tip_class']})"
+                )
+            if events.get("frames"):
+                lines.append("")
+        else:
+            lines += ["Tip events: not run for this board.", ""]
     controls = board.get("negative_controls") or []
     lines += ["## Negative controls", ""]
     if not controls:

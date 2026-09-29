@@ -170,5 +170,136 @@
    "ring_end_finding": "the coloured ring is the plunger button at the top of the pipette, not the tip; tip indices are the other axis end",
    "claim_boundary": "Agreement is measured against the detector's class, itself an appearance vote on the same ring; a disagreement is not an error count. Hues are read from crf-18 proxies with subsampled chroma. The ring is the plunger button, not the tip: 'tip' indices are the other end of the axis under that finding."
   }
+ },
+ "bare_length_cm": {
+  "8_channel_pipette": 22.63,
+  "blue_pipette": 21.7,
+  "red_pipette": 24.46,
+  "yellow_pipette": 21.97
+ },
+ "tip_length_cm": {
+  "8_channel_tip": 5.65,
+  "blue_tip": 5.17,
+  "red_tip": 5.65,
+  "yellow_tip": 6.13
+ },
+ "two_state_provenance": {
+  "method": "battle-finebio-stand tips per trial (the rest measurement split by whether a *_tip detector box attached to the body axis in >= 2 fixed views; the with-tip length re-triangulated from the axes extended to the tip boxes), then battle-finebio-stand tips-config",
+  "bare_basis": {
+   "8_channel_pipette": "the shortest bare (no tip attached) rest mode over 2 trial(s): [22.63, 30.15]",
+   "blue_pipette": "the shortest bare (no tip attached) rest mode over 1 trial(s): [21.7]",
+   "red_pipette": "the shortest bare (no tip attached) rest mode over 1 trial(s): [24.46]",
+   "yellow_pipette": "the shortest bare (no tip attached) rest mode over 2 trial(s): [21.97, 22.77]"
+  },
+  "tip_basis": {
+   "8_channel_tip": "assumed: the median of the tip classes that were estimated (the detector never labelled this tip class on a pipette in either trial)",
+   "blue_tip": "median of 1 estimate(s) over 12 attached frames: [5.17]",
+   "red_tip": "assumed: the median of the tip classes that were estimated (the detector never labelled this tip class on a pipette in either trial)",
+   "yellow_tip": "median of 1 estimate(s) over 77 attached frames: [6.13]"
+  },
+  "per_trial": {
+   "P03_03_01": {
+    "report": "runs/finebio-lines-P03_03_01-20260928/stand-tips/tip_lengths.json",
+    "per_class": {
+     "8_channel_pipette": {
+      "bare_median_cm": 22.63,
+      "bare_frames": 2087,
+      "tip_length_estimate_cm": null,
+      "tip_length_basis": null,
+      "tip_class": "blue_tip",
+      "frames_with_tip_attached": {
+       "ge_1_view": 2,
+       "ge_2_views": 0
+      },
+      "all_frames_with_tip": 0,
+      "difference_lower_bound_cm": null
+     },
+     "blue_pipette": {
+      "bare_median_cm": 22.84,
+      "bare_frames": 16,
+      "tip_length_estimate_cm": 5.17,
+      "tip_length_basis": "all frames attached in >= 2 views: median of the extended minus the body segment, frame by frame; a lower bound where a view's mask already covers the tip",
+      "tip_class": "blue_tip",
+      "frames_with_tip_attached": {
+       "ge_1_view": 0,
+       "ge_2_views": 0
+      },
+      "all_frames_with_tip": 12,
+      "difference_lower_bound_cm": 5.17
+     },
+     "red_pipette": {
+      "bare_median_cm": 24.46,
+      "bare_frames": 1549,
+      "tip_length_estimate_cm": null,
+      "tip_length_basis": null,
+      "tip_class": null,
+      "frames_with_tip_attached": {
+       "ge_1_view": 0,
+       "ge_2_views": 0
+      },
+      "all_frames_with_tip": 0,
+      "difference_lower_bound_cm": null
+     },
+     "yellow_pipette": {
+      "bare_median_cm": 21.97,
+      "bare_frames": 2960,
+      "tip_length_estimate_cm": null,
+      "tip_length_basis": null,
+      "tip_class": "blue_tip",
+      "frames_with_tip_attached": {
+       "ge_1_view": 4,
+       "ge_2_views": 0
+      },
+      "all_frames_with_tip": 0,
+      "difference_lower_bound_cm": null
+     }
+    }
+   },
+   "P20_03_01": {
+    "report": "runs/finebio-lines-P20_03_01-20260928/stand-tips/tip_lengths.json",
+    "per_class": {
+     "8_channel_pipette": {
+      "bare_median_cm": 30.15,
+      "bare_frames": 1677,
+      "tip_length_estimate_cm": null,
+      "tip_length_basis": null,
+      "tip_class": null,
+      "frames_with_tip_attached": {
+       "ge_1_view": 0,
+       "ge_2_views": 0
+      },
+      "all_frames_with_tip": 0,
+      "difference_lower_bound_cm": null
+     },
+     "blue_pipette": {
+      "bare_median_cm": 21.7,
+      "bare_frames": 1179,
+      "tip_length_estimate_cm": null,
+      "tip_length_basis": null,
+      "tip_class": "yellow_tip",
+      "frames_with_tip_attached": {
+       "ge_1_view": 0,
+       "ge_2_views": 0
+      },
+      "all_frames_with_tip": 1,
+      "difference_lower_bound_cm": -0.71
+     },
+     "yellow_pipette": {
+      "bare_median_cm": 22.77,
+      "bare_frames": 848,
+      "tip_length_estimate_cm": 6.13,
+      "tip_length_basis": "all frames attached in >= 2 views: the extended length's median minus the rest bare mode (the tracker measures the tip the same way; biased long by the detector box's slack beyond the tip)",
+      "tip_class": "yellow_tip",
+      "frames_with_tip_attached": {
+       "ge_1_view": 1,
+       "ge_2_views": 0
+      },
+      "all_frames_with_tip": 77,
+      "difference_lower_bound_cm": 2.92
+     }
+    }
+   }
+  },
+  "claim_boundary": "The tip state comes from the detector's *_tip boxes on the fixed views; a class whose tip the detector never labels is measured in one state only and its bare length may be a body-plus-tip length. Tip lengths are differences of medians of SAM3 axis extents extended to detector boxes, not physical measurements."
  }
 }

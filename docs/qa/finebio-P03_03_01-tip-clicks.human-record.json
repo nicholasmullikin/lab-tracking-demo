@@ -1,0 +1,2796 @@
+{
+  "schema": "battle-finebio-tips/1/human-record",
+  "anchor_kind": "human_tip_click",
+  "author": "nick",
+  "reviewed_at": null,
+  "trial": "P03_03_01",
+  "workspace": "runs/finebio-tips-P03_03_01-20260928",
+  "cells_json": {
+    "uri": "runs/finebio-tips-P03_03_01-20260928/cells.json",
+    "sha256": "31d88edffff92d65249350e7282b581d5012d81f0a7751c9c7b91e07b4ce73e0"
+  },
+  "clip_config": {
+    "uri": "configs/clips/finebio_P03_03_01_600-4200.json",
+    "sha256": "dc9add2928e55c9e8b12f6869d7fa2993394763b9f57a3e744dd790ad2142db8"
+  },
+  "observations": {
+    "uri": "runs/finebio-lines-P03_03_01-20260928/observations-b/observations.jsonl",
+    "sha256": "48292c1efc4de0d08e302583758dfac22359bd6dce789092f913a68c9ab2513b"
+  },
+  "decisions": {
+    "uri": "runs/finebio-tips-P03_03_01-20260928/decisions.json",
+    "sha256": "2488ecd9e7a5b69610d900b2518b62b2184f75acc5fed0763c7119a1a0e77b2e"
+  },
+  "frame_convention": "raw = shipped video frame index; proxy frame = raw - frame_index_offset; every pixel is a raw-video pixel of the view",
+  "protocol": "Accept or hide: on every cell I clicked only when the dashed marker (the mask axis end away from the hand) sat on the correct tip, and pressed h otherwise. So hidden means the marker was wrong or the tip was hidden, not that the tip was hidden. Each click is my acceptance of the axis end as the tip, so most clicks sit within a few pixels of the marker by design, not by bias. I pressed no identity key, by design. Some accepted markers sat on the plunger end (the 8-channel pipette in T3 and T5, the red pipette at frame 3311), so the 8-channel anchors are unreliable as tip anchors.",
+  "counts": {
+    "cells": 167,
+    "clicked": 138,
+    "hidden": 25,
+    "undecided": 4,
+    "with_identity": 0,
+    "frames": 30,
+    "frames_by_state": {
+      "rest": 10,
+      "held": 10,
+      "low": 10
+    }
+  },
+  "clicks": [
+    {
+      "raw_frame": 600,
+      "proxy_frame": 0,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "rest",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 600,
+      "proxy_frame": 0,
+      "view": "T4",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        574.0,
+        727.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 600,
+      "proxy_frame": 0,
+      "view": "T5",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1082.0,
+        920.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 600,
+      "proxy_frame": 0,
+      "view": "fpv",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1705.0,
+        604.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 600,
+      "proxy_frame": 0,
+      "view": "T2",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        698.0,
+        587.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 600,
+      "proxy_frame": 0,
+      "view": "T4",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        981.0,
+        706.4
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 600,
+      "proxy_frame": 0,
+      "view": "fpv",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1793.0,
+        646.0
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 600,
+      "proxy_frame": 0,
+      "view": "T4",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1017.0,
+        756.0
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 600,
+      "proxy_frame": 0,
+      "view": "T5",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1319.0,
+        666.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 600,
+      "proxy_frame": 0,
+      "view": "T3",
+      "slot": 3,
+      "class": "8_channel_pipette",
+      "label": "8_channel_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1381.0,
+        399.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 600,
+      "proxy_frame": 0,
+      "view": "T5",
+      "slot": 3,
+      "class": "8_channel_pipette",
+      "label": "8_channel_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1527.0,
+        672.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 637,
+      "proxy_frame": 37,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 637,
+      "proxy_frame": 37,
+      "view": "T4",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": [
+        560.0,
+        719.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 637,
+      "proxy_frame": 37,
+      "view": "T5",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": [
+        1075.0,
+        933.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 754,
+      "proxy_frame": 154,
+      "view": "fpv",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1485.0,
+        368.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 754,
+      "proxy_frame": 154,
+      "view": "T2",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        699.0,
+        587.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 754,
+      "proxy_frame": 154,
+      "view": "T4",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        984.0,
+        703.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 754,
+      "proxy_frame": 154,
+      "view": "fpv",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1577.0,
+        410.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 754,
+      "proxy_frame": 154,
+      "view": "T4",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1016.0,
+        754.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 754,
+      "proxy_frame": 154,
+      "view": "T5",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1318.0,
+        668.4
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 754,
+      "proxy_frame": 154,
+      "view": "fpv",
+      "slot": 3,
+      "class": "8_channel_pipette",
+      "label": "8_channel_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1815.0,
+        437.0
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 754,
+      "proxy_frame": 154,
+      "view": "T3",
+      "slot": 3,
+      "class": "8_channel_pipette",
+      "label": "8_channel_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1382.0,
+        404.0
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 754,
+      "proxy_frame": 154,
+      "view": "T5",
+      "slot": 3,
+      "class": "8_channel_pipette",
+      "label": "8_channel_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1546.0,
+        896.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 845,
+      "proxy_frame": 245,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "low",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 845,
+      "proxy_frame": 245,
+      "view": "T5",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "low",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1168,
+      "proxy_frame": 568,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "low",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1168,
+      "proxy_frame": 568,
+      "view": "T4",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "low",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1168,
+      "proxy_frame": 568,
+      "view": "fpv",
+      "slot": 3,
+      "class": "8_channel_pipette",
+      "label": "8_channel_pipette#0",
+      "state": "low",
+      "tip_px": [
+        1726.0,
+        936.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1168,
+      "proxy_frame": 568,
+      "view": "T3",
+      "slot": 3,
+      "class": "8_channel_pipette",
+      "label": "8_channel_pipette#0",
+      "state": "low",
+      "tip_px": [
+        1380.0,
+        400.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1189,
+      "proxy_frame": 589,
+      "view": "fpv",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1407.0,
+        1347.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1189,
+      "proxy_frame": 589,
+      "view": "T2",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        703.0,
+        588.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1189,
+      "proxy_frame": 589,
+      "view": "T4",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        845.0,
+        961.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1189,
+      "proxy_frame": 589,
+      "view": "T4",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        815.0,
+        1039.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1189,
+      "proxy_frame": 589,
+      "view": "T5",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1320.0,
+        914.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1189,
+      "proxy_frame": 589,
+      "view": "fpv",
+      "slot": 3,
+      "class": "8_channel_pipette",
+      "label": "8_channel_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1656.0,
+        848.4
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1189,
+      "proxy_frame": 589,
+      "view": "T3",
+      "slot": 3,
+      "class": "8_channel_pipette",
+      "label": "8_channel_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1379.0,
+        399.4
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1189,
+      "proxy_frame": 589,
+      "view": "T5",
+      "slot": 3,
+      "class": "8_channel_pipette",
+      "label": "8_channel_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1526.0,
+        672.0
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1395,
+      "proxy_frame": 795,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "rest",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1395,
+      "proxy_frame": 795,
+      "view": "T4",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        749.0,
+        1044.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1395,
+      "proxy_frame": 795,
+      "view": "T5",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1267.5,
+        932.1
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1395,
+      "proxy_frame": 795,
+      "view": "fpv",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1907.0,
+        817.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1395,
+      "proxy_frame": 795,
+      "view": "T2",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        701.0,
+        586.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1395,
+      "proxy_frame": 795,
+      "view": "T4",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        982.0,
+        706.4
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1395,
+      "proxy_frame": 795,
+      "view": "T4",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1016.0,
+        756.0
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1395,
+      "proxy_frame": 795,
+      "view": "T5",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1320.0,
+        667.0
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1395,
+      "proxy_frame": 795,
+      "view": "T3",
+      "slot": 3,
+      "class": "8_channel_pipette",
+      "label": "8_channel_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1380.0,
+        402.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1395,
+      "proxy_frame": 795,
+      "view": "T5",
+      "slot": 3,
+      "class": "8_channel_pipette",
+      "label": "8_channel_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1545.0,
+        895.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1491,
+      "proxy_frame": 891,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1491,
+      "proxy_frame": 891,
+      "view": "T4",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": [
+        707.0,
+        652.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1491,
+      "proxy_frame": 891,
+      "view": "T5",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": [
+        1295.5,
+        928.1
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1657,
+      "proxy_frame": 1057,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "low",
+      "tip_px": [
+        618.0,
+        397.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1657,
+      "proxy_frame": 1057,
+      "view": "T4",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "low",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1657,
+      "proxy_frame": 1057,
+      "view": "fpv",
+      "slot": 3,
+      "class": "8_channel_pipette",
+      "label": "8_channel_pipette#0",
+      "state": "low",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1657,
+      "proxy_frame": 1057,
+      "view": "T3",
+      "slot": 3,
+      "class": "8_channel_pipette",
+      "label": "8_channel_pipette#0",
+      "state": "low",
+      "tip_px": [
+        1380.0,
+        407.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1657,
+      "proxy_frame": 1057,
+      "view": "T5",
+      "slot": 3,
+      "class": "8_channel_pipette",
+      "label": "8_channel_pipette#0",
+      "state": "low",
+      "tip_px": [
+        1567.0,
+        894.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1749,
+      "proxy_frame": 1149,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1749,
+      "proxy_frame": 1149,
+      "view": "T4",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1837,
+      "proxy_frame": 1237,
+      "view": "T2",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        696.0,
+        588.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1837,
+      "proxy_frame": 1237,
+      "view": "T4",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        847.0,
+        959.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1837,
+      "proxy_frame": 1237,
+      "view": "T5",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1305.0,
+        865.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1837,
+      "proxy_frame": 1237,
+      "view": "T4",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        815.0,
+        1039.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1837,
+      "proxy_frame": 1237,
+      "view": "T5",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1322.0,
+        916.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1962,
+      "proxy_frame": 1362,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1962,
+      "proxy_frame": 1362,
+      "view": "T4",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": [
+        1091.0,
+        820.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1962,
+      "proxy_frame": 1362,
+      "view": "T5",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": [
+        1526.5,
+        791.1
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1962,
+      "proxy_frame": 1362,
+      "view": "T2",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "held",
+      "tip_px": [
+        702.0,
+        585.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1962,
+      "proxy_frame": 1362,
+      "view": "T4",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "held",
+      "tip_px": [
+        987.0,
+        705.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1962,
+      "proxy_frame": 1362,
+      "view": "T5",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "held",
+      "tip_px": [
+        1270.0,
+        643.4
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2110,
+      "proxy_frame": 1510,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "low",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2110,
+      "proxy_frame": 1510,
+      "view": "T5",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "low",
+      "tip_px": [
+        1338.0,
+        341.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2110,
+      "proxy_frame": 1510,
+      "view": "T3",
+      "slot": 3,
+      "class": "8_channel_pipette",
+      "label": "8_channel_pipette#0",
+      "state": "low",
+      "tip_px": [
+        1187.0,
+        357.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2110,
+      "proxy_frame": 1510,
+      "view": "T5",
+      "slot": 3,
+      "class": "8_channel_pipette",
+      "label": "8_channel_pipette#0",
+      "state": "low",
+      "tip_px": [
+        1544.0,
+        896.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2402,
+      "proxy_frame": 1802,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "low",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2402,
+      "proxy_frame": 1802,
+      "view": "T4",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "low",
+      "tip_px": [
+        1236.0,
+        829.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2402,
+      "proxy_frame": 1802,
+      "view": "T5",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "low",
+      "tip_px": [
+        1618.0,
+        758.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2402,
+      "proxy_frame": 1802,
+      "view": "fpv",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "low",
+      "tip_px": [
+        1363.0,
+        1203.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2402,
+      "proxy_frame": 1802,
+      "view": "T2",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "low",
+      "tip_px": [
+        697.0,
+        589.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2402,
+      "proxy_frame": 1802,
+      "view": "T5",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "low",
+      "tip_px": [
+        1271.0,
+        646.4
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2438,
+      "proxy_frame": 1838,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2438,
+      "proxy_frame": 1838,
+      "view": "T5",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": [
+        1130.0,
+        748.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2634,
+      "proxy_frame": 2034,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        688.0,
+        330.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2634,
+      "proxy_frame": 2034,
+      "view": "T5",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1174.0,
+        823.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2634,
+      "proxy_frame": 2034,
+      "view": "fpv",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1646.0,
+        1111.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2634,
+      "proxy_frame": 2034,
+      "view": "T2",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        691.0,
+        588.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2634,
+      "proxy_frame": 2034,
+      "view": "T4",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        982.0,
+        703.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2634,
+      "proxy_frame": 2034,
+      "view": "fpv",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1638.0,
+        728.4
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2634,
+      "proxy_frame": 2034,
+      "view": "T4",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1014.0,
+        753.4
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2634,
+      "proxy_frame": 2034,
+      "view": "T5",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1320.0,
+        669.0
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2634,
+      "proxy_frame": 2034,
+      "view": "fpv",
+      "slot": 3,
+      "class": "8_channel_pipette",
+      "label": "8_channel_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1896.0,
+        740.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2634,
+      "proxy_frame": 2034,
+      "view": "T3",
+      "slot": 3,
+      "class": "8_channel_pipette",
+      "label": "8_channel_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1379.0,
+        403.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2634,
+      "proxy_frame": 2034,
+      "view": "T5",
+      "slot": 3,
+      "class": "8_channel_pipette",
+      "label": "8_channel_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1526.0,
+        670.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2745,
+      "proxy_frame": 2145,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": [
+        777.0,
+        302.3
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2745,
+      "proxy_frame": 2145,
+      "view": "T4",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": [
+        719.0,
+        742.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2745,
+      "proxy_frame": 2145,
+      "view": "T5",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": [
+        1091.0,
+        819.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2745,
+      "proxy_frame": 2145,
+      "view": "fpv",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "held",
+      "tip_px": [
+        1689.0,
+        1123.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2745,
+      "proxy_frame": 2145,
+      "view": "T4",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "held",
+      "tip_px": [
+        1015.0,
+        756.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2745,
+      "proxy_frame": 2145,
+      "view": "T5",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "held",
+      "tip_px": [
+        1320.0,
+        665.4
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2968,
+      "proxy_frame": 2368,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "low",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2968,
+      "proxy_frame": 2368,
+      "view": "T5",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "low",
+      "tip_px": [
+        1340.0,
+        1016.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3136,
+      "proxy_frame": 2536,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "rest",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3136,
+      "proxy_frame": 2536,
+      "view": "T4",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        781.5,
+        1010.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3136,
+      "proxy_frame": 2536,
+      "view": "fpv",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1770.0,
+        1019.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3136,
+      "proxy_frame": 2536,
+      "view": "T4",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        980.0,
+        703.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3136,
+      "proxy_frame": 2536,
+      "view": "T5",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1270.0,
+        642.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3136,
+      "proxy_frame": 2536,
+      "view": "fpv",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1816.0,
+        1092.4
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3136,
+      "proxy_frame": 2536,
+      "view": "T4",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1016.0,
+        754.4
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3136,
+      "proxy_frame": 2536,
+      "view": "T5",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1320.0,
+        669.0
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3136,
+      "proxy_frame": 2536,
+      "view": "T3",
+      "slot": 3,
+      "class": "8_channel_pipette",
+      "label": "8_channel_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1187.0,
+        352.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3136,
+      "proxy_frame": 2536,
+      "view": "T5",
+      "slot": 3,
+      "class": "8_channel_pipette",
+      "label": "8_channel_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1546.0,
+        894.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3160,
+      "proxy_frame": 2560,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "low",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3160,
+      "proxy_frame": 2560,
+      "view": "T4",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "low",
+      "tip_px": [
+        710.0,
+        706.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3311,
+      "proxy_frame": 2711,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "rest",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3311,
+      "proxy_frame": 2711,
+      "view": "T4",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        715.0,
+        710.3
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3311,
+      "proxy_frame": 2711,
+      "view": "fpv",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1379.0,
+        1070.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3311,
+      "proxy_frame": 2711,
+      "view": "T2",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        701.0,
+        582.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3311,
+      "proxy_frame": 2711,
+      "view": "T4",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        979.0,
+        704.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3311,
+      "proxy_frame": 2711,
+      "view": "fpv",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1447.0,
+        1136.4
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3311,
+      "proxy_frame": 2711,
+      "view": "T4",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1014.0,
+        756.4
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3311,
+      "proxy_frame": 2711,
+      "view": "T5",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1320.0,
+        667.0
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3311,
+      "proxy_frame": 2711,
+      "view": "T3",
+      "slot": 3,
+      "class": "8_channel_pipette",
+      "label": "8_channel_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1184.0,
+        357.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3311,
+      "proxy_frame": 2711,
+      "view": "T5",
+      "slot": 3,
+      "class": "8_channel_pipette",
+      "label": "8_channel_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1548.0,
+        894.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3467,
+      "proxy_frame": 2867,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "rest",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3467,
+      "proxy_frame": 2867,
+      "view": "T4",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        766.5,
+        1019.3
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3467,
+      "proxy_frame": 2867,
+      "view": "fpv",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1791.0,
+        747.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3467,
+      "proxy_frame": 2867,
+      "view": "T2",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        698.0,
+        589.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3467,
+      "proxy_frame": 2867,
+      "view": "T4",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        984.0,
+        705.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3467,
+      "proxy_frame": 2867,
+      "view": "fpv",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1852.0,
+        819.4
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3467,
+      "proxy_frame": 2867,
+      "view": "T4",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1018.0,
+        758.4
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3467,
+      "proxy_frame": 2867,
+      "view": "T5",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1319.0,
+        664.0
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3467,
+      "proxy_frame": 2867,
+      "view": "T3",
+      "slot": 3,
+      "class": "8_channel_pipette",
+      "label": "8_channel_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1181.0,
+        356.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3467,
+      "proxy_frame": 2867,
+      "view": "T5",
+      "slot": 3,
+      "class": "8_channel_pipette",
+      "label": "8_channel_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1547.0,
+        897.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3528,
+      "proxy_frame": 2928,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "low",
+      "tip_px": [
+        559.0,
+        701.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3528,
+      "proxy_frame": 2928,
+      "view": "T4",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "low",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3528,
+      "proxy_frame": 2928,
+      "view": "T5",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "low",
+      "tip_px": [
+        1479.0,
+        587.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3528,
+      "proxy_frame": 2928,
+      "view": "fpv",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "low",
+      "tip_px": [
+        1284.0,
+        1002.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3528,
+      "proxy_frame": 2928,
+      "view": "T2",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "low",
+      "tip_px": [
+        703.0,
+        585.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3528,
+      "proxy_frame": 2928,
+      "view": "T4",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "low",
+      "tip_px": [
+        846.0,
+        956.4
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3528,
+      "proxy_frame": 2928,
+      "view": "fpv",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "low",
+      "tip_px": [
+        1347.0,
+        1093.0
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3528,
+      "proxy_frame": 2928,
+      "view": "T4",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "low",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3528,
+      "proxy_frame": 2928,
+      "view": "T5",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "low",
+      "tip_px": [
+        1321.0,
+        918.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3528,
+      "proxy_frame": 2928,
+      "view": "fpv",
+      "slot": 3,
+      "class": "8_channel_pipette",
+      "label": "8_channel_pipette#0",
+      "state": "low",
+      "tip_px": [
+        1437.0,
+        613.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3528,
+      "proxy_frame": 2928,
+      "view": "T3",
+      "slot": 3,
+      "class": "8_channel_pipette",
+      "label": "8_channel_pipette#0",
+      "state": "low",
+      "tip_px": [
+        1385.0,
+        404.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3528,
+      "proxy_frame": 2928,
+      "view": "T5",
+      "slot": 3,
+      "class": "8_channel_pipette",
+      "label": "8_channel_pipette#0",
+      "state": "low",
+      "tip_px": [
+        1583.0,
+        893.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3801,
+      "proxy_frame": 3201,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": [
+        698.0,
+        589.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3801,
+      "proxy_frame": 3201,
+      "view": "T5",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": [
+        1117.0,
+        803.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3882,
+      "proxy_frame": 3282,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": [
+        490.0,
+        258.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3882,
+      "proxy_frame": 3282,
+      "view": "T4",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": [
+        840.0,
+        873.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3939,
+      "proxy_frame": 3339,
+      "view": "fpv",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1317.0,
+        469.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3939,
+      "proxy_frame": 3339,
+      "view": "T2",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        701.0,
+        587.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3939,
+      "proxy_frame": 3339,
+      "view": "T4",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        846.0,
+        958.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3939,
+      "proxy_frame": 3339,
+      "view": "fpv",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1402.0,
+        494.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3939,
+      "proxy_frame": 3339,
+      "view": "T4",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        817.0,
+        1038.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3939,
+      "proxy_frame": 3339,
+      "view": "T5",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1320.0,
+        666.4
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3939,
+      "proxy_frame": 3339,
+      "view": "fpv",
+      "slot": 3,
+      "class": "8_channel_pipette",
+      "label": "8_channel_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1641.0,
+        472.0
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3939,
+      "proxy_frame": 3339,
+      "view": "T3",
+      "slot": 3,
+      "class": "8_channel_pipette",
+      "label": "8_channel_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1381.0,
+        400.0
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3939,
+      "proxy_frame": 3339,
+      "view": "T5",
+      "slot": 3,
+      "class": "8_channel_pipette",
+      "label": "8_channel_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1536.0,
+        899.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 4004,
+      "proxy_frame": 3404,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "low",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 4004,
+      "proxy_frame": 3404,
+      "view": "T5",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "low",
+      "tip_px": [
+        1464.0,
+        289.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 4053,
+      "proxy_frame": 3453,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 4053,
+      "proxy_frame": 3453,
+      "view": "T4",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 4053,
+      "proxy_frame": 3453,
+      "view": "T5",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": [
+        1414.0,
+        778.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 4098,
+      "proxy_frame": 3498,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 4098,
+      "proxy_frame": 3498,
+      "view": "T4",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 4098,
+      "proxy_frame": 3498,
+      "view": "T5",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 4189,
+      "proxy_frame": 3589,
+      "view": "fpv",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "low",
+      "tip_px": [
+        1778.0,
+        1059.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 4189,
+      "proxy_frame": 3589,
+      "view": "T2",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "low",
+      "tip_px": [
+        695.0,
+        587.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 4189,
+      "proxy_frame": 3589,
+      "view": "T4",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "low",
+      "tip_px": [
+        983.0,
+        705.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "note": ""
+    }
+  ],
+  "claim_boundary": "Tip anchors are one person's clicks at the end of the white tip cone in two or three views on about 30 frames of one trial, triangulated through the rig; they inherit the rig's residual of a few pixels and the click's own scatter. They rank trackers against each other and read the pre-registered rule (median tip error under 2 cm); they are not ground truth and support no accuracy claim.",
+  "licence": "FineBio is licensed for non-commercial research; frames and crops derived from it stay under runs/ and are never committed or redistributed. cells.json (frames, pixels of detector boxes and mask axes) and the human record (clicks, flags, identities) carry no image.",
+  "notes": "Written by battle-finebio-tips export. tip_px is the clicked full-frame pixel (raw video pixels of the view), never the suggested tip; author and reviewed_at come from the decisions file and stay null until filled in. protocol, when given, is how I chose between a click and h in this session, and so what hidden means here. Crops stay under runs/."
+}

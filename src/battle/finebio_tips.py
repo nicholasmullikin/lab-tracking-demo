@@ -29,15 +29,22 @@ tracker's tip is measured against it in centimetres. About 20 minutes of clickin
   to the record (temporary file, then rename). The suggestion is never saved: a cell's
   ``tip_px`` comes from a click or stays null.
 * ``score`` triangulates each frame's clicks per pipette (undistort + DLT, per-click
-  reprojection residual; frames with a single clicked view are dropped), then for every
-  tracks file finds that pipette's track on that frame (by ``support_slots``, else the
-  nearest endpoint) and reports the tip error: the distance from ``endpoints_cm[0]`` when
-  ``tip_resolved``, from the nearer endpoint when not (flagged), and from ``position_cm`` for
-  a point track (a midpoint, so expected large, and named as such). Pipette-only IDF1 and the
-  colour vote's agreement come from the identity keys (``1`` blue, ``2`` yellow, ``3`` red,
-  ``4`` 8-channel) I press per pipette per frame.
+  reprojection residual; frames with a single clicked view are dropped, and so are frames
+  whose clicks still disagree by more than the residual gate after one view is dropped),
+  then for every tracks file finds that pipette's track on that frame (by
+  ``support_slots``, else the nearest endpoint) and reports the tip error: the distance from
+  ``endpoints_cm[0]`` when ``tip_resolved``, from the nearer endpoint when not (flagged), and
+  from ``position_cm`` for a point track (a midpoint, so expected large, and named as such).
+  A line track's error is also split along its axis (signed: positive when the anchor lies
+  beyond the track's tip end, as it does when a disposable tip is attached and the mask stops
+  at the body's cone) and across it, by state and by pipette class, with the fraction of
+  anchors more than 2 cm beyond the end. Pipette-only IDF1 and the colour vote's agreement
+  come from the identity keys (``1`` blue, ``2`` yellow, ``3`` red, ``4`` 8-channel) I press
+  per pipette per frame, with the detector's class of the clicked cell as a named fallback;
+  ``colour_identity`` is read from a ``tracks_colour.jsonl`` beside the tracks when present.
 * ``export`` writes the no-pixel human record under ``docs/qa/``: clicks in full-frame
-  pixels, hidden flags, identities, the decisions file's SHA-256.
+  pixels, hidden flags, identities, the decisions file's SHA-256 and, with ``--protocol``,
+  a note on how I chose between a click and ``h`` in that session (what ``hidden`` means).
 
 Claim boundary: the anchors are one person's clicks on the proxies' pixels at about 30
 frames of one trial; the triangulation inherits the rig's residual (a few px). They rank
@@ -111,6 +118,7 @@ IDENTITY_SHORT: dict[str, str] = {
     "red_pipette": "red",
     "8_channel_pipette": "8-channel",
 }
+COLOUR_TO_CLASS: dict[str, str] = {short: cls for cls, short in IDENTITY_SHORT.items()}
 LINE_CLASS = "pipette"
 HAND_CLASSES: tuple[str, ...] = ("left_hand", "right_hand")
 STATES: tuple[str, ...] = ("rest", "held", "low")
@@ -134,6 +142,8 @@ EDGE_MARGIN_PX = 6.0
 RESIDUAL_GATE_PX = 30.0
 MATCH_GATE_CM = 15.0
 THRESHOLD_MEDIAN_CM = 2.0
+ATTACHED_ALONG_CM = 2.0
+COLOUR_TRACKS_NAME = "tracks_colour.jsonl"
 HISTORY_LIMIT = 500
 DEFAULT_PORT = 8767
 CELLS_NAME = "cells.json"
@@ -2036,6 +2046,7 @@ class TipAnchor:
             "state": self.state,
             "instance_identity": self.identity,
             "views": self.views,
+            "n_views": len(self.residual_px) if self.residual_px else len(self.pixels),
             "hidden_views": self.hidden_views,
             "tip_cm": None if self.tip_cm is None else [round(float(v), 3) for v in self.tip_cm],
             "tip_height_cm": None if self.tip_cm is None else round(-float(self.tip_cm[2]), 2),
@@ -2068,8 +2079,10 @@ def triangulate_clicks(
 ) -> tuple[list[TipAnchor], list[dict[str, Any]]]:
     """One anchor per (frame, pipette) with at least two clicked views that have a camera
     (undistort + DLT); with three or more views the worst view is dropped once when its
-    residual exceeds `residual_gate_px`. A (frame, pipette) with fewer clicked views keeps
-    its identity for IDF1 but has no 3D tip and is listed under `dropped`."""
+    residual exceeds `residual_gate_px`. A (frame, pipette) with fewer clicked views, or
+    whose remaining clicks still disagree by more than the gate (two views cannot say which
+    click is wrong), keeps its identity for IDF1 but has no 3D tip and is listed under
+    `dropped` with its reason."""
     decisions = {cell_key(c): c for c in record.get("cells", [])}
     groups: dict[tuple[int, int], list[dict[str, Any]]] = defaultdict(list)
     for cell in workspace["cells"]:
@@ -2117,8 +2130,26 @@ def triangulate_clicks(
             kept = [v for v in views if v != worst]
             point, residuals = _triangulate(cams, pixels, kept)
             anchor.dropped_view = worst
-        anchor.tip_cm = point
         anchor.residual_px = residuals
+        if max(residuals.values()) > residual_gate_px:
+            dropped.append(
+                {
+                    "raw_frame": raw,
+                    "slot": slot,
+                    "class": anchor.cls,
+                    "reason": (
+                        f"clicks disagree: residual {max(residuals.values()):.0f} px over the "
+                        f"{residual_gate_px:g} px gate on {', '.join(residuals)}"
+                    ),
+                    "views": list(residuals),
+                    "residual_px": {v: round(r, 2) for v, r in residuals.items()},
+                    "dropped_view": anchor.dropped_view,
+                }
+            )
+            if identity:
+                anchors.append(anchor)
+            continue
+        anchor.tip_cm = point
         anchors.append(anchor)
     return anchors, dropped
 
@@ -2150,7 +2181,9 @@ def read_track_rows(path: Path, frames: Iterable[int]) -> dict[int, list[dict[st
     """frame -> the pipette track rows on `frames` (line tracks of the `pipette` class and
     point tracks of the four detector classes)."""
     wanted = {int(f) for f in frames}
-    keys = {f'"frame_index":{f},' for f in wanted}
+    # A cheap text prefilter before json.loads; the tracker writes compact JSON and the
+    # colour annotator writes it with a space after the colon, so both spellings pass.
+    keys = {f'"frame_index":{s}{f},' for f in wanted for s in ("", " ")}
     out: dict[int, list[dict[str, Any]]] = defaultdict(list)
     with Path(path).open(encoding="utf-8") as handle:
         for line in handle:
@@ -2213,11 +2246,44 @@ def match_track(
     return dict(nearest), f"nearest endpoint ({nearest_cm:.1f} cm)"
 
 
+def along_across(
+    anchor_cm: np.ndarray, tip_end: np.ndarray, other_end: np.ndarray
+) -> tuple[float, float] | None:
+    """Split (anchor - tip_end) along the segment's axis: `along` is signed along the
+    outward direction from `other_end` through `tip_end`, positive when the anchor lies
+    beyond the track's tip end (the mask stopped short of the anchor, as it does when a
+    disposable tip is attached and SAM3 stops at the body's cone), negative when the track
+    overshoots; `across` is the perpendicular distance. None for a degenerate segment."""
+    axis = np.asarray(tip_end, dtype=np.float64) - np.asarray(other_end, dtype=np.float64)
+    norm = float(np.linalg.norm(axis))
+    if norm <= 1e-9:
+        return None
+    axis /= norm
+    offset = np.asarray(anchor_cm, dtype=np.float64) - np.asarray(tip_end, dtype=np.float64)
+    along = float(offset @ axis)
+    across = float(np.linalg.norm(offset - along * axis))
+    return along, across
+
+
+def along_band(along: float | None, *, attached_cm: float = ATTACHED_ALONG_CM) -> str | None:
+    """`beyond`: anchor more than `attached_cm` past the track's tip end (a tip is probably
+    attached); `within`: inside +-`attached_cm`; `behind`: the track overshoots by more."""
+    if along is None:
+        return None
+    if along > attached_cm:
+        return "beyond"
+    if along < -attached_cm:
+        return "behind"
+    return "within"
+
+
 def tip_error(anchor: TipAnchor, row: Mapping[str, Any]) -> dict[str, Any]:
     """Distance from the anchor's tip to the track's tip: `endpoints_cm[0]` when
     `tip_resolved`, the nearer endpoint when not (flagged), and `position_cm` for a point
-    track (a midpoint, named as such); a point track with a `direction` also gets the
-    perpendicular distance to its axis."""
+    track (a midpoint, named as such). A line track's error is also split into `along_cm`
+    (signed, along the track's axis, positive = anchor beyond the tip end) and `across_cm`
+    (perpendicular); a point track with a `direction` gets the perpendicular distance to
+    its axis (`axis_distance_cm`) and no signed split, since a midpoint has no tip end."""
     assert anchor.tip_cm is not None
     endpoints = row.get("endpoints_cm")
     out: dict[str, Any] = {
@@ -2225,20 +2291,35 @@ def tip_error(anchor: TipAnchor, row: Mapping[str, Any]) -> dict[str, Any]:
         "track_class": row.get("object_class"),
         "observed_class": row.get("observed_class"),
         "colour_identity": row.get("colour_identity"),
+        "colour_confidence": row.get("colour_confidence"),
         "track_kind": "line" if endpoints else "point",
         "tip_resolved": row.get("tip_resolved"),
+        "along_cm": None,
+        "across_cm": None,
+        "along_band": None,
+        "other_end_nearer": None,
         "axis_distance_cm": None,
     }
     if endpoints:
         ends = [np.asarray(p, dtype=np.float64) for p in endpoints]
         distances = [float(np.linalg.norm(p - anchor.tip_cm)) for p in ends]
         if row.get("tip_resolved"):
-            out["tip_error_cm"] = round(distances[0], 3)
+            tip_index = 0
             out["measure"] = "tip_endpoint"
+            # The anchor sits nearer the track's butt than its named tip: either the track
+            # named the wrong end or the clicks sit at the butt. The number says which end,
+            # not whose fault.
+            out["other_end_nearer"] = bool(distances[1] < distances[0])
         else:
-            out["tip_error_cm"] = round(min(distances), 3)
+            tip_index = int(np.argmin(distances))
             out["measure"] = "nearer_endpoint_unresolved"
-        out["other_end_cm"] = round(max(distances), 3)
+        out["tip_error_cm"] = round(distances[tip_index], 3)
+        out["other_end_cm"] = round(distances[1 - tip_index], 3)
+        split = along_across(anchor.tip_cm, ends[tip_index], ends[1 - tip_index])
+        if split is not None:
+            out["along_cm"] = round(split[0], 3)
+            out["across_cm"] = round(split[1], 3)
+            out["along_band"] = along_band(split[0])
         return out
     position = np.asarray(row["position_cm"], dtype=np.float64)
     out["tip_error_cm"] = round(float(np.linalg.norm(position - anchor.tip_cm)), 3)
@@ -2266,6 +2347,68 @@ def _percentiles(values: Sequence[float]) -> dict[str, Any]:
     }
 
 
+ERROR_MEASURES: tuple[str, ...] = ("raw", "along", "across")
+
+
+def _error_summary(entries: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """`raw` (the tip error), `along` (signed) and `across` percentiles over the matched
+    cells that carry them, plus the along-axis bands and the attached fraction."""
+    raw = [c["tip_error_cm"] for c in entries if c.get("tip_error_cm") is not None]
+    along = [c["along_cm"] for c in entries if c.get("along_cm") is not None]
+    across = [c["across_cm"] for c in entries if c.get("across_cm") is not None]
+    bands = Counter(c["along_band"] for c in entries if c.get("along_band"))
+    split = sum(bands.values())
+    # The flat n / median_cm / p90_cm / max_cm are the raw error, so `by_state[s]["median_cm"]`
+    # reads as before; the split sits beside them.
+    return {
+        **_percentiles(raw),
+        "raw": _percentiles(raw),
+        "along": _percentiles(along),
+        "across": _percentiles(across),
+        "along_bands": {band: bands.get(band, 0) for band in ("beyond", "within", "behind")},
+        "attached_fraction": round(bands.get("beyond", 0) / split, 3) if split else None,
+        "other_end_nearer": sum(1 for c in entries if c.get("other_end_nearer")),
+    }
+
+
+def read_colour_identities(
+    path: Path, frames: Iterable[int]
+) -> dict[tuple[int, str], dict[str, Any]]:
+    """(frame, track_id) -> the colour vote's fields on the pipette rows of a
+    `tracks_colour.jsonl` (written by `battle-finebio-colour annotate` beside the tracks)."""
+    out: dict[tuple[int, str], dict[str, Any]] = {}
+    for frame, rows in read_track_rows(path, frames).items():
+        for row in rows:
+            if row.get("colour_identity") is None:
+                continue
+            out[(frame, str(row.get("track_id")))] = {
+                # The vote names a colour (`yellow`); the identity keys name the class.
+                "colour_identity": COLOUR_TO_CLASS.get(
+                    str(row["colour_identity"]), str(row["colour_identity"])
+                ),
+                "colour_confidence": row.get("colour_confidence"),
+            }
+    return out
+
+
+def colour_tracks_beside(path: Path) -> Path | None:
+    candidate = Path(path).parent / COLOUR_TRACKS_NAME
+    return candidate if candidate.is_file() and candidate != Path(path) else None
+
+
+def _agreement(row: Mapping[str, Any], identity: str, into: Mapping[str, Counter]) -> None:
+    for field_name, key in (
+        ("colour_identity", "colour_identity"),
+        ("observed_class", "observed_class"),
+        ("track_class", "object_class"),
+    ):
+        value = row.get(key)
+        if value is None or value == LINE_CLASS:
+            into[field_name]["absent"] += 1
+        else:
+            into[field_name]["agree" if value == identity else "differ"] += 1
+
+
 def score_tracks_file(
     name: str,
     path: Path,
@@ -2274,15 +2417,31 @@ def score_tracks_file(
     repository_root: Path,
     gate_cm: float = MATCH_GATE_CM,
     threshold_cm: float = THRESHOLD_MEDIAN_CM,
+    colour_path: Path | None = None,
 ) -> dict[str, Any]:
+    """Score one tracks file against the anchors. `colour_path` (default: a
+    `tracks_colour.jsonl` beside the tracks, when one exists) supplies `colour_identity`
+    for the matched rows. Identity is read two ways: from the keys I pressed
+    (`pipette_idf1`, the designed measure, null when no key was pressed) and from the
+    detector class of the clicked cells (`pipette_idf1_by_cell_class`, the fallback: it
+    inherits the detector's class confusions and is named as such)."""
     frames = sorted({a.raw_frame for a in anchors})
     rows_by_frame = read_track_rows(path, frames)
+    if colour_path is None:
+        colour_path = colour_tracks_beside(Path(path))
+    colours = read_colour_identities(colour_path, frames) if colour_path else {}
     cells: list[dict[str, Any]] = []
-    errors: list[float] = []
-    by_state: dict[str, list[float]] = defaultdict(list)
+    by_state: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    by_class: dict[str, list[dict[str, Any]]] = defaultdict(list)
     measures: Counter[str] = Counter()
     identity_pairs: list[tuple[str, str | None]] = []
+    class_pairs: list[tuple[str, str | None]] = []
     agreement = {
+        "colour_identity": Counter(),
+        "observed_class": Counter(),
+        "track_class": Counter(),
+    }
+    class_agreement = {
         "colour_identity": Counter(),
         "observed_class": Counter(),
         "track_class": Counter(),
@@ -2293,48 +2452,60 @@ def score_tracks_file(
         )
         entry: dict[str, Any] = {**anchor.as_dict(), "match": match_by, "track_id": None}
         if row is not None:
+            colour = colours.get((anchor.raw_frame, str(row.get("track_id"))))
+            if colour and row.get("colour_identity") is None:
+                row = {**row, **colour}
             entry["track_id"] = row.get("track_id")
             if anchor.tip_cm is not None:
                 entry.update(tip_error(anchor, row))
-                errors.append(entry["tip_error_cm"])
-                by_state[anchor.state].append(entry["tip_error_cm"])
+                by_state[anchor.state].append(entry)
+                by_class[anchor.cls].append(entry)
                 measures[entry["measure"]] += 1
+                _agreement(row, anchor.cls, class_agreement)
             else:
                 entry["measure"] = None
             if anchor.identity:
-                for field_name, key in (
-                    ("colour_identity", "colour_identity"),
-                    ("observed_class", "observed_class"),
-                    ("track_class", "object_class"),
-                ):
-                    value = row.get(key)
-                    if value is None or value == LINE_CLASS:
-                        agreement[field_name]["absent"] += 1
-                    else:
-                        agreement[field_name][
-                            "agree" if value == anchor.identity else "differ"
-                        ] += 1
+                _agreement(row, anchor.identity, agreement)
         if anchor.identity:
             identity_pairs.append((anchor.identity, entry["track_id"]))
+        if anchor.tip_cm is not None:
+            class_pairs.append((anchor.cls, entry["track_id"]))
         cells.append(entry)
     with_tip = sum(1 for a in anchors if a.tip_cm is not None)
-    matched = sum(1 for c in cells if c.get("tip_error_cm") is not None)
+    matched = [c for c in cells if c.get("tip_error_cm") is not None]
+    summary = _error_summary(matched)
+    across = summary["across"]["median_cm"]
     return {
         "tracks": name,
         "path": fs_common.relative_uri(Path(path), repository_root),
+        "colour_tracks": None
+        if colour_path is None
+        else fs_common.relative_uri(Path(colour_path), repository_root),
         "anchors": with_tip,
-        "matched": matched,
-        "unmatched": with_tip - matched,
-        "tip_error": _percentiles(errors),
-        "by_state": {state: _percentiles(by_state.get(state, [])) for state in STATES},
+        "matched": len(matched),
+        "unmatched": with_tip - len(matched),
+        "tip_error": summary["raw"],
+        "along": summary["along"],
+        "across": summary["across"],
+        "along_bands": summary["along_bands"],
+        "attached_fraction": summary["attached_fraction"],
+        "attached_along_cm": ATTACHED_ALONG_CM,
+        "other_end_nearer": summary["other_end_nearer"],
+        "by_state": {state: _error_summary(by_state.get(state, [])) for state in STATES},
+        "by_class": {cls: _error_summary(by_class.get(cls, [])) for cls in PIPETTE_CLASSES},
         "measures": dict(measures),
         "tips_unresolved": measures.get("nearer_endpoint_unresolved", 0),
         "point_tracks": measures.get("point_to_midpoint", 0),
         "threshold_median_cm": threshold_cm,
-        "median_under_threshold": (bool(np.median(errors) < threshold_cm) if errors else None),
+        "median_under_threshold": (
+            bool(summary["raw"]["median_cm"] < threshold_cm) if matched else None
+        ),
+        "median_across_under_threshold": (None if across is None else bool(across < threshold_cm)),
         "identity": {
             "pipette_idf1": idf1(identity_pairs),
             "agreement": {k: dict(v) for k, v in agreement.items()},
+            "pipette_idf1_by_cell_class": idf1(class_pairs),
+            "agreement_by_cell_class": {k: dict(v) for k, v in class_agreement.items()},
         },
         "cells": cells,
     }
@@ -2355,7 +2526,16 @@ def score_workspace(
     anchors, dropped = triangulate_clicks(workspace, record, cameras_at)
     with_tip = [a for a in anchors if a.tip_cm is not None]
     residuals = [r for a in with_tip for r in a.residual_px.values()]
+    residual_max = [max(a.residual_px.values()) for a in with_tip]
     cells = record.get("cells", [])
+    dropped_kinds = Counter(
+        "clicks_disagree"
+        if d["reason"].startswith("clicks disagree")
+        else "no_click"
+        if d["reason"] == "no click"
+        else "single_view"
+        for d in dropped
+    )
     return {
         "schema": f"{SCHEMA}/scoreboard",
         "anchor_kind": ANCHOR_KIND,
@@ -2384,9 +2564,18 @@ def score_workspace(
                 "p90": round(float(np.percentile(residuals, 90)), 2) if residuals else None,
                 "max": round(float(max(residuals)), 2) if residuals else None,
             },
+            "residual_max_per_anchor_px": {
+                "median": round(float(np.median(residual_max)), 2) if residual_max else None,
+                "p90": round(float(np.percentile(residual_max, 90)), 2) if residual_max else None,
+                "max": round(float(max(residual_max)), 2) if residual_max else None,
+            },
             "views_dropped_by_residual_gate": sum(1 for a in with_tip if a.dropped_view),
             "residual_gate_px": RESIDUAL_GATE_PX,
             "identity_only": len(anchors) - len(with_tip),
+            "dropped_by_kind": {
+                kind: dropped_kinds.get(kind, 0)
+                for kind in ("single_view", "no_click", "clicks_disagree")
+            },
             "dropped": dropped,
             "rows": [a.as_dict() for a in with_tip],
         },
@@ -2427,20 +2616,33 @@ def _fmt(value: Any, digits: int = 2) -> str:
     return str(value)
 
 
+def _split_cell(summary: Mapping[str, Any]) -> str:
+    """`raw / along / across (n)` medians of one error summary, `-` where absent."""
+    raw = summary["raw"] if "raw" in summary else summary["tip_error"]
+    return (
+        f"{_fmt(raw['median_cm'])} / {_fmt(summary['along']['median_cm'])} / "
+        f"{_fmt(summary['across']['median_cm'])} ({raw['n']})"
+    )
+
+
 def scoreboard_markdown(report: dict[str, Any]) -> str:
     anchors = report["anchors"]
     summary = report["record_summary"]
     residual = anchors["reprojection_residual_px"]
+    kinds = anchors.get("dropped_by_kind", {})
     lines = [
         f"# Tip scoreboard: {anchors['count']} anchors from {summary['clicked']} clicks",
         "",
         f"Anchors by state: {json.dumps(anchors['by_state'])}; by class: "
-        f"{json.dumps(anchors['by_class'])}. Reprojection residual of the clicks median "
-        f"{_fmt(residual['median'])} px, p90 {_fmt(residual['p90'])} px; "
-        f"{anchors['views_dropped_by_residual_gate']} views dropped by the "
-        f"{anchors['residual_gate_px']:g} px gate; {len(anchors['dropped'])} pipette-frames "
-        f"without two clicked views. {summary['hidden']} cells hidden, {summary['with_identity']} "
-        "with an identity.",
+        f"{json.dumps(anchors['by_class'])}; views per anchor: "
+        f"{json.dumps(anchors['views_per_anchor'])}. Reprojection residual of the kept clicks "
+        f"median {_fmt(residual['median'])} px, p90 {_fmt(residual['p90'])} px, max "
+        f"{_fmt(residual['max'])} px; {anchors['views_dropped_by_residual_gate']} views dropped "
+        f"by the {anchors['residual_gate_px']:g} px gate. Pipette-frames without an anchor: "
+        f"{kinds.get('single_view', 0)} with one clicked view, {kinds.get('no_click', 0)} with "
+        f"none, {kinds.get('clicks_disagree', 0)} whose clicks disagree beyond the gate. "
+        f"{summary['hidden']} cells marked h (see the note below), {summary['with_identity']} "
+        "with an identity key.",
         "",
     ]
     if anchors["count"] == 0:
@@ -2454,20 +2656,28 @@ def scoreboard_markdown(report: dict[str, Any]) -> str:
         "anchors matched",
         "tip error median cm",
         "p90 cm",
+        "along median cm",
+        "across median cm",
+        "attached (along > 2 cm)",
         "rest median (n)",
         "held median (n)",
         "low median (n)",
         "measure",
-        "median < 2 cm",
-        "pipette IDF1",
-        "colour vote agrees / differs / absent",
+        "median < 2 cm raw",
+        "median < 2 cm across",
+        "pipette IDF1 keys",
+        "IDF1 by cell class",
+        "colour vote agrees / differs / absent (vs keys; vs cell class)",
     ]
     lines.append("| " + " | ".join(header) + " |")
     lines.append("|" + "---|" * len(header))
     for arm in report["arms"]:
         by_state = arm["by_state"]
         measures = ", ".join(f"{k} {v}" for k, v in sorted(arm["measures"].items())) or "-"
-        colour = arm["identity"]["agreement"]["colour_identity"]
+        keyed = arm["identity"]["agreement"]["colour_identity"]
+        colour = arm["identity"]["agreement_by_cell_class"]["colour_identity"]
+        bands = arm["along_bands"]
+        split_n = sum(bands.values())
         lines.append(
             "| "
             + " | ".join(
@@ -2476,14 +2686,20 @@ def scoreboard_markdown(report: dict[str, Any]) -> str:
                     f"{arm['matched']} / {arm['anchors']}",
                     _fmt(arm["tip_error"]["median_cm"]),
                     _fmt(arm["tip_error"]["p90_cm"]),
+                    _fmt(arm["along"]["median_cm"]),
+                    _fmt(arm["across"]["median_cm"]),
+                    f"{bands['beyond']} / {split_n}" if split_n else "-",
                     f"{_fmt(by_state['rest']['median_cm'])} ({by_state['rest']['n']})",
                     f"{_fmt(by_state['held']['median_cm'])} ({by_state['held']['n']})",
                     f"{_fmt(by_state['low']['median_cm'])} ({by_state['low']['n']})",
                     measures,
                     _fmt(arm["median_under_threshold"]),
+                    _fmt(arm["median_across_under_threshold"]),
                     _fmt(arm["identity"]["pipette_idf1"]["idf1"], 3),
-                    f"{colour.get('agree', 0)} / {colour.get('differ', 0)} / "
-                    f"{colour.get('absent', 0)}",
+                    _fmt(arm["identity"]["pipette_idf1_by_cell_class"]["idf1"], 3),
+                    f"{keyed.get('agree', 0)} / {keyed.get('differ', 0)} / "
+                    f"{keyed.get('absent', 0)}; {colour.get('agree', 0)} / "
+                    f"{colour.get('differ', 0)} / {colour.get('absent', 0)}",
                 ]
             )
             + " |"
@@ -2493,23 +2709,60 @@ def scoreboard_markdown(report: dict[str, Any]) -> str:
         lines.append(f"Tracks file not found: `{missing['path']}` ({missing['tracks']}).")
     if report.get("missing_tracks"):
         lines.append("")
+    if any(arm["along"]["n"] for arm in report["arms"]):
+        lines.append("## Tip error split: raw / along / across medians in cm (n)")
+        lines.append("")
+        lines.append(
+            "| tracks | all | p90 raw / along / across | rest | held | low | "
+            + " | ".join(IDENTITY_SHORT[c] for c in PIPETTE_CLASSES)
+            + " | beyond / within / behind 2 cm | anchor nearer other end |"
+        )
+        lines.append("|" + "---|" * (6 + len(PIPETTE_CLASSES) + 2))
+        for arm in report["arms"]:
+            if not arm["along"]["n"]:
+                continue
+            bands = arm["along_bands"]
+            lines.append(
+                f"| {arm['tracks']} | {_split_cell(arm)} | "
+                f"{_fmt(arm['tip_error']['p90_cm'])} / {_fmt(arm['along']['p90_cm'])} / "
+                f"{_fmt(arm['across']['p90_cm'])} | "
+                + " | ".join(_split_cell(arm["by_state"][s]) for s in STATES)
+                + " | "
+                + " | ".join(_split_cell(arm["by_class"][c]) for c in PIPETTE_CLASSES)
+                + f" | {bands['beyond']} / {bands['within']} / {bands['behind']} "
+                f"| {arm['other_end_nearer']} |"
+            )
+        lines.append("")
+    if anchors.get("dropped"):
+        lines.append("## Pipette-frames without an anchor")
+        lines.append("")
+        lines.append("| frame | pipette | reason |")
+        lines.append("|---|---|---|")
+        for item in anchors["dropped"]:
+            pipette = IDENTITY_SHORT.get(item["class"], item["class"])
+            lines.append(f"| {item['raw_frame']} | {pipette} | {item['reason']} |")
+        lines.append("")
     for arm in report["arms"]:
         lines.append(f"## {arm['tracks']}: per pipette-frame")
         lines.append("")
         lines.append(
             "| frame | state | pipette | views | residual max px | track | match | tip error cm "
-            "| measure | axis cm |"
+            "| along cm | across cm | measure | axis cm |"
         )
-        lines.append("|---|---|---|---|---|---|---|---|---|---|")
+        lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|")
         for cell in arm["cells"]:
             if cell["tip_cm"] is None:
                 continue
             pipette = IDENTITY_SHORT.get(cell["class"], cell["class"])
+            measure = cell.get("measure") or "-"
+            if cell.get("other_end_nearer"):
+                measure += " (other end nearer)"
             lines.append(
                 f"| {cell['raw_frame']} | {cell['state']} | {pipette} "
                 f"| {','.join(cell['views'])} | {_fmt(cell['residual_max_px'])} | "
                 f"{cell['track_id'] or '-'} | {cell['match']} | "
-                f"{_fmt(cell.get('tip_error_cm'))} | {cell.get('measure') or '-'} | "
+                f"{_fmt(cell.get('tip_error_cm'))} | {_fmt(cell.get('along_cm'))} | "
+                f"{_fmt(cell.get('across_cm'))} | {measure} | "
                 f"{_fmt(cell.get('axis_distance_cm'))} |"
             )
         lines.append("")
@@ -2519,10 +2772,23 @@ def scoreboard_markdown(report: dict[str, Any]) -> str:
         "track has not resolved which end is the tip (nearer_endpoint_unresolved), and "
         "`position_cm` for a point track (point_to_midpoint: the box-centre tracker's point is "
         "the middle of the shaft, so this distance is expected near half a pipette length and is "
-        "not a tip error); axis cm = for a point track with a direction, the perpendicular "
-        "distance from the anchor to that axis. pipette IDF1 = identity F1 between the plunger "
-        "colour I named and the track ids over the named pipette-frames. "
-        + report["claim_boundary"]
+        "not a tip error). along cm = the signed part of that error along the track's axis, "
+        "positive when the anchor lies beyond the track's tip end (the mask stopped short: a "
+        "disposable tip is attached and SAM3 stops at the body's cone, so a steady 3-7 cm here is "
+        "the tip's length, not a geometry error); across cm = the perpendicular part; attached = "
+        f"anchors with along > {ATTACHED_ALONG_CM:g} cm over anchors with a split. across is the "
+        "error with the whole along-axis part removed, so it is the generous reading; raw is the "
+        "pre-registered one. other end nearer = a resolved track whose other end is nearer the "
+        "anchor than its named tip (along is then about minus one pipette length): the track "
+        "named the wrong end, or the clicks sit at the butt because I accepted a suggested marker "
+        "that sat on the plunger end, and the number does not say which. marked h = cells with "
+        "no click: the tip not visible, or, when I click only to accept a suggested marker that "
+        "sits on the tip, the marker not on the tip. It is not a count of hidden tips. "
+        "axis cm = for a point track with a direction, the perpendicular "
+        "distance from the anchor to that axis. pipette IDF1 keys = identity F1 between the "
+        "plunger colour I named and the track ids over the named pipette-frames; by cell class = "
+        "the same with the detector's class of the clicked cell standing in for my key, which "
+        "inherits the detector's class confusions. " + report["claim_boundary"]
     )
     lines.append("")
     return "\n".join(lines)
@@ -2556,7 +2822,12 @@ def run_score(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def export_record(
-    *, workspace_dir: Path, record_path: Path, output: Path, repository_root: Path
+    *,
+    workspace_dir: Path,
+    record_path: Path,
+    output: Path,
+    repository_root: Path,
+    protocol: str | None = None,
 ) -> dict[str, Any]:
     workspace = load_workspace(workspace_dir)
     if not Path(record_path).is_file():
@@ -2609,6 +2880,7 @@ def export_record(
             "sha256": fs_common.sha256_file(Path(record_path)),
         },
         "frame_convention": workspace["frame_convention"],
+        "protocol": protocol,
         "counts": counts,
         "clicks": entries,
         "claim_boundary": CLAIM_BOUNDARY,
@@ -2616,7 +2888,9 @@ def export_record(
         "notes": (
             "Written by battle-finebio-tips export. tip_px is the clicked full-frame pixel (raw "
             "video pixels of the view), never the suggested tip; author and reviewed_at come from "
-            "the decisions file and stay null until filled in. Crops stay under runs/."
+            "the decisions file and stay null until filled in. protocol, when given, is how I "
+            "chose between a click and h in this session, and so what hidden means here. Crops "
+            "stay under runs/."
         ),
     }
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -2705,6 +2979,14 @@ def build_parser() -> argparse.ArgumentParser:
     export.add_argument("--workspace", type=Path, required=True)
     export.add_argument("--record", type=Path, required=True)
     export.add_argument("--output", type=Path, required=True)
+    export.add_argument(
+        "--protocol",
+        default=None,
+        help=(
+            "one paragraph on how I chose between a click and h in this session (what hidden "
+            "means); written as the record's `protocol` field"
+        ),
+    )
     return parser
 
 
@@ -2724,6 +3006,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 record_path=Path(args.record),
                 output=Path(args.output),
                 repository_root=Path.cwd().resolve(),
+                protocol=args.protocol,
             )
             print(f"Human record: {args.output} ({json.dumps(doc['counts'])})")
     except (OSError, ValueError, KeyError) as error:

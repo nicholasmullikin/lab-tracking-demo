@@ -76,6 +76,9 @@ AXIS_RANSAC_MAX_INLIER_PX = 6.0
 AXIS_WIDTH_BINS = 48
 AXIS_WIDTH_MIN_BIN_PX = 2.0
 AXIS_WIDTH_MIN_BIN_PIXELS = 3
+# The fraction of the axis length at each end over which the end width is measured.
+AXIS_END_BAND = 0.2
+AXIS_END_MIN_PIXELS = 6
 PoseValidity = Callable[[int], bool]
 
 
@@ -256,6 +259,10 @@ class MaskAxis:
     residual_px: float | None
     method: str
     reason: str | None = None
+    # Sep 29 (tip / butt by the width profile): the median across-axis width over the band
+    # `AXIS_END_BAND` of the axis length at each end, in the order of `axis_px`; None on a
+    # compact mask or when a band holds too few pixels.
+    end_widths_px: tuple[float, float] | None = None
 
     def provenance(self) -> dict[str, Any]:
         out: dict[str, Any] = {"axis_method": self.method}
@@ -429,7 +436,36 @@ def mask_axis_measurements(
     along, across = _axis_frame(sample, centre, direction)
     width = _width_along_axis(along, across)
     ends = _axis_endpoints(sample, centre, direction, band_px=max(0.75 * width, 1.0))
-    return MaskAxis(ends, round(elongation, 3), round(width, 1), residual, method)
+    end_widths = _end_widths(centre, direction, ends, along, across)
+    return MaskAxis(
+        ends, round(elongation, 3), round(width, 1), residual, method, end_widths_px=end_widths
+    )
+
+
+def _end_widths(
+    centre: np.ndarray,
+    direction: np.ndarray,
+    ends: tuple[Vec2, Vec2],
+    along: np.ndarray,
+    across: np.ndarray,
+    band: float = AXIS_END_BAND,
+) -> tuple[float, float] | None:
+    """The median across-axis width over the first and last `band` of the axis length, in
+    the order of `ends` (Sep 29: the wide end of an 8-channel pipette is its manifold, the
+    wide end of a single-channel one its grip; either names the tip / butt)."""
+    t_ends = [float((np.asarray(e, dtype=np.float64) - centre) @ direction) for e in ends]
+    span = abs(t_ends[1] - t_ends[0])
+    if span < 1e-6:
+        return None
+    widths = []
+    for t_end, t_other in (t_ends, t_ends[::-1]):
+        sign = 1.0 if t_other > t_end else -1.0
+        inside = (along - t_end) * sign <= band * span
+        inside &= (along - t_end) * sign >= -0.5
+        if int(inside.sum()) < AXIS_END_MIN_PIXELS:
+            return None
+        widths.append(round(_width_along_axis(along[inside], across[inside]), 1))
+    return widths[0], widths[1]
 
 
 def filter_mask_components(
@@ -589,6 +625,7 @@ def worker_to_observations(
                     mask_elongation=axis.elongation,
                     mask_width_px=axis.width_px,
                     mask_axis_residual_px=axis.residual_px,
+                    mask_end_widths_px=axis.end_widths_px,
                     sam3_object_score=(
                         None if obj.object_score is None else round(float(obj.object_score), 4)
                     ),

@@ -333,3 +333,107 @@ def test_cli_report_and_config_write_their_files(tmp_path: Path, fixtures):
     doc = json.loads(config.read_text())
     assert abs(doc["length_cm"] - 25.0) < 0.3 and abs(doc["stand_spacing_cm"] - 3.0) < 0.2
     assert doc["provenance"]["run_dir"] == str(out)
+
+
+def _tip_box(view: str, frame: int, cam, body_end, tip_end, cls: str) -> FineBioObservation:
+    pixels = cam.project(np.stack([body_end, tip_end]))
+    x0, y0 = pixels.min(axis=0) - 6.0
+    x1, y1 = pixels.max(axis=0) + 6.0
+    return _det(view, frame, cls, (x0, y0, x1, y1))
+
+
+def test_two_state_rest_lengths_split_by_the_attached_tip_and_write_the_config(
+    tmp_path: Path, fixtures
+):
+    """Sep 29, disposable tips. A yellow pipette rests bare for 40 frames (the bare mode),
+    then moves for 30 frames carrying a 5 cm tip that two fixed views see as a `yellow_tip`
+    box on the body's end: the all-frames population measures the tip as the extended minus
+    the bare length, and `tips-config` writes `bare_length_cm` and `tip_length_cm` beside the
+    old keys, naming the assumed classes. Without tip boxes (the v2 rows) the report has one
+    state and no tip estimate."""
+    from battle.finebio_observations import write_observations
+    from battle.finebio_stand import tip_length_report, two_state_config
+
+    cams = fixtures.fixed_cameras()
+    bare, tip = 22.0, 5.0
+    top, bottom = _standing(10.0, 20.0, length=bare)
+    rest = list(range(1800, 1840))
+    rows = _rows_for_segment(cams, "yellow_pipette", top, bottom, rest, seed=1)
+    # Then carried flat above the bench, 1 cm a frame along y, the tip on the +x end.
+    moving = list(range(1840, 1870))
+    for f in moving:
+        butt = np.array([-5.0, -20.0 + (f - 1840), -12.0])
+        body_end = butt + np.array([bare, 0.0, 0.0])
+        tip_end = body_end + np.array([tip, 0.0, 0.0])
+        rows += _rows_for_segment(cams, "yellow_pipette", butt, body_end, [f], seed=f)
+        for view in ("T1", "T4"):
+            rows.append(_tip_box(view, f, cams[view], body_end, tip_end, "yellow_tip"))
+    settings = StandSettings(min_run_frames=20, fixed_views=tuple(cams))
+    report, records = tip_length_report(
+        rows, cams, trial="P03_01_01", settings=settings, gate_px=30.0, min_attached_views=2
+    )
+    block = report["per_class"]["yellow_pipette"]
+    assert block["bare_body_length_cm"]["n"] == 40
+    assert abs(block["bare_body_length_cm"]["median"] - bare) < 0.3
+    assert block["frames_with_tip_attached"]["ge_2_views"] == 0  # no tip at rest
+    all_frames = block["all_frames_with_tip"]
+    assert all_frames["frames"] == 30 and all_frames["views"] == {"T1": 30, "T4": 30}
+    # The extension runs to the far edge of the detector box (6 px of slack here), so the
+    # measured tip is the true one plus that slack in cm: biased long, as documented.
+    assert tip <= all_frames["difference_cm"]["median"] < tip + 1.2
+    assert bare + tip <= all_frames["extended_length_cm"]["median"] < bare + tip + 1.2
+    assert tip - 0.3 <= block["tip_length_estimate_cm"] < tip + 1.2
+    assert block["tip_class"] == "yellow_tip"
+    assert block["tip_length_basis"].startswith("all frames attached in >= 2 views: the extended")
+    assert len(records) == 40 and all(r["attached_views"] == [] for r in records)
+    # The v2 rows: no tip box anywhere, one state.
+    plain = [r for r in rows if r.object_class != "yellow_tip"]
+    one_state, _ = tip_length_report(
+        plain, cams, trial="P03_01_01", settings=settings, gate_px=30.0, min_attached_views=2
+    )
+    assert one_state["per_class"]["yellow_pipette"]["tip_length_estimate_cm"] is None
+    assert one_state["per_class"]["yellow_pipette"]["all_frames_with_tip"]["frames"] == 0
+    # The config: bare from the rest mode, the yellow tip measured, the others assumed.
+    config = {
+        "length_cm": 23.0,
+        "length_spread_cm": 2.0,
+        "provenance": {"per_trial": {"X": {"per_pipette_median_cm": {"red_pipette": 24.5}}}},
+        "colour": {"kept": True},
+    }
+    doc = two_state_config(config, [report], report_paths=["tips.json"])
+    assert doc["colour"] == {"kept": True} and doc["length_cm"] == 23.0
+    assert abs(doc["bare_length_cm"]["yellow_pipette"] - bare) < 0.3
+    assert doc["bare_length_cm"]["red_pipette"] == 24.5  # the single-state median, named
+    assert "single-state" in doc["two_state_provenance"]["bare_basis"]["red_pipette"]
+    assert doc["bare_length_cm"]["blue_pipette"] == 23.0  # the shared length, named
+    assert tip - 0.3 <= doc["tip_length_cm"]["yellow_tip"] < tip + 1.2
+    assert doc["tip_length_cm"]["blue_tip"] == doc["tip_length_cm"]["yellow_tip"]
+    assert doc["two_state_provenance"]["tip_basis"]["blue_tip"].startswith("assumed")
+    # And through the CLI, writing beside the old keys.
+    obs = tmp_path / "observations.jsonl"
+    write_observations(rows, obs)
+    out = tmp_path / "tips"
+    assert (
+        main(
+            [
+                "tips",
+                "--observations",
+                str(obs),
+                "--cameras",
+                str(FIXTURE_DIR / "cameras.json"),
+                "--output",
+                str(out),
+                "--min-run-frames",
+                "20",
+            ]
+        )
+        == 0
+    )
+    written = json.loads((out / "tip_lengths.json").read_text())
+    assert tip - 0.3 <= written["per_class"]["yellow_pipette"]["tip_length_estimate_cm"] < tip + 1.2
+    assert (out / "tip_lengths.md").read_text().startswith("# Two-state rest lengths")
+    cfg = tmp_path / "pipettes.json"
+    cfg.write_text(json.dumps(config))
+    assert main(["tips-config", "--config", str(cfg), "--tips", str(out / "tip_lengths.json")]) == 0
+    updated = json.loads(cfg.read_text())
+    assert set(updated) >= {"bare_length_cm", "tip_length_cm", "two_state_provenance", "colour"}

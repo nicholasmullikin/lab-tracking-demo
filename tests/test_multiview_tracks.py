@@ -17,6 +17,7 @@ from battle.multiview_schemas import FineBioObservation, Track3D, TrackEvent, re
 from battle.multiview_tracks import (
     LINE_CLASS_SHORTHANDS,
     Gates,
+    LinePrior,
     TrackerParams,
     build_container_volumes,
     convex_hull,
@@ -1234,7 +1235,8 @@ def test_e_soft_prior_completes_a_truncated_extent_and_reports_the_deviation(rig
     cams, _fpv = rig
     rng = np.random.default_rng(5)
     frames = list(range(10))
-    length = PRIOR.length_for("yellow_pipette")
+    # The two-state prior (Sep 29) completes a bare body to `bare_for`, the no-tip rest mode.
+    length = PRIOR.bare_for("yellow_pipette")
     a, b = _segment([5.0, 0.0, -12.0], [0.2, 0.1, -1.0], length)
     # Every view sees the middle 60%: the visible extent is 0.6 of the prior, both ends
     # equally supported, so the prior completes both ends by half.
@@ -1767,3 +1769,317 @@ def test_n_a_track_whose_votes_flip_to_another_colour_splits_into_a_new_id(rig) 
     assert row.line_update == "fit" and row.extent_clamped is False
     back = Track3D.model_validate_json(row.model_dump_json(exclude_none=True))
     assert back == row
+
+
+# --------------------------------------------------------------------------- Sep 29 disposable tips
+#
+# A disposable tip is attached to the pipette, picked from a tip rack and ejected into the
+# trash; SAM3's body mask usually stops at the cone, so the axis "tip" is the body end, a bias
+# of one tip length exactly when the tip matters. The detector's `*_tip` boxes carry the tip.
+# Each test here fails on the v2 tracker and passes on this one.
+
+TWO_STATE_PRIOR = LinePrior(
+    length_cm=22.0,
+    spread_cm=1.5,
+    per_class={"blue_pipette": 22.0, "yellow_pipette": 22.0, "red_pipette": 22.0},
+    source="test",
+    bare={"blue_pipette": 22.0, "yellow_pipette": 22.0, "red_pipette": 22.0},
+    tip={"blue_tip": 6.0, "yellow_tip": 5.0, "red_tip": 4.0},
+)
+
+
+def _tip_box_row(cams, view: str, frame: int, body_end, tip_end, cls: str, *, half_px=6.0):
+    """A `*_tip` detector box around the projected disposable tip (body end to tip end)."""
+    pixels = cams[view].project(np.stack([body_end, tip_end]))
+    x0, y0 = pixels.min(axis=0) - half_px
+    x1, y1 = pixels.max(axis=0) + half_px
+    return FineBioObservation(
+        view=view,
+        frame_index=frame,
+        slot=f"{cls}#0",
+        object_class=cls,
+        detector_score=0.7,
+        box_xyxy_px=(float(x0), float(y0), float(x1), float(y1)),
+        pose_valid=True,
+        source="detector",
+    )
+
+
+def test_o_an_attached_tip_box_extends_the_extent_names_the_tip_and_sets_the_state(rig) -> None:
+    """A blue pipette flat on the bench with a 6 cm disposable tip on. Four views see the
+    body mask; T2 and T4 also see a `blue_tip` detector box on the body's end for the first
+    25 frames, then the tip is gone. With the tip boxes attached the written segment reaches
+    the tip (bare + tip), the tip end is `endpoints_cm[0]` on the box basis with no hand in
+    sight, `tip_attached` turns on after five attached frames and off 15 frames after the
+    last one, the tip class casts a vote, and the rows say which views attached. With the
+    adapter off (the v2 tracker) none of that exists and the segment is the bare body."""
+    cams, _fpv = rig
+    rng = np.random.default_rng(53)
+    frames = list(range(43))
+    prior = TWO_STATE_PRIOR
+    bare, tip_len = prior.bare_for("blue_pipette"), prior.tip_for("blue_tip")
+    direction = _unit([1.0, 0.15, 0.0])
+    butt = np.array([-12.0, -8.0, -1.0])
+    body_end = butt + direction * bare
+    tip_end = body_end + direction * tip_len
+    rows = []
+    for f in frames:
+        for v in ("T1", "T2", "T4", "T5"):
+            rows.append(_axis_row(cams, v, f, butt, body_end, "blue_pipette", rng=rng))
+        if f < 25:
+            for v in ("T2", "T4"):
+                rows.append(_tip_box_row(cams, v, f, body_end, tip_end, "blue_tip"))
+    params = TrackerParams(observation_source="auto", line_classes=("blue_pipette",))
+    out = run_tracker(rows, cams, lambda f: None, frames, params, line_prior=prior)
+    assert out.metrics["per_class"]["pipette"]["tracks_born"] == 1
+    pipette = {r.frame_index: r for r in out.rows if r.object_class == "pipette"}
+    assert set(pipette) == set(frames)
+    for f in range(25):
+        r = pipette[f]
+        assert r.tip_attached_views == ("T2", "T4"), f
+        assert r.tip_class == "blue_tip", f
+        assert _row_length(r) == pytest.approx(bare + tip_len, abs=1.5), f
+        if f >= 4:
+            # The box names the tip once the state is on (not on one frame's box).
+            assert r.tip_resolved is True and r.tip_basis == "tip_box", f
+            assert np.linalg.norm(np.array(r.endpoints_cm[0]) - tip_end) < 1.5, f
+            assert np.linalg.norm(np.array(r.endpoints_cm[1]) - butt) < 1.5, f
+        else:
+            assert r.tip_resolved is False, f
+    # The state: None until five of eight frames carry a tip, True from the fifth frame.
+    assert pipette[0].tip_attached is None and pipette[3].tip_attached is None
+    assert all(pipette[f].tip_attached is True for f in range(4, 39))
+    # No tip box from frame 25: the state holds the tip on the completed extent (the body
+    # masks alone are one tip length short of the expected length) until 15 frames pass.
+    for f in range(25, 39):
+        assert pipette[f].tip_attached_views is None, f
+        assert _row_length(r := pipette[f]) == pytest.approx(bare + tip_len, abs=1.5), f
+        assert r.tip_class == "blue_tip"
+    # The state is read after the frame's fit, so frame 39 still wrote the tipped length;
+    # from frame 40 the expected length is the bare body and the blend follows within two.
+    assert pipette[39].tip_attached is False and pipette[39].tip_class is None
+    assert _row_length(pipette[41]) < bare + 0.5 * tip_len
+    assert _row_length(pipette[42]) == pytest.approx(bare, abs=1.0)
+    metrics = _lines_metrics(out)
+    tips = metrics["tips"]
+    assert tips["enabled"] and tips["line_frames_with_attached_tip"] == 25
+    assert tips["attached_by_view"] == {"T2": 25, "T4": 25}
+    assert tips["attached_by_mode"] == {"axis": 50} and tips["attached_by_tip_class"] == {
+        "blue_tip": 50
+    }
+    assert tips["state_transitions"] == {"on": 1, "off": 1}
+    assert tips["tip_class_votes"] == 50 and tips["tracks_ever_attached"] == 1
+    assert metrics["tip_resolutions_by_basis"] == {"tip_box": 1}
+    (votes,) = metrics["class_votes_by_track"].values()
+    assert votes == {"blue_pipette": len(frames) * 4 + 50}
+    # The rows round-trip through the schema with the new fields.
+    back = Track3D.model_validate_json(pipette[10].model_dump_json(exclude_none=True))
+    assert back == pipette[10]
+    # The adapter off: the v2 tracker. No tip field, no tip vote, the bare body written.
+    off = run_tracker(
+        rows,
+        cams,
+        lambda f: None,
+        frames,
+        TrackerParams(
+            observation_source="auto", line_classes=("blue_pipette",), line_tip_boxes=False
+        ),
+        line_prior=prior,
+    )
+    plain = [r for r in off.rows if r.object_class == "pipette"]
+    assert plain and all(r.tip_attached is None and r.tip_attached_views is None for r in plain)
+    assert all(r.tip_resolved is False and r.tip_class is None for r in plain)
+    assert np.median([_row_length(r) for r in plain]) == pytest.approx(bare, abs=1.0)
+    assert _lines_metrics(off)["tips"]["enabled"] is False
+    (votes_off,) = _lines_metrics(off)["class_votes_by_track"].values()
+    assert votes_off == {"blue_pipette": len(frames) * 4}
+
+
+def test_o2_a_box_only_view_attaches_a_tip_on_the_track_s_projected_body(rig) -> None:
+    """Trial 1's head camera: the blue pipette has no SAM3 slot there, so its observation is
+    the detector box alone (no axis), while the `blue_tip` box is seen. Once the track is a
+    line the tip attaches on the track's projected body (`track` mode): it counts for the
+    state, the vote and the tip end, and changes no geometry."""
+    cams, _fpv = rig
+    rng = np.random.default_rng(59)
+    frames = list(range(20))
+    prior = TWO_STATE_PRIOR
+    bare, tip_len = prior.bare_for("blue_pipette"), prior.tip_for("blue_tip")
+    direction = _unit([1.0, 0.15, 0.0])
+    butt = np.array([-12.0, -8.0, -1.0])
+    body_end = butt + direction * bare
+    tip_end = body_end + direction * tip_len
+    rows = []
+    for f in frames:
+        for v in ("T2", "T4", "T5"):
+            rows.append(_axis_row(cams, v, f, butt, body_end, "blue_pipette", rng=rng))
+        # T1: a detector box over the body, no mask, and the tip box beyond the body end.
+        rows.append(
+            _box_row(cams, "T1", f, 0.5 * (butt + body_end), "blue_pipette", size=(260, 40))
+        )
+        rows.append(_tip_box_row(cams, "T1", f, body_end, tip_end, "blue_tip"))
+    params = TrackerParams(observation_source="auto", line_classes=("blue_pipette",))
+    out = run_tracker(rows, cams, lambda f: None, frames, params, line_prior=prior)
+    assert out.metrics["per_class"]["pipette"]["tracks_born"] == 1
+    pipette = {r.frame_index: r for r in out.rows if r.object_class == "pipette"}
+    with_t1 = [f for f in frames if "T1" in pipette[f].support_views]
+    assert len(with_t1) >= 15
+    attached = [f for f in frames if pipette[f].tip_attached_views == ("T1",)]
+    assert len(attached) >= 14 and attached[0] <= 2
+    on = [f for f in attached if pipette[f].tip_attached is True]
+    assert len(on) >= 10 and all(pipette[f].tip_basis == "tip_box" for f in on)
+    # Born as the bare body and completed from the better-supported end until the box names
+    # the tip; the first frames after the state turns on blend towards it, then sit on it.
+    for f in on[2:]:
+        assert np.linalg.norm(np.array(pipette[f].endpoints_cm[0]) - tip_end) < 1.0, f
+        assert _row_length(pipette[f]) == pytest.approx(bare + tip_len, abs=1.0), f
+    tips = _lines_metrics(out)["tips"]
+    assert tips["attached_by_mode"].get("track", 0) >= 14 and tips["attached_by_view"] == {
+        "T1": tips["attached_by_mode"]["track"]
+    }
+    assert pipette[frames[-1]].tip_attached is True
+
+
+def _end_width_rows(cams, view, frame, a, b, cls, *, rng, wide_at, ratio=3.0):
+    """An axis row whose mask is wide at the end nearer the 3D point `wide_at`."""
+    row = _axis_row(cams, view, frame, a, b, cls, rng=rng)
+    assert row.mask_axis_px is not None and row.mask_width_px is not None
+    wide_px = cams[view].project(np.asarray(wide_at, dtype=float))[0]
+    ends = np.asarray(row.mask_axis_px)
+    wide_end = int(np.argmin(np.linalg.norm(ends - wide_px, axis=1)))
+    narrow = float(row.mask_width_px)
+    widths = [narrow, narrow]
+    widths[wide_end] = narrow * ratio
+    return row.model_copy(update={"mask_end_widths_px": (widths[0], widths[1])})
+
+
+def test_q_the_width_profile_names_the_tip_by_the_class_rule_and_yields_to_a_hand(rig) -> None:
+    """The click scorer's flips: every 8-channel anchor sat at the track's other end (the
+    tracker called the plunger end the tip; the manifold with the tips is the other end),
+    and the single-channel rest pipettes flipped when a hand box passed over one end. The
+    mask's end widths decide with a class rule: the 8-channel's wide end is the manifold,
+    the tip; a single-channel pipette's wide end is the grip, the butt. Without the widths
+    (the v2 rows) a pipette with no hand near it stays unresolved; with them it is resolved
+    on the `width` basis after the vote window's margin, and a hand track still overrules."""
+    cams, _fpv = rig
+    rng = np.random.default_rng(61)
+    frames = list(range(12))
+    length = PRIOR.length_for("8_channel_pipette")
+    a, b = _segment([5.0, 2.0, -1.0], [1.0, 0.2, 0.0], length)  # flat, a -> b
+    y0, y1 = _segment([5.0, -8.0, -1.0], [1.0, 0.2, 0.0], PRIOR.length_for("yellow_pipette"))
+    rows = []
+    for f in frames:
+        for v in FIXED:
+            # The 8-channel's manifold (wide) is at b; the yellow pipette's grip (wide) is at y1.
+            rows.append(_end_width_rows(cams, v, f, a, b, "8_channel_pipette", rng=rng, wide_at=b))
+            rows.append(_end_width_rows(cams, v, f, y0, y1, "yellow_pipette", rng=rng, wide_at=y1))
+    params = TrackerParams(
+        observation_source="auto", line_classes=("8_channel_pipette", "yellow_pipette")
+    )
+    out = run_tracker(rows, cams, lambda f: None, frames, params)
+    assert out.metrics["per_class"]["pipette"]["tracks_born"] == 2
+    by_class = defaultdict(dict)
+    for r in out.rows:
+        if r.object_class == "pipette":
+            by_class[r.observed_class][r.frame_index] = r
+    eight, yellow = by_class["8_channel_pipette"], by_class["yellow_pipette"]
+    # Five views vote every frame: the margin of 5 is met on the first frame's votes.
+    assert eight[0].tip_resolved is False  # born before any vote
+    for f in frames[1:]:
+        assert eight[f].tip_resolved is True and eight[f].tip_basis == "width", f
+        assert np.linalg.norm(np.array(eight[f].endpoints_cm[0]) - b) < 1.0, f  # the manifold
+        assert yellow[f].tip_resolved is True and yellow[f].tip_basis == "width", f
+        assert np.linalg.norm(np.array(yellow[f].endpoints_cm[0]) - y0) < 1.0, f  # not the grip
+    metrics = _lines_metrics(out)
+    assert metrics["tip_resolutions_by_basis"] == {"width": 2}
+    assert metrics["tip_basis_frames"]["width"] == 2 * (len(frames) - 1)
+    assert metrics["width_basis"]["votes_cast"] == 2 * 5 * (len(frames) - 1)  # not at birth
+    # The v2 rows (no end widths): nothing names the tip.
+    plain = [r.model_copy(update={"mask_end_widths_px": None}) for r in rows]
+    v2 = run_tracker(plain, cams, lambda f: None, frames, params)
+    assert all(r.tip_resolved is False for r in v2.rows if r.object_class == "pipette")
+    assert _lines_metrics(v2)["tip_basis_frames"] == {"unresolved": 2 * len(frames)}
+    # A hand track at the yellow pipette's grip agrees with the widths and takes over as the
+    # stronger basis; a hand track at the 8-channel's manifold end (a wrong reading the
+    # widths would contradict) still wins: the width basis is a tie-breaker, not a veto.
+    hand_rows = [
+        *(
+            _box_row(cams, v, f, y1 + np.array([0.0, 0.0, 1.0]), "right_hand", size=(220, 220))
+            for f in frames
+            for v in FIXED[:4]
+        ),
+        *(
+            _box_row(cams, v, f, b + np.array([0.0, 0.0, 1.0]), "left_hand", size=(220, 220))
+            for f in frames
+            for v in FIXED[:4]
+        ),
+    ]
+    held = run_tracker(
+        rows + hand_rows,
+        cams,
+        lambda f: None,
+        frames,
+        TrackerParams(
+            observation_source="auto",
+            held=True,
+            line_classes=("8_channel_pipette", "yellow_pipette"),
+        ),
+    )
+    by_class = defaultdict(dict)
+    for r in held.rows:
+        if r.object_class == "pipette":
+            by_class[r.observed_class][r.frame_index] = r
+    for f in frames[2:]:
+        assert by_class["yellow_pipette"][f].tip_basis == "hand_track", f
+        assert np.linalg.norm(np.array(by_class["yellow_pipette"][f].endpoints_cm[0]) - y0) < 1.0
+        assert by_class["8_channel_pipette"][f].tip_basis == "hand_track", f
+        assert np.linalg.norm(np.array(by_class["8_channel_pipette"][f].endpoints_cm[0]) - a) < 1.0
+    # The variant (`line_width_over_hand`): a decisive width vote outranks the hand, so the
+    # 8-channel's tip goes back to the manifold and the row says so.
+    variant = run_tracker(
+        rows + hand_rows,
+        cams,
+        lambda f: None,
+        frames,
+        TrackerParams(
+            observation_source="auto",
+            held=True,
+            line_classes=("8_channel_pipette", "yellow_pipette"),
+            line_width_over_hand=True,
+        ),
+    )
+    eight_v = {r.frame_index: r for r in variant.rows if r.observed_class == "8_channel_pipette"}
+    for f in frames[2:]:
+        assert eight_v[f].tip_basis == "width", f
+        assert np.linalg.norm(np.array(eight_v[f].endpoints_cm[0]) - b) < 1.0, f
+
+
+def test_p_two_state_prior_loads_and_the_old_file_shape_still_does(tmp_path) -> None:
+    doc = {
+        "length_cm": 23.2,
+        "length_spread_cm": 2.5,
+        "bare_length_cm": {"blue_pipette": 21.9, "yellow_pipette": 22.0},
+        "tip_length_cm": {"blue_tip": 6.1, "yellow_tip": 5.2},
+        "provenance": {"per_trial": {"P03": {"per_pipette_median_cm": {"yellow_pipette": 22.0}}}},
+    }
+    path = tmp_path / "pipettes.json"
+    path.write_text(json.dumps(doc))
+    prior = load_line_prior(path)
+    assert prior.two_state
+    assert prior.length_for("yellow_pipette") == pytest.approx(22.0)
+    assert prior.bare_for("blue_pipette") == pytest.approx(21.9)
+    assert prior.bare_for("red_pipette") == pytest.approx(23.2)  # falls back to length_for
+    assert prior.tip_for("blue_tip") == pytest.approx(6.1)
+    assert prior.tip_for("red_tip") == pytest.approx(0.5 * (6.1 + 5.2))  # median of the named
+    assert prior.tip_class_for("blue_pipette") == "blue_tip"
+    assert prior.expected_length("blue_pipette") == pytest.approx(21.9)
+    assert prior.expected_length("blue_pipette", attached=True) == pytest.approx(28.0)
+    assert prior.expected_length("blue_pipette", "yellow_tip", attached=True) == pytest.approx(27.1)
+    assert prior.as_dict()["tip_length_cm"] == {"blue_tip": 6.1, "yellow_tip": 5.2}
+    # The old file shape: one state, the tip length zero.
+    old = {k: v for k, v in doc.items() if k not in ("bare_length_cm", "tip_length_cm")}
+    path.write_text(json.dumps(old))
+    single = load_line_prior(path)
+    assert not single.two_state and single.tip_for("blue_tip") == 0.0
+    assert single.expected_length("yellow_pipette", attached=True) == pytest.approx(22.0)
+    assert single.bare_for("yellow_pipette") == single.length_for("yellow_pipette")

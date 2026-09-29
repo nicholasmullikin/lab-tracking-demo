@@ -22,6 +22,8 @@ merged. `loo_residual` is the label-free score of the plan (every axis view agai
 from the others, in px and degrees); `centroid_point` / `centroid_loo_residual` run today's
 box-centre method through `triangulate_pixels` for the same views so the scoreboard can
 compare. `line_distance` and `line_cost` are the association gate for the tracker extension.
+`attach_tip_box` (Sep 29) is the 2D test that a `*_tip` detector box sits on one end of a
+mask axis, so the disposable tip the body mask leaves out can extend that view's extent.
 
 Conventions, exactly those of `finebio_cameras` / `finebio_slice` / `multiview_tracks`: world
 in board centimetres with z into the bench (height is ``-z``); pixels are raw video pixels
@@ -202,6 +204,72 @@ class Extent:
 
 
 CamObs = tuple[Camera, AxisObs]
+
+
+@dataclass(frozen=True)
+class TipAttachment:
+    """`attach_tip_box` result (Sep 29, disposable tips): the index of the axis endpoint the
+    tip box lies beyond, the axis extended along itself to the far edge of the box, the box
+    centre's perpendicular distance to the axis line and its distance beyond the body end
+    (px), and the gap between the body end and the box's near edge along the axis (negative
+    when the box overlaps the body end)."""
+
+    end: int
+    axis_px: np.ndarray
+    across_px: float
+    beyond_px: float
+    gap_px: float
+
+
+def attach_tip_box(
+    axis_px: np.ndarray,
+    box_xyxy: Sequence[float],
+    gate_px: float,
+    *,
+    side: int | None = None,
+) -> TipAttachment | None:
+    """Does a detector tip box sit on the end of a mask axis, in one view?
+
+    A disposable tip is attached to the pipette body. SAM3's body mask usually stops at the
+    cone (the head camera, the side views), so the tip shows as a `*_tip` detector box beyond
+    one end of the axis; from above (T5) the mask often covers the tip too, and the box then
+    sits on the end, its centre a little inside. The box is attached when its centre lies
+    within `gate_px` of the axis line and within `gate_px` of one endpoint along the axis on
+    either side (never deeper inside the body), and its near edge along the axis is within
+    `gate_px` of that endpoint (adjacent, not a loose tip further along the same line).
+    `side` restricts the attachment to that endpoint index (the tip side when the track knows
+    it). Returns the attachment with the axis extended to the far edge of the box when that
+    edge lies beyond the end (`beyond_px` is negative for a centre inside), or None."""
+    ends = np.asarray(axis_px, dtype=np.float64).reshape(2, 2).copy()
+    segment = ends[1] - ends[0]
+    length = float(np.linalg.norm(segment))
+    if length < 1e-9:
+        return None
+    unit = segment / length
+    normal = np.array([-unit[1], unit[0]])
+    x0, y0, x1, y1 = (float(v) for v in box_xyxy)
+    centre = np.array([0.5 * (x0 + x1), 0.5 * (y0 + y1)])
+    across = abs(float((centre - ends[0]) @ normal))
+    if across > gate_px:
+        return None
+    t = float((centre - ends[0]) @ unit)
+    if gate_px <= t <= length - gate_px:
+        return None
+    end = 1 if t >= 0.5 * length else 0
+    if side is not None and end != side:
+        return None
+    corners = np.array([[x0, y0], [x1, y0], [x0, y1], [x1, y1]])
+    along = (corners - ends[0]) @ unit
+    if end == 1:
+        gap, far, beyond = float(along.min()) - length, float(along.max()), t - length
+    else:
+        gap, far, beyond = -float(along.max()), float(along.min()), -t
+    if gap > gate_px:
+        return None
+    extended = ends.copy()
+    if (end == 1 and far > length) or (end == 0 and far < 0.0):
+        extended[end] = ends[0] + far * unit
+    return TipAttachment(end=end, axis_px=extended, across_px=across, beyond_px=beyond, gap_px=gap)
 
 
 # --------------------------------------------------------------------------- back-projection

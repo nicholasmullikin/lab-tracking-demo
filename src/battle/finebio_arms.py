@@ -1316,6 +1316,9 @@ def _remeasure_chunk(
                     "mask_elongation": axis.elongation,
                     "mask_width_px": axis.width_px,
                     "mask_axis_residual_px": axis.residual_px,
+                    "mask_end_widths_px": (
+                        None if axis.end_widths_px is None else list(axis.end_widths_px)
+                    ),
                     "provenance": axis.provenance(),
                 },
             )
@@ -1377,28 +1380,42 @@ def remeasure_observations(
     jobs: int = 8,
     chunk_size: int = 500,
     summary_classes: Sequence[str] = PIPETTE_CLASSES,
+    classes: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     """Re-read the masks behind an arm's `observations.jsonl` and rewrite every SAM3 row with
     the Sep 28 axis fields (`mask_axis_px`, `mask_elongation`, `mask_width_px`,
-    `mask_axis_residual_px`, provenance `axis_method` / `axis_reason`), every other field
-    identical: detector rows are copied byte for byte, a SAM3 row keeps its bbox, centroid and
-    area as written (the recomputed ones are compared and any difference is counted, never
-    applied). Masks are found from the rows (`provenance.object_id`, raw frame minus
-    `start_frame`) through each view's worker run under `worker_root/<view>`; nothing lists a
-    mask directory. `start_frame` defaults to the first SAM3 frame of the source minus the
-    worker's first analysis frame. Writes `<output>/observations.jsonl`,
-    `observations_summary.json` (the source's, when beside it, plus a `remeasure` block) and
-    `remeasure_summary.json` / `.md`; returns the remeasure summary."""
+    `mask_axis_residual_px`, provenance `axis_method` / `axis_reason`; Sep 29 also
+    `mask_end_widths_px`), every other field identical: detector rows are copied byte for
+    byte, a SAM3 row keeps its bbox, centroid and area as written (the recomputed ones are
+    compared and any difference is counted, never applied). Masks are found from the rows
+    (`provenance.object_id`, raw frame minus `start_frame`) through each view's worker run
+    under `worker_root/<view>`; nothing lists a mask directory. `start_frame` defaults to the
+    first SAM3 frame of the source minus the worker's first analysis frame. With `classes`
+    only the SAM3 rows of those classes are re-measured and every other row is copied byte
+    for byte (the Sep 29 end-width pass over the pipette rows alone). Writes
+    `<output>/observations.jsonl`, `observations_summary.json` (the source's, when beside
+    it, plus a `remeasure` block) and `remeasure_summary.json` / `.md`; returns the
+    remeasure summary."""
     source, worker_root, output = Path(source), Path(worker_root), Path(output)
     output.mkdir(parents=True, exist_ok=True)
+    wanted = None if classes is None else set(classes)
     keys: dict[str, list[tuple[int, str]]] = defaultdict(list)
+    first_sam3_frame: dict[str, int] = {}
     detector_rows = 0
+    copied_other_class = 0
     with source.open(encoding="utf-8") as handle:
         for line in handle:
             if not line.strip():
                 continue
             row = json.loads(line)
             if row.get("source") in SAM3_SOURCES:
+                view_name, frame_index = str(row["view"]), int(row["frame_index"])
+                first_sam3_frame[view_name] = min(
+                    first_sam3_frame.get(view_name, frame_index), frame_index
+                )
+                if wanted is not None and row.get("object_class") not in wanted:
+                    copied_other_class += 1
+                    continue
                 object_id = (row.get("provenance") or {}).get("object_id")
                 if object_id is None:
                     raise ValueError(f"{source}: a SAM3 row without provenance.object_id")
@@ -1415,7 +1432,9 @@ def remeasure_observations(
         index = _mask_index(run_dir)
         offset = start_frame
         if offset is None:
-            offset = min(f for f, _ in keys[view]) - min(f for f, _ in index)
+            # The first SAM3 frame of the view over every class (a class filter must not
+            # move the inferred start frame).
+            offset = first_sam3_frame[view] - min(f for f, _ in index)
         offsets[view] = offset
         items = []
         for frame, object_id in keys[view]:
@@ -1448,7 +1467,9 @@ def remeasure_observations(
             if not line.strip():
                 continue
             row = json.loads(line)
-            if row.get("source") not in SAM3_SOURCES:
+            if row.get("source") not in SAM3_SOURCES or (
+                wanted is not None and row.get("object_class") not in wanted
+            ):
                 dst.write(line if line.endswith("\n") else line + "\n")
                 written += 1
                 continue
@@ -1477,6 +1498,11 @@ def remeasure_observations(
                     "mask_elongation": result["mask_elongation"],
                     "mask_width_px": result["mask_width_px"],
                     "mask_axis_residual_px": result["mask_axis_residual_px"],
+                    "mask_end_widths_px": (
+                        None
+                        if result.get("mask_end_widths_px") is None
+                        else tuple(result["mask_end_widths_px"])
+                    ),
                     "provenance": {**model.provenance, **result["provenance"]},
                 }
                 model = model.model_copy(update=update)
@@ -1494,6 +1520,8 @@ def remeasure_observations(
         "start_frame_by_view": offsets,
         "rows_written": written,
         "detector_rows_copied": detector_rows,
+        "classes": None if classes is None else list(classes),
+        "sam3_rows_of_other_classes_copied": copied_other_class,
         "sam3_rows": sum(len(v) for v in keys.values()),
         "sam3_rows_by_view": {v: len(keys[v]) for v in sorted(keys)},
         "masks_unresolved_by_view": dict(unresolved),
@@ -2272,6 +2300,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="raw frame of the worker's analysis frame 0; default: inferred per view",
     )
     remeasure.add_argument("--jobs", type=int, default=8)
+    remeasure.add_argument(
+        "--classes",
+        default=None,
+        help="comma-separated classes to re-measure (others copied byte for byte); Sep 29: "
+        "the pipette classes for the end widths",
+    )
 
     board = sub.add_parser("scoreboard", help="arms x measures from measures.json files")
     board.add_argument(
@@ -2328,6 +2362,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--other-trial", type=Path, default=None, help="the other trial's lines_scoreboard.json"
     )
     lines_board.add_argument("--fpv-poses", type=Path, default=None)
+    lines_board.add_argument(
+        "--tip-events",
+        type=Path,
+        default=None,
+        help="events_summary.json of `battle-finebio-events --tip-events` on the line tracks",
+    )
     lines_board.add_argument("--output", type=Path, required=True, help="directory")
 
     controls = sub.add_parser(
@@ -2488,6 +2528,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.output,
             start_frame=args.start_frame,
             jobs=args.jobs,
+            classes=(tuple(c for c in args.classes.split(",") if c) if args.classes else None),
         )
         print(remeasure_markdown(summary))
         return 0
@@ -2532,6 +2573,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             negative_controls=[read(p) for p in args.negative_controls or ()] or None,
             other_trial=read(args.other_trial),
             fpv_poses=args.fpv_poses,
+            tip_events=(read(args.tip_events) or {}).get("tip_events")
+            if args.tip_events is not None
+            else None,
             inputs={
                 "lines_tracks": str(lines_dir),
                 "ext_tracks": str(ext_dir),
@@ -2544,6 +2588,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "colour_tracks": str(colour_tracks) if colour_tracks.is_file() else None,
                 "negative_controls": [str(p) for p in args.negative_controls or ()],
                 "other_trial": None if args.other_trial is None else str(args.other_trial),
+                "tip_events": None if args.tip_events is None else str(args.tip_events),
             },
         )
         args.output.mkdir(parents=True, exist_ok=True)

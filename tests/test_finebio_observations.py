@@ -185,6 +185,29 @@ def test_axis_of_a_rotated_rectangle_matches_its_angle_length_and_width():
         assert (axis.axis_px[0][1], axis.axis_px[0][0]) <= (axis.axis_px[1][1], axis.axis_px[1][0])
 
 
+def test_end_widths_name_the_wide_end_of_a_shaft_with_a_head():
+    """Sep 29 (tip / butt by the width profile): a 240 x 16 px shaft with a 40 x 56 px head
+    on one end. The end widths follow the axis endpoint order (top first) and the head's end
+    reads about three times the shaft's; a plain rectangle reads the same width at both
+    ends, and a compact blob has none."""
+    for angle in (0, 30, 90):
+        u = np.array([np.cos(np.radians(angle)), np.sin(np.radians(angle))])
+        shaft = _rect(angle, 240, 16)
+        head_centre = np.array([300.0, 200.0]) + 100.0 * u
+        head = _rect(angle, 40, 56, centre=tuple(head_centre))
+        axis = mask_axis_measurements(shaft | head)
+        assert axis.axis_px is not None and axis.end_widths_px is not None
+        ends = np.asarray(axis.axis_px)
+        head_end = int(np.argmin(np.linalg.norm(ends - head_centre, axis=1)))
+        wide, narrow = axis.end_widths_px[head_end], axis.end_widths_px[1 - head_end]
+        assert wide > 2.5 * narrow, (angle, axis.end_widths_px)
+        assert abs(narrow - 17.0) <= 3.0, (angle, axis.end_widths_px)
+    plain = mask_axis_measurements(_rect(30, 240, 24))
+    assert plain.end_widths_px is not None
+    assert abs(plain.end_widths_px[0] - plain.end_widths_px[1]) <= 2.0
+    assert mask_axis_measurements(_blob(40)).end_widths_px is None
+
+
 def test_round_blob_has_no_axis_but_an_elongation_and_a_width():
     axis = mask_axis_measurements(_blob(40))
     assert axis.axis_px is None and axis.residual_px is None

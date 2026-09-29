@@ -129,3 +129,38 @@ decision record for ranking the tracking arms (a) to (d) against each other, my 
 decoder masks on 18 frames of one trial, not a dataset and not ground truth; the scoreboard
 against it and the read-back are in the ledger entry "Sep 27: gate 2 held, the anchor scoreboard
 on trial 1 (p6-anchors)".
+
+## FineBio tip clicks on trial 1 (clicked Sep 28)
+
+**The tip clicks give 38 three-dimensional tip anchors on 30 frames of trial 1, and no
+tracker meets the pre-registered 2 cm median.** `finebio-P03_03_01-tip-clicks.human-record.json`
+is written by `battle-finebio-tips export` from the uncommitted workspace
+`runs/finebio-tips-P03_03_01-20260928/`. It holds one entry per cell (167: ten rest, ten held
+and ten low frames, each pipette in two or three views) with my click in full-frame pixels
+(`tip_px`), the crop I clicked in, the hidden flag, the identity key and a note. The file also
+carries the counts, the frame convention, the protocol below, the URI and SHA-256 of
+`cells.json` and of the `decisions.json`, and the claim boundary. The crops and the decisions
+file stay under `runs/` (FineBio license).
+
+**I clicked to accept, not to place.** On every cell I clicked only when the dashed marker
+(the mask axis end away from the hand) sat on the correct tip, and pressed `h` otherwise. So
+`hidden` on 25 cells means the marker was wrong or the tip was hidden, not that the tip was
+hidden. Each of the 138 clicks is my acceptance of the axis end as the tip. That is why 84 of
+them (61%) fall within 3 px of the marker: the protocol, not a bias toward the suggestion.
+Four cells stayed undecided. I pressed no identity key, by design. The record's `protocol`
+field states this.
+
+`battle-finebio-tips score` triangulates the clicks through the rig. Frames with one clicked
+view (10), none (4) or clicks that disagree by more than 30 px after one view is dropped (12)
+get no anchor. Eight of the 12 are the 8-channel pipette, whose accepted marker sat on the
+plunger end in one view (T3 or T5 on seven of them). The 38 anchors that remain reproject to a
+median of 3.7 px (p90 6.7 px). Each tracker's tip is measured against them raw and split along
+and across the track's axis. The along part is the one a disposable tip would show as a steady
+positive offset. On these clicks its median is minus 0.5 cm, so the misses are not tip length.
+They are tracks that name the wrong end, or accepted markers that sat on the plunger end (the
+8-channel in T3 and T5, the red pipette at frame 3311). For the 8-channel the axis end away
+from the hand was often the plunger, so its anchors are unreliable as tip anchors. The clicks
+are my clicks on one trial: they rank trackers against each other and are not ground truth.
+
+Evidence: `runs/finebio-tips-P03_03_01-20260928/scoreboard/tip_scoreboard.md`, plan todo
+`p3-tip-anchors`.

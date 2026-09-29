@@ -362,6 +362,10 @@ TrackEventKind = Literal[
     # Sep 29 (p2-tracker-lines, defects): a line track whose observed classes flipped to a
     # second colour continues under a new id.
     "class_split",
+    # Sep 29 (disposable tips, `battle-finebio-events --tip-events`): a pipette's tip state
+    # turned on with its tip end in a tip rack, or off with its tip end at the trash can.
+    "tip_picked",
+    "tip_ejected",
 ]
 
 Vec2 = tuple[float, float]
@@ -403,6 +407,9 @@ class FineBioObservation(VersionedModel):
     mask_elongation: float | None = Field(default=None, ge=0)
     mask_width_px: float | None = Field(default=None, ge=0)
     mask_axis_residual_px: float | None = Field(default=None, ge=0)
+    # Sep 29 (tip / butt by the width profile), optional: the median across-axis width over
+    # the outer fifth of the axis at each end, in the order of `mask_axis_px`.
+    mask_end_widths_px: tuple[float, float] | None = None
     sam3_object_score: float | None = None
     pose_valid: bool
     source: ObservationSource
@@ -539,6 +546,15 @@ class Track3D(VersionedModel):
     extent_clamped: bool | None = None
     butt_to_hand_cm: float | None = Field(default=None, ge=0)
     tip_to_hand_cm: float | None = Field(default=None, ge=0)
+    # Sep 29 (disposable tips), None unless a line track with the tip boxes on: whether a
+    # disposable tip is attached to the pipette (two-state with hysteresis; None while the
+    # windows have not decided), the detector class of that tip (`blue_tip`, ...), the views
+    # whose `*_tip` box attached to this frame's observation, and the basis of the tip / butt
+    # resolution (`tip_box`, `hand_track`, `hand_box`).
+    tip_attached: bool | None = None
+    tip_class: str | None = None
+    tip_attached_views: tuple[str, ...] | None = None
+    tip_basis: str | None = None
 
 
 class TrackEvent(VersionedModel):

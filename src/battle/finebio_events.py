@@ -28,7 +28,16 @@ rows (`ObjectEvent`, a `TrackEvent` whose kind set adds `proximity`), `episodes.
 per episode, `events_strip.jsonl` the active relations per frame with the lid state, and
 `events.md` the counts, durations and the centrifuge cycles vs `contained` cross-table.
 
-No tip or lid attachment events (no observable). Nothing under `runs/` is committed.
+Sep 29, behind `--tip-events` (disposable tips): the line tracker's rows carry `tip_attached`
+(a two-state flag with hysteresis from the detector's `*_tip` boxes on the pipette's end) and
+the resolved tip end. **tip_picked** is the flag turning on with the tip end inside a
+`*_tip_rack` volume in the preceding frames; **tip_ejected** is the flag turning off with the
+tip end within a margin of the `trash_can` volume around the last frame that still carried an
+attached tip box. The rack and trash volumes are built from the rig's static points the way
+the other containers are (`container_volumes`); a rack the rig has no point for is triangulated
+from its median detector box centres across the fixed views (the way the plate volume takes
+its track's median), and the report says which basis each volume has. No lid attachment
+events (no observable). Nothing under `runs/` is committed.
 """
 
 from __future__ import annotations
@@ -113,9 +122,10 @@ class EventParams:
 
 class ObjectEvent(TrackEvent):
     """A `TrackEvent` whose kind set adds `proximity` (the schema's `TrackEventKind` has `held`
-    and `contained`; `proximity` is this module's addition, one line for the schema owner)."""
+    and `contained`; `proximity` is this module's addition, one line for the schema owner) and,
+    Sep 29 behind `--tip-events`, `tip_picked` / `tip_ejected`."""
 
-    kind: Literal["held", "contained", "proximity"]  # type: ignore[assignment]
+    kind: Literal["held", "contained", "proximity", "tip_picked", "tip_ejected"]  # type: ignore[assignment]
 
 
 class EventStripRow(VersionedModel):
@@ -292,6 +302,252 @@ def plate_volume(
             "footprint_scale": scale,
         },
     )
+
+
+TIP_RACK_SUFFIX = "_tip_rack"
+TRASH_CLASS = "trash_can"
+TIP_EVENT_KINDS: tuple[str, ...] = ("tip_picked", "tip_ejected")
+
+
+def median_box_centres(
+    observations: Path, classes: Iterable[str], *, min_score: float = 0.3, min_rows: int = 10
+) -> dict[tuple[str, str], tuple[float, float]]:
+    """(view, class) -> median centre px of the top-ranked detector box, over views with at
+    least `min_rows` rows (the plate volume's method applied to a class without a track)."""
+    wanted = set(classes)
+    centres: dict[tuple[str, str], list[tuple[float, float]]] = defaultdict(list)
+    with Path(observations).open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if row.get("source") != "detector" or row["object_class"] not in wanted:
+                continue
+            if not row["slot"].endswith("#0") or (row.get("detector_score") or 0) < min_score:
+                continue
+            box = row["box_xyxy_px"]
+            centres[(row["view"], row["object_class"])].append(
+                ((box[0] + box[2]) / 2, (box[1] + box[3]) / 2)
+            )
+    return {
+        key: (float(np.median([x for x, _ in v])), float(np.median([y for _, y in v])))
+        for key, v in centres.items()
+        if len(v) >= min_rows
+    }
+
+
+def box_volumes(
+    classes: Iterable[str],
+    cams: dict[str, Camera],
+    box_centres: dict[tuple[str, str], tuple[float, float]],
+    box_sizes: dict[tuple[str, str], tuple[float, float]],
+    *,
+    heights: dict[str, float] | None = None,
+    gate_px: float = 30.0,
+    min_views: int = 2,
+) -> tuple[list[Volume], dict[str, str]]:
+    """Volumes for classes the rig has no static point for: the median detector box centres
+    of the fixed views triangulated (at least `min_views`, every reprojection within
+    `gate_px`), the footprint from the box sizes as the plate volume takes it. Returns the
+    volumes and, per class not built, the reason."""
+    heights = {**CONTAINER_HEIGHT_CM, **(heights or {})}
+    volumes: list[Volume] = []
+    skipped: dict[str, str] = {}
+    for cls in classes:
+        pixels = {
+            view: np.asarray(box_centres[(view, cls)], dtype=np.float64)
+            for view in cams
+            if (view, cls) in box_centres
+        }
+        if len(pixels) < min_views:
+            skipped[cls] = f"{len(pixels)} fixed views with a stable box, need {min_views}"
+            continue
+        views = list(pixels)
+        point = triangulate_pixels([cams[v] for v in views], [pixels[v] for v in views])
+        if not np.all(np.isfinite(point)):
+            skipped[cls] = "the box centres do not triangulate"
+            continue
+        residuals = reprojection_residuals(cams, pixels, point)
+        if residuals and max(residuals.values()) > gate_px:
+            skipped[cls] = (
+                f"box centres disagree: reprojection {max(residuals.values()):.1f} px over "
+                f"the {gate_px:.0f} px gate"
+            )
+            continue
+        half, per_view = footprint_half_extent_cm(point, cams, box_sizes, cls, views)
+        if half is None:
+            skipped[cls] = "no box size to give a footprint"
+            continue
+        height = heights.get(cls, max(2.0 * float(-point[2]) + DEFAULT_HEIGHT_MARGIN_CM, 6.0))
+        volumes.append(
+            Volume(
+                name=cls,
+                object_class=cls,
+                centre_xy=(float(point[0]), float(point[1])),
+                half_x_cm=half,
+                half_y_cm=half,
+                z_top=-height,
+                z_bottom=BENCH_TOLERANCE_CM,
+                provenance={
+                    "centre": "median detector box centres triangulated (no rig static point)",
+                    "views": views,
+                    "reprojection_px": {v: round(r, 2) for v, r in residuals.items()},
+                    "height_cm": height,
+                    "height_source": "CONTAINER_HEIGHT_CM"
+                    if cls in heights
+                    else "2x point + margin",
+                    "half_extent_per_view_cm": per_view,
+                },
+            )
+        )
+    return volumes, skipped
+
+
+def tip_end_of(row: Track3D) -> np.ndarray | None:
+    """The resolved tip end of a line row, else None."""
+    if row.endpoints_cm is None or not row.tip_resolved:
+        return None
+    return np.asarray(row.endpoints_cm[0], dtype=np.float64)
+
+
+def _either_end_inside(row: Track3D, volume: Volume, margin: float) -> bool:
+    """Either end of the segment (the tip when resolved, both when not) within `margin` of
+    the volume; the track point when the row is not a line."""
+    if row.endpoints_cm is None:
+        return volume.signed_distance(row.position_cm) <= margin
+    tip = tip_end_of(row)
+    ends = [tip] if tip is not None else [np.asarray(e, dtype=np.float64) for e in row.endpoints_cm]
+    return any(volume.signed_distance(e) <= margin for e in ends)
+
+
+def tip_events(
+    rows: Sequence[Track3D],
+    *,
+    racks: Sequence[Volume],
+    trash: Sequence[Volume],
+    lookback_frames: int = 15,
+    margin_cm: float = 5.0,
+) -> tuple[list[ObjectEvent], dict[str, Any]]:
+    """Sep 29: per line track, the `tip_attached` transitions. Off -> on (or undecided -> on)
+    with the tip end (either end while unresolved) inside a rack volume on one of the
+    `lookback_frames` frames up to the flip is `tip_picked`; on -> off with the tip end within
+    `margin_cm` of the trash volume within `lookback_frames` frames of the last frame that
+    still attached a tip box (the hysteresis turns the flag off later) is `tip_ejected`. Flips
+    that met neither volume are counted as such, with the nearest volume, and not emitted."""
+    by_track: dict[str, list[Track3D]] = defaultdict(list)
+    for r in rows:
+        if r.tip_attached is not None or r.tip_attached_views:
+            by_track[r.track_id].append(r)
+    events: list[ObjectEvent] = []
+    counts: Counter = Counter()
+    unmatched: list[dict[str, Any]] = []
+    for track_id, trows in sorted(by_track.items()):
+        trows.sort(key=lambda r: r.frame_index)
+        previous: bool | None = None
+        for i, row in enumerate(trows):
+            state = row.tip_attached
+            if state is None or state == previous or (state is False and previous is None):
+                # Undecided, unchanged, or the first decision being "no tip": not a flip.
+                previous = state if state is not None else previous
+                continue
+            window = [r for r in trows[max(0, i - lookback_frames) : i + 1]]
+            if state is True:
+                hits = [
+                    (v.name, r.frame_index)
+                    for r in window
+                    for v in racks
+                    if _either_end_inside(r, v, 0.0)
+                ]
+                kind = "tip_picked"
+                targets = racks
+            else:
+                last_attached = next(
+                    (r for r in reversed(trows[: i + 1]) if r.tip_attached_views), None
+                )
+                centre = last_attached.frame_index if last_attached is not None else row.frame_index
+                window = [
+                    r
+                    for r in trows
+                    if centre - lookback_frames <= r.frame_index <= centre + lookback_frames
+                ]
+                hits = [
+                    (v.name, r.frame_index)
+                    for r in window
+                    for v in trash
+                    if _either_end_inside(r, v, margin_cm)
+                ]
+                kind = "tip_ejected"
+                targets = trash
+            previous_state = previous
+            previous = state
+            if hits:
+                target = Counter(name for name, _ in hits).most_common(1)[0][0]
+                counts[kind] += 1
+                events.append(
+                    ObjectEvent(
+                        frame_index=row.frame_index,
+                        track_id=track_id,
+                        kind=kind,  # type: ignore[arg-type]
+                        payload={
+                            "object_class": row.observed_class or row.object_class,
+                            "tip_class": row.tip_class,
+                            "target": target,
+                            "from_state": previous_state,
+                            "frames_in_volume": len({f for _, f in hits}),
+                            "first_frame_in_volume": min(f for _, f in hits),
+                            "tracker_state": row.state,
+                            "source": "geometry",
+                            "model_output": True,
+                        },
+                    )
+                )
+            else:
+                nearest = None
+                tip = tip_end_of(row)
+                if tip is not None and targets:
+                    nearest = min(
+                        ((v.name, v.signed_distance(tip)) for v in targets), key=lambda x: x[1]
+                    )
+                counts[f"{kind}_unmatched"] += 1
+                unmatched.append(
+                    {
+                        "track_id": track_id,
+                        "frame_index": row.frame_index,
+                        "kind": kind,
+                        "from_state": previous_state,
+                        "nearest_volume": None if nearest is None else nearest[0],
+                        "nearest_distance_cm": None if nearest is None else round(nearest[1], 1),
+                    }
+                )
+    summary = {
+        "rule": (
+            f"tip_picked: tip_attached turns on with the tip end inside a *_tip_rack volume on "
+            f"one of the {lookback_frames} frames up to the flip; tip_ejected: it turns off with "
+            f"the tip end within {margin_cm} cm of the trash_can volume within {lookback_frames} "
+            "frames of the last attached tip box"
+        ),
+        "counts": {k: counts.get(k, 0) for k in ("tip_picked", "tip_ejected")},
+        "unmatched_flips": {
+            k: counts.get(f"{k}_unmatched", 0) for k in ("tip_picked", "tip_ejected")
+        },
+        "events": [
+            {
+                "kind": e.kind,
+                "track_id": e.track_id,
+                "frame_index": e.frame_index,
+                "target": e.payload["target"],
+                "object_class": e.payload["object_class"],
+                "tip_class": e.payload["tip_class"],
+                "from_state": e.payload["from_state"],
+            }
+            for e in events
+        ],
+        "unmatched": unmatched,
+        "racks": [v.to_record() for v in racks],
+        "trash": [v.to_record() for v in trash],
+        "tracks_with_a_tip_state": len(by_track),
+    }
+    return events, summary
 
 
 # --------------------------------------------------------------------------- lid state
@@ -1018,6 +1274,40 @@ def summary_markdown(summary: dict[str, Any]) -> str:
                 f"{e['inside_while_closed_frames']} frames"
                 + (f"; successors after opening: {succ}" if succ else "")
             )
+    tips = summary.get("tip_events")
+    if tips:
+        lines += [
+            "",
+            "## Disposable tips (`--tip-events`)",
+            "",
+            f"Rule: {tips['rule']}.",
+            "",
+            "| kind | events | flips that met no volume | measured against |",
+            "|---|---|---|---|",
+            f"| tip_picked | {tips['counts']['tip_picked']} | "
+            f"{tips['unmatched_flips']['tip_picked']} | the tracker's tip state and the rack "
+            "volumes |",
+            f"| tip_ejected | {tips['counts']['tip_ejected']} | "
+            f"{tips['unmatched_flips']['tip_ejected']} | the tracker's tip state and the trash "
+            "volume |",
+            "",
+            "Volumes from the rig's static points: "
+            + (", ".join(tips["volumes_from_rig"]) or "none")
+            + "; from median detector boxes: "
+            + (", ".join(tips["volumes_from_boxes"]) or "none")
+            + "; skipped: "
+            + (", ".join(f"{k} ({v})" for k, v in tips["volumes_skipped"].items()) or "none")
+            + f". Tracks with a tip state: {tips['tracks_with_a_tip_state']}.",
+            "",
+        ]
+        if tips["events"]:
+            lines += ["Events:", ""]
+            for e in tips["events"]:
+                lines.append(
+                    f"- {e['kind']} `{e['track_id']}` ({e['object_class']}, {e['tip_class']}) at "
+                    f"frame {e['frame_index']} in {e['target']} (from {e['from_state']})"
+                )
+            lines.append("")
     lines += [
         "",
         "A `contained` episode that ends `track_lost` while the lid is closed is the core "
@@ -1043,6 +1333,10 @@ def run(
     trials_path: Path = DEFAULT_TRIALS,
     params: EventParams = EventParams(),
     arm: str | None = None,
+    observations: Path | None = None,
+    tip_events_on: bool = False,
+    tip_lookback_frames: int = 15,
+    tip_margin_cm: float = 5.0,
 ) -> dict[str, Any]:
     arm_dir = Path(arm_dir)
     clip: ClipWindow = load_clip(clip_path)
@@ -1053,8 +1347,21 @@ def run(
     rows = list(read_jsonl(tracks_path / "tracks.jsonl", Track3D))
     clip_doc = json.loads(Path(clip_path).read_text(encoding="utf-8"))
     targets = tuple(clip_doc.get("targets", ()))
-    observations = arm_dir / "observations.jsonl"
-    box_sizes = median_box_sizes(observations, [*clip.containers, PLATE_CLASS])
+    observations = (
+        Path(observations) if observations is not None else arm_dir / "observations.jsonl"
+    )
+    if observations.is_dir():
+        observations = observations / "observations.jsonl"
+    rack_classes = sorted(
+        {
+            str(s["class"])
+            for s in rig.get("static", ())
+            if str(s["class"]).endswith(TIP_RACK_SUFFIX)
+        }
+        | {c for c in targets if c.endswith(TIP_RACK_SUFFIX)}
+    )
+    tip_volume_classes = [*rack_classes, TRASH_CLASS] if tip_events_on else []
+    box_sizes = median_box_sizes(observations, [*clip.containers, PLATE_CLASS, *tip_volume_classes])
     volumes = container_volumes(rig, clip.containers, cams, box_sizes, scale=params.footprint_scale)
     proximity_targets: list[Volume] = []
     for name in params.proximity_targets:
@@ -1103,6 +1410,33 @@ def run(
         gate_px=gate,
     )
     cross = cycle_cross_table(episodes, rows, cycles)
+    tip_summary: dict[str, Any] | None = None
+    if tip_events_on:
+        from_rig = container_volumes(
+            rig, tip_volume_classes, cams, box_sizes, scale=params.footprint_scale
+        )
+        have = {v.name for v in from_rig}
+        missing = [c for c in tip_volume_classes if c not in have]
+        from_boxes, skipped = box_volumes(
+            missing, cams, median_box_centres(observations, missing), box_sizes, gate_px=gate
+        )
+        volumes_for_tips = [*from_rig, *from_boxes]
+        racks = [v for v in volumes_for_tips if v.name.endswith(TIP_RACK_SUFFIX)]
+        trash = [v for v in volumes_for_tips if v.name == TRASH_CLASS]
+        tip_rows, tip_summary = tip_events(
+            rows,
+            racks=racks,
+            trash=trash,
+            lookback_frames=tip_lookback_frames,
+            margin_cm=tip_margin_cm,
+        )
+        tip_summary["volumes_from_rig"] = sorted(have)
+        tip_summary["volumes_from_boxes"] = [v.name for v in from_boxes]
+        tip_summary["volumes_skipped"] = skipped
+        events = sorted(
+            [*events, *tip_rows],
+            key=lambda e: (e.frame_index, e.track_id, e.payload.get("phase") == "end"),
+        )
     output.mkdir(parents=True, exist_ok=True)
     write_jsonl(events, output / "events.jsonl")
     with (output / "episodes.jsonl").open("w", encoding="utf-8") as handle:
@@ -1123,6 +1457,7 @@ def run(
     )
     summary["arm_dir"] = arm_dir.as_posix()
     summary["tip_pixels_loaded"] = len(tips)
+    summary["tip_events"] = tip_summary
     (output / "events_summary.json").write_text(
         json.dumps(summary, indent=1) + "\n", encoding="utf-8"
     )
@@ -1162,6 +1497,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="comma list of classes `contained` is judged for (their _group slots included)",
     )
     parser.add_argument("--held-min-motion-cm", type=float, default=d.held_min_motion_cm)
+    parser.add_argument(
+        "--observations",
+        type=Path,
+        default=None,
+        help="observations.jsonl (or its directory); default <arm-dir>/observations.jsonl",
+    )
+    parser.add_argument(
+        "--tip-events",
+        action="store_true",
+        help="Sep 29: tip_picked / tip_ejected from the line tracker's tip_attached state and "
+        "the *_tip_rack / trash_can volumes",
+    )
+    parser.add_argument("--tip-lookback-frames", type=int, default=15)
+    parser.add_argument("--tip-margin-cm", type=float, default=5.0)
     return parser
 
 
@@ -1190,12 +1539,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         trials_path=args.trials,
         params=params,
         arm=args.arm,
+        observations=args.observations,
+        tip_events_on=args.tip_events,
+        tip_lookback_frames=args.tip_lookback_frames,
+        tip_margin_cm=args.tip_margin_cm,
     )
     kinds = summary["kinds"]
+    tips = summary.get("tip_events") or {}
     print(
         f"arm {summary['arm']}: "
         + ", ".join(f"{k} {v['episodes']}" for k, v in kinds.items())
-        + f" episodes; lid closed {summary['lid_closed_frames']} frames -> {args.output}"
+        + f" episodes; lid closed {summary['lid_closed_frames']} frames"
+        + (f"; tips {tips['counts']}" if tips else "")
+        + f" -> {args.output}"
     )
     return 0
 
