@@ -15,8 +15,10 @@ the memory-free decode is the mask source. Four tracker extensions (motion model
 held objects) cut spurious track births by 40% and identity ambiguities by two-thirds on trial 1,
 and by a similar amount in room 2 with nothing tuned. A tube keeps its identity through a closed
 centrifuge lid. The one failure is the pipette in the hand, which splits into 50 to 60 identities
-over two minutes in both rooms. Every IoU here is agreement between SAM3 and a detector trained on
-this bench, not accuracy; the boundaries are in the last section.
+over two minutes in both rooms. Tracking it as a 3D line cut that to 18 and 17 and failed its
+own rule, so the line tracker is not adopted (its section below). Every IoU here is agreement
+between SAM3 and a detector trained on this bench, not accuracy; the boundaries are in the last
+section.
 
 Evidence: `runs/finebio-arms-P03_03_01-filtered-20260927/scoreboard/scoreboard.md`,
 `runs/finebio-arms-P20_03_01-20260925/scoreboard/scoreboard.md`, archive entries "p-docs" (the
@@ -110,6 +112,95 @@ pipette's fragmentation has no human-anchored reading.
 Evidence: `qa/finebio-P03_03_01-review-anchors.human-record.json` (the record without pixels),
 archive entry "p6-anchors" (gate 2 held).
 
+## Pipettes as 3D lines
+
+**Tracking the pipettes as 3D line segments fitted to the mask axes cut the held pipette's ids
+2.8x, not the 5x I pre-registered, and I did not adopt it.** Each elongated mask contributes a
+plane through its camera and each compact mask a ray. The line is the null space of the stacked
+constraints, completed to a length prior, and the tracker associates on line distance. The
+extension sits behind `--line-classes`, so the point tracker's outputs are byte for byte
+unchanged. Four attempts ran on both trials with the same flags and nothing tuned between rooms.
+The first wrote impossible segments (one row in ten longer than two pipettes). The second fixed
+the geometry defects behind them. The third added the detector's tip boxes, a two-state length
+and the mask's end widths. The fourth read the tip side from the mask's thin tail and the tip
+state from the 3D length. The third attempt (v3) is the arm the tables read; the fourth cost
+room 2 ten ids.
+
+| Clause of the rule | Read-out | Numbers (v3) | Measured against |
+|---|---|---|---|
+| Ids per held pipette fall at least 5x | **No.** | 51 to 18 in room 1 (2.8x), 48 to 17 in room 2 (2.8x) | the tracker's own ids against the point tracker on the same rows |
+| Held-out line residual beats the box centre's | **No, a draw.** | 8.36 against 8.84 px in room 1, 13.4 against 12.9 in room 2 | the held-out camera's own mask axis on frames with three axis views |
+| Tip error median under 2 cm | **No.** | 3.03 cm on 48 anchors, the wrong end named on 14 of 47 | my clicks at the cone end on 30 frames of trial 1, triangulated through the rig |
+| Flat-rest geometry within the rig's static noise | Yes on v3, no on v4 | the 8-channel pipette at 86.5 deg against the stand's 85.8 in room 1, 71.9 against 70.5 in room 2 | the stand report on the same rows |
+
+The rule also said that an id gain without the tip clause is luck, and the anchors read it that
+way. Over the 30 click frames the blue pipette spans ten v3 ids, the same ten as the point
+tracker, and the one long v3 track is the resting red pipette absorbing the blue and yellow
+anchors the detector's blue class put on it.
+
+| Held pipette | Point tracker | Lines v1 | v2 | v3 | v4 | Measured against |
+|---|---|---|---|---|---|---|
+| Room 1, blue | 51 | 34 | 17 | 18 | 18 | the tracker's own ids over the 120 s window |
+| Room 2, yellow | 48 | 34 | 20 | 17 | 27 | same |
+
+| Tracks | Median cm | p90 cm | Across the axis cm | Rest (n) | Held (n) | Around the tip events (n) | Wrong end | Measured against |
+|---|---|---|---|---|---|---|---|---|
+| Lines v3 | 3.03 | 24.8 | 1.98 | 2.35 (19) | 13.0 (13) | 2.54 (15) | 14 of 47 | the 48 anchors of the second click sitting |
+| Lines v4 | 3.47 | 23.1 | 2.04 | 2.30 (20) | 5.80 (13) | 2.62 (14) | 8 of 47 | same |
+| Lines v2 | 8.76 | 24.9 | 1.88 | 13.1 (20) | 8.76 (13) | 12.8 (14) | 21 of 47 | same |
+| Point tracker, box centre | 13.9 | 17.0 | not a tip | 14.6 (19) | 13.1 (9) | 14.0 (13) | not a tip | same, 41 anchors matched |
+
+The p90 is a pipette length on every line arm, and the across-axis error is about 2 cm on all
+three, so the axis is right and the end choice is what fails. The held anchors are where v3
+loses (13.0 cm on 13), and the resting red pipette is where the line is best (0.9 cm across the
+axis on 15).
+
+**The id count did not move because a line needs two cameras to see the same shaft on the same
+frame, and the hand takes that away.** The held blue pipette has two axis views on 69% of room
+1's frames and three on 19%. On the rest the hand covers part of the shaft, the mask breaks into
+a blob or a stub, and the tracker has a ray or nothing. Those are the frames where the first
+attempt invented geometry and the later ones coast, and 30 frames of coasting end an id. The 18
+ids that remain are born where the pipette comes back into two views after a gap the coast did
+not cover, or turns while one camera sees it and returns outside the gate. Room 2 has better
+coverage (two axis views on 91% of frames) and its ids fell less, so coverage is not the whole
+story there: the yellow pipette's ids are born where the hand covers the shaft and where the
+class rule splits a track whose masks changed colour. The tip boxes, the end widths and the tail
+rule all name the tip end better and touch none of this.
+
+What stands from the phase:
+
+- Every SAM3 observation carries a mask axis, its two endpoints, an elongation and a width:
+  165,551 rows in room 1 and 162,676 in room 2 re-measured, no old field changed.
+- The line geometry module. On the resting red pipette the line sits 0.9 cm across the axis from
+  my clicks (15 anchors). The negative controls break the held-out residual: 3–5x on the real
+  rows with camera 6's shipped pose, 35–131x on synthetic segments on the real rig.
+- The pipettes rest flat on the bench at 86–87 deg from the bench normal, not upright in a
+  stand, so the stand check became a flat-rest check.
+- The disposable tip is inside SAM3's mask when one is on. The blue pipette's butt-to-end length
+  has two modes, 22.3 cm bare and 29.5 cm with a tip, which is a P1000 tip. The yellow and red
+  pipettes rest bare the whole window, at 21.7 and 24.5 cm.
+- The colour is the plunger button at the top of the pipette, not a ring at the tip. The colour
+  vote disagrees with the detector on 9 of 39 coloured tracks in room 1 and reads yellow on
+  almost every disagreement in room 2, a sampler problem there rather than a tracking one.
+- The detector's `*_tip` classes fire on 1% of pipette rows, and SAM3 prompted with an empty box
+  returns a blob the size of the box, so neither is a tip finder.
+- The tip-click tool and two human records. The first sitting accepted a suggested marker and
+  put 70 of 138 clicks on the plunger end; the second, with no marker, put every one of its 133
+  clicks at the cone end and gave 48 anchors.
+- The fourth attempt's thin-tail rule for the tip side, checked by eye in room 1, did not travel:
+  room 2's held ids went from 17 to 27.
+
+The next lever is a tracker change, not another observation: carry a held pipette on the
+triangulated hand and refuse a new id until the hand lets go. A separate plan is being written.
+
+Evidence: `runs/finebio-lines-P03_03_01-20260928/README.md` (sections "The pre-registered rule",
+"Third attempt" and "Fourth attempt"), `runs/finebio-lines-P20_03_01-20260928/README.md`,
+`runs/finebio-tipseg-P03_03_01-20260929/README.md`,
+`runs/finebio-tips-P03_03_01-20260929/scoreboard/tip_scoreboard.md`,
+`qa/finebio-P03_03_01-tip-clicks.human-record.json` and
+`qa/finebio-P03_03_01-tip-clicks-2.human-record.json`. The archive closed before this phase, so
+the run READMEs are its record.
+
 ## Assembly101 in numbers
 
 **SAM3 at 1280 px with an appended prompt memory is the best arm on the toy car, DAM4SAM ties it,
@@ -194,7 +285,9 @@ model's masks. None is accuracy against ground truth.** The boundaries, once:
   arm and is not a probability. Events are geometry on model output.
 - The pipette in the hand fragments in both rooms (blue 59, yellow 48 ids with the extensions). I
   read it as an observation problem: a long object seen from one or two cameras has no single 3D
-  point in its box center. The fix (a tip or handle keypoint) is named, not built.
+  point in its box center. Tracking it as a 3D line cut the ids 2.8x and failed its rule, so the
+  observation was only part of it. The hold on the hand in the tracker is the next lever, named,
+  not built.
 - Proximity events are zero by protocol: no pipette comes near the plate in either window. The
   mechanism is tested on synthetic tracks only.
 - Parameters the plan left open were never swept: frames before a re-seed, the memory-write

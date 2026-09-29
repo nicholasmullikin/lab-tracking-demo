@@ -25,11 +25,18 @@ the proxy video as `AssetVideo` + `VideoFrameReference`, detector boxes, the def
 masks as RGBA cut-outs, track ids with abstain flags, seed boxes), **Evidence** (the cross-checks,
 the negative control, scorecards, inventories, identity metrics, residual series). States are
 entity paths (`world/tracks/<arm>/<state>`), so the tracker extensions' `held` / `contained`
-rows render without a code change; `--tracks-dir tracks-ext` re-runs the build on them.
+rows render without a code change; `--tracks-dir tracks-ext` re-runs the build on them, and
+`--tracks-dir b=tracks-ext,lines=tracks-lines` names the directory per arm. Rows that carry
+`endpoints_cm` (the `--line-classes` extension, Sep 28) are drawn as `LineStrips3D` under
+`world/tracks/<arm>/<state>/lines` beside the points, coloured per track id, with the resolved
+tip as a small white point under `.../tips` and the same segment projected into every camera
+tile (`world/<view>/tracks/<arm>/lines`); the label carries the observed class and the tip
+state. An arm whose rows carry lines stays visible in the presets beside the default arm.
 
 Storyboard frames are chosen from the data (the centrifuge cycle with the longest closed
 containment, the longest fpv look-away from the plate, the six-view annotated frame for the
-transparent plate, the largest confidence drop that a slot's mask-vs-box IoU confirms) and
+transparent plate, the longest held stretch of a pipette tracked as a line, the largest
+confidence drop that a slot's mask-vs-box IoU confirms) and
 marked on the timeline (`storyboard/marks`, `storyboard/index`, `storyboard/current`) and in
 `storyboard.md`. Masks are logged every `--mask-every` frames (and on every storyboard frame) to
 keep the recording near a gigabyte; the recording index records the strides. No viewer is
@@ -97,6 +104,8 @@ PREFERRED_FAILURE_SLOTS: dict[str, tuple[tuple[str, str], ...]] = {
     "d": (("T4", "50ml_tube#1"),),
 }
 LOO_CLASSES = ("cell_culture_plate", "blue_pipette", "left_hand", "right_hand")
+TIP_COLOUR = [255, 255, 255]
+LINE_RADIUS_CM = 0.35
 CLAIM_BOUNDARY = (
     "Model output throughout: the FineBio DINO detector was trained on FineBio's own bench and "
     "cameras, so its boxes (and every mask prompted from them) are agreement between models, not "
@@ -124,6 +133,17 @@ class TrackRow:
     container_id: str | None = None
     held_by: str | None = None
     group_size: int | None = None
+    # The `--line-classes` extension's fields (Sep 28): the two endpoints in cm, whether
+    # `endpoints[0]` is the tip, whether a disposable tip is on, and the plurality of the
+    # per-view detector classes (the geometric class is `object_class`).
+    endpoints: tuple[tuple[float, float, float], tuple[float, float, float]] | None = None
+    tip_resolved: bool | None = None
+    tip_attached: bool | None = None
+    observed_class: str | None = None
+
+    @property
+    def tip(self) -> tuple[float, float, float] | None:
+        return self.endpoints[0] if self.endpoints is not None and self.tip_resolved else None
 
 
 def read_track_rows(path: Path) -> list[TrackRow]:
@@ -134,6 +154,7 @@ def read_track_rows(path: Path) -> list[TrackRow]:
             if not line.strip():
                 continue
             r = json.loads(line)
+            endpoints = r.get("endpoints_cm")
             rows.append(
                 TrackRow(
                     frame=int(r["frame_index"]),
@@ -149,6 +170,17 @@ def read_track_rows(path: Path) -> list[TrackRow]:
                     container_id=r.get("container_id"),
                     held_by=r.get("held_by"),
                     group_size=r.get("group_size"),
+                    endpoints=(
+                        (
+                            tuple(float(x) for x in endpoints[0]),
+                            tuple(float(x) for x in endpoints[1]),
+                        )
+                        if endpoints
+                        else None
+                    ),
+                    tip_resolved=r.get("tip_resolved"),
+                    tip_attached=r.get("tip_attached"),
+                    observed_class=r.get("observed_class"),
                 )
             )
     return rows
@@ -172,6 +204,11 @@ class ArmData:
     identity: dict[str, Any] | None
     worker_runs: dict[str, Path]
     events_by_frame: dict[int, list[dict[str, Any]]]
+    # The rows the arm was tracked from: `<arm>/observations.jsonl`, or the directory the
+    # summary's `observations_dir` names when the tracker read a remeasured set (Sep 28).
+    observations_path: Path = Path("observations.jsonl")
+    # True when any row carries `endpoints_cm` (a `--line-classes` run).
+    has_lines: bool = False
 
 
 def derived_dir_names(tracks_dir_name: str) -> tuple[str, str]:
@@ -190,6 +227,7 @@ def load_arm(label: str, arm_dir: Path, tracks_dir_name: str | None) -> ArmData:
     else:
         tracks_dir = arm_dir / "tracks"
     confidence_name, events_name = derived_dir_names(tracks_dir.name)
+    tag = tracks_dir.name.removeprefix("tracks")
     confidence_dir = arm_dir / confidence_name
     events_dir = arm_dir / events_name
     rows = read_track_rows(tracks_dir / "tracks.jsonl")
@@ -227,13 +265,19 @@ def load_arm(label: str, arm_dir: Path, tracks_dir_name: str | None) -> ArmData:
                 r = json.loads(line)
                 events_by_frame[int(r["frame_index"])].append(r)
     worker_runs: dict[str, Path] = {}
+    observations_path = arm_dir / "observations.jsonl"
     summary_path = arm_dir / "observations_summary.json"
     if summary_path.is_file():
         summary = json.loads(summary_path.read_text(encoding="utf-8"))
         worker_runs = {v: Path(p) for v, p in (summary.get("worker_runs") or {}).items()}
+        if not observations_path.is_file() and summary.get("observations_dir"):
+            observations_path = Path(summary["observations_dir"]) / "observations.jsonl"
 
     def text(path: Path) -> str | None:
         return path.read_text(encoding="utf-8") if path.is_file() else None
+
+    def tagged(stem: str) -> str | None:
+        return text(arm_dir / f"{stem}{tag}.md") or text(arm_dir / f"{stem}.md")
 
     identity_path = tracks_dir / "identity_metrics.json"
     return ArmData(
@@ -252,11 +296,13 @@ def load_arm(label: str, arm_dir: Path, tracks_dir_name: str | None) -> ArmData:
             else None
         ),
         events_md=text(events_dir / "events.md"),
-        measures_md=text(arm_dir / "measures.md"),
-        inventory_md=text(arm_dir / "occlusion_inventory.md"),
+        measures_md=tagged("measures"),
+        inventory_md=tagged("occlusion_inventory"),
         identity=json.loads(text(identity_path) or "null") if identity_path.is_file() else None,
         worker_runs=worker_runs,
         events_by_frame=dict(events_by_frame),
+        observations_path=observations_path,
+        has_lines=any(r.endpoints is not None for r in rows),
     )
 
 
@@ -273,6 +319,25 @@ def parse_arm_dirs(spec: str) -> dict[str, Path]:
     if not out:
         raise ValueError("--arm-dirs names no arm")
     return out
+
+
+def parse_tracks_dir(spec: str | None) -> tuple[str | None, dict[str, str]]:
+    """`--tracks-dir`: one name for every arm (`tracks-ext`), or `label=name,...` per arm; an
+    arm the spec does not name gets the default (tracks-ext when present, else tracks)."""
+    if spec is None or not spec.strip():
+        return None, {}
+    items = [item.strip() for item in spec.split(",") if item.strip()]
+    if all("=" not in item for item in items):
+        if len(items) != 1:
+            raise ValueError(f"--tracks-dir takes one name or label=name pairs, got {spec!r}")
+        return items[0], {}
+    per_arm: dict[str, str] = {}
+    for item in items:
+        if "=" not in item:
+            raise ValueError(f"--tracks-dir mixes a bare name with label=name pairs: {spec!r}")
+        label, name = item.split("=", 1)
+        per_arm[label.strip()] = name.strip()
+    return None, per_arm
 
 
 # --------------------------------------------------------------------------- observations
@@ -785,6 +850,83 @@ def _slot_ious(
     return out
 
 
+def pick_held_pipette_story(arm: ArmData, frames: Sequence[int]) -> list[StoryItem]:
+    """The longest unbroken `held` stretch of one line track (the pipette in use as a 3D
+    segment with its tip): one item at the middle of the stretch, with the id count of that
+    pipette's class over the window beside it."""
+    if not arm.has_lines:
+        return []
+    wanted = set(frames)
+    by_track: dict[str, list[TrackRow]] = defaultdict(list)
+    for r in arm.rows:
+        if r.endpoints is not None and r.frame in wanted and r.state != "lost":
+            by_track[r.track_id].append(r)
+    best: tuple[int, str, list[TrackRow]] | None = None
+    for track_id, rows in by_track.items():
+        rows.sort(key=lambda r: r.frame)
+        run: list[TrackRow] = []
+        for r in rows:
+            if r.state == "held" and (not run or r.frame == run[-1].frame + 1):
+                run.append(r)
+            else:
+                if best is None or len(run) > best[0]:
+                    best = (len(run), track_id, list(run))
+                run = [r] if r.state == "held" else []
+        if run and (best is None or len(run) > best[0]):
+            best = (len(run), track_id, list(run))
+    if best is None or best[0] == 0:
+        return []
+    _, track_id, run = best
+    start, end = run[0].frame, run[-1].frame
+    cls = run[0].observed_class or run[0].object_class
+    hands = Counter(r.held_by for r in run if r.held_by)
+    tip_resolved = sum(1 for r in run if r.tip_resolved)
+    tip_on = sum(1 for r in run if r.tip_attached)
+    same_class_ids = sorted(
+        {
+            r.track_id
+            for r in arm.rows
+            if r.endpoints is not None
+            and r.frame in wanted
+            and (r.observed_class or r.object_class) == cls
+        }
+    )
+    entities = (
+        f"world/tracks/{arm.label}/held",
+        f"world/tracks/{arm.label}/held/lines",
+        f"world/tracks/{arm.label}/held/tips",
+        f"world/*/tracks/{arm.label}/lines",
+        f"world/*/tracks/{arm.label}/tips",
+    )
+    hand = hands.most_common(1)[0][0] if hands else "a hand"
+    return [
+        StoryItem(
+            0,
+            "held pipette",
+            "the pipette in use as a 3D line",
+            start + (end - start) // 2,
+            f"`{track_id}` ({cls}, arm {arm.label}) is `held` by {hand} for raw frames "
+            f"[{start}, {end}], {len(run)} frames, the longest such stretch of a line track; "
+            f"the segment rides on the hand track while no two cameras see the shaft, the tip "
+            f"is named on {tip_resolved} of the {len(run)} frames and a disposable tip is read as "
+            f"on for {tip_on}; {len(same_class_ids)} line ids read as {cls} on some frame of the "
+            "window (the scoreboard counts a track once, by its plurality class).",
+            entities,
+            {
+                "arm": arm.label,
+                "track_id": track_id,
+                "observed_class": cls,
+                "held_by": hand,
+                "held_frames": [start, end],
+                "held_frame_count": len(run),
+                "tip_resolved_frames": tip_resolved,
+                "tip_attached_frames": tip_on,
+                "same_class_line_ids": same_class_ids,
+            },
+        )
+    ]
+
+
 def number_items(items: list[StoryItem]) -> list[StoryItem]:
     for i, item in enumerate(items, start=1):
         item.index = i
@@ -832,8 +974,19 @@ def _state_colour(cls: str, state: str) -> list[int]:
     return colour if state == "observed" else _dim(colour)
 
 
+def _row_colour(r: TrackRow) -> list[int]:
+    """Class colour for a point track; one stable colour per track id for a line track, so a
+    segment, its midpoint and its projections share it and a new id shows as a new colour."""
+    if r.endpoints is None:
+        return _state_colour(r.object_class, r.state)
+    colour = class_colour(r.track_id)
+    return colour if r.state == "observed" else _dim(colour, 0.7)
+
+
 def _track_label(r: TrackRow, abstain: bool | None) -> str:
     label = r.track_id
+    if r.observed_class and r.observed_class != r.object_class:
+        label += f" {r.observed_class}"
     if r.state != "observed":
         label += f" [{r.state}]"
     if r.container_id:
@@ -842,6 +995,10 @@ def _track_label(r: TrackRow, abstain: bool | None) -> str:
         label += f" by {r.held_by}"
     if r.group_size:
         label += f" x{r.group_size}"
+    if r.tip_attached is True:
+        label += " tip on"
+    elif r.tip_attached is False and r.endpoints is not None:
+        label += " tip off"
     if abstain:
         label += " !"
     return label
@@ -1284,14 +1441,15 @@ def log_recording(inputs: BuildInputs) -> dict[str, Any]:
                 entity = f"world/tracks/{label}/{state}"
                 state_rows = by_state.get(state, [])
                 if not state_rows:
-                    rr.log(entity, rr.Clear(recursive=False))
+                    # The children (`lines`, `tips`) go with the points.
+                    rr.log(entity, rr.Clear(recursive=True))
                     continue
                 seen_states[label].add(state)
                 rr.log(
                     entity,
                     rr.Points3D(
                         np.array([r.position for r in state_rows]),
-                        colors=[_state_colour(r.object_class, r.state) for r in state_rows],
+                        colors=[_row_colour(r) for r in state_rows],
                         radii=[
                             float(np.clip(0.4 + 0.15 * r.uncertainty, 0.4, 2.5)) for r in state_rows
                         ],
@@ -1302,6 +1460,27 @@ def log_recording(inputs: BuildInputs) -> dict[str, Any]:
                             for r in state_rows
                         ],
                     ),
+                )
+                # Line tracks: the segment beside the point, its tip as a small white point.
+                line_rows = [r for r in state_rows if r.endpoints is not None]
+                _log_or_clear(
+                    f"{entity}/lines",
+                    (
+                        rr.LineStrips3D(
+                            [np.array(r.endpoints) for r in line_rows],
+                            colors=[_row_colour(r) for r in line_rows],
+                            radii=LINE_RADIUS_CM,
+                        )
+                        if line_rows
+                        else None
+                    ),
+                    seen_2d,
+                )
+                tips = [r.tip for r in line_rows if r.tip is not None]
+                _log_or_clear(
+                    f"{entity}/tips",
+                    (rr.Points3D(np.array(tips), colors=[TIP_COLOUR], radii=0.6) if tips else None),
+                    seen_2d,
                 )
             # Trails for the default arm, 2D projections for the arms whose masks are logged:
             # the other arms' 3D points stay (toggle them in the World preset), which keeps
@@ -1325,31 +1504,62 @@ def log_recording(inputs: BuildInputs) -> dict[str, Any]:
                     seen_2d.add(trails_entity)
                 elif trails_entity in seen_2d:
                     rr.log(trails_entity, rr.Clear(recursive=False))
-            if label not in (inputs.mask_arm, inputs.secondary_mask_arm):
+            # The arms with masks in the tiles project their points; an arm tracked as lines
+            # projects its segments and tips into every tile too, whatever its mask budget.
+            if label not in (inputs.mask_arm, inputs.secondary_mask_arm) and not arm.has_lines:
                 continue
             for view in views:
                 entity = f"world/{view}/tracks/{label}"
                 cam = all_cams.get(view)
                 positions, labels, colours = [], [], []
+                segments, segment_colours, tips_2d = [], [], []
                 for r in rows if cam is not None else []:
                     pixel = project(cam, np.asarray(r.position))
-                    if pixel is None or not (
-                        0 <= pixel[0] < cam.size[0] and 0 <= pixel[1] < cam.size[1]
-                    ):
+                    inside = pixel is not None and _inside(pixel, cam)
+                    if inside:
+                        positions.append(pixel)
+                        labels.append(
+                            _track_label(
+                                r, arm.confidence.get((r.track_id, frame), (None, None))[1]
+                            )
+                        )
+                        colours.append(_row_colour(r))
+                    if r.endpoints is None:
                         continue
-                    positions.append(pixel)
-                    labels.append(
-                        _track_label(r, arm.confidence.get((r.track_id, frame), (None, None))[1])
-                    )
-                    colours.append(_state_colour(r.object_class, r.state))
-                if positions:
-                    rr.log(
-                        entity,
-                        rr.Points2D(np.array(positions), labels=labels, colors=colours, radii=5.0),
-                    )
-                    seen_2d.add(entity)
-                elif entity in seen_2d:
-                    rr.log(entity, rr.Clear(recursive=False))
+                    ends = [project(cam, np.asarray(p)) for p in r.endpoints]
+                    if any(p is None for p in ends) or not any(_inside(p, cam) for p in ends):
+                        continue
+                    segments.append(np.array(ends))
+                    segment_colours.append(_row_colour(r))
+                    if r.tip is not None:
+                        tips_2d.append(ends[0])
+                _log_or_clear(
+                    entity,
+                    (
+                        rr.Points2D(np.array(positions), labels=labels, colors=colours, radii=5.0)
+                        if positions
+                        else None
+                    ),
+                    seen_2d,
+                )
+                _log_or_clear(
+                    f"{entity}/lines",
+                    (
+                        rr.LineStrips2D(segments, colors=segment_colours, radii=2.0)
+                        if segments
+                        else None
+                    ),
+                    seen_2d,
+                )
+                _log_or_clear(
+                    f"{entity}/tips",
+                    (
+                        rr.Points2D(np.array(tips_2d), colors=[TIP_COLOUR], radii=4.0)
+                        if tips_2d
+                        else None
+                    ),
+                    seen_2d,
+                )
         # Events: the default arm's active relations as text and the log of transitions.
         for label, arm in inputs.arms.items():
             for e in arm.events_by_frame.get(frame, []):
@@ -1409,6 +1619,22 @@ def log_recording(inputs: BuildInputs) -> dict[str, Any]:
         ),
         "build_seconds": round(elapsed, 1),
     }
+
+
+def _inside(pixel: np.ndarray, cam: Camera) -> bool:
+    return bool(0 <= pixel[0] < cam.size[0] and 0 <= pixel[1] < cam.size[1])
+
+
+def _log_or_clear(entity: str, archetype: Any, seen: set[str]) -> None:
+    """Log `archetype` at the current time, or clear the entity once it has been logged
+    before and has nothing this frame (a Clear on a never-logged entity is dead weight)."""
+    import rerun as rr
+
+    if archetype is not None:
+        rr.log(entity, archetype)
+        seen.add(entity)
+    elif entity in seen:
+        rr.log(entity, rr.Clear(recursive=False))
 
 
 def _active_text(strip_row: dict[str, Any], frame: int, arm: str) -> str:
@@ -1576,6 +1802,12 @@ def _log_loo_and_handoff(inputs: BuildInputs, frames: Sequence[int]) -> None:
 # --------------------------------------------------------------------------- presets
 
 
+def hidden_arm_labels(arms: dict[str, ArmData], mask_arm: str) -> list[str]:
+    """The arms the presets hide until toggled: every arm but the default one and the ones
+    tracked as lines, which are drawn beside the default arm's points."""
+    return [a for a in arms if a != mask_arm and not arms[a].has_lines]
+
+
 def write_presets(inputs: BuildInputs, index: dict[str, Any]) -> dict[str, Any]:
     """The three `.rbl` presets beside the recording (and copies under `configs/rerun/`),
     validated against the recording's entity tree with `review_presets`' checker."""
@@ -1589,7 +1821,11 @@ def write_presets(inputs: BuildInputs, index: dict[str, Any]) -> dict[str, Any]:
     fixed_views = list(inputs.cams)
     views = [*fixed_views, inputs.clip.fpv_view]
     arm = inputs.mask_arm
-    other_arms = [a for a in inputs.arms if a != arm]
+    other_arms = hidden_arm_labels(inputs.arms, arm)
+    line_arms = [a for a in inputs.arms if a != arm and inputs.arms[a].has_lines]
+    shown = f"tracks of arm ({arm})" + (
+        f" and the line tracks of ({', '.join(line_arms)}) shown" if line_arms else " shown"
+    )
 
     def hidden(prefixes: Iterable[str]) -> dict[str, Any]:
         out = {}
@@ -1610,7 +1846,7 @@ def write_presets(inputs: BuildInputs, index: dict[str, Any]) -> dict[str, Any]:
         world_excludes += [f"- /world/{v}/masks/**", f"- /world/{v}/tracks/**"]
     world_view = rrb.Spatial3DView(
         origin="world",
-        name=f"World: cm, z down; tracks of arm ({arm}) shown, other arms hidden",
+        name=f"World: cm, z down; {shown}, other arms hidden",
         contents=["+ /world/**", *world_excludes],
         overrides=hidden([f"world/tracks/{a}" for a in other_arms] + ["world/T5_shipped"]),
     )
@@ -1621,8 +1857,12 @@ def write_presets(inputs: BuildInputs, index: dict[str, Any]) -> dict[str, Any]:
     events_series = rrb.TimeSeriesView(
         origin="events",
         name="events strip: active contained / held / proximity per arm, lid closed (model output)",
-        contents=["+ /events/lid_closed"]
-        + [f"+ /events/{a}/{k}" for a in inputs.arms for k in ("contained", "held", "proximity")],
+        contents=[f"+ /{p}" for p in present("events/lid_closed")]
+        + [
+            f"+ /{p}"
+            for a in inputs.arms
+            for p in present(*(f"events/{a}/{k}" for k in ("contained", "held", "proximity")))
+        ],
         overrides=hidden([f"events/{a}" for a in other_arms]),
     )
     story_tabs = rrb.Tabs(
@@ -1849,6 +2089,7 @@ def build(
     mask_every: int = 6,
     secondary_mask_every: int = 30,
     tracks_dir: str | None = None,
+    tracks_dir_by_arm: dict[str, str] | None = None,
     trials_path: Path = DEFAULT_TRIALS,
     scoreboard_md: Path | None = None,
     preset_dir: Path | None = DEFAULT_PRESET_DIR,
@@ -1871,18 +2112,22 @@ def build(
     fpv_source = resolve_fpv_source(config, fpv_poses)
     rig = json.loads(Path(rig_path).read_text(encoding="utf-8"))
     frames = list(clip.frames)
-    arms = {label: load_arm(label, path, tracks_dir) for label, path in arm_dirs.items()}
+    per_arm = tracks_dir_by_arm or {}
+    arms = {
+        label: load_arm(label, path, per_arm.get(label, tracks_dir))
+        for label, path in arm_dirs.items()
+    }
     if mask_arm not in arms:
         mask_arm = next(iter(arms))
     if secondary_mask_arm not in arms:
         secondary_mask_arm = None
     observations = {
-        label: load_view_observations(arm.arm_dir / "observations.jsonl", frames=frames)
+        label: load_view_observations(arm.observations_path, frames=frames)
         for label, arm in arms.items()
         if label in (mask_arm, secondary_mask_arm) or arm.worker_runs
     }
     default_arm = arms[mask_arm]
-    box_sizes = median_box_sizes(default_arm.arm_dir / "observations.jsonl", clip.containers)
+    box_sizes = median_box_sizes(default_arm.observations_path, clip.containers)
     volumes = container_volumes(rig, clip.containers, cams, box_sizes)
     trials = (
         json.loads(Path(trials_path).read_text(encoding="utf-8"))
@@ -1931,15 +2176,18 @@ def build(
         views=[*cams, clip.fpv_view],
         annotated=clip_doc.get("annotated_frames_in_window", {}).get("six_view", []),
     )
-    # The confidence drop: every arm with masks is searched; the candidate with the largest
-    # confidence drop + mask-vs-box IoU drop wins (the arms' known failures, when they qualify,
-    # are preferred within their own arm).
+    # The pipette in use as a 3D line, from every arm whose rows carry endpoints.
+    for line_arm in arms.values():
+        story += pick_held_pipette_story(line_arm, frames)
+    # The confidence drop: every arm with masks and a confidence pass is searched; the
+    # candidate with the largest confidence drop + mask-vs-box IoU drop wins (the arms' known
+    # failures, when they qualify, are preferred within their own arm).
     drop_items: list[StoryItem] = []
     for drop_arm, drop_data in arms.items():
-        if not drop_data.worker_runs:
+        if not drop_data.worker_runs or not drop_data.confidence:
             continue
         drop_signals = load_observation_signals(
-            drop_data.arm_dir / "observations.jsonl",
+            drop_data.observations_path,
             {(v, r.frame, s) for r in drop_data.rows for v, s in r.support_slots.items()},
         )
         drop_items += pick_confidence_drop(
@@ -1948,7 +2196,7 @@ def build(
     if drop_items:
         story.append(max(drop_items, key=lambda it: it.numbers.get("score", 0.0)))
     story = number_items(story)
-    loo_rows = detector_rows_for_slice(default_arm.arm_dir / "observations.jsonl", LOO_CLASSES)
+    loo_rows = detector_rows_for_slice(default_arm.observations_path, LOO_CLASSES)
     output.mkdir(parents=True, exist_ok=True)
     inputs = BuildInputs(
         clip=clip,
@@ -1998,7 +2246,12 @@ def build(
         "clip_config": Path(clip_path).as_posix(),
         "window": [clip.start_frame, clip.end_frame_exclusive],
         "arms": {
-            label: {"arm_dir": a.arm_dir.as_posix(), "tracks_dir": a.tracks_dir.as_posix()}
+            label: {
+                "arm_dir": a.arm_dir.as_posix(),
+                "tracks_dir": a.tracks_dir.as_posix(),
+                "observations": a.observations_path.as_posix(),
+                "lines": a.has_lines,
+            }
             for label, a in arms.items()
         },
         "mask_arm": mask_arm,
@@ -2041,8 +2294,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--tracks-dir",
         default=None,
         help="tracks directory name under each arm (default: tracks-ext when present, else "
-        "tracks); the confidence and events outputs are read from confidence<tag> / "
-        "events<tag> for tracks<tag>",
+        "tracks), or label=name,label=name to name it per arm (b=tracks-ext,lines=tracks-lines); "
+        "the confidence and events outputs are read from confidence<tag> / events<tag> for "
+        "tracks<tag>",
     )
     parser.add_argument("--trials", type=Path, default=DEFAULT_TRIALS)
     parser.add_argument("--scoreboard", type=Path, default=None, help="scoreboard.md to embed")
@@ -2064,6 +2318,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    tracks_dir, tracks_dir_by_arm = parse_tracks_dir(args.tracks_dir)
     index = build(
         clip_path=args.clip_config,
         arm_dirs=parse_arm_dirs(args.arm_dirs),
@@ -2074,7 +2329,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         secondary_mask_arm=args.secondary_mask_arm or None,
         mask_every=args.mask_every,
         secondary_mask_every=args.secondary_mask_every,
-        tracks_dir=args.tracks_dir,
+        tracks_dir=tracks_dir,
+        tracks_dir_by_arm=tracks_dir_by_arm,
         trials_path=args.trials,
         scoreboard_md=args.scoreboard,
         preset_dir=Path(args.preset_dir) if args.preset_dir else None,

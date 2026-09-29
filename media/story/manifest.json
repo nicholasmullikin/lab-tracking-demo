@@ -2015,6 +2015,127 @@
         ]
       },
       "encode": null
+    },
+    {
+      "id": "pipette-lines",
+      "day": "2026-09-28",
+      "kind": "world",
+      "caption": "The line fits the shaft, and its tip flips to the wrong end while the hand covers it",
+      "struggle": "The pipettes-as-3D-lines phase: masks are coloured by the point tracker's id (a new colour is a new id; the counter names the ids so far) and the v3 line tracker's segment is projected into T4 and T5 with its resolved tip as a white dot. The line fits the shaft while two cameras see it; while the hand covers the shaft the tip jumps to the plunger end and back, and the point tracker still splits the pipette into new ids.",
+      "output": "media/story/2026-09-28-pipette-lines.gif",
+      "size_bytes": 1257887,
+      "sources": [
+        {
+          "label": "T4, arm b masks coloured by point id",
+          "view": "T4",
+          "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T4_600-4200.mp4",
+          "observations": "runs/finebio-arms-P03_03_01-20260925/b-box-decode/T4/muggledsam-arm-box-decode-t4-20260925t052510z-r1280/observations.jsonl",
+          "labels": [
+            "blue_pipette#*"
+          ],
+          "crop": "auto"
+        },
+        {
+          "label": "T5 (top)",
+          "view": "T5",
+          "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T5_600-4200.mp4",
+          "observations": "runs/finebio-arms-P03_03_01-20260925/b-box-decode/T5/muggledsam-arm-box-decode-t5-20260925t053512z-r1280/observations.jsonl",
+          "labels": [
+            "blue_pipette#*"
+          ],
+          "crop": "auto"
+        }
+      ],
+      "frames": {
+        "start": 840,
+        "stop": 960,
+        "stride": 3
+      },
+      "fps": 10,
+      "duration_seconds": 4.0,
+      "width": 640,
+      "options": {
+        "columns": 2,
+        "tracks": "runs/finebio-arms-P03_03_01-filtered-20260927/b-box-decode-arm/tracks-ext/tracks.jsonl",
+        "line_tracks": "runs/finebio-lines-P03_03_01-20260928/arm-b-lines-v3/tracks-lines/tracks.jsonl",
+        "tracks_frame_offset": 600,
+        "rig": "runs/finebio-rig-P03_03_01-600-4200/rig.json",
+        "cameras": "configs/finebio/cameras/P03_03_01_600-4200.json",
+        "events_summary": "runs/finebio-arms-P03_03_01-filtered-20260927/b-box-decode-arm/events-ext/events_summary.json",
+        "panel_classes": [
+          "blue_pipette"
+        ],
+        "label_classes": [
+          "blue_pipette"
+        ],
+        "panel_height": 200,
+        "extent": [
+          -55,
+          -36,
+          48,
+          58
+        ],
+        "count_ids_of_class": "blue_pipette"
+      },
+      "fallback": null,
+      "detail": {
+        "tiles": [
+          {
+            "label": "T4, arm b masks coloured by point id",
+            "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T4_600-4200.mp4",
+            "observations": "runs/finebio-arms-P03_03_01-20260925/b-box-decode/T4/muggledsam-arm-box-decode-t4-20260925t052510z-r1280/observations.jsonl",
+            "run": "runs/finebio-arms-P03_03_01-20260925/b-box-decode/T4/muggledsam-arm-box-decode-t4-20260925t052510z-r1280",
+            "frame_offset": 0,
+            "crop": [
+              0.3045,
+              0.24655555555555558,
+              0.5434166666666667,
+              1.0
+            ],
+            "view": "T4"
+          },
+          {
+            "label": "T5 (top)",
+            "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T5_600-4200.mp4",
+            "observations": "runs/finebio-arms-P03_03_01-20260925/b-box-decode/T5/muggledsam-arm-box-decode-t5-20260925t053512z-r1280/observations.jsonl",
+            "run": "runs/finebio-arms-P03_03_01-20260925/b-box-decode/T5/muggledsam-arm-box-decode-t5-20260925t053512z-r1280",
+            "frame_offset": 0,
+            "crop": [
+              0.4613333333333333,
+              0.3857407407407407,
+              0.7157500000000001,
+              0.9309259259259259
+            ],
+            "view": "T5"
+          }
+        ],
+        "tracks": "runs/finebio-arms-P03_03_01-filtered-20260927/b-box-decode-arm/tracks-ext/tracks.jsonl",
+        "tracks_frame_offset": 600,
+        "line_tracks": "runs/finebio-lines-P03_03_01-20260928/arm-b-lines-v3/tracks-lines/tracks.jsonl",
+        "rig": "runs/finebio-rig-P03_03_01-600-4200/rig.json",
+        "cameras": "configs/finebio/cameras/P03_03_01_600-4200.json",
+        "events_summary": "runs/finebio-arms-P03_03_01-filtered-20260927/b-box-decode-arm/events-ext/events_summary.json",
+        "highlight": [],
+        "distinct_ids_in_clip": {
+          "blue_pipette": 4
+        },
+        "distinct_line_ids_in_clip": {
+          "blue_pipette": 1
+        }
+      },
+      "encode": {
+        "attempts": [
+          {
+            "colours": 128,
+            "scale": 1.0,
+            "width": 640,
+            "size_bytes": 1257887
+          }
+        ],
+        "size_bytes": 1257887,
+        "target_bytes": 1500000,
+        "max_bytes": 3000000
+      }
     }
   ],
   "coverage": {
@@ -2125,6 +2246,13 @@
     "2026-09-27": {
       "images": [
         "media/story/2026-09-27-gate2-rejected-masks.png"
+      ],
+      "fallbacks": [],
+      "placeholders": []
+    },
+    "2026-09-28": {
+      "images": [
+        "media/story/2026-09-28-pipette-lines.gif"
       ],
       "fallbacks": [],
       "placeholders": []

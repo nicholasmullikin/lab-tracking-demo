@@ -1,6 +1,6 @@
 {
   "schema": "battle-story-media/1",
-  "$comment": "One entry per GIF or still of docs/story.md. Each active day Sep 8-27 shows the failure or hard case that drove the next change; the one success clip is 2026-09-25 finebio-3d. Frames are indices into the named video (proxy frame k == raw frame start+k for FineBio; FineBio raw = proxy + 600). Rendered by `battle-story-media render --manifest configs/story/media.json --output media/story`; a missing source falls back to `fallback` and is reported in media/story/manifest.json. Assembly101 frames are CC BY-NC 4.0; FineBio frames are gated, non-commercial (Yagi et al., IJCV 2025).",
+  "$comment": "One entry per GIF or still of docs/story.md. Each active day Sep 8-29 shows the failure or hard case that drove the next change; the one success clip is 2026-09-25 finebio-3d. Frames are indices into the named video (proxy frame k == raw frame start+k for FineBio; FineBio raw = proxy + 600). Rendered by `battle-story-media render --manifest configs/story/media.json --output media/story`; a missing source falls back to `fallback` and is reported in media/story/manifest.json. Assembly101 frames are CC BY-NC 4.0; FineBio frames are gated, non-commercial (Yagi et al., IJCV 2025).",
   "defaults": {"fps": 10, "width": 640, "max_bytes": 3000000, "target_bytes": 1500000},
   "entries": [
     {
@@ -333,6 +333,33 @@
       ],
       "options": {"columns": 3, "cell_height": 170, "margin": 0.5},
       "fallback": "runs/finebio-anchors-P03_03_01-20260925/sheets/f000916_T4_overview.jpg"
+    },
+    {
+      "id": "pipette-lines",
+      "day": "2026-09-28",
+      "kind": "world",
+      "struggle": "The pipettes-as-3D-lines phase: masks are coloured by the point tracker's id (a new colour is a new id; the counter names the ids so far) and the v3 line tracker's segment is projected into T4 and T5 with its resolved tip as a white dot. The line fits the shaft while two cameras see it; while the hand covers the shaft the tip jumps to the plunger end and back, and the point tracker still splits the pipette into new ids.",
+      "caption": "The line fits the shaft, and its tip flips to the wrong end while the hand covers it",
+      "sources": [
+        {"label": "T4, arm b masks coloured by point id", "view": "T4", "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T4_600-4200.mp4", "observations": "runs/finebio-arms-P03_03_01-20260925/b-box-decode/T4/muggledsam-arm-box-decode-t4-20260925t052510z-r1280/observations.jsonl", "labels": ["blue_pipette#*"], "crop": "auto"},
+        {"label": "T5 (top)", "view": "T5", "video": "data/derived/finebio/P03_03_01/600-4200/P03_03_01_T5_600-4200.mp4", "observations": "runs/finebio-arms-P03_03_01-20260925/b-box-decode/T5/muggledsam-arm-box-decode-t5-20260925t053512z-r1280/observations.jsonl", "labels": ["blue_pipette#*"], "crop": "auto"}
+      ],
+      "frames": {"start": 840, "stop": 960, "stride": 3},
+      "options": {
+        "columns": 2,
+        "tracks": "runs/finebio-arms-P03_03_01-filtered-20260927/b-box-decode-arm/tracks-ext/tracks.jsonl",
+        "line_tracks": "runs/finebio-lines-P03_03_01-20260928/arm-b-lines-v3/tracks-lines/tracks.jsonl",
+        "tracks_frame_offset": 600,
+        "rig": "runs/finebio-rig-P03_03_01-600-4200/rig.json",
+        "cameras": "configs/finebio/cameras/P03_03_01_600-4200.json",
+        "events_summary": "runs/finebio-arms-P03_03_01-filtered-20260927/b-box-decode-arm/events-ext/events_summary.json",
+        "panel_classes": ["blue_pipette"],
+        "label_classes": ["blue_pipette"],
+        "panel_height": 200,
+        "extent": [-55, -36, 48, 58],
+        "count_ids_of_class": "blue_pipette"
+      },
+      "fallback": "runs/finebio-tips-P03_03_01-20260929/crops/f001395_T4_full.jpg"
     }
   ]
 }

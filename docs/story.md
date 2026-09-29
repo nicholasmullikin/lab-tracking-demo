@@ -330,3 +330,41 @@ Evidence: `runs/finebio-anchors-P03_03_01-20260925/scoreboard/` and
 `runs/finebio-arms-P03_03_01-filtered-20260927/`; archive entries
 [gate 2 held](archive/method-ledger.md#sep-27-gate-2-held-the-anchor-scoreboard-on-trial-1-p6-anchors)
 and [the redo on the filtered seeds](archive/method-ledger.md#sep-27-trial-1-downstream-redone-on-the-human-filtered-seeds-post-gate).
+
+## Sep 28 to 29: pipettes as 3D lines, and where it stopped
+
+**Tracking the pipettes as 3D line segments instead of box centres failed its pre-registered
+rule on all three clauses, and the failure named what to change next.** The point tracker
+reduces each camera's mask to one point, and a 30 cm pipette seen from above, from the side and
+from the head camera gives three different points on the shaft. So I fitted a 3D line to the
+mask axes instead, with a length prior, a hold on the hand and a colour vote at the plunger.
+Four attempts ran on both trials with nothing tuned between them. The held blue pipette fell
+from 51 ids to 18, a 2.8x fall where the rule asked for 5x, and the yellow pipette in room 2
+from 48 to 17. The held-out residual against the box centre was a draw within a pixel, and it changed
+sign between the rooms. On 48 tip anchors I clicked at the cone end, the median tip error was
+3.03 cm against a 2 cm rule, with the wrong end named on 14 of 47. Across the axis the line
+sits within about 2 cm of my clicks in every arm, so the axis is right and the end choice
+fails, and the frames where the hand covers the shaft still end an id.
+
+![The line fits the shaft, and its tip flips to the wrong end while the hand covers it](../media/story/2026-09-28-pipette-lines.gif)
+
+The bench gave up facts along the way that stand. The pipettes rest flat on the bench, not
+upright in a stand. The colour is the plunger button, not a ring at the tip. The disposable tip
+sits inside SAM3's mask when one is on, so the blue pipette's length has two modes, 22.3 and
+29.5 cm. The detector's tip classes fire on 1% of pipette rows, and SAM3 given an empty box
+returns a blob the size of the box. My first click sitting accepted a suggested marker and
+measured the plunger end on half its cells, so I redid it without a marker. The click anchors
+also read the id gain: over the 30 click frames the blue pipette spans ten line ids, the same
+ten as the point tracker, and the one long line track is the resting red pipette absorbing the
+anchors the detector's blue class put on it. The next lever is a tracker change: carry a held
+pipette on the triangulated hand and refuse a new id until the hand lets go. That plan is being
+written.
+
+The number that changed: ids on the held blue pipette, 51 to 18, against the fall to 10 or
+fewer the rule asked for; the tip error median 3.03 cm against 2 cm.
+
+Evidence: `runs/finebio-lines-P03_03_01-20260928/`, `runs/finebio-lines-P20_03_01-20260928/`,
+`runs/finebio-tipseg-P03_03_01-20260929/`, `runs/finebio-tips-P03_03_01-20260929/` and the two
+click records [`qa/finebio-P03_03_01-tip-clicks.human-record.json`](qa/finebio-P03_03_01-tip-clicks.human-record.json)
+and [`qa/finebio-P03_03_01-tip-clicks-2.human-record.json`](qa/finebio-P03_03_01-tip-clicks-2.human-record.json).
+The archive closed before this phase, so the run READMEs are its record.

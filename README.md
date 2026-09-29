@@ -2,7 +2,7 @@
 A 3D object tracker for a wet-lab bench made with SAM3, six cameras and no training
 
 This is a method lab that went from SAM3 smoke tests on a toy car assembly (Assembly101) to a
-six-camera 3D object tracker on a wet-lab bench (FineBio) in 20 days. I trained nothing and
+six-camera 3D object tracker on a wet-lab bench (FineBio) in 22 days. I trained nothing and
 annotated no ground truth, so every number on this page says what it was measured against. This
 page is the five-minute version. The day by day is in [`docs/story.md`](docs/story.md), the
 numbers are in [`docs/results.md`](docs/results.md), the commands are in
@@ -70,6 +70,7 @@ accepted or rejected each seed box. At gate 2 I picked the right mask on a sampl
 | [Sep 25](docs/story.md#sep-25-the-3d-tracker-runs-in-both-rooms) | The tracker ran in both rooms. Video memory drifted and the pipette in the hand fragmented into 59 identities | <a href="docs/story.md#sep-25-the-3d-tracker-runs-in-both-rooms"><img src="media/story/2026-09-25-pipette-fragments.gif" width="140" alt="The pipette in the hand fragments"></a> |
 | [Sep 26](docs/story.md#sep-26-gate-1-rejects-six-seeds) | Gate 1 rejected six seeds (two objects under one box, a glove, a table edge) and no verdict moved | [still](docs/story.md#sep-26-gate-1-rejects-six-seeds) |
 | [Sep 27](docs/story.md#sep-27-gate-2-rejects-30-masks-and-the-redo-holds) | Gate 2 rejected 30 of 337 masks, almost all pipettes in a hand. The label-free gap shrank from 20 percentage points to 5 | [still](docs/story.md#sep-27-gate-2-rejects-30-masks-and-the-redo-holds) |
+| [Sep 28 to 29](docs/story.md#sep-28-to-29-pipettes-as-3d-lines-and-where-it-stopped) | Pipettes tracked as 3D lines fit the shaft but cut the held pipette's ids 2.8x, not 5x, and named the wrong end where the hand covered it. Not adopted | <a href="docs/story.md#sep-28-to-29-pipettes-as-3d-lines-and-where-it-stopped"><img src="media/story/2026-09-28-pipette-lines.gif" width="140" alt="The line fits the shaft and its tip flips while the hand covers it"></a> |
 
 ## Recordings
 
@@ -106,7 +107,8 @@ that model's masks. None of them is accuracy against ground truth. The long vers
   control (drawn for camera 6 only).
 - The pipette in the hand fragments in both rooms (59 identities for blue and 48 for yellow, with
   the extensions on). I read it as an observation problem, since a long object seen from one or two
-  cameras has no single 3D point at its box center.
+  cameras has no single 3D point at its box center. Tracking it as a 3D line cut that to 18 and 17
+  and failed its own rule, so the observation is only part of it.
 - Proximity events are zero by protocol, because no pipette comes near the plate in either window.
   The mechanism has only been tested on synthetic tracks.
 - Trial 2 has no human gate. Its 66 seed tiles are undecided, no anchor set was chosen and its
@@ -119,8 +121,11 @@ has the terms they carry and says they must be removed before any redistribution
 
 ## Open problems
 
-- The pipette in the hand. The tracker needs an observation that is one 3D point, a tip or handle
-  keypoint per camera instead of a box center. Named, not built.
+- The pipette in the hand. I tried tracking it as a 3D line fitted to the mask axes, with a
+  length prior and a hold on the hand. The ids fell 2.8x (51 to 18), not the 5x I pre-registered,
+  and the tip landed 3 cm from my clicks against a 2 cm rule, so I did not adopt it. The line
+  fits the shaft, and the ids die where the hand covers it. The next lever is in the tracker:
+  carry a held pipette on the hand and refuse a new id until the hand lets go. Named, not built.
 - Room 2 has no human gate. Gate 2 was only run on trial 1, so room 2 has no number anchored on
   my choices. The web workspace for it exists and the sitting would take about 1.5 h.
 - Nothing was swept. Frames before a re-seed, the memory write threshold, the hysteresis widths, the

@@ -14,7 +14,10 @@ Kinds:
 * `grid`: several such tiles side by side (methods, views, arms), `columns` per row.
 * `world`: the FineBio layout, camera tiles above a top-down bench panel drawn from
   `Track3D` rows, the rig's static objects, the container volumes and the camera centres;
-  masks and points share one colour per track id.
+  masks and points share one colour per track id.  `options.line_tracks` names a second
+  tracks file whose rows carry `endpoints_cm` (the pipettes-as-lines extension, Sep 28):
+  each segment is drawn on the panel and, through the fixed cameras in `options.cameras`,
+  projected into its tile, with the resolved tip as a white dot.
 * `still`: one or more images tiled into a PNG.
 * `cells`: crops around boxes on chosen frames (a human gate's accept / reject tiles).
 * `rerun_still`: `rerun --headless --screenshot-to` on a recording and a blueprint.
@@ -70,6 +73,7 @@ PALETTE: tuple[tuple[int, int, int], ...] = (
 MUTED = (120, 120, 120)
 ACCEPT = (90, 200, 90)
 REJECT = (60, 60, 230)
+TIP = (255, 255, 255)
 
 
 # --------------------------------------------------------------------------- manifest
@@ -442,6 +446,41 @@ def auto_crop(source: TileSource, frames: Iterable[int], margin: float = 0.12) -
     return [max(0.0, x0 - mx), max(0.0, y0 - my), min(1.0, x1 + mx), min(1.0, y1 + my)]
 
 
+@dataclass(frozen=True)
+class TileTransform:
+    """How a full-frame pixel lands on a composited tile: the crop window's origin, the
+    scale and the letterbox padding (`composite_tile` and any later drawing share it)."""
+
+    x0: int
+    y0: int
+    x1: int
+    y1: int
+    scale: float
+    inner: tuple[int, int]
+    pad: tuple[int, int]
+
+    def to_tile(self, u: float, v: float) -> tuple[int, int]:
+        return (
+            int(round((u - self.x0) * self.scale)) + self.pad[0],
+            int(round((v - self.y0) * self.scale)) + self.pad[1],
+        )
+
+
+def tile_transform(
+    frame_shape: Sequence[int], size: tuple[int, int], crop: Sequence[float] | None
+) -> TileTransform:
+    height, width = int(frame_shape[0]), int(frame_shape[1])
+    if crop is None:
+        # No crop asked for: the whole frame, letterboxed (an ego 4:3 clip keeps its edges).
+        x0, y0, x1, y1 = 0, 0, width, height
+    else:
+        x0, y0, x1, y1 = fit_crop(crop, width, height, size[0] / size[1])
+    scale = min(size[0] / max(x1 - x0, 1), size[1] / max(y1 - y0, 1))
+    inner = (max(1, int(round((x1 - x0) * scale))), max(1, int(round((y1 - y0) * scale))))
+    pad = ((size[0] - inner[0]) // 2, (size[1] - inner[1]) // 2)
+    return TileTransform(x0, y0, x1, y1, scale, inner, pad)
+
+
 def composite_tile(
     frame: np.ndarray,
     objects: Sequence[FrameObject],
@@ -461,14 +500,9 @@ def composite_tile(
     short text drawn at the box's top-left.
     """
     height, width = frame.shape[:2]
-    if crop is None:
-        # No crop asked for: the whole frame, letterboxed (an ego 4:3 clip keeps its edges).
-        x0, y0, x1, y1 = 0, 0, width, height
-    else:
-        x0, y0, x1, y1 = fit_crop(crop, width, height, size[0] / size[1])
-    scale = min(size[0] / max(x1 - x0, 1), size[1] / max(y1 - y0, 1))
-    inner = (max(1, int(round((x1 - x0) * scale))), max(1, int(round((y1 - y0) * scale))))
-    pad = ((size[0] - inner[0]) // 2, (size[1] - inner[1]) // 2)
+    transform = tile_transform(frame.shape, size, crop)
+    x0, y0, x1, y1 = transform.x0, transform.y0, transform.x1, transform.y1
+    scale, inner, pad = transform.scale, transform.inner, transform.pad
     interpolation = cv2.INTER_AREA if scale < 1 else cv2.INTER_LINEAR
     view = np.full((size[1], size[0], 3), 18, dtype=np.uint8)
     view[pad[1] : pad[1] + inner[1], pad[0] : pad[0] + inner[0]] = cv2.resize(
@@ -516,6 +550,19 @@ class TrackRow:
     position: tuple[float, float, float]
     state: str
     support_slots: dict[str, str]
+    # The line extension's fields, None on a point track: the segment's two endpoints (cm),
+    # whether `endpoints[0]` is the tip, and the plurality of the per-view detector classes.
+    endpoints: tuple[tuple[float, float, float], tuple[float, float, float]] | None = None
+    tip_resolved: bool | None = None
+    observed_class: str | None = None
+
+    @property
+    def shown_class(self) -> str:
+        return self.observed_class or self.object_class
+
+    @property
+    def tip(self) -> tuple[float, float, float] | None:
+        return self.endpoints[0] if self.endpoints is not None and self.tip_resolved else None
 
 
 def read_tracks(path: Path, frames: Iterable[int]) -> dict[int, list[TrackRow]]:
@@ -533,6 +580,7 @@ def read_tracks(path: Path, frames: Iterable[int]) -> dict[int, list[TrackRow]]:
             if not digits.isdigit() or int(digits) not in wanted:
                 continue
             row = json.loads(line)
+            ends = row.get("endpoints_cm")
             out[int(row["frame_index"])].append(
                 TrackRow(
                     int(row["frame_index"]),
@@ -541,6 +589,13 @@ def read_tracks(path: Path, frames: Iterable[int]) -> dict[int, list[TrackRow]]:
                     tuple(float(v) for v in row["position_cm"]),  # type: ignore[arg-type]
                     str(row["state"]),
                     dict(row.get("support_slots") or {}),
+                    endpoints=(
+                        (tuple(float(v) for v in ends[0]), tuple(float(v) for v in ends[1]))  # type: ignore[arg-type]
+                        if ends
+                        else None
+                    ),
+                    tip_resolved=row.get("tip_resolved"),
+                    observed_class=row.get("observed_class"),
                 )
             )
     return out
@@ -652,7 +707,17 @@ def render_world_panel(
         colour = colour_of(row.track_id) if colour_of else colour_for(row.track_id)
         px, py = to_px(row.position[0], row.position[1])
         filled = row.state in ("observed", "contained", "held")
-        cv2.circle(panel, (px, py), 4, colour, -1 if filled else 1)
+        if row.endpoints is not None:
+            # A line track: the segment in the id's colour and its tip as a white dot; no
+            # midpoint dot, so it reads apart from the point tracker's dots.
+            a = to_px(row.endpoints[0][0], row.endpoints[0][1])
+            b = to_px(row.endpoints[1][0], row.endpoints[1][1])
+            cv2.line(panel, a, b, colour, 2 if filled else 1, cv2.LINE_AA)
+            if row.tip is not None:
+                cv2.circle(panel, a, 4, TIP, -1)
+                cv2.circle(panel, a, 4, colour, 1)
+        else:
+            cv2.circle(panel, (px, py), 4, colour, -1 if filled else 1)
         if row.track_id in highlight:
             cv2.circle(panel, (px, py), 9, colour, 2)
             put_text(
@@ -801,8 +866,15 @@ def render_tiles(
     colour_of: Any = None,
     tag_of: Any = None,
     per_frame_hook: Any = None,
+    per_tile_hook: Any = None,
+    legend_extra: Sequence[tuple[str, tuple[int, int, int]]] = (),
 ) -> tuple[list[np.ndarray], list[dict[str, Any]]]:
-    """The per-frame tile grid of an overlay / grid / world entry (before any panel)."""
+    """The per-frame tile grid of an overlay / grid / world entry (before any panel).
+
+    `per_tile_hook(source, frame, tile, transform)` draws on one composited tile in place,
+    with the `TileTransform` that maps full-frame pixels onto it; `legend_extra` adds rows
+    to the legend strip under the tiles.
+    """
     assert entry.frames is not None
     sources = [load_tile_source(raw, root) for raw in entry.sources]
     if not sources:
@@ -875,6 +947,10 @@ def render_tiles(
                     alpha=source.alpha,
                     tag_of=(lambda o, v=source.view, f=frame: tag_of(o, v, f)) if tag_of else None,
                 )
+                if per_tile_hook is not None:
+                    per_tile_hook(
+                        source, frame, tile, tile_transform(image.shape, size, crops[s_index])
+                    )
             label_tile(tile, source.label)
             tiles.append(tile)
         grid = tile_grid(tiles, columns)
@@ -895,6 +971,7 @@ def render_tiles(
         }
         for i, (s, raw) in enumerate(zip(sources, entry.sources, strict=True))
     ]
+    legend = [*legend, *legend_extra]
     if legend:
         strip = legend_bar(frames[0].shape[1], legend) if frames else None
         if strip is not None:
@@ -1021,6 +1098,29 @@ def _id_counter(
     return counts
 
 
+def _project(cam: Any, point: Sequence[float]) -> tuple[float, float] | None:
+    """A world point through a fixed camera (`finebio_cameras.Camera`), None behind it."""
+    p = np.asarray(point, dtype=np.float64)
+    if float((cam.R @ p + cam.tvec.reshape(3))[2]) <= 0:
+        return None
+    u, v = cam.project(p)[0]
+    return float(u), float(v)
+
+
+def _line_id_counter(
+    tracks: dict[int, list[TrackRow]], frames: Sequence[int], offset: int, shown_class: str
+) -> list[int]:
+    """Distinct live line-track ids whose observed class is `shown_class`, up to each frame."""
+    seen: set[str] = set()
+    counts = []
+    for frame in frames:
+        for row in tracks.get(frame + offset, ()):
+            if row.endpoints is not None and row.shown_class == shown_class and row.state != "lost":
+                seen.add(row.track_id)
+        counts.append(len(seen))
+    return counts
+
+
 def render_world(entry: MediaEntry, root: Path) -> tuple[list[np.ndarray], dict[str, Any]]:
     assert entry.frames is not None
     opts = entry.options
@@ -1034,19 +1134,35 @@ def render_world(entry: MediaEntry, root: Path) -> tuple[list[np.ndarray], dict[
     colour_of, tag_of = _track_colouring(tracks, offset, highlight)
     panel_h = int(opts.get("panel_height", 260))
     classes = opts.get("panel_classes")
-    all_rows = [r for rows in tracks.values() for r in rows]
-    if classes:
-        all_rows = [r for r in all_rows if r.object_class in classes]
+    # A second tracks file of line rows (segments with a tip), drawn on the panel and, through
+    # the fixed cameras, into the tiles; the point rows keep the mask colouring and the count.
+    line_tracks: dict[int, list[TrackRow]] = {}
+    cams: dict[str, Any] = {}
+    if opts.get("line_tracks"):
+        line_tracks = read_tracks(_require(root, opts["line_tracks"], "line tracks"), raw_frames)
+        if opts.get("cameras"):
+            from .finebio_cameras import cameras_from_config, read_camera_config
+
+            cams = cameras_from_config(
+                read_camera_config(_require(root, opts["cameras"], "camera config"))
+            )
+
+    def keep(row: TrackRow) -> bool:
+        return not classes or row.shown_class in classes or row.track_id in highlight
+
+    def line_rows_at(raw: int) -> list[TrackRow]:
+        return [r for r in line_tracks.get(raw, ()) if r.endpoints is not None and keep(r)]
+
+    all_rows = [r for rows in tracks.values() for r in rows if keep(r)]
+    all_rows += [r for raw in raw_frames for r in line_rows_at(raw)]
     if scene.extent is None:
         scene.extent = scene_extent(scene, all_rows)  # type: ignore[assignment]
 
     def hook(frame: int, grid: np.ndarray) -> np.ndarray:
         raw = frame + offset
-        rows = tracks.get(raw, [])
-        if classes:
-            rows = [r for r in rows if r.object_class in classes or r.track_id in highlight]
+        rows = [r for r in tracks.get(raw, []) if keep(r)] + line_rows_at(raw)
         labelled = tuple(highlight) + tuple(
-            r.track_id for r in rows if r.object_class in label_classes
+            r.track_id for r in rows if r.shown_class in label_classes
         )
         panel = render_world_panel(
             rows,
@@ -1058,13 +1174,41 @@ def render_world(entry: MediaEntry, root: Path) -> tuple[list[np.ndarray], dict[
         )
         return np.vstack([grid, panel])
 
+    def tile_hook(source: TileSource, frame: int, tile: np.ndarray, transform: TileTransform):
+        cam = cams.get(source.view or "")
+        if cam is None:
+            return
+        for row in line_rows_at(frame + offset):
+            if row.state == "lost":
+                continue
+            ends = [_project(cam, p) for p in row.endpoints or ()]
+            if any(p is None for p in ends):
+                continue
+            a, b = (transform.to_tile(*p) for p in ends)  # type: ignore[misc]
+            colour = colour_for(row.track_id)
+            cv2.line(tile, a, b, colour, 2, cv2.LINE_AA)
+            if row.tip is not None:
+                cv2.circle(tile, a, 5, TIP, -1, cv2.LINE_AA)
+                cv2.circle(tile, a, 5, colour, 1, cv2.LINE_AA)
+
     frames, records = render_tiles(
-        entry, root, colour_of=colour_of, tag_of=tag_of, per_frame_hook=hook
+        entry,
+        root,
+        colour_of=colour_of,
+        tag_of=tag_of,
+        per_frame_hook=hook,
+        per_tile_hook=tile_hook if cams else None,
+        legend_extra=(
+            [("segment = the pipette tracked as a 3D line, white dot = its tip", TIP)]
+            if line_tracks
+            else []
+        ),
     )
     detail = {
         "tiles": records,
         "tracks": opts["tracks"],
         "tracks_frame_offset": offset,
+        "line_tracks": opts.get("line_tracks"),
         "rig": opts.get("rig"),
         "cameras": opts.get("cameras"),
         "events_summary": opts.get("events_summary"),
@@ -1075,7 +1219,14 @@ def render_world(entry: MediaEntry, root: Path) -> tuple[list[np.ndarray], dict[
     if counter_class:
         counts = _id_counter(tracks, indices, offset, counter_class)
         detail["distinct_ids_in_clip"] = {counter_class: counts[-1] if counts else 0}
-        label = lambda i: f"{counter_class} ids so far: {counts[i]}"  # noqa: E731
+        if line_tracks:
+            line_counts = _line_id_counter(line_tracks, indices, offset, counter_class)
+            detail["distinct_line_ids_in_clip"] = {
+                counter_class: line_counts[-1] if line_counts else 0
+            }
+            label = lambda i: f"{counter_class} ids: points {counts[i]}, lines {line_counts[i]}"  # noqa: E731
+        else:
+            label = lambda i: f"{counter_class} ids so far: {counts[i]}"  # noqa: E731
     return _finish_frames(entry, frames, label), detail
 
 

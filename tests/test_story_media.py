@@ -309,6 +309,76 @@ def test_world_panel_draws_two_tracks_and_the_closed_lid(tmp_path: Path) -> None
     assert tuple(int(v) for v in panel[cy, cx]) != sm.colour_for("50ml_tube-002")
 
 
+def test_world_panel_draws_a_line_track_as_a_segment_with_its_tip(tmp_path: Path) -> None:
+    tracks = tmp_path / "tracks.jsonl"
+    rows = [
+        {
+            "frame_index": 700,
+            "track_id": "pipette-007",
+            "object_class": "pipette",
+            "observed_class": "blue_pipette",
+            "position_cm": [0.0, 0.0, -5.0],
+            "state": "held",
+            "support_slots": {},
+            "endpoints_cm": [[-20.0, 0.0, -5.0], [20.0, 0.0, -5.0]],
+            "tip_resolved": True,
+        },
+        {
+            "frame_index": 700,
+            "track_id": "pipette-008",
+            "object_class": "pipette",
+            "position_cm": [0.0, 20.0, -5.0],
+            "state": "observed",
+            "support_slots": {},
+            "endpoints_cm": [[-10.0, 20.0, -5.0], [10.0, 20.0, -5.0]],
+            "tip_resolved": False,
+        },
+    ]
+    tracks.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+    by_frame = sm.read_tracks(tracks, [700])
+    held, bare = by_frame[700]
+    assert held.endpoints == ((-20.0, 0.0, -5.0), (20.0, 0.0, -5.0))
+    assert held.tip == (-20.0, 0.0, -5.0) and held.shown_class == "blue_pipette"
+    assert bare.tip is None and bare.shown_class == "pipette"
+    scene = sm.WorldScene(extent=(-50.0, -40.0, 50.0, 40.0))
+    panel = sm.render_world_panel(by_frame[700], scene, size=(320, 160), raw_frame=700)
+    scale = min(300 / 100, 140 / 80)
+    ox, oy = (320 - 100 * scale) / 2, (160 - 80 * scale) / 2
+    tip = (int(round(oy + 40 * scale)), int(round(ox + 30 * scale)))
+    mid = (int(round(oy + 40 * scale)), int(round(ox + 50 * scale)))
+    assert tuple(int(v) for v in panel[tip]) == sm.TIP
+    colour = np.array(sm.colour_for("pipette-007"), dtype=int)
+    assert np.abs(panel[mid].astype(int) - colour).max() < 60, (
+        "the segment is drawn in the id colour"
+    )
+    # The unresolved track has a segment and no white tip at its end.
+    end = (int(round(oy + 60 * scale)), int(round(ox + 40 * scale)))
+    assert tuple(int(v) for v in panel[end]) != sm.TIP
+    counts = sm._line_id_counter(by_frame, [700], 0, "blue_pipette")
+    assert counts == [1]
+
+
+def test_tile_transform_maps_frame_pixels_onto_the_tile_and_projects_points() -> None:
+    from battle.finebio_cameras import Camera
+
+    transform = sm.tile_transform((360, 640), (320, 180), None)
+    assert transform.scale == 0.5 and transform.pad == (0, 0)
+    assert transform.to_tile(640, 360) == (320, 180)
+    cropped = sm.tile_transform((360, 640), (320, 180), [0.25, 0.25, 0.75, 0.75])
+    assert cropped.to_tile(cropped.x0, cropped.y0) == cropped.pad
+    cam = Camera(
+        "T1",
+        np.array([[100.0, 0.0, 320.0], [0.0, 100.0, 180.0], [0.0, 0.0, 1.0]]),
+        np.zeros(5),
+        np.zeros(3),
+        np.array([0.0, 0.0, 50.0]),
+        (640, 360),
+    )
+    assert sm._project(cam, (0.0, 0.0, 0.0)) == pytest.approx((320.0, 180.0))
+    assert sm._project(cam, (10.0, 0.0, 50.0)) == pytest.approx((330.0, 180.0))
+    assert sm._project(cam, (0.0, 0.0, -60.0)) is None
+
+
 def test_camera_centres_invert_the_extrinsics() -> None:
     config = {"fixed": {"T1": {"rvec": [0.0, 0.0, 0.0], "tvec": [-10.0, 20.0, 80.0]}}}
     assert sm.camera_centres(config)["T1"] == pytest.approx((10.0, -20.0, -80.0))

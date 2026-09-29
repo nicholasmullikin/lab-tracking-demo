@@ -18,12 +18,16 @@ from battle.finebio_viewer import (
     ArmData,
     StoryItem,
     TrackRow,
+    _row_colour,
     _track_label,
     build,
     derived_dir_names,
+    hidden_arm_labels,
     load_arm,
     parse_arm_dirs,
+    parse_tracks_dir,
     pick_confidence_drop,
+    pick_held_pipette_story,
     read_track_rows,
     storyboard_markdown,
 )
@@ -31,6 +35,9 @@ from battle.multiview_schemas import Track3D
 
 TARGETS = ["micro_tube", "50ml_tube", "blue_pipette", "cell_culture_plate"]
 FRAMES = list(range(600, 700))
+# The synthetic line track: a pipette held from 630 to 669, observed before and after.
+LINE_HELD = (630, 670)
+LINE_ENDS = ((10.0, -10.0, -5.0), (10.0, 14.0, -5.0))
 
 
 def _row(frame: int, track_id: str, cls: str, position, *, state="observed", slots=None) -> Track3D:
@@ -48,6 +55,62 @@ def _row(frame: int, track_id: str, cls: str, position, *, state="observed", slo
         confidence=0.5,
         abstain=False,
     )
+
+
+def _line_row(frame: int, *, state: str = "observed", tip_resolved: bool = True) -> Track3D:
+    """A `--line-classes` row: the geometric class `pipette`, the observed class blue, the
+    segment `LINE_ENDS` with its tip at `LINE_ENDS[0]` when resolved."""
+    held = state == "held"
+    views = () if held else ("T1", "T2")
+    a, b = np.asarray(LINE_ENDS[0]), np.asarray(LINE_ENDS[1])
+    return Track3D(
+        frame_index=frame,
+        track_id="pipette-001",
+        object_class="pipette",
+        position_cm=tuple((a + b) / 2),
+        uncertainty_cm=1.0,
+        support_views=views,
+        support_slots={v: "blue_pipette#0" for v in views},
+        residual_px={v: 3.0 for v in views},
+        state=state,
+        confidence=0.5,
+        abstain=False,
+        held_by="right_hand-001" if held else None,
+        direction=tuple((b - a) / np.linalg.norm(b - a)),
+        endpoints_cm=LINE_ENDS,
+        tip_resolved=tip_resolved,
+        observed_class="blue_pipette",
+        tip_attached=False,
+        tip_basis="hand_track",
+    )
+
+
+def _synthetic_line_arm(root: Path, points_arm: Path, label: str = "lines") -> Path:
+    """An arm tracked with the line extension into `tracks-lines/`: the point arm's rows plus
+    one pipette line track; no `observations.jsonl` of its own, the summary names the point
+    arm's directory as `observations_dir` (the Sep 28 `--observations-dir` layout)."""
+    arm = root / f"{label}-synthetic-arm"
+    (arm / "tracks-lines").mkdir(parents=True)
+    rows: list[Track3D] = []
+    for f in FRAMES:
+        rows.append(_row(f, "cell_culture_plate-001", "cell_culture_plate", (-30.0, 0.0, -1.0)))
+        rows.append(_row(f, "right_hand-001", "right_hand", (10.0, -12.0, -6.0)))
+        if LINE_HELD[0] <= f < LINE_HELD[1]:
+            rows.append(_line_row(f, state="held"))
+        else:
+            rows.append(_line_row(f, tip_resolved=f % 2 == 0))
+    with (arm / "tracks-lines" / "tracks.jsonl").open("w") as handle:
+        for r in rows:
+            handle.write(r.model_dump_json(exclude_none=True) + "\n")
+    (arm / "tracks-lines" / "events.jsonl").write_text("")
+    (arm / "tracks-lines" / "identity_metrics.json").write_text(
+        json.dumps({"tracks_born": 3, "tracks_lost": 0, "per_class": {"pipette": {"born": 1}}})
+    )
+    summary = json.loads((points_arm / "observations_summary.json").read_text())
+    summary["observations_dir"] = str(points_arm)
+    (arm / "observations_summary.json").write_text(json.dumps(summary))
+    (arm / "measures-lines.md").write_text("# measures (lines)\n")
+    return arm
 
 
 def _synthetic_arm(root: Path, label: str = "b") -> Path:
@@ -292,6 +355,16 @@ def test_helpers():
     assert derived_dir_names("tracks-ext") == ("confidence-ext", "events-ext")
     with pytest.raises(ValueError):
         parse_arm_dirs("nolabel")
+    assert parse_tracks_dir(None) == (None, {})
+    assert parse_tracks_dir("tracks-ext") == ("tracks-ext", {})
+    assert parse_tracks_dir("b=tracks-ext, lines=tracks-lines") == (
+        None,
+        {"b": "tracks-ext", "lines": "tracks-lines"},
+    )
+    with pytest.raises(ValueError):
+        parse_tracks_dir("tracks-ext,tracks-lines")
+    with pytest.raises(ValueError):
+        parse_tracks_dir("tracks-ext,lines=tracks-lines")
     row = TrackRow(
         600,
         "t-1",
@@ -326,6 +399,107 @@ def test_light_rows_and_arm_loading(synthetic):
     assert arm.strip[660]["lid_closed"] is True and arm.strip[660]["contained"]
     assert arm.worker_runs["T1"].is_dir()
     assert arm.events_summary["kinds"]["contained"]["episodes"] == 2
+
+
+def test_line_rows_carry_endpoints_tip_and_labels(tmp_path: Path):
+    path = tmp_path / "tracks.jsonl"
+    path.write_text(
+        _line_row(700, state="held").model_dump_json(exclude_none=True)
+        + "\n"
+        + _line_row(701, tip_resolved=False).model_dump_json(exclude_none=True)
+        + "\n"
+        + _row(701, "micro_tube-001", "micro_tube", (1.0, 2.0, 3.0)).model_dump_json(
+            exclude_none=True
+        )
+        + "\n"
+    )
+    held, unresolved, point = read_track_rows(path)
+    assert held.endpoints == LINE_ENDS and held.tip == LINE_ENDS[0]
+    assert held.observed_class == "blue_pipette" and held.tip_attached is False
+    assert unresolved.tip is None and unresolved.endpoints == LINE_ENDS
+    assert point.endpoints is None and point.tip is None
+    label = _track_label(held, None)
+    assert label == "pipette-001 blue_pipette [held] by right_hand-001 tip off"
+    assert _track_label(point, None) == "micro_tube-001"
+    # A line track is coloured by its id (dimmed while not observed), a point track by class.
+    from battle.finebio_slice import class_colour
+
+    assert _row_colour(unresolved) == class_colour("pipette-001")
+    assert _row_colour(held) != class_colour("pipette-001")
+    assert _row_colour(point) == class_colour("micro_tube")
+
+
+def test_held_pipette_story_picks_the_longest_held_stretch():
+    rows = [
+        r
+        for f in FRAMES
+        for r in (
+            read_track_rows_from(_line_row(f, state="held" if 630 <= f < 670 else "observed")),
+            read_track_rows_from(
+                _line_row(f, state="held" if 690 <= f < 695 else "observed").model_copy(
+                    update={"track_id": "pipette-002"}
+                )
+            ),
+        )
+    ]
+    arm = ArmData(
+        label="lines",
+        arm_dir=Path("."),
+        tracks_dir=Path("."),
+        rows=rows,
+        by_frame={},
+        confidence={},
+        confidence_md=None,
+        strip={},
+        episodes=[],
+        events_summary=None,
+        events_md=None,
+        measures_md=None,
+        inventory_md=None,
+        identity=None,
+        worker_runs={},
+        events_by_frame={},
+        has_lines=True,
+    )
+    items = pick_held_pipette_story(arm, FRAMES)
+    assert len(items) == 1
+    item = items[0]
+    assert item.story == "held pipette" and item.frame == 649
+    assert item.numbers["track_id"] == "pipette-001"
+    assert item.numbers["held_frames"] == [630, 669] and item.numbers["held_frame_count"] == 40
+    assert item.numbers["observed_class"] == "blue_pipette"
+    assert item.numbers["same_class_line_ids"] == ["pipette-001", "pipette-002"]
+    assert item.numbers["tip_resolved_frames"] == 40 and item.numbers["tip_attached_frames"] == 0
+    assert "world/tracks/lines/held/lines" in item.entities
+    # No line rows: no item.
+    assert pick_held_pipette_story(replace_rows(arm, []), FRAMES) == []
+
+
+def read_track_rows_from(row: Track3D) -> TrackRow:
+    r = row.model_dump(exclude_none=True)
+    return TrackRow(
+        frame=r["frame_index"],
+        track_id=r["track_id"],
+        object_class=r["object_class"],
+        position=tuple(r["position_cm"]),
+        uncertainty=r["uncertainty_cm"],
+        support_views=tuple(r["support_views"]),
+        support_slots=r["support_slots"],
+        state=r["state"],
+        residual_px=r["residual_px"],
+        possibly_same_as=(),
+        held_by=r.get("held_by"),
+        endpoints=tuple(tuple(p) for p in r["endpoints_cm"]),
+        tip_resolved=r.get("tip_resolved"),
+        tip_attached=r.get("tip_attached"),
+        observed_class=r.get("observed_class"),
+    )
+
+
+def replace_rows(arm: ArmData, rows: list[TrackRow]) -> ArmData:
+    from dataclasses import replace
+
+    return replace(arm, rows=rows, has_lines=any(r.endpoints for r in rows))
 
 
 def test_confidence_drop_picker_on_synthetic_series():
@@ -468,3 +642,69 @@ def test_build_writes_recording_presets_and_storyboard(synthetic, tmp_path: Path
     assert index["cycles_in_window"] == [[650, 680]]
     assert index["containers"][0]["name"] == "centrifuge"
     assert index["mask_arm"] == "b" and index["secondary_mask_arm"] is None
+    assert index["arms"]["b"]["lines"] is False
+    assert not any(it["story"] == "held pipette" for it in story)
+
+
+def test_build_draws_a_line_arm_beside_the_points(synthetic, tmp_path: Path):
+    """A second arm tracked as lines (`tracks-lines/`, rows read from the point arm's
+    directory through `observations_dir`): segments and tips in the world and in every tile,
+    the held-pipette storyboard item, the arm visible in the presets."""
+    lines_arm = _synthetic_line_arm(tmp_path, synthetic["arm"])
+    output = tmp_path / "review"
+    index = build(
+        clip_path=synthetic["clip"],
+        arm_dirs={"b": synthetic["arm"], "lines": lines_arm},
+        rig_path=synthetic["rig"],
+        seeds_dir=None,
+        output=output,
+        mask_arm="b",
+        secondary_mask_arm=None,
+        mask_every=10,
+        tracks_dir_by_arm={"lines": "tracks-lines"},
+        trials_path=synthetic["trials"],
+        preset_dir=None,
+        skip_video=True,
+        fpv_poses=FIXTURE_DIR / "fpv_poses.json",
+    )
+    assert index["rerun_cli"]["verify"]["returncode"] == 0 and index["presets"]["ok"]
+    assert index["arms"]["lines"]["lines"] is True
+    assert index["arms"]["lines"]["tracks_dir"].endswith("tracks-lines")
+    observations = synthetic["arm"] / "observations.jsonl"
+    assert index["arms"]["lines"]["observations"] == observations.as_posix()
+    paths = set((output / "entity_paths.txt").read_text().splitlines())
+    for path in (
+        "/world/tracks/lines/observed",
+        "/world/tracks/lines/observed/lines",
+        "/world/tracks/lines/observed/tips",
+        "/world/tracks/lines/held",
+        "/world/tracks/lines/held/lines",
+        "/world/tracks/lines/held/tips",
+        "/world/T1/tracks/lines",
+        "/world/T1/tracks/lines/lines",
+        "/world/T1/tracks/lines/tips",
+        "/world/T2/tracks/lines/lines",
+        "/checks/measures/lines",
+        "/checks/identity/lines",
+    ):
+        assert path in paths, path
+    # The point arm has no line children.
+    assert not any(p.startswith("/world/tracks/b/") and p.endswith("/lines") for p in paths)
+    # The storyboard item sits at the middle of the held stretch and names the id.
+    story = json.loads((output / "storyboard.json").read_text())
+    item = next(it for it in story if it["story"] == "held pipette")
+    assert item["raw_frame"] == LINE_HELD[0] + (LINE_HELD[1] - 1 - LINE_HELD[0]) // 2
+    assert item["numbers"]["track_id"] == "pipette-001"
+    assert item["numbers"]["held_frame_count"] == LINE_HELD[1] - LINE_HELD[0]
+    assert "world/tracks/lines/held/lines" in item["entities"]
+    assert "the pipette in use as a 3D line" in (output / "storyboard.md").read_text()
+    # The line arm stays visible in the presets; a third point arm would be hidden.
+    arms = {
+        label: load_arm(label, path, per)
+        for label, path, per in (
+            ("b", synthetic["arm"], None),
+            ("lines", lines_arm, "tracks-lines"),
+            ("c", synthetic["arm"], None),
+        )
+    }
+    assert hidden_arm_labels(arms, "b") == ["c"]

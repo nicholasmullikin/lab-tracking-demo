@@ -1,8 +1,9 @@
 # Pipeline
 
 This page is how to run the lab: set up the three environments, run the FineBio pipeline one
-stage at a time, hold the two human gates, open the recordings, rebuild the Assembly101 review
-package, run the tests, queue GPU jobs and prune old runs. I checked every flag below against the
+stage at a time, run the pipettes-as-lines extension and its tip-click gate, open the recordings,
+hold the two human gates, rebuild the Assembly101 review package, run the tests, queue GPU jobs
+and prune old runs. I checked every flag below against the
 tool's `--help`, and every tool answers `uv run battle-<name> --help` on the CPU. The numbers these
 commands produced are in [`results.md`](results.md); the words are in the
 [glossary](writing-style.md#glossary).
@@ -104,18 +105,63 @@ uv run rerun rrd verify runs/finebio-review-$T-ext/review.rrd
 The recording takes six to eight minutes to build and lands near 900 MB. One trial's two mask
 arms cost about 2.3 h of GPU; the detector pass for both trials and both detectors cost 65 minutes.
 
+## Pipettes as 3D lines
+
+**The line extension runs on the CPU from the masks already on disk, and every step below is one
+command.** It failed its pre-registered rule and is not adopted; the numbers are in
+[`results.md`](results.md#pipettes-as-3d-lines). The rows first gain a mask axis per SAM3
+observation (`remeasure`), the stand slice measures the pipettes at rest and writes the length
+prior, the colour calibration finds the plunger colour, and then the tracker runs with `--lines`,
+which is `--ext` plus `--line-classes pipette` into `tracks-lines/`. The scoreboard reads the
+rule. `battle-finebio-tipseg` tries five ways to find the disposable tip in each camera (its
+`sam3` step needs the GPU), and `battle-finebio-tips` is the tip-click gate: `prepare` cuts the
+crops, `serve` shows the pages, `score` triangulates the clicks against any tracks files, `export`
+writes the committed no-pixel record.
+
+```bash
+F=runs/finebio-arms-$T-filtered-20260927
+L=runs/finebio-lines-$T-20260928
+uv run battle-finebio-arms remeasure --observations $F/b-box-decode-arm/observations.jsonl --worker-root $A/b-box-decode --output $L/observations-b   # mask axes on every SAM3 row; --classes blue_pipette,yellow_pipette,red_pipette,8_channel_pipette re-reads those alone
+uv run battle-finebio-stand report --observations $L/observations-b/observations.jsonl --cameras configs/finebio/cameras/${T}_600-4200.json --output $L/stand   # the pipettes at rest: lengths, flat-rest geometry
+uv run battle-finebio-stand config --report $L/stand/stand_report.json --output configs/finebio/pipettes.json                                              # the length prior with provenance; repeat --report for trial 2
+uv run battle-finebio-stand tips --observations $L/observations-b/observations.jsonl --cameras configs/finebio/cameras/${T}_600-4200.json --gate-px 30.083 --with-fpv --output $L/stand-tips   # bare and with-tip rest lengths
+uv run battle-finebio-stand tips-config --config configs/finebio/pipettes.json --tips $L/stand-tips/tip_lengths.json                                       # writes bare_length_cm and tip_length_cm; repeat --tips for trial 2
+uv run battle-finebio-colour sample --observations $L/observations-b --clip-config $C --output $L/colour && uv run battle-finebio-colour config --calibration $L/colour/colour_calibration.json --pipettes configs/finebio/pipettes.json
+uv run battle-finebio-arms run --arm b --lines --clip-config $C --detections $D --gates $G --seeds $S/filtered --worker-root $A/b-box-decode --observations-dir $L/observations-b --output $L/arm-b-lines   # --ext alone for the point tracker on the same rows, into $L/arm-b-ext
+uv run battle-finebio-colour annotate --tracks $L/arm-b-lines/tracks-lines/tracks.jsonl --observations $L/observations-b --clip-config $C --every 3 --output $L/arm-b-lines/tracks-lines/tracks_colour.jsonl
+uv run battle-finebio-arms lines-negative-controls --observations $L/observations-b --clip-config $C --gates $G --frames 1040-1339 --shipped-view T5 --shift-view T3,T4 --output $L/negative-controls-1040   # trial 1 only
+uv run battle-finebio-arms lines-scoreboard --lines-dir $L/arm-b-lines --ext-dir $L/arm-b-ext --baseline-ext-dir $F/b-box-decode-arm/tracks-ext --observations $L/observations-b --clip-config $C --rig $G --prior configs/finebio/pipettes.json --stand-report $L/stand/stand_report.json --negative-controls $L/negative-controls-1040/negative_controls.json --output $L/scoreboard
+uv run battle-finebio-events --arm-dir $L/arm-b-lines --tracks-dir tracks-lines --observations $L/observations-b/observations.jsonl --config $C --rig $G --tip-events --output $L/arm-b-lines/events-tips   # tip_picked / tip_ejected from the line rows
+uv run battle-finebio-tipseg prepare --clip-config $C --observations $L/observations-b --tips-workspace runs/finebio-tips-$T-20260928 --output runs/finebio-tipseg-$T   # then `sam3 --output <dir>` (GPU) and `score --output <dir> --tips-workspace <workspace>`
+W=runs/finebio-tips-$T-20260929
+uv run battle-finebio-tips prepare --observations $L/observations-b --clip-config $C --frames 30 --no-marker --single-channel-only --output $W   # --event-frames 2180,2330 --event-class blue_pipette --event-quota 10 --states held,rest chose the second sitting's frames
+uv run battle-finebio-tips serve --workspace $W --tailscale                                                                                        # click; Ctrl-C when done
+uv run battle-finebio-tips score --workspace $W --tracks lines-v3=$L/arm-b-lines-v3/tracks-lines/tracks.jsonl --tracks points-ext=$F/b-box-decode-arm/tracks-ext/tracks.jsonl --clip-config $C
+uv run battle-finebio-tips export --workspace $W --record $W/decisions.json --protocol "<how I chose between a click and h>" --output docs/qa/finebio-$T-tip-clicks-2.human-record.json
+uv run battle-finebio-viewer --clip-config $C --arm-dirs b=$F/b-box-decode-arm,lines=$L/arm-b-lines-v3 --rig $G --seeds $S/filtered --tracks-dir b=tracks-ext,lines=tracks-lines --secondary-mask-arm "" --preset-dir "" --output runs/finebio-review-$T-lines-20260929   # the line arm's segments and tips beside the point arm
+```
+
+The viewer draws an arm whose rows carry `endpoints_cm` as segments under
+`world/tracks/<arm>/<state>/lines`, its tip as a white point under `.../tips`, and the same
+segment in every camera tile; `--tracks-dir` takes `label=name` pairs when the arms keep their
+tracks in differently named directories. The lines recording for trial 1 took six minutes to
+build and lands at 870 MB.
+
 ## Opening the recordings
 
 **Three recordings are worth opening, each with a World, a Cameras and an Evidence preset.** Pass
 the recording and one preset to the viewer; swap `world.rbl` for `cameras.rbl` or `evidence.rbl`, or
 drag the other presets in once the viewer is open. The timeline is `frame`, the raw frame index;
 `storyboard/marks` jumps between the bookmarked frames. The 20-minute route through both trials is
-in [`review-guide-2026-09-25-finebio-3d.md`](review-guide-2026-09-25-finebio-3d.md).
+in [`review-guide-2026-09-25-finebio-3d.md`](review-guide-2026-09-25-finebio-3d.md). A fourth
+recording shows the pipettes as lines beside the point tracker, with a "held pipette" storyboard
+item at the longest held stretch.
 
 ```bash
 uv run rerun runs/finebio-review-P03_03_01-filtered-20260927/review.rrd runs/finebio-review-P03_03_01-filtered-20260927/world.rbl   # trial 1 on human-filtered seeds, with the extensions (recommended)
 uv run rerun runs/finebio-review-P03_03_01-20260925/review.rrd runs/finebio-review-P03_03_01-20260925/world.rbl                     # trial 1, core tracker, the recording the guide describes
 uv run rerun runs/finebio-review-P20_03_01-20260925-ext/review.rrd runs/finebio-review-P20_03_01-20260925-ext/world.rbl             # trial 2, with the extensions
+uv run rerun runs/finebio-review-P03_03_01-lines-20260929/review.rrd runs/finebio-review-P03_03_01-lines-20260929/world.rbl         # trial 1, the pipettes as 3D lines (v3) beside the point tracker
 ```
 
 ## The two human gates
