@@ -164,3 +164,43 @@ are my clicks on one trial: they rank trackers against each other and are not gr
 
 Evidence: `runs/finebio-tips-P03_03_01-20260928/scoreboard/tip_scoreboard.md`, plan todo
 `p3-tip-anchors`.
+
+## FineBio tip clicks on trial 1, second sitting (clicked Sep 29)
+
+**The second sitting gives 48 tip anchors on 30 frames of trial 1, every click at the cone
+end, and still no tracker meets the pre-registered 2 cm median.**
+`finebio-P03_03_01-tip-clicks-2.human-record.json` is written by `battle-finebio-tips export`
+from the uncommitted workspace `runs/finebio-tips-P03_03_01-20260929/`. It holds one entry per
+cell (175: ten rest, ten held and ten frames around the blue pipette's tip events at 2180 and
+2330, the three single-channel pipettes in two or three views) with my click in full-frame
+pixels (`tip_px`), the crop I clicked in, the hidden flag, the plunger color I named
+(`instance_identity`) and my `t` / `b` label for a disposable tip on or a bare pipette
+(`tip_attached_label`). The file also carries the counts, the frame convention, the protocol,
+the URI and SHA-256 of `cells.json` and of the `decisions.json`, and the claim boundary. The
+crops and the decisions file stay under `runs/` (FineBio license).
+
+**I clicked to place, not to accept.** No marker was drawn. On every cell I clicked the very
+end of the pipette away from the colored plunger button and pressed `h` when that end was
+not in view, so `hidden` on 42 cells means the end was hidden or outside the crop. I clicked
+133 cells and left none undecided. I labeled 59 of the 66 pipette-frames (14 tipped, 45 bare)
+and named the color on 59; both agree across every view. Read against the mask's end widths,
+125 of the 133 clicks sit at the narrow end. I looked at the other eight and at eight more in
+the crops: all 16 sit at the cone or tip end, and where the widths disagreed the blue-class
+mask sat on a resting pipette. The first sitting had 70 of 138 clicks on the plunger. The
+record's `protocol` field states this.
+
+`battle-finebio-tips score` triangulates the clicks through the rig. Pipette-frames with one
+clicked view (17, 11 of them the blue pipette whose end T2 does not see) or clicks that
+disagree by more than 30 px (one) get no anchor. The 48 anchors (20 rest, 13 held, 15 event)
+reproject to a median of 4.11 px (p90 9.65 px). Against them the raw median tip error is
+3.03 cm for lines-v3, 3.47 for lines-v4, 8.76 for lines-v2 and 13.89 for the point tracker's
+midpoint, so no arm passes the clause. The p90 is a pipette length on every line arm: v3
+names the wrong end on 14 anchors (six of its 13 held ones), v4 on eight, v2 on 21, the
+resting red pipette most of all. My `t` / `b` label finds the tracker's `tip_attached` at the
+bare majority: v3 agrees on 42 of 49 decided pipette-frames and says attached once, rightly;
+v4 agrees on 40 of 51 and says attached only on resting pipettes, two of them labeled bare,
+never on a tipped one. The clicks are my
+clicks on one trial: they rank trackers against each other and are not ground truth.
+
+Evidence: `runs/finebio-tips-P03_03_01-20260929/scoreboard/tip_scoreboard.md` and that
+workspace's README, plan todo `p3-tip-anchors`.

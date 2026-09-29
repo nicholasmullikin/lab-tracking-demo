@@ -1,0 +1,3069 @@
+{
+  "schema": "battle-finebio-tips/1/human-record",
+  "anchor_kind": "human_tip_click",
+  "author": "nick",
+  "reviewed_at": null,
+  "trial": "P03_03_01",
+  "workspace": "runs/finebio-tips-P03_03_01-20260929",
+  "cells_json": {
+    "uri": "runs/finebio-tips-P03_03_01-20260929/cells.json",
+    "sha256": "6840bfb158f760c81633a49ba480e6702c4c495ed64365309c157da1390c6a2c"
+  },
+  "clip_config": {
+    "uri": "configs/clips/finebio_P03_03_01_600-4200.json",
+    "sha256": "dc9add2928e55c9e8b12f6869d7fa2993394763b9f57a3e744dd790ad2142db8"
+  },
+  "observations": {
+    "uri": "runs/finebio-lines-P03_03_01-20260928/observations-b-v4/observations.jsonl",
+    "sha256": "1208dc80dd243ccfbf38b4f210805776d4a9bcb090764fd5c1eefdd52385b56d"
+  },
+  "decisions": {
+    "uri": "runs/finebio-tips-P03_03_01-20260929/decisions.json",
+    "sha256": "6aa4b247bab4fab31f583c65cafdaf75880d5f0678e5c11472c22f3aa5c3da09"
+  },
+  "frame_convention": "raw = shipped video frame index; proxy frame = raw - frame_index_offset; every pixel is a raw-video pixel of the view",
+  "protocol": "I clicked to place, not to accept. No marker was drawn. On every cell I clicked the very end of the pipette away from the coloured plunger button: the point of the disposable tip when one was on, the end of the cone when the pipette was bare. I pressed h when that end was not visible in the view, so hidden here means the end was hidden or outside the crop, and nothing else. Once per pipette per frame I pressed t for a disposable tip attached and b for a bare pipette, and the plunger colour I saw (keys 1 to 4); the tool wrote both on every view of that pipette on that frame. The small arrow at the crop's edge was the tracker's guess at the tip end (the long-thin-tail rule) and was never saved; a click that disagreed with it counts the same as one that agreed. When a crop showed a different pipette from the class in its caption, I clicked the end of the pipette I saw and named its colour, so the identity records which class was wrong (frame 600 in the head camera: the yellow cell showed the blue pipette with a tip on). The 8-channel pipette was left out of this sitting.",
+  "counts": {
+    "cells": 175,
+    "clicked": 133,
+    "hidden": 42,
+    "undecided": 0,
+    "with_identity": 155,
+    "with_tip_label": 157,
+    "frames": 30,
+    "frames_by_state": {
+      "rest": 10,
+      "held": 10,
+      "event": 10
+    }
+  },
+  "clicks": [
+    {
+      "raw_frame": 600,
+      "proxy_frame": 0,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "rest",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 600,
+      "proxy_frame": 0,
+      "view": "T4",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        564.5,
+        720.1
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 600,
+      "proxy_frame": 0,
+      "view": "fpv",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1411.0,
+        953.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": true,
+      "note": ""
+    },
+    {
+      "raw_frame": 600,
+      "proxy_frame": 0,
+      "view": "T2",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": true,
+      "note": ""
+    },
+    {
+      "raw_frame": 600,
+      "proxy_frame": 0,
+      "view": "T4",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": true,
+      "note": ""
+    },
+    {
+      "raw_frame": 600,
+      "proxy_frame": 0,
+      "view": "fpv",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 600,
+      "proxy_frame": 0,
+      "view": "T4",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        815.0,
+        1040.0
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 600,
+      "proxy_frame": 0,
+      "view": "T5",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1321.0,
+        915.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 754,
+      "proxy_frame": 154,
+      "view": "fpv",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 754,
+      "proxy_frame": 154,
+      "view": "T2",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        479.0,
+        436.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 754,
+      "proxy_frame": 154,
+      "view": "T4",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        844.0,
+        962.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 754,
+      "proxy_frame": 154,
+      "view": "fpv",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 754,
+      "proxy_frame": 154,
+      "view": "T4",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        816.0,
+        1038.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 754,
+      "proxy_frame": 154,
+      "view": "T5",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1318.0,
+        916.4
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 865,
+      "proxy_frame": 265,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": [
+        411.0,
+        395.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": true,
+      "note": ""
+    },
+    {
+      "raw_frame": 865,
+      "proxy_frame": 265,
+      "view": "T4",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": [
+        752.0,
+        1078.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": true,
+      "note": ""
+    },
+    {
+      "raw_frame": 1122,
+      "proxy_frame": 522,
+      "view": "T4",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": [
+        1308.0,
+        614.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 1122,
+      "proxy_frame": 522,
+      "view": "T5",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": [
+        1662.0,
+        623.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 1189,
+      "proxy_frame": 589,
+      "view": "fpv",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1405.0,
+        1341.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 1189,
+      "proxy_frame": 589,
+      "view": "T2",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        479.0,
+        436.1
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 1189,
+      "proxy_frame": 589,
+      "view": "T4",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        846.0,
+        959.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 1189,
+      "proxy_frame": 589,
+      "view": "T4",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        813.0,
+        1040.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 1189,
+      "proxy_frame": 589,
+      "view": "T5",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1320.0,
+        917.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 1395,
+      "proxy_frame": 795,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        458.0,
+        398.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 1395,
+      "proxy_frame": 795,
+      "view": "T4",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        745.0,
+        1040.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 1395,
+      "proxy_frame": 795,
+      "view": "T5",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1268.5,
+        930.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 1395,
+      "proxy_frame": 795,
+      "view": "fpv",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1834.0,
+        1258.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 1395,
+      "proxy_frame": 795,
+      "view": "T2",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        482.0,
+        438.4
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 1395,
+      "proxy_frame": 795,
+      "view": "T4",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        845.0,
+        959.4
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 1395,
+      "proxy_frame": 795,
+      "view": "T4",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        815.0,
+        1038.0
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1395,
+      "proxy_frame": 795,
+      "view": "T5",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1323.0,
+        917.0
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 1664,
+      "proxy_frame": 1064,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": [
+        646.0,
+        624.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": true,
+      "note": ""
+    },
+    {
+      "raw_frame": 1664,
+      "proxy_frame": 1064,
+      "view": "T4",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": true,
+      "note": ""
+    },
+    {
+      "raw_frame": 1664,
+      "proxy_frame": 1064,
+      "view": "T5",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": [
+        1455.0,
+        574.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": true,
+      "note": ""
+    },
+    {
+      "raw_frame": 1664,
+      "proxy_frame": 1064,
+      "view": "fpv",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "held",
+      "tip_px": [
+        1400.0,
+        1113.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 1664,
+      "proxy_frame": 1064,
+      "view": "T2",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "held",
+      "tip_px": [
+        476.0,
+        433.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 1664,
+      "proxy_frame": 1064,
+      "view": "T4",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "held",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 1837,
+      "proxy_frame": 1237,
+      "view": "T2",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 1837,
+      "proxy_frame": 1237,
+      "view": "T4",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        846.0,
+        959.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 1837,
+      "proxy_frame": 1237,
+      "view": "T5",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1306.5,
+        868.1
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 1837,
+      "proxy_frame": 1237,
+      "view": "T4",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        813.0,
+        1039.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 1837,
+      "proxy_frame": 1237,
+      "view": "T5",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1323.0,
+        918.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 1969,
+      "proxy_frame": 1369,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": true,
+      "note": ""
+    },
+    {
+      "raw_frame": 1969,
+      "proxy_frame": 1369,
+      "view": "T4",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": [
+        1023.0,
+        942.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": true,
+      "note": ""
+    },
+    {
+      "raw_frame": 1969,
+      "proxy_frame": 1369,
+      "view": "T5",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": [
+        1474.0,
+        840.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": true,
+      "note": ""
+    },
+    {
+      "raw_frame": 1969,
+      "proxy_frame": 1369,
+      "view": "T2",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "held",
+      "tip_px": [
+        479.5,
+        437.9
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 1969,
+      "proxy_frame": 1369,
+      "view": "T4",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "held",
+      "tip_px": [
+        849.0,
+        957.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 1969,
+      "proxy_frame": 1369,
+      "view": "T5",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "held",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2120,
+      "proxy_frame": 1520,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "event",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": true,
+      "note": ""
+    },
+    {
+      "raw_frame": 2120,
+      "proxy_frame": 1520,
+      "view": "T5",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "event",
+      "tip_px": [
+        1346.0,
+        286.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": true,
+      "note": ""
+    },
+    {
+      "raw_frame": 2120,
+      "proxy_frame": 1520,
+      "view": "T2",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "event",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2120,
+      "proxy_frame": 1520,
+      "view": "T4",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "event",
+      "tip_px": [
+        847.0,
+        958.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2120,
+      "proxy_frame": 1520,
+      "view": "T5",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "event",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2120,
+      "proxy_frame": 1520,
+      "view": "T4",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "event",
+      "tip_px": [
+        815.0,
+        1037.4
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2120,
+      "proxy_frame": 1520,
+      "view": "T5",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "event",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2147,
+      "proxy_frame": 1547,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "event",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2147,
+      "proxy_frame": 1547,
+      "view": "T4",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "event",
+      "tip_px": [
+        1219.0,
+        360.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2147,
+      "proxy_frame": 1547,
+      "view": "fpv",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "event",
+      "tip_px": [
+        1855.7,
+        1247.9
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2147,
+      "proxy_frame": 1547,
+      "view": "T2",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "event",
+      "tip_px": [
+        474.0,
+        436.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2147,
+      "proxy_frame": 1547,
+      "view": "T4",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "event",
+      "tip_px": [
+        839.0,
+        956.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2147,
+      "proxy_frame": 1547,
+      "view": "T4",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "event",
+      "tip_px": [
+        814.0,
+        1039.4
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2147,
+      "proxy_frame": 1547,
+      "view": "T5",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "event",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2176,
+      "proxy_frame": 1576,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "event",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": null,
+      "tip_attached_label": true,
+      "note": ""
+    },
+    {
+      "raw_frame": 2176,
+      "proxy_frame": 1576,
+      "view": "T4",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "event",
+      "tip_px": [
+        1278.0,
+        370.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "tip_attached_label": true,
+      "note": ""
+    },
+    {
+      "raw_frame": 2176,
+      "proxy_frame": 1576,
+      "view": "T5",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "event",
+      "tip_px": [
+        1424.5,
+        241.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "tip_attached_label": true,
+      "note": ""
+    },
+    {
+      "raw_frame": 2176,
+      "proxy_frame": 1576,
+      "view": "fpv",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "event",
+      "tip_px": [
+        1618.0,
+        1150.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2176,
+      "proxy_frame": 1576,
+      "view": "T2",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "event",
+      "tip_px": [
+        479.0,
+        437.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2176,
+      "proxy_frame": 1576,
+      "view": "T4",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "event",
+      "tip_px": [
+        845.0,
+        958.4
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2176,
+      "proxy_frame": 1576,
+      "view": "fpv",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "event",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2176,
+      "proxy_frame": 1576,
+      "view": "T4",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "event",
+      "tip_px": [
+        815.0,
+        1040.0
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2176,
+      "proxy_frame": 1576,
+      "view": "T5",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "event",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2206,
+      "proxy_frame": 1606,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "event",
+      "tip_px": [
+        570.0,
+        686.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2206,
+      "proxy_frame": 1606,
+      "view": "T4",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "event",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": null,
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2206,
+      "proxy_frame": 1606,
+      "view": "T5",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "event",
+      "tip_px": [
+        1470.0,
+        589.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2206,
+      "proxy_frame": 1606,
+      "view": "fpv",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "event",
+      "tip_px": [
+        1367.0,
+        973.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2206,
+      "proxy_frame": 1606,
+      "view": "T4",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "event",
+      "tip_px": [
+        849.0,
+        960.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2206,
+      "proxy_frame": 1606,
+      "view": "T5",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "event",
+      "tip_px": [
+        1305.0,
+        866.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2206,
+      "proxy_frame": 1606,
+      "view": "fpv",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "event",
+      "tip_px": [
+        1432.0,
+        1057.0
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2206,
+      "proxy_frame": 1606,
+      "view": "T4",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "event",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2206,
+      "proxy_frame": 1606,
+      "view": "T5",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "event",
+      "tip_px": [
+        1322.0,
+        914.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2238,
+      "proxy_frame": 1638,
+      "view": "T4",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "event",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": true,
+      "note": ""
+    },
+    {
+      "raw_frame": 2238,
+      "proxy_frame": 1638,
+      "view": "T5",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "event",
+      "tip_px": [
+        1447.5,
+        574.3
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": true,
+      "note": ""
+    },
+    {
+      "raw_frame": 2238,
+      "proxy_frame": 1638,
+      "view": "T4",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "event",
+      "tip_px": [
+        846.0,
+        956.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2238,
+      "proxy_frame": 1638,
+      "view": "T5",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "event",
+      "tip_px": [
+        1303.5,
+        865.1
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2238,
+      "proxy_frame": 1638,
+      "view": "T4",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "event",
+      "tip_px": [
+        849.0,
+        996.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2238,
+      "proxy_frame": 1638,
+      "view": "T5",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "event",
+      "tip_px": [
+        1321.0,
+        914.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2273,
+      "proxy_frame": 1673,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "event",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": true,
+      "note": ""
+    },
+    {
+      "raw_frame": 2273,
+      "proxy_frame": 1673,
+      "view": "T4",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "event",
+      "tip_px": [
+        847.0,
+        783.1
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": true,
+      "note": ""
+    },
+    {
+      "raw_frame": 2273,
+      "proxy_frame": 1673,
+      "view": "fpv",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "event",
+      "tip_px": [
+        1678.0,
+        908.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2273,
+      "proxy_frame": 1673,
+      "view": "T2",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "event",
+      "tip_px": [
+        421.0,
+        403.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2273,
+      "proxy_frame": 1673,
+      "view": "T4",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "event",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2273,
+      "proxy_frame": 1673,
+      "view": "fpv",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "event",
+      "tip_px": [
+        1724.3,
+        1009.3
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2273,
+      "proxy_frame": 1673,
+      "view": "T4",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "event",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2273,
+      "proxy_frame": 1673,
+      "view": "T5",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "event",
+      "tip_px": [
+        1322.0,
+        915.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2304,
+      "proxy_frame": 1704,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "event",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": true,
+      "note": ""
+    },
+    {
+      "raw_frame": 2304,
+      "proxy_frame": 1704,
+      "view": "T5",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "event",
+      "tip_px": [
+        1300.0,
+        858.1
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": true,
+      "note": ""
+    },
+    {
+      "raw_frame": 2304,
+      "proxy_frame": 1704,
+      "view": "fpv",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "event",
+      "tip_px": [
+        1600.0,
+        1009.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2304,
+      "proxy_frame": 1704,
+      "view": "T4",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "event",
+      "tip_px": [
+        849.0,
+        958.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2304,
+      "proxy_frame": 1704,
+      "view": "T5",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "event",
+      "tip_px": [
+        1300.5,
+        866.7
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2304,
+      "proxy_frame": 1704,
+      "view": "fpv",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "event",
+      "tip_px": [
+        1646.0,
+        1101.3
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2304,
+      "proxy_frame": 1704,
+      "view": "T4",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "event",
+      "tip_px": [
+        819.0,
+        1040.0
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2304,
+      "proxy_frame": 1704,
+      "view": "T5",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "event",
+      "tip_px": [
+        1322.0,
+        917.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2347,
+      "proxy_frame": 1747,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "event",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": true,
+      "note": ""
+    },
+    {
+      "raw_frame": 2347,
+      "proxy_frame": 1747,
+      "view": "T5",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "event",
+      "tip_px": [
+        1302.0,
+        725.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": true,
+      "note": ""
+    },
+    {
+      "raw_frame": 2367,
+      "proxy_frame": 1767,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "event",
+      "tip_px": [
+        339.0,
+        534.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": true,
+      "note": ""
+    },
+    {
+      "raw_frame": 2367,
+      "proxy_frame": 1767,
+      "view": "T4",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "event",
+      "tip_px": [
+        1191.5,
+        767.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": true,
+      "note": ""
+    },
+    {
+      "raw_frame": 2367,
+      "proxy_frame": 1767,
+      "view": "T5",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "event",
+      "tip_px": [
+        1585.0,
+        719.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": true,
+      "note": ""
+    },
+    {
+      "raw_frame": 2367,
+      "proxy_frame": 1767,
+      "view": "fpv",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "event",
+      "tip_px": [
+        1222.0,
+        1193.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2367,
+      "proxy_frame": 1767,
+      "view": "T2",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "event",
+      "tip_px": [
+        485.5,
+        440.4
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2367,
+      "proxy_frame": 1767,
+      "view": "T5",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "event",
+      "tip_px": [
+        1302.0,
+        863.4
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2388,
+      "proxy_frame": 1788,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "event",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": true,
+      "note": ""
+    },
+    {
+      "raw_frame": 2388,
+      "proxy_frame": 1788,
+      "view": "T4",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "event",
+      "tip_px": [
+        1241.0,
+        780.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": true,
+      "note": ""
+    },
+    {
+      "raw_frame": 2388,
+      "proxy_frame": 1788,
+      "view": "T5",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "event",
+      "tip_px": [
+        1599.0,
+        710.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": true,
+      "note": ""
+    },
+    {
+      "raw_frame": 2388,
+      "proxy_frame": 1788,
+      "view": "fpv",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "event",
+      "tip_px": [
+        1276.0,
+        1231.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2388,
+      "proxy_frame": 1788,
+      "view": "T2",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "event",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2388,
+      "proxy_frame": 1788,
+      "view": "T5",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "event",
+      "tip_px": [
+        1301.0,
+        866.4
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2409,
+      "proxy_frame": 1809,
+      "view": "fpv",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "held",
+      "tip_px": [
+        1424.0,
+        1109.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2409,
+      "proxy_frame": 1809,
+      "view": "T2",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "held",
+      "tip_px": [
+        482.0,
+        436.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2409,
+      "proxy_frame": 1809,
+      "view": "T4",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "held",
+      "tip_px": [
+        849.0,
+        956.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2634,
+      "proxy_frame": 2034,
+      "view": "fpv",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2634,
+      "proxy_frame": 2034,
+      "view": "T2",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        479.0,
+        436.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2634,
+      "proxy_frame": 2034,
+      "view": "T4",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2634,
+      "proxy_frame": 2034,
+      "view": "fpv",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1675.3,
+        1219.1
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2634,
+      "proxy_frame": 2034,
+      "view": "T4",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2634,
+      "proxy_frame": 2034,
+      "view": "T5",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1321.0,
+        912.5
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2880,
+      "proxy_frame": 2280,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2880,
+      "proxy_frame": 2280,
+      "view": "T5",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": [
+        1066.0,
+        820.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 2880,
+      "proxy_frame": 2280,
+      "view": "fpv",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "held",
+      "tip_px": [
+        1665.0,
+        1000.3
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2880,
+      "proxy_frame": 2280,
+      "view": "T4",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "held",
+      "tip_px": [
+        827.5,
+        1020.9
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 2880,
+      "proxy_frame": 2280,
+      "view": "T5",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "held",
+      "tip_px": [
+        1320.5,
+        917.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 3066,
+      "proxy_frame": 2466,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 3066,
+      "proxy_frame": 2466,
+      "view": "T4",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": [
+        1009.0,
+        618.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 3066,
+      "proxy_frame": 2466,
+      "view": "T5",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": [
+        1485.0,
+        763.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 3066,
+      "proxy_frame": 2466,
+      "view": "fpv",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "held",
+      "tip_px": [
+        1533.0,
+        1217.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 3066,
+      "proxy_frame": 2466,
+      "view": "T2",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "held",
+      "tip_px": [
+        484.0,
+        435.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 3066,
+      "proxy_frame": 2466,
+      "view": "T5",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "held",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 3136,
+      "proxy_frame": 2536,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "rest",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 3136,
+      "proxy_frame": 2536,
+      "view": "T4",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        784.0,
+        1011.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 3136,
+      "proxy_frame": 2536,
+      "view": "T2",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3136,
+      "proxy_frame": 2536,
+      "view": "T4",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        846.0,
+        959.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3136,
+      "proxy_frame": 2536,
+      "view": "T5",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1301.0,
+        866.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": null,
+      "note": ""
+    },
+    {
+      "raw_frame": 3136,
+      "proxy_frame": 2536,
+      "view": "T4",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        817.0,
+        1040.0
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 3136,
+      "proxy_frame": 2536,
+      "view": "T5",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1322.0,
+        914.0
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 3311,
+      "proxy_frame": 2711,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "rest",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 3311,
+      "proxy_frame": 2711,
+      "view": "T4",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        778.0,
+        1010.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 3311,
+      "proxy_frame": 2711,
+      "view": "T2",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        478.0,
+        436.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 3311,
+      "proxy_frame": 2711,
+      "view": "T4",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        846.0,
+        955.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 3311,
+      "proxy_frame": 2711,
+      "view": "T5",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1300.0,
+        863.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 3311,
+      "proxy_frame": 2711,
+      "view": "T4",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        815.0,
+        1039.0
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 3311,
+      "proxy_frame": 2711,
+      "view": "T5",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1320.0,
+        919.0
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 3542,
+      "proxy_frame": 2942,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "rest",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": true,
+      "note": ""
+    },
+    {
+      "raw_frame": 3542,
+      "proxy_frame": 2942,
+      "view": "T4",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "rest",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": true,
+      "note": ""
+    },
+    {
+      "raw_frame": 3542,
+      "proxy_frame": 2942,
+      "view": "T5",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1461.5,
+        571.9
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": true,
+      "note": ""
+    },
+    {
+      "raw_frame": 3542,
+      "proxy_frame": 2942,
+      "view": "fpv",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1635.0,
+        1104.4
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 3542,
+      "proxy_frame": 2942,
+      "view": "T4",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        847.0,
+        961.4
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 3542,
+      "proxy_frame": 2942,
+      "view": "T5",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1304.0,
+        867.0
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 3542,
+      "proxy_frame": 2942,
+      "view": "fpv",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1669.7,
+        1201.1
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 3542,
+      "proxy_frame": 2942,
+      "view": "T4",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        866.0,
+        965.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 3542,
+      "proxy_frame": 2942,
+      "view": "T5",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1321.5,
+        915.4
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "red_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 3882,
+      "proxy_frame": 3282,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": [
+        493.5,
+        253.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 3882,
+      "proxy_frame": 3282,
+      "view": "T4",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": [
+        840.0,
+        876.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 4033,
+      "proxy_frame": 3433,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": [
+        481.0,
+        284.3
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 4033,
+      "proxy_frame": 3433,
+      "view": "T4",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": [
+        1001.0,
+        706.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 4033,
+      "proxy_frame": 3433,
+      "view": "T5",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "held",
+      "tip_px": [
+        1501.5,
+        821.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 4168,
+      "proxy_frame": 3568,
+      "view": "fpv",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "held",
+      "tip_px": [
+        1644.0,
+        979.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 4168,
+      "proxy_frame": 3568,
+      "view": "T2",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "held",
+      "tip_px": [
+        479.0,
+        433.2
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 4168,
+      "proxy_frame": 3568,
+      "view": "T4",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "held",
+      "tip_px": null,
+      "clicked_in": null,
+      "hidden": true,
+      "instance_identity": "yellow_pipette",
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 4199,
+      "proxy_frame": 3599,
+      "view": "T2",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        732.0,
+        301.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": true,
+      "note": ""
+    },
+    {
+      "raw_frame": 4199,
+      "proxy_frame": 3599,
+      "view": "T4",
+      "slot": 0,
+      "class": "blue_pipette",
+      "label": "blue_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        679.0,
+        672.6
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": "blue_pipette",
+      "tip_attached_label": true,
+      "note": ""
+    },
+    {
+      "raw_frame": 4199,
+      "proxy_frame": 3599,
+      "view": "fpv",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1776.0,
+        1030.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 4199,
+      "proxy_frame": 3599,
+      "view": "T2",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        482.0,
+        436.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 4199,
+      "proxy_frame": 3599,
+      "view": "T4",
+      "slot": 1,
+      "class": "yellow_pipette",
+      "label": "yellow_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        845.0,
+        955.4
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 4199,
+      "proxy_frame": 3599,
+      "view": "fpv",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1791.3,
+        1131.7
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 4199,
+      "proxy_frame": 3599,
+      "view": "T4",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        818.0,
+        1042.0
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "tip_attached_label": false,
+      "note": ""
+    },
+    {
+      "raw_frame": 4199,
+      "proxy_frame": 3599,
+      "view": "T5",
+      "slot": 2,
+      "class": "red_pipette",
+      "label": "red_pipette#0",
+      "state": "rest",
+      "tip_px": [
+        1321.5,
+        911.8
+      ],
+      "clicked_in": "zoom",
+      "hidden": false,
+      "instance_identity": null,
+      "tip_attached_label": false,
+      "note": ""
+    }
+  ],
+  "claim_boundary": "Tip anchors are one person's clicks at the end of the white tip cone in two or three views on about 30 frames of one trial, triangulated through the rig; they inherit the rig's residual of a few pixels and the click's own scatter. They rank trackers against each other and read the pre-registered rule (median tip error under 2 cm); they are not ground truth and support no accuracy claim.",
+  "licence": "FineBio is licensed for non-commercial research; frames and crops derived from it stay under runs/ and are never committed or redistributed. cells.json (frames, pixels of detector boxes and mask axes) and the human record (clicks, flags, identities) carry no image.",
+  "notes": "Written by battle-finebio-tips export. tip_px is the clicked full-frame pixel (raw video pixels of the view), never the suggested tip; author and reviewed_at come from the decisions file and stay null until filled in. protocol, when given, is how I chose between a click and h in this session, and so what hidden means here. Crops stay under runs/."
+}

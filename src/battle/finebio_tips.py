@@ -3071,11 +3071,23 @@ def _split_cell(summary: Mapping[str, Any]) -> str:
     )
 
 
+def table_states(report: Mapping[str, Any]) -> tuple[str, ...]:
+    """The state columns of the markdown: the states any arm has anchors in, in `ALL_STATES`
+    order (the event state shows only for a workspace with event frames), else `STATES`."""
+    present = tuple(
+        state
+        for state in ALL_STATES
+        if any((arm["by_state"].get(state) or {}).get("n") for arm in report["arms"])
+    )
+    return present or STATES
+
+
 def scoreboard_markdown(report: dict[str, Any]) -> str:
     anchors = report["anchors"]
     summary = report["record_summary"]
     residual = anchors["reprojection_residual_px"]
     kinds = anchors.get("dropped_by_kind", {})
+    states = table_states(report)
     lines = [
         f"# Tip scoreboard: {anchors['count']} anchors from {summary['clicked']} clicks",
         "",
@@ -3106,9 +3118,7 @@ def scoreboard_markdown(report: dict[str, Any]) -> str:
         "along median cm",
         "across median cm",
         "attached (along > 2 cm)",
-        "rest median (n)",
-        "held median (n)",
-        "low median (n)",
+        *(f"{state} median (n)" for state in states),
         "measure",
         "median < 2 cm raw",
         "median < 2 cm across",
@@ -3136,9 +3146,10 @@ def scoreboard_markdown(report: dict[str, Any]) -> str:
                     _fmt(arm["along"]["median_cm"]),
                     _fmt(arm["across"]["median_cm"]),
                     f"{bands['beyond']} / {split_n}" if split_n else "-",
-                    f"{_fmt(by_state['rest']['median_cm'])} ({by_state['rest']['n']})",
-                    f"{_fmt(by_state['held']['median_cm'])} ({by_state['held']['n']})",
-                    f"{_fmt(by_state['low']['median_cm'])} ({by_state['low']['n']})",
+                    *(
+                        f"{_fmt(by_state[state]['median_cm'])} ({by_state[state]['n']})"
+                        for state in states
+                    ),
                     measures,
                     _fmt(arm["median_under_threshold"]),
                     _fmt(arm["median_across_under_threshold"]),
@@ -3160,11 +3171,13 @@ def scoreboard_markdown(report: dict[str, Any]) -> str:
         lines.append("## Tip error split: raw / along / across medians in cm (n)")
         lines.append("")
         lines.append(
-            "| tracks | all | p90 raw / along / across | rest | held | low | "
+            "| tracks | all | p90 raw / along / across | "
+            + " | ".join(states)
+            + " | "
             + " | ".join(IDENTITY_SHORT[c] for c in PIPETTE_CLASSES)
             + " | beyond / within / behind 2 cm | anchor nearer other end |"
         )
-        lines.append("|" + "---|" * (6 + len(PIPETTE_CLASSES) + 2))
+        lines.append("|" + "---|" * (3 + len(states) + len(PIPETTE_CLASSES) + 2))
         for arm in report["arms"]:
             if not arm["along"]["n"]:
                 continue
@@ -3173,7 +3186,7 @@ def scoreboard_markdown(report: dict[str, Any]) -> str:
                 f"| {arm['tracks']} | {_split_cell(arm)} | "
                 f"{_fmt(arm['tip_error']['p90_cm'])} / {_fmt(arm['along']['p90_cm'])} / "
                 f"{_fmt(arm['across']['p90_cm'])} | "
-                + " | ".join(_split_cell(arm["by_state"][s]) for s in STATES)
+                + " | ".join(_split_cell(arm["by_state"][s]) for s in states)
                 + " | "
                 + " | ".join(_split_cell(arm["by_class"][c]) for c in PIPETTE_CLASSES)
                 + f" | {bands['beyond']} / {bands['within']} / {bands['behind']} "

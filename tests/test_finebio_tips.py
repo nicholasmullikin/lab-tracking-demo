@@ -1295,6 +1295,19 @@ def test_along_across_split_of_the_tip_error(tmp_path: Path) -> None:
     assert "1 with one clicked view, 0 with none, 2 whose clicks disagree" in markdown
     assert "## Pipette-frames without an anchor" in markdown
     assert "| along cm | across cm |" in markdown
+    # The state columns are the states the arms have anchors in: the event state (Sep 29)
+    # appears only for a workspace with event frames.
+    assert ft.table_states(report) == ("rest", "held", "low")
+    assert "| rest median (n) | held median (n) | low median (n) |" in markdown
+    with_event = {
+        **report,
+        "arms": [{**arm, "by_state": {**arm["by_state"], "event": arm["by_state"]["rest"]}}],
+    }
+    assert ft.table_states(with_event) == ("rest", "held", "low", "event")
+    event_markdown = ft.scoreboard_markdown(with_event)
+    assert "| low median (n) | event median (n) |" in event_markdown
+    assert "| rest | held | low | event | blue |" in event_markdown
+    assert ft.table_states({"arms": []}) == ft.STATES
 
 
 def test_score_and_export_on_a_served_workspace(tmp_path: Path) -> None:
