@@ -20,6 +20,10 @@ and raw frame indices.  Two tools produce the evidence in their own formats:
   (``sam3_decode`` for the memory-free decode, ``sam3_video`` for the video-memory tracker).
   A box-decode row carries the detector box that prompted it; a video row is matched to a
   same-class detector row of the same frame by IoU when detector rows are supplied.
+  Sep 28 (`p0-axis-observations`): :func:`mask_axis_measurements` adds the mask's principal
+  axis (two endpoints in pixels, elongation, width, skeleton residual) beside the centroid,
+  so the pipettes can be tracked as 3D lines; the old fields are computed by the same code
+  as before and a compact mask simply carries no axis.
 
 The fpv observes only with a valid shipped pose: :func:`fpv_pose_validity` (from the trial's
 pose file) or :func:`pose_validity_from_fixture` (from ``fpv_poses.json``) give the lookup,
@@ -31,6 +35,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +47,7 @@ from .multiview_schemas import (
     BoxXYXY,
     FineBioObservation,
     ObservationSource,
+    Vec2,
     write_jsonl,
 )
 from .observations import load_observations
@@ -56,6 +62,20 @@ DEFAULT_MATCH_IOU = 0.3
 # pixels per mask), which would otherwise set the bbox; the same rule is applied here before a
 # mask is measured, and the dropped pixels are recorded in the row's provenance.
 MASK_COMPONENT_KEEP_FRACTION = 0.20
+# Sep 28 (p0-axis-observations): the mask axis. A mask whose elongation (sqrt of the ratio of
+# the second-moment eigenvalues) is under the threshold is compact and gets no axis; the
+# pixel cloud is stride-sampled above AXIS_MAX_POINTS (1080p masks, ~180k arm-b rows); the
+# RANSAC inlier band on the skeleton is a quarter of the PCA minor width, clamped.
+AXIS_ELONGATION_THRESHOLD = 2.5
+AXIS_MAX_POINTS = 50_000
+AXIS_MIN_PIXELS = 10
+AXIS_MIN_SKELETON_POINTS = 5
+AXIS_RANSAC_ITERATIONS = 200
+AXIS_RANSAC_MIN_INLIER_PX = 1.5
+AXIS_RANSAC_MAX_INLIER_PX = 6.0
+AXIS_WIDTH_BINS = 48
+AXIS_WIDTH_MIN_BIN_PX = 2.0
+AXIS_WIDTH_MIN_BIN_PIXELS = 3
 PoseValidity = Callable[[int], bool]
 
 
@@ -215,6 +235,203 @@ def mask_measurements(mask: np.ndarray) -> tuple[BoxXYXY, tuple[float, float], i
     return bbox, centroid, int(xs.size)
 
 
+@dataclass(frozen=True)
+class MaskAxis:
+    """The principal axis of one mask (plan `p0-axis-observations`, Sep 28).
+
+    `axis_px` is the two endpoints in raw pixels, ordered by image y then x (top first);
+    the order says nothing about tip or butt. `elongation` is sqrt(largest / smallest
+    second-moment eigenvalue) of the mask as a region (1.0 is round; a w x L rectangle gives
+    exactly L / w). `width_px` is the median across-axis extent sampled along the axis.
+    `residual_px` is the RMS distance of the skeleton points to the fitted axis, the quality
+    number a merged mask raises. `method` is ``ransac_skeleton`` (RANSAC line on the thinned
+    mask, PCA as the seed), ``pca`` (the PCA axis: elongated with no usable skeleton, or a
+    compact mask with no axis) or ``none`` (too few pixels); `reason` names why `axis_px` is
+    None (``compact``, ``too_few_pixels``).
+    """
+
+    axis_px: tuple[Vec2, Vec2] | None
+    elongation: float | None
+    width_px: float | None
+    residual_px: float | None
+    method: str
+    reason: str | None = None
+
+    def provenance(self) -> dict[str, Any]:
+        out: dict[str, Any] = {"axis_method": self.method}
+        if self.reason is not None:
+            out["axis_reason"] = self.reason
+        return out
+
+
+NO_AXIS = MaskAxis(None, None, None, None, "none", "too_few_pixels")
+
+
+def _region_moments(points: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Centre, eigenvalues (ascending) and eigenvectors of the pixel cloud's second moments as
+    a region: each pixel is a unit square, so 1/12 is added on the diagonal (a one-pixel-wide
+    line then has a finite minor moment and an L x w rectangle an elongation of exactly L/w)."""
+    centre = points.mean(axis=0)
+    centred = points - centre
+    cov = centred.T @ centred / len(points) + np.eye(2) / 12.0
+    evals, evecs = np.linalg.eigh(cov)
+    return centre, evals, evecs
+
+
+def _axis_frame(
+    points: np.ndarray, centre: np.ndarray, direction: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """(along, across) coordinates of `points` in the frame of a line through `centre`."""
+    normal = np.array([-direction[1], direction[0]])
+    rel = points - centre
+    return rel @ direction, rel @ normal
+
+
+def _width_along_axis(along: np.ndarray, across: np.ndarray, bins: int = AXIS_WIDTH_BINS) -> float:
+    """Median over bins along the axis of the across-axis extent (max - min + 1 px)."""
+    t0, t1 = float(along.min()), float(along.max())
+    count = max(1, min(bins, int(np.ceil((t1 - t0) / AXIS_WIDTH_MIN_BIN_PX))))
+    edges = np.linspace(t0, t1, count + 1)
+    index = np.clip(np.searchsorted(edges, along, side="right") - 1, 0, count - 1)
+    low = np.full(count, np.inf)
+    high = np.full(count, -np.inf)
+    filled = np.zeros(count, dtype=np.int64)
+    np.minimum.at(low, index, across)
+    np.maximum.at(high, index, across)
+    np.add.at(filled, index, 1)
+    keep = filled >= AXIS_WIDTH_MIN_BIN_PIXELS
+    if not keep.any():
+        keep = filled > 0
+    return float(np.median(high[keep] - low[keep] + 1.0))
+
+
+def _skeleton_points(mask: np.ndarray, xs: np.ndarray, ys: np.ndarray) -> np.ndarray | None:
+    """Zhang-Suen thinning of the mask's bbox crop (cv2.ximgproc), as pixel-centre points in
+    full-image coordinates; None when the thinning is unavailable or finds nothing."""
+    import cv2
+
+    thinning = getattr(getattr(cv2, "ximgproc", None), "thinning", None)
+    if thinning is None:
+        return None
+    # The thinning never removes a pixel on the image border, so a shape that touches the
+    # crop's edge would keep its full outline: pad the crop by two background pixels.
+    pad = 2
+    x0, y0 = int(xs.min()), int(ys.min())
+    crop = np.pad(mask[y0 : int(ys.max()) + 1, x0 : int(xs.max()) + 1], pad).astype(np.uint8)
+    thin = thinning(crop * 255, thinningType=cv2.ximgproc.THINNING_ZHANGSUEN)
+    sy, sx = np.nonzero(thin)
+    if sx.size == 0:
+        return None
+    return np.column_stack([sx + x0 - pad, sy + y0 - pad]).astype(np.float64) + 0.5
+
+
+def _ransac_line(
+    points: np.ndarray,
+    *,
+    inlier_px: float,
+    iterations: int = AXIS_RANSAC_ITERATIONS,
+    seed: int = 0,
+) -> tuple[np.ndarray, np.ndarray] | None:
+    """The line through the most points within `inlier_px`, from pairs at least a quarter of
+    the cloud's extent apart, refitted twice by total least squares on its inliers. Returns
+    (centre, unit direction) or None with fewer than three usable points."""
+    n = len(points)
+    if n < 3:
+        return None
+    rng = np.random.default_rng(seed)
+    a = points[rng.integers(0, n, iterations)]
+    b = points[rng.integers(0, n, iterations)]
+    span = np.linalg.norm(points.max(axis=0) - points.min(axis=0))
+    gap = np.linalg.norm(b - a, axis=1)
+    usable = gap >= max(0.25 * span, 1.0)
+    if not usable.any():
+        return None
+    a, b, gap = a[usable], b[usable], gap[usable]
+    direction = (b - a) / gap[:, None]
+    normal = np.column_stack([-direction[:, 1], direction[:, 0]])
+    # (hypotheses, points): across-axis distance of every point to every candidate line.
+    dist = np.abs(normal @ points.T - np.sum(normal * a, axis=1)[:, None])
+    best = int(np.argmax((dist <= inlier_px).sum(axis=1)))
+    centre, unit = a[best], direction[best]
+    for _ in range(2):
+        along, across = _axis_frame(points, centre, unit)
+        inliers = points[np.abs(across) <= inlier_px]
+        if len(inliers) < 3:
+            break
+        centre, _, evecs = _region_moments(inliers)
+        unit = evecs[:, 1]
+    return centre, unit
+
+
+def _axis_endpoints(
+    points: np.ndarray, centre: np.ndarray, direction: np.ndarray, band_px: float
+) -> tuple[Vec2, Vec2]:
+    """Extreme projections onto the axis of the pixels within `band_px` of it, pushed half a
+    pixel outward to the pixel edge, ordered by image y then x."""
+    along, across = _axis_frame(points, centre, direction)
+    inside = np.abs(across) <= band_px
+    if not inside.any():
+        inside = np.ones(len(points), dtype=bool)
+    t0, t1 = float(along[inside].min()) - 0.5, float(along[inside].max()) + 0.5
+    ends = sorted(
+        (
+            (round(float(p[0]), 1), round(float(p[1]), 1))
+            for p in (centre + t * direction for t in (t0, t1))
+        ),
+        key=lambda p: (p[1], p[0]),
+    )
+    return ends[0], ends[1]
+
+
+def mask_axis_measurements(
+    mask: np.ndarray,
+    *,
+    elongation_threshold: float = AXIS_ELONGATION_THRESHOLD,
+    max_points: int = AXIS_MAX_POINTS,
+) -> MaskAxis:
+    """Principal axis, elongation, width and axis residual of a boolean mask (:class:`MaskAxis`).
+
+    PCA on the pixel cloud (a deterministic stride sample of at most `max_points`) seeds the
+    axis and gives the elongation; below `elongation_threshold` the mask is compact and gets
+    no axis (elongation and width are still filled). An elongated mask is thinned and a
+    RANSAC line on the skeleton replaces the PCA axis (the branch to a blob stuck on one side
+    loses the vote); the endpoints are the extreme projections of the mask pixels within
+    three quarters of the width of the axis, the width the median across-axis extent along
+    it, the residual the RMS skeleton distance to the axis. Fewer than
+    ``AXIS_MIN_PIXELS`` pixels give :data:`NO_AXIS`.
+    """
+    ys, xs = np.nonzero(mask)
+    n = int(xs.size)
+    if n < AXIS_MIN_PIXELS:
+        return NO_AXIS
+    points = np.column_stack([xs, ys]).astype(np.float64) + 0.5
+    sample = points[np.linspace(0, n - 1, max_points).astype(int)] if n > max_points else points
+    centre, evals, evecs = _region_moments(sample)
+    elongation = float(np.sqrt(evals[1] / evals[0]))
+    direction = evecs[:, 1]
+    minor_width = float(np.sqrt(12.0 * evals[0]))
+    if elongation < elongation_threshold:
+        along, across = _axis_frame(sample, centre, direction)
+        width = _width_along_axis(along, across)
+        return MaskAxis(None, round(elongation, 3), round(width, 1), None, "pca", "compact")
+    method, residual = "pca", None
+    skeleton = _skeleton_points(mask, xs, ys)
+    if skeleton is not None and len(skeleton) >= AXIS_MIN_SKELETON_POINTS:
+        inlier_px = min(
+            max(0.25 * minor_width, AXIS_RANSAC_MIN_INLIER_PX), AXIS_RANSAC_MAX_INLIER_PX
+        )
+        fit = _ransac_line(skeleton, inlier_px=inlier_px)
+        if fit is not None:
+            centre, direction = fit
+            method = "ransac_skeleton"
+            _, across = _axis_frame(skeleton, centre, direction)
+            residual = round(float(np.sqrt(np.mean(across**2))), 2)
+    along, across = _axis_frame(sample, centre, direction)
+    width = _width_along_axis(along, across)
+    ends = _axis_endpoints(sample, centre, direction, band_px=max(0.75 * width, 1.0))
+    return MaskAxis(ends, round(elongation, 3), round(width, 1), residual, method)
+
+
 def filter_mask_components(
     mask: np.ndarray, keep_fraction: float = MASK_COMPONENT_KEEP_FRACTION
 ) -> tuple[np.ndarray, int, int]:
@@ -319,6 +536,7 @@ def worker_to_observations(
                     provenance["mask_speckle_pixels_dropped"] = dropped
                     provenance["mask_components"] = components
             measured = mask_measurements(mask) if mask is not None else None
+            axis = NO_AXIS
             if measured is None:
                 mask_bbox = _normalised_to_px(obj.box, width, height)
                 centroid = None
@@ -326,6 +544,8 @@ def worker_to_observations(
                 provenance["mask"] = "absent" if mask is None else "empty"
             else:
                 mask_bbox, centroid, area = measured
+                assert mask is not None
+                axis = mask_axis_measurements(mask)
             if obj.iou_prediction is not None:
                 provenance["decoder_iou_pred"] = round(float(obj.iou_prediction), 4)
             if source == "sam3_decode":
@@ -351,6 +571,9 @@ def worker_to_observations(
                 provenance.setdefault(
                     "detector_box_iou", round(box_iou(list(mask_bbox), list(box)), 4)
                 )
+            if measured is not None:
+                # Last, so `remeasure` (which appends to a Sep 25 row) writes the same bytes.
+                provenance.update(axis.provenance())
             rows.append(
                 FineBioObservation(
                     view=view,
@@ -362,6 +585,10 @@ def worker_to_observations(
                     mask_bbox_px=mask_bbox,
                     mask_centroid_px=centroid,
                     mask_area_px=area,
+                    mask_axis_px=axis.axis_px,
+                    mask_elongation=axis.elongation,
+                    mask_width_px=axis.width_px,
+                    mask_axis_residual_px=axis.residual_px,
                     sam3_object_score=(
                         None if obj.object_score is None else round(float(obj.object_score), 4)
                     ),

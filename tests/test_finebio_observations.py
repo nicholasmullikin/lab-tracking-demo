@@ -10,12 +10,15 @@ import pytest
 from conftest import require_artifact
 
 from battle.finebio_observations import (
+    AXIS_ELONGATION_THRESHOLD,
+    NO_AXIS,
     VIEWS,
     class_of_slot,
     detection_row_to_observations,
     detections_to_observations,
     fill_pose_valid,
     filter_mask_components,
+    mask_axis_measurements,
     mask_measurements,
     pose_validity_from_fixture,
     worker_to_observations,
@@ -94,6 +97,140 @@ def test_mask_measurements_use_pixel_centres():
     assert mask_measurements(np.zeros((4, 4), dtype=bool)) is None
 
 
+# ------------------------------------------------------------------ mask axis (Sep 28)
+
+
+def _rect(angle_deg: float, length: float, width: float, centre=(300.0, 200.0), shape=(400, 600)):
+    import cv2
+
+    mask = np.zeros(shape, np.uint8)
+    box = cv2.boxPoints(((centre[0], centre[1]), (length, width), angle_deg))
+    cv2.fillPoly(mask, [np.round(box).astype(np.int32)], 255)
+    return mask > 0
+
+
+def _blob(radius: int, centre=(300, 200), shape=(400, 600)):
+    import cv2
+
+    mask = np.zeros(shape, np.uint8)
+    cv2.circle(mask, centre, radius, 255, -1)
+    return mask > 0
+
+
+def _axis_angle_deg(axis) -> float:
+    (x0, y0), (x1, y1) = axis
+    return float(np.degrees(np.arctan2(y1 - y0, x1 - x0)) % 180.0)
+
+
+def _angle_gap(a: float, b: float) -> float:
+    d = abs(a - b) % 180.0
+    return min(d, 180.0 - d)
+
+
+def _tiny_mask():
+    mask = np.zeros((40, 40), dtype=bool)
+    mask[10:12, 10:12] = True
+    return mask
+
+
+# The old fields on deterministic synthetic masks, recorded with the Sep 25 code before the
+# axis was added: bbox, centroid and area must stay byte for byte what they were.
+OLD_MEASUREMENTS = {
+    "rect30": ((190.0, 130.0, 411.0, 271.0), (300.5, 200.5), 5829),
+    "rect_vert": ((292.0, 100.0, 309.0, 301.0), (300.5, 200.5), 3417),
+    "blob": ((260.0, 160.0, 341.0, 241.0), (300.5, 200.5), 5025),
+    "rect_blob": ((180.0, 188.0, 421.0, 261.0), (317.6, 210.2), 8419),
+    "tiny": ((10.0, 10.0, 12.0, 12.0), (11.0, 11.0), 4),
+    "empty": None,
+}
+
+
+def _golden_masks():
+    return {
+        "rect30": _rect(30, 240, 24),
+        "rect_vert": _rect(90, 200, 16),
+        "blob": _blob(40),
+        "rect_blob": _rect(0, 240, 24) | _blob(30, (360, 230)),
+        "tiny": _tiny_mask(),
+        "empty": np.zeros((40, 40), dtype=bool),
+    }
+
+
+def test_old_mask_measurements_are_unchanged_by_the_axis():
+    for name, mask in _golden_masks().items():
+        kept, dropped, _ = filter_mask_components(mask)
+        assert dropped == 0
+        assert mask_measurements(kept) == OLD_MEASUREMENTS[name], name
+
+
+def test_axis_of_a_rotated_rectangle_matches_its_angle_length_and_width():
+    for angle, length, width in ((30, 240, 24), (-30, 240, 24), (0, 240, 24), (90, 200, 16)):
+        axis = mask_axis_measurements(_rect(angle, length, width))
+        assert axis.method == "ransac_skeleton" and axis.reason is None
+        assert axis.axis_px is not None
+        assert _angle_gap(_axis_angle_deg(axis.axis_px), angle % 180) < 1.0
+        # Endpoints: the rectangle's centre +/- half the length along its axis.
+        u = np.array([np.cos(np.radians(angle)), np.sin(np.radians(angle))])
+        expected = sorted(
+            [tuple(np.array([300.0, 200.0]) + s * length / 2 * u) for s in (-1, 1)],
+            key=lambda p: (p[1], p[0]),
+        )
+        for got, want in zip(axis.axis_px, expected):
+            assert np.hypot(got[0] - want[0], got[1] - want[1]) < 2.0, (angle, got, want)
+        # A rasterised rectangle is one pixel longer and wider than its nominal size.
+        assert abs(axis.width_px - (width + 1)) <= 0.1 * width
+        assert abs(axis.elongation - (length + 1) / (width + 1)) < 0.5
+        assert axis.residual_px is not None and axis.residual_px < 1.0
+        # Top first: the endpoints are ordered by image y then x.
+        assert (axis.axis_px[0][1], axis.axis_px[0][0]) <= (axis.axis_px[1][1], axis.axis_px[1][0])
+
+
+def test_round_blob_has_no_axis_but_an_elongation_and_a_width():
+    axis = mask_axis_measurements(_blob(40))
+    assert axis.axis_px is None and axis.residual_px is None
+    assert axis.method == "pca" and axis.reason == "compact"
+    assert abs(axis.elongation - 1.0) < 0.05
+    assert 60.0 <= axis.width_px <= 81.0
+    assert axis.provenance() == {"axis_method": "pca", "axis_reason": "compact"}
+
+
+def test_ransac_axis_ignores_a_blob_stuck_on_one_side():
+    plain = mask_axis_measurements(_rect(0, 240, 24))
+    assert plain.residual_px < 0.5
+    # A 30 px blob whose centre sits 30-40 px to one side of the rectangle's axis.
+    for angle, blob_centre in ((0, (360, 230)), (20, (330, 170)), (60, (288, 253))):
+        merged = mask_axis_measurements(_rect(angle, 240, 24) | _blob(30, blob_centre))
+        assert merged.method == "ransac_skeleton" and merged.axis_px is not None
+        assert _angle_gap(_axis_angle_deg(merged.axis_px), angle) < 3.0, angle
+        # The rectangle's ends, not the blob's, bound the axis; the branch raises the residual.
+        for got, want in zip(merged.axis_px, mask_axis_measurements(_rect(angle, 240, 24)).axis_px):
+            assert np.hypot(got[0] - want[0], got[1] - want[1]) < 3.0
+        assert merged.residual_px > 2.0, (angle, merged)
+        assert abs(merged.width_px - plain.width_px) < 2.0
+
+
+def test_empty_and_tiny_masks_have_no_axis_with_a_reason():
+    for mask in (np.zeros((40, 40), dtype=bool), _tiny_mask()):
+        axis = mask_axis_measurements(mask)
+        assert axis == NO_AXIS
+        assert axis.method == "none" and axis.reason == "too_few_pixels"
+        assert axis.elongation is None and axis.width_px is None
+    assert mask_axis_measurements(_rect(45, 150, 1)).method == "ransac_skeleton"
+    assert AXIS_ELONGATION_THRESHOLD == 2.5
+
+
+def test_large_masks_are_stride_sampled_without_moving_the_axis():
+    mask = _rect(15, 900, 90, centre=(960.0, 540.0), shape=(1080, 1920))
+    full = mask_axis_measurements(mask, max_points=10**7)
+    sampled = mask_axis_measurements(mask, max_points=20_000)
+    assert sampled.method == full.method == "ransac_skeleton"
+    assert _angle_gap(_axis_angle_deg(sampled.axis_px), 15) < 0.5
+    assert abs(sampled.elongation - full.elongation) < 0.05
+    assert abs(sampled.width_px - full.width_px) < 2.0
+    for got, want in zip(sampled.axis_px, full.axis_px):
+        assert np.hypot(got[0] - want[0], got[1] - want[1]) < 2.0
+
+
 def _write_worker_run(root: Path, *, video_mode: bool) -> None:
     import cv2
 
@@ -161,6 +298,42 @@ def test_worker_to_observations_box_decode_rows(tmp_path: Path):
     assert plate.provenance["prompt_source"] == "finebio_dino"
     tube = rows[3]
     assert tube.mask_bbox_px == (41.0, 30.0, 51.0, 44.0) and tube.mask_centroid_px == (46.0, 37.0)
+
+
+def test_worker_rows_carry_the_mask_axis_fields(tmp_path: Path):
+    """Sep 28 (p0-axis-observations): a compact mask gets elongation and width and no axis, an
+    elongated one the axis too; the old fields are what they were on the same run."""
+    import cv2
+
+    _write_worker_run(tmp_path, video_mode=False)
+    # Overwrite the tube mask of frame 1 with a 40 x 4 px bar at 0 degrees.
+    mask = np.zeros((48, 64), dtype=np.uint8)
+    mask[20:24, 10:50] = 255
+    cv2.imwrite(str(tmp_path / "masks/000001_01.png"), mask)
+    rows = worker_to_observations(tmp_path, "T2", 600, ["cell_culture_plate#0", "micro_tube#3"])
+    plate = rows[0]
+    assert plate.mask_bbox_px == (8.0, 8.0, 24.0, 20.0)
+    assert plate.mask_centroid_px == (16.0, 14.0) and plate.mask_area_px == 16 * 12
+    assert plate.mask_axis_px is None and plate.mask_axis_residual_px is None
+    assert plate.mask_elongation == pytest.approx(16 / 12, abs=0.01)
+    assert plate.mask_width_px == 12.0
+    assert plate.provenance["axis_method"] == "pca"
+    assert plate.provenance["axis_reason"] == "compact"
+    bar = rows[3]
+    assert bar.slot == "micro_tube#3" and bar.frame_index == 601
+    assert bar.mask_bbox_px == (10.0, 20.0, 50.0, 24.0) and bar.mask_area_px == 160
+    # The thinned line of an even-width bar sits half a pixel off its centre (22.0).
+    assert bar.mask_axis_px == ((10.0, 21.5), (50.0, 21.5))
+    assert bar.mask_elongation == 10.0 and bar.mask_width_px == 4.0
+    assert bar.mask_axis_residual_px == 0.0
+    assert bar.provenance["axis_method"] == "ransac_skeleton"
+    assert "axis_reason" not in bar.provenance
+    # The compact JSONL omits None fields, so a row without an axis reads back as before.
+    out = tmp_path / "obs.jsonl"
+    write_observations(rows, out)
+    back = list(read_jsonl(out, FineBioObservation))
+    assert back == sorted(rows, key=lambda r: (r.frame_index, r.slot))
+    assert "mask_axis_px" not in out.read_text().splitlines()[0]
 
 
 def test_worker_to_observations_video_rows_match_detector_boxes(tmp_path: Path):

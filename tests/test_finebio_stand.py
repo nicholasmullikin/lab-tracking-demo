@@ -1,0 +1,335 @@
+"""`battle-finebio-stand` (p0-stand-slice): static frames from detector boxes, 3D segments
+from per-view mask axes on the real P03 rig fixture with synthetic pipettes, the rest gates,
+the report and the pipettes config (no data/, no GPU)."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import numpy as np
+import pytest
+from finebio_fixtures import FIXTURE_DIR, load_preflight_fixtures
+
+from battle.finebio_stand import (
+    BENCH_UP,
+    StandSettings,
+    main,
+    match_endpoints,
+    pipettes_config,
+    segment_from_views,
+    stand_report,
+    stand_window,
+    static_frames,
+    stationary_runs,
+)
+from battle.multiview_schemas import FineBioObservation
+
+FRAMES = range(1800, 1840)
+
+
+@pytest.fixture(scope="module")
+def fixtures():
+    return load_preflight_fixtures()
+
+
+def _det(view: str, frame: int, cls: str, box) -> FineBioObservation:
+    return FineBioObservation(
+        view=view,
+        frame_index=frame,
+        slot=f"{cls}#0",
+        object_class=cls,
+        detector_score=0.9,
+        box_xyxy_px=tuple(float(x) for x in box),
+        pose_valid=True,
+        source="detector",
+    )
+
+
+def test_stationary_runs_need_small_steps_and_a_minimum_length():
+    centres = {f: (100.0 + (f % 2), 50.0) for f in range(0, 40)}  # jitter of 1 px
+    centres.update({f: (100.0 + 5.0 * f, 50.0) for f in range(40, 60)})  # moving
+    centres.update({f: (300.0, 50.0) for f in range(70, 90)})  # a gap, then 20 still frames
+    runs = stationary_runs(centres, max_step_px=3.0, min_run_frames=30)
+    assert runs == [(0, 39)]
+    assert stationary_runs(centres, max_step_px=3.0, min_run_frames=20) == [(0, 39), (70, 89)]
+    assert stationary_runs({}, max_step_px=3.0, min_run_frames=1) == []
+
+
+def test_static_frames_count_fixed_views_and_the_window_prefers_more_pipettes():
+    settings = StandSettings(min_run_frames=10, classes=("blue_pipette", "red_pipette"))
+    rows = []
+    for f in range(600, 660):
+        for view in ("T1", "T2", "T3"):
+            rows.append(_det(view, f, "blue_pipette", (10, 10, 50, 90)))
+        # The red is still in one fixed view only, and its fpv box does not count.
+        rows.append(_det("T4", f, "red_pipette", (200, 10, 240, 90)))
+        rows.append(_det("fpv", f, "red_pipette", (200, 10, 240, 90)))
+        rows.append(_det("T5", f, "red_pipette", (200 + 4 * f, 10, 240 + 4 * f, 90)))
+    static = static_frames(rows, settings)
+    assert set(static) == {"blue_pipette"}
+    assert static["blue_pipette"][600] == ("T1", "T2", "T3") and len(static["blue_pipette"]) == 60
+    resting = {"blue_pipette": range(600, 660), "red_pipette": range(620, 635)}
+    window = stand_window(
+        resting, StandSettings(min_run_frames=10, shared_classes=settings.classes)
+    )
+    assert (window.start, window.end, window.static_count) == (620, 634, 2)
+    assert window.classes == ("blue_pipette", "red_pipette")
+    # Too short a joint run: the longest single-pipette run wins.
+    window = stand_window(
+        resting, StandSettings(min_run_frames=20, shared_classes=settings.classes)
+    )
+    assert (window.start, window.end, window.static_count) == (600, 659, 1)
+    assert stand_window({}, settings) is None
+
+
+# ------------------------------------------------------------------ synthetic pipettes
+
+
+def _project(cam, point: np.ndarray) -> np.ndarray:
+    return cam.project(np.asarray(point, dtype=np.float64))[0]
+
+
+def _rows_for_segment(
+    cams,
+    cls: str,
+    end_top: np.ndarray,
+    end_bottom: np.ndarray,
+    frames,
+    *,
+    seed: int,
+    views=None,
+    bad_view: str | None = None,
+) -> list[FineBioObservation]:
+    """Detector and SAM3 rows of one segment in every fixed view: the axis is the projected
+    ends (in a per-view shuffled order), the box their bounds; `bad_view` gets one end pushed
+    60 px along the axis, a mask that runs long."""
+    rng = np.random.default_rng(seed)
+    rows = []
+    for view, cam in cams.items():
+        if views is not None and view not in views:
+            continue
+        top, bottom = _project(cam, end_top), _project(cam, end_bottom)
+        if view == bad_view:
+            direction = (bottom - top) / np.linalg.norm(bottom - top)
+            bottom = bottom + 60.0 * direction
+        ends = [top, bottom] if rng.random() < 0.5 else [bottom, top]
+        x0, y0 = np.minimum(top, bottom) - 8
+        x1, y1 = np.maximum(top, bottom) + 8
+        box = (round(float(x0), 1), round(float(y0), 1), round(float(x1), 1), round(float(y1), 1))
+        centroid = tuple(round(float(v), 1) for v in (top + bottom) / 2)
+        for f in frames:
+            rows.append(_det(view, f, cls, box))
+            rows.append(
+                FineBioObservation(
+                    view=view,
+                    frame_index=f,
+                    slot=f"{cls}#0",
+                    object_class=cls,
+                    detector_score=0.9,
+                    box_xyxy_px=box,
+                    mask_bbox_px=box,
+                    mask_centroid_px=centroid,
+                    mask_area_px=2000,
+                    mask_axis_px=tuple(tuple(round(float(v), 1) for v in p) for p in ends),
+                    mask_elongation=8.0,
+                    mask_width_px=20.0,
+                    mask_axis_residual_px=1.0,
+                    sam3_object_score=0.9,
+                    pose_valid=True,
+                    source="sam3_decode",
+                    provenance={"axis_method": "ransac_skeleton"},
+                )
+            )
+    return rows
+
+
+def _standing(x: float, y: float, length: float = 25.0, tilt_deg: float = 0.0):
+    """A pipette standing on the bench at (x, y): bottom on the plane, top `length` up the
+    bench normal, leaning `tilt_deg` towards +x."""
+    bottom = np.array([x, y, 0.0])
+    lean = np.array([np.sin(np.radians(tilt_deg)), 0.0, 0.0])
+    up = BENCH_UP * np.cos(np.radians(tilt_deg)) + lean
+    return bottom + length * up, bottom
+
+
+def test_match_endpoints_labels_the_higher_end_a_in_every_view(fixtures):
+    cams = fixtures.fixed_cameras()
+    top, bottom = _standing(20.0, 10.0)
+    axes = {}
+    for i, (view, cam) in enumerate(cams.items()):
+        t, b = _project(cam, top), _project(cam, bottom)
+        axes[view] = (t, b) if i % 2 else (b, t)
+    ends_a, ends_b, info = match_endpoints(cams, axes, (top + bottom) / 2)
+    for view, cam in cams.items():
+        assert np.allclose(ends_a[view], _project(cam, top), atol=1e-6)
+        assert np.allclose(ends_b[view], _project(cam, bottom), atol=1e-6)
+    assert info["up_order_disagreements"] == [] and info["anchor_view"] in cams
+
+
+def test_vertical_segments_on_the_rig_fixture_recover_length_angle_and_spacing(fixtures):
+    """Three 25 cm pipettes standing 4 cm apart, a leaning fourth, a fifth held in the air and
+    a sixth with one view's mask running long: the resting ones come back within the rig's
+    noise, the held one fails the height gate and the long mask's view is dropped."""
+    cams = fixtures.fixed_cameras()
+    rows = []
+    stand = {}
+    for i, cls in enumerate(("blue_pipette", "yellow_pipette", "red_pipette")):
+        top, bottom = _standing(10.0 + 4.0 * i, 20.0)
+        stand[cls] = (top, bottom)
+        rows += _rows_for_segment(cams, cls, top, bottom, FRAMES, seed=i)
+    top, bottom = _standing(40.0, 20.0, length=22.0, tilt_deg=20.0)
+    rows += _rows_for_segment(cams, "8_channel_pipette", top, bottom, FRAMES, seed=7)
+    settings = StandSettings(min_run_frames=20)
+    report, segments = stand_report(rows, cams, trial="fixture", settings=settings)
+    window = report["stand_window"]
+    assert (window["start_frame"], window["end_frame"], window["static_pipettes"]) == (
+        1800,
+        1839,
+        3,
+    )
+    assert window["classes"] == ["blue_pipette", "yellow_pipette", "red_pipette"]
+    for cls, (top, bottom) in stand.items():
+        p = report["per_pipette"][cls]
+        assert p["frames_with_segment"] == len(FRAMES) and p["frames_failed_rest_gate"] == 0
+        assert abs(p["length_cm"]["median"] - 25.0) < 0.3
+        assert p["length_cm"]["p90"] - p["length_cm"]["p10"] < 0.2
+        assert p["angle_to_bench_normal_deg"]["median"] < 1.0
+        assert abs(p["end_a_height_cm"]["median"] - 25.0) < 0.3
+        assert abs(p["end_b_height_cm"]["median"]) < 0.3
+        assert p["end_a_drift_window"]["max_cm"] < 0.1 and p["end_b_drift_window"]["max_cm"] < 0.1
+        assert p["view_sets"] == {"T1,T2,T3,T4,T5": len(FRAMES)}
+        for view in cams:
+            assert p["residual_a_px_per_view"][view]["median"] < 2.0
+            assert p["loo_b_px_per_view"][view]["median"] < 3.0
+    leaning = report["per_pipette"]["8_channel_pipette"]
+    assert abs(leaning["length_cm"]["median"] - 22.0) < 0.3
+    assert abs(leaning["angle_to_bench_normal_deg"]["median"] - 20.0) < 1.0
+    pairs = {tuple(p["pair"]): p for p in report["pairwise"]}
+    assert abs(pairs[("blue_pipette", "yellow_pipette")]["spacing_cm"]["median"] - 4.0) < 0.2
+    assert abs(pairs[("blue_pipette", "red_pipette")]["spacing_cm"]["median"] - 8.0) < 0.2
+    assert pairs[("yellow_pipette", "red_pipette")]["angle_deg"]["median"] < 1.0
+    assert abs(pairs[("red_pipette", "8_channel_pipette")]["angle_deg"]["median"] - 20.0) < 1.0
+    shared = report["shared_length"]
+    assert abs(shared["length_cm"] - 25.0) < 0.3 and shared["spread_cm"] < 0.2
+    assert shared["pipettes"] == 3 and shared["excluded_too_few_resting_frames"] == []
+    assert all(seg.views_dropped == () for seg in segments["blue_pipette"])
+
+
+def test_rest_gates_exclude_a_held_pipette_and_drop_a_long_mask_view(fixtures):
+    cams = fixtures.fixed_cameras()
+    rows = []
+    top, bottom = _standing(10.0, 20.0)
+    rows += _rows_for_segment(cams, "red_pipette", top, bottom, FRAMES, seed=1)
+    # Held still 30 cm up: static by its boxes, out by the height gate.
+    lift = np.array([0.0, 0.0, -30.0])
+    rows += _rows_for_segment(cams, "blue_pipette", top + lift, bottom + lift, FRAMES, seed=2)
+    # T2's mask runs 60 px long at one end: the leave-one-out rule drops T2.
+    top_y, bottom_y = _standing(18.0, 20.0)
+    rows += _rows_for_segment(
+        cams, "yellow_pipette", top_y, bottom_y, FRAMES, seed=3, bad_view="T2"
+    )
+    settings = StandSettings(min_run_frames=20)
+    report, segments = stand_report(rows, cams, trial="fixture", settings=settings)
+    blue = report["per_pipette"]["blue_pipette"]
+    assert blue["frames_static_with_axes"] == len(FRAMES)
+    assert blue["frames_failed_height_gate"] == len(FRAMES) and blue["frames_with_segment"] == 0
+    assert blue["frames_failed_residual_gate"] == 0
+    yellow = report["per_pipette"]["yellow_pipette"]
+    assert yellow["frames_with_segment"] == len(FRAMES)
+    assert yellow["views_dropped"] == {"T2": len(FRAMES)}
+    assert yellow["view_sets"] == {"T1,T3,T4,T5": len(FRAMES)}
+    assert abs(yellow["length_cm"]["median"] - 25.0) < 0.3
+    window = report["stand_window"]
+    assert window["classes"] == ["yellow_pipette", "red_pipette"] and window["static_pipettes"] == 2
+    shared = report["shared_length"]
+    assert shared["pipettes"] == 2 and shared["excluded_too_few_resting_frames"] == ["blue_pipette"]
+    # Two views cannot vote a view out: the segment keeps both and fails the gate instead.
+    per_view = {
+        r.view: r
+        for r in rows
+        if r.object_class == "yellow_pipette"
+        and r.source == "sam3_decode"
+        and r.frame_index == 1800
+        and r.view in ("T2", "T4")
+    }
+    seg = segment_from_views(
+        1800, "yellow_pipette", cams, per_view, min_views=2, rest_residual_px=30.0
+    )
+    assert seg is not None and seg.views_dropped == ()
+    assert seg.max_residual_px > 30.0 or abs(seg.length_cm - 25.0) > 1.0
+
+
+def test_pipettes_config_keeps_trial_one_and_writes_a_disagreement_note():
+    def report(trial: str, lengths: dict[str, float], spacing: float):
+        values = list(lengths.values())
+        return {
+            "trial": trial,
+            "stand_window": {"start_frame": 600, "end_frame": 900},
+            "shared_length": {
+                "length_cm": float(np.median(values)),
+                "spread_cm": round(max(values) - min(values), 2),
+                "per_pipette_median_cm": lengths,
+            },
+            "pairwise": [
+                {"pair": ["yellow_pipette", "red_pipette"], "spacing_cm": {"median": spacing}},
+                {"pair": ["yellow_pipette", "8_channel_pipette"], "spacing_cm": {"median": 20.0}},
+            ],
+        }
+
+    one = report("P03_03_01", {"yellow_pipette": 22.0, "red_pipette": 24.5}, 2.9)
+    two = report("P20_03_01", {"blue_pipette": 28.0, "red_pipette": 29.0}, 3.1)
+    doc = pipettes_config([one, two], run_dirs=["runs/one/stand", "runs/two/stand"])
+    assert doc["config_kind"] == "finebio_pipettes"
+    assert doc["length_cm"] == 23.25 and doc["length_spread_cm"] == 2.5
+    assert doc["stand_spacing_cm"] == 2.9  # single-channel pairs only
+    assert doc["elongation_threshold"] == 2.5
+    assert doc["merged_width_factor"] == 1.6 and doc["merged_extent_factor"] == 1.2
+    prov = doc["provenance"]
+    assert prov["trial"] == "P03_03_01" and prov["frames"] == [600, 900]
+    assert prov["run_dir"] == "runs/one/stand"
+    assert prov["per_trial"]["P20_03_01"]["primary"] is False
+    assert len(prov["notes"]) == 1 and "kept" in prov["notes"][0]
+    close = report("P20_03_01", {"blue_pipette": 22.5, "red_pipette": 24.0}, 3.1)
+    agree = pipettes_config([one, close], run_dirs=["a", "b"])
+    assert agree["length_cm"] == 23.25 and "within the spread" in agree["provenance"]["notes"][0]
+
+
+def test_cli_report_and_config_write_their_files(tmp_path: Path, fixtures):
+    from battle.finebio_observations import write_observations
+
+    cams = fixtures.fixed_cameras()
+    rows = []
+    for i, cls in enumerate(("yellow_pipette", "red_pipette")):
+        top, bottom = _standing(10.0 + 3.0 * i, 20.0)
+        rows += _rows_for_segment(cams, cls, top, bottom, FRAMES, seed=i)
+    obs = tmp_path / "observations.jsonl"
+    write_observations(rows, obs)
+    out = tmp_path / "stand"
+    argv = [
+        "report",
+        "--observations",
+        str(obs),
+        "--cameras",
+        str(FIXTURE_DIR / "cameras.json"),
+        "--output",
+        str(out),
+        "--min-run-frames",
+        "20",
+        "--frames",
+        "1800-1839",
+    ]
+    assert main(argv) == 0
+    report = json.loads((out / "stand_report.json").read_text())
+    assert report["trial"] == "P03_01_01" and report["stand_window"]["frames"] == 40
+    assert abs(report["shared_length"]["length_cm"] - 25.0) < 0.3
+    assert (out / "segments.jsonl").read_text().count("\n") == 80
+    md = (out / "stand_report.md").read_text()
+    assert md.startswith("# Pipettes at rest, P03_01_01") and "## Shared length" in md
+    config = tmp_path / "pipettes.json"
+    assert (
+        main(["config", "--report", str(out / "stand_report.json"), "--output", str(config)]) == 0
+    )
+    doc = json.loads(config.read_text())
+    assert abs(doc["length_cm"] - 25.0) < 0.3 and abs(doc["stand_spacing_cm"] - 3.0) < 0.2
+    assert doc["provenance"]["run_dir"] == str(out)

@@ -691,6 +691,145 @@ def test_filter_observations_drops_rejected_slots_by_view_and_label(tmp_path: Pa
     assert len(list(read_jsonl(src / "observations.jsonl", FineBioObservation))) == 11
 
 
+def _write_axis_worker_run(root: Path, view: str, frames: int) -> None:
+    """A box-decode worker run with one compact plate and one 40 x 4 px bar per frame."""
+    import cv2
+
+    (root / "masks").mkdir(parents=True)
+    (root / "manifest.json").write_text(json.dumps({"method_statuses": [{"state": "succeeded"}]}))
+    lines = []
+    for k in range(frames):
+        objects = []
+        for slot, label, (x0, y0, x1, y1) in (
+            (0, "cell_culture_plate#0", (8, 8, 24, 20)),
+            (1, "blue_pipette#0", (10 + k, 30, 50 + k, 34)),
+        ):
+            mask = np.zeros((48, 64), dtype=np.uint8)
+            mask[y0:y1, x0:x1] = 255
+            uri = f"masks/{k:06d}_{slot:02d}.png"
+            cv2.imwrite(str(root / uri), mask)
+            objects.append(
+                {
+                    "object_id": f"sam3-{slot:02d}",
+                    "label": label,
+                    "confidence": 0.9,
+                    "box": {"x": x0 / 64, "y": y0 / 48, "width": (x1 - x0) / 64, "height": 0.1},
+                    "mask": {"uri": uri, "storage": "external_artifact", "format": "png"},
+                    "object_score": 0.9,
+                    "iou_prediction": 0.9,
+                    "prompt_box": {"x": 0.1, "y": 0.15, "width": 0.25, "height": 0.25},
+                    "source": "sam3_decode",
+                    "prompt_source": "finebio_dino",
+                    "prompt_score": 0.42,
+                }
+            )
+        lines.append(
+            json.dumps(
+                {
+                    "view_id": view,
+                    "analysis_frame_index": k,
+                    "source_seconds": k / 30.0,
+                    "objects": objects,
+                    "hands": [],
+                }
+            )
+        )
+    (root / "observations.jsonl").write_text("\n".join(lines) + "\n")
+
+
+AXIS_FIELDS = ("mask_axis_px", "mask_elongation", "mask_width_px", "mask_axis_residual_px")
+AXIS_PROVENANCE = ("axis_method", "axis_reason")
+
+
+def _strip_axis(line: str) -> str:
+    """A Sep 28 row as the Sep 25 adapter would have written it."""
+    row = json.loads(line)
+    for key in AXIS_FIELDS:
+        row.pop(key, None)
+    for key in AXIS_PROVENANCE:
+        row.get("provenance", {}).pop(key, None)
+    return FineBioObservation.model_validate(row).model_dump_json(
+        exclude_none=True, exclude_defaults=True
+    )
+
+
+def test_remeasure_adds_the_axis_fields_and_keeps_every_other_field(tmp_path: Path, fixtures):
+    """Sep 28 (p0-axis-observations): `remeasure` re-reads the masks behind an arm's rows and
+    adds the axis fields; stripping them from its output gives the input byte for byte, and the
+    fixture's detector rows pass through untouched."""
+    from battle.finebio_observations import worker_to_observations, write_observations
+
+    worker_root = tmp_path / "b-box-decode"
+    for view in ("T1", "T2"):
+        _write_axis_worker_run(worker_root / view / f"run-{view.lower()}", view, frames=3)
+    rows = [r for r in fixtures.observations if r.source == "detector" and r.frame_index <= 1802]
+    for view in ("T1", "T2"):
+        rows.extend(worker_to_observations(worker_root / view / f"run-{view.lower()}", view, 1800))
+    with_axis = tmp_path / "with-axis.jsonl"
+    write_observations(rows, with_axis)
+    sep25 = tmp_path / "sep25"
+    sep25.mkdir()
+    (sep25 / "observations.jsonl").write_text(
+        "".join(_strip_axis(line) + "\n" for line in with_axis.read_text().splitlines())
+    )
+    (sep25 / "observations_summary.json").write_text(json.dumps({"arm": "b", "rows_written": 1}))
+    assert "mask_axis_px" not in (sep25 / "observations.jsonl").read_text()
+    out = tmp_path / "observations-b"
+    assert (
+        main(
+            [
+                "remeasure",
+                "--observations",
+                str(sep25 / "observations.jsonl"),
+                "--worker-root",
+                str(worker_root),
+                "--output",
+                str(out),
+                "--jobs",
+                "1",
+            ]
+        )
+        == 0
+    )
+    source_lines = (sep25 / "observations.jsonl").read_text().splitlines()
+    out_lines = (out / "observations.jsonl").read_text().splitlines()
+    assert len(out_lines) == len(source_lines) == len(rows)
+    # Every other field byte-identical, in the source order; the detector rows untouched.
+    assert [_strip_axis(line) for line in out_lines] == source_lines
+    assert [line for line in out_lines if '"source":"detector"' in line] == [
+        line for line in source_lines if '"source":"detector"' in line
+    ]
+    # And the added fields are what the adapter computes from the same masks.
+    assert out_lines == with_axis.read_text().splitlines()
+    back = list(read_jsonl(out / "observations.jsonl", FineBioObservation))
+    bars = [r for r in back if r.object_class == "blue_pipette" and r.source == "sam3_decode"]
+    assert len(bars) == 6 and all(r.mask_axis_px is not None for r in bars)
+    assert bars[0].mask_axis_px == ((10.0, 31.5), (50.0, 31.5))
+    assert bars[0].mask_elongation == 10.0 and bars[0].mask_width_px == 4.0
+    assert all(r.provenance["axis_method"] == "ransac_skeleton" for r in bars)
+    plates = [
+        r for r in back if r.object_class == "cell_culture_plate" and r.source == "sam3_decode"
+    ]
+    assert len(plates) == 6
+    assert all(r.mask_axis_px is None and r.provenance["axis_reason"] == "compact" for r in plates)
+    summary = json.loads((out / "remeasure_summary.json").read_text())
+    assert summary["start_frame_by_view"] == {"T1": 1800, "T2": 1800}
+    assert summary["sam3_rows"] == 12 and summary["detector_rows_copied"] == len(rows) - 12
+    assert summary["old_fields_mismatch_by_view"] == {}
+    assert summary["masks_missing_by_view"] == {} and summary["masks_unresolved_by_view"] == {}
+    assert summary["reserialisation_mismatches"] == 0
+    assert summary["per_class"]["blue_pipette"]["rows_with_axis"] == 6
+    assert summary["per_class"]["blue_pipette"]["methods"] == {"ransac_skeleton": 6}
+    assert summary["per_class"]["cell_culture_plate"]["axis_fraction"] == 0.0
+    assert summary["per_class_view"]["blue_pipette/T1"]["rows"] == 3
+    obs_summary = json.loads((out / "observations_summary.json").read_text())
+    assert obs_summary["arm"] == "b" and obs_summary["rows_written"] == len(rows)
+    assert obs_summary["remeasure"]["worker_runs"]["T1"].endswith("run-t1")
+    assert (out / "remeasure_summary.md").read_text().startswith("# Mask axes")
+    # The source is untouched.
+    assert (sep25 / "observations.jsonl").read_text().splitlines() == source_lines
+
+
 def _measures(iou_median: float, frac: float, **identity):
     ident = {"id_switches": 3, "fragmentation": 10, "ambiguities": 5}
     ident.update(identity)

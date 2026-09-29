@@ -390,6 +390,16 @@ class FineBioObservation(VersionedModel):
     mask_bbox_px: BoxXYXY | None = None
     mask_centroid_px: Vec2 | None = None
     mask_area_px: int | None = Field(default=None, ge=0)
+    # Sep 28 (p0-axis-observations), all optional so every earlier row still validates: the
+    # mask's principal axis as two endpoints in raw pixels (order unresolved: not tip / butt;
+    # None on a compact mask), sqrt of the ratio of the largest to smallest second-moment
+    # eigenvalue (1.0 is round), the median across-axis width along the axis, and the RMS
+    # distance of the skeleton points to the fitted axis (a quality number). The provenance
+    # carries `axis_method` (ransac_skeleton | pca | none) and `axis_reason` when None.
+    mask_axis_px: tuple[Vec2, Vec2] | None = None
+    mask_elongation: float | None = Field(default=None, ge=0)
+    mask_width_px: float | None = Field(default=None, ge=0)
+    mask_axis_residual_px: float | None = Field(default=None, ge=0)
     sam3_object_score: float | None = None
     pose_valid: bool
     source: ObservationSource

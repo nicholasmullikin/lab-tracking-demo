@@ -1,0 +1,71 @@
+{
+ "schema_version": "1.0",
+ "config_kind": "finebio_pipettes",
+ "length_cm": 23.21,
+ "length_spread_cm": 2.49,
+ "stand_spacing_cm": 2.92,
+ "stand_spacing_pairs_cm": {
+  "yellow_pipette/red_pipette": 2.92,
+  "yellow_pipette/8_channel_pipette": 22.58,
+  "red_pipette/8_channel_pipette": 19.91
+ },
+ "elongation_threshold": 2.5,
+ "merged_width_factor": 1.6,
+ "merged_extent_factor": 1.2,
+ "units": "board centimetres; pixels are raw video pixels",
+ "provenance": {
+  "trial": "P03_03_01",
+  "frames": [
+   626,
+   834
+  ],
+  "run_dir": "runs/finebio-lines-P03_03_01-20260928/stand",
+  "method": "battle-finebio-stand: per static frame, the two SAM3 mask-axis endpoints of every fixed view with an axis are matched across views (projected world-up in the best-aligned view, then the pairing with the smaller two-view residual) and triangulated (undistort + DLT); length = |end A - end B|; the shared length is the median of the single-channel pipettes' median lengths and the spread their max - min; spacing is the distance between segment midlines over the stand window",
+  "per_trial": {
+   "P03_03_01": {
+    "length_cm": 23.21,
+    "spread_cm": 2.49,
+    "per_pipette_median_cm": {
+     "yellow_pipette": 21.97,
+     "red_pipette": 24.46
+    },
+    "stand_window": {
+     "start_frame": 626,
+     "end_frame": 834,
+     "frames": 209,
+     "classes": [
+      "yellow_pipette",
+      "red_pipette"
+     ],
+     "static_pipettes": 2
+    },
+    "run_dir": "runs/finebio-lines-P03_03_01-20260928/stand",
+    "primary": true
+   },
+   "P20_03_01": {
+    "length_cm": 22.23,
+    "spread_cm": 1.07,
+    "per_pipette_median_cm": {
+     "blue_pipette": 21.7,
+     "yellow_pipette": 22.77
+    },
+    "stand_window": {
+     "start_frame": 998,
+     "end_frame": 1072,
+     "frames": 75,
+     "classes": [
+      "blue_pipette",
+      "yellow_pipette"
+     ],
+     "static_pipettes": 2
+    },
+    "run_dir": "runs/finebio-lines-P20_03_01-20260928/stand",
+    "primary": false
+   }
+  },
+  "notes": [
+   "P20_03_01 measures 22.23 cm, within the spread of P03_03_01's 23.21 cm"
+  ],
+  "claim_boundary": "Segment ends are the extremes of SAM3 masks along their fitted axis, not physical tips: a mask that stops short shortens the segment and a merged mask lengthens it. The static frames are the detector's, the cameras the rig's; no number here is ground truth."
+ }
+}

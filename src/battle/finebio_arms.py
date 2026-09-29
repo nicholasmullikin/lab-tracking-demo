@@ -63,9 +63,14 @@ from . import multiview_tracks
 from .finebio_cameras import Camera, cameras_from_config, read_camera_config
 from .finebio_detect import box_iou
 from .finebio_observations import (
+    AXIS_ELONGATION_THRESHOLD,
     detections_to_observations,
+    filter_mask_components,
     fpv_pose_validity,
+    mask_axis_measurements,
+    mask_measurements,
     pose_validity_from_fixture,
+    read_mask,
     worker_to_observations,
     write_observations,
 )
@@ -106,6 +111,8 @@ IDENTICAL_INSTANCE_CLASSES = (
     "8_channel_tip",
 )
 GROUP_SUFFIX = "_group"
+# Sep 28 (p0-axis-observations): the classes `remeasure` reports per view.
+PIPETTE_CLASSES = ("blue_pipette", "yellow_pipette", "red_pipette", "8_channel_pipette")
 DEFAULT_MIN_SCORE = 0.3
 DEFAULT_RESEED_K = 30
 DECISION_MARGIN = 0.02
@@ -1266,6 +1273,323 @@ def filter_observations_to_seeds(source: Path, seeds_dir: Path, output: Path) ->
     return summary
 
 
+# --------------------------------------------------------------------------- remeasure
+
+
+def _remeasure_chunk(
+    task: tuple[str, list[tuple[tuple[str, int, str], str]]],
+) -> list[tuple[tuple[str, int, str], dict[str, Any]]]:
+    """Process-pool worker: the axis fields (plus the old fields, for the identity check) of
+    one chunk of masks; a mask that cannot be read yields ``{"mask": "absent"}``."""
+    _, items = task
+    out = []
+    for key, path in items:
+        mask = read_mask(Path(path))
+        if mask is None:
+            out.append((key, {"mask": "absent"}))
+            continue
+        mask, _, _ = filter_mask_components(mask)
+        measured = mask_measurements(mask)
+        if measured is None:
+            out.append((key, {"mask": "empty"}))
+            continue
+        bbox, centroid, area = measured
+        axis = mask_axis_measurements(mask)
+        out.append(
+            (
+                key,
+                {
+                    "old": {
+                        "mask_bbox_px": list(bbox),
+                        "mask_centroid_px": list(centroid),
+                        "mask_area_px": area,
+                    },
+                    "mask_axis_px": None
+                    if axis.axis_px is None
+                    else [list(p) for p in axis.axis_px],
+                    "mask_elongation": axis.elongation,
+                    "mask_width_px": axis.width_px,
+                    "mask_axis_residual_px": axis.residual_px,
+                    "provenance": axis.provenance(),
+                },
+            )
+        )
+    return out
+
+
+def _mask_index(run_dir: Path) -> dict[tuple[int, str], str]:
+    """(analysis frame, worker object id) -> mask path of one worker run."""
+    from .observations import load_observations
+
+    index: dict[tuple[int, str], str] = {}
+    for frame in load_observations(Path(run_dir) / "observations.jsonl"):
+        for obj in frame.objects:
+            if obj.mask is not None:
+                index[(frame.analysis_frame_index, obj.object_id)] = str(
+                    Path(run_dir) / obj.mask.uri
+                )
+    return index
+
+
+def _axis_stats(rows: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    """Axis coverage, elongation distribution, width and method counts over row dicts."""
+    with_axis = [r for r in rows if r.get("mask_axis_px") is not None]
+    elong = [r["mask_elongation"] for r in rows if r.get("mask_elongation") is not None]
+    widths = [r["mask_width_px"] for r in with_axis]
+    residuals = [
+        r["mask_axis_residual_px"] for r in with_axis if r.get("mask_axis_residual_px") is not None
+    ]
+    lengths = [
+        float(np.hypot(a[1][0] - a[0][0], a[1][1] - a[0][1]))
+        for a in (r["mask_axis_px"] for r in with_axis)
+    ]
+    return {
+        "rows": len(rows),
+        "rows_with_axis": len(with_axis),
+        "axis_fraction": round(len(with_axis) / len(rows), 4) if rows else None,
+        "elongation": _percentiles(elong),
+        "elongation_ge_threshold_fraction": (
+            round(float(np.mean(np.asarray(elong) >= AXIS_ELONGATION_THRESHOLD)), 4)
+            if elong
+            else None
+        ),
+        "width_px": _percentiles(widths),
+        "axis_length_px": _percentiles(lengths),
+        "axis_residual_px": _percentiles(residuals),
+        "methods": dict(
+            Counter(str((r.get("provenance") or {}).get("axis_method", "none")) for r in rows)
+        ),
+    }
+
+
+def remeasure_observations(
+    source: Path,
+    worker_root: Path,
+    output: Path,
+    *,
+    start_frame: int | None = None,
+    jobs: int = 8,
+    chunk_size: int = 500,
+    summary_classes: Sequence[str] = PIPETTE_CLASSES,
+) -> dict[str, Any]:
+    """Re-read the masks behind an arm's `observations.jsonl` and rewrite every SAM3 row with
+    the Sep 28 axis fields (`mask_axis_px`, `mask_elongation`, `mask_width_px`,
+    `mask_axis_residual_px`, provenance `axis_method` / `axis_reason`), every other field
+    identical: detector rows are copied byte for byte, a SAM3 row keeps its bbox, centroid and
+    area as written (the recomputed ones are compared and any difference is counted, never
+    applied). Masks are found from the rows (`provenance.object_id`, raw frame minus
+    `start_frame`) through each view's worker run under `worker_root/<view>`; nothing lists a
+    mask directory. `start_frame` defaults to the first SAM3 frame of the source minus the
+    worker's first analysis frame. Writes `<output>/observations.jsonl`,
+    `observations_summary.json` (the source's, when beside it, plus a `remeasure` block) and
+    `remeasure_summary.json` / `.md`; returns the remeasure summary."""
+    source, worker_root, output = Path(source), Path(worker_root), Path(output)
+    output.mkdir(parents=True, exist_ok=True)
+    keys: dict[str, list[tuple[int, str]]] = defaultdict(list)
+    detector_rows = 0
+    with source.open(encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if row.get("source") in SAM3_SOURCES:
+                object_id = (row.get("provenance") or {}).get("object_id")
+                if object_id is None:
+                    raise ValueError(f"{source}: a SAM3 row without provenance.object_id")
+                keys[str(row["view"])].append((int(row["frame_index"]), str(object_id)))
+            else:
+                detector_rows += 1
+    tasks: list[tuple[str, list[tuple[tuple[str, int, str], str]]]] = []
+    worker_runs: dict[str, str] = {}
+    offsets: dict[str, int] = {}
+    unresolved: Counter[str] = Counter()
+    for view in sorted(keys):
+        run_dir = find_worker_run(worker_root / view)
+        worker_runs[view] = str(run_dir)
+        index = _mask_index(run_dir)
+        offset = start_frame
+        if offset is None:
+            offset = min(f for f, _ in keys[view]) - min(f for f, _ in index)
+        offsets[view] = offset
+        items = []
+        for frame, object_id in keys[view]:
+            path = index.get((frame - offset, object_id))
+            if path is None:
+                unresolved[view] += 1
+                continue
+            items.append(((view, frame, object_id), path))
+        for i in range(0, len(items), chunk_size):
+            tasks.append((view, items[i : i + chunk_size]))
+    results: dict[tuple[str, int, str], dict[str, Any]] = {}
+    if jobs > 1 and len(tasks) > 1:
+        with ProcessPoolExecutor(max_workers=min(jobs, len(tasks))) as pool:
+            for chunk in pool.map(_remeasure_chunk, tasks):
+                results.update(chunk)
+    else:
+        for task in tasks:
+            results.update(_remeasure_chunk(task))
+    old_mismatch: Counter[str] = Counter()
+    reserialise_mismatch = 0
+    masks_missing: Counter[str] = Counter()
+    per_class: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    per_class_view: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    written = 0
+    with (
+        source.open(encoding="utf-8") as src,
+        (output / "observations.jsonl").open("w", encoding="utf-8") as dst,
+    ):
+        for line in src:
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if row.get("source") not in SAM3_SOURCES:
+                dst.write(line if line.endswith("\n") else line + "\n")
+                written += 1
+                continue
+            view = str(row["view"])
+            key = (view, int(row["frame_index"]), str(row["provenance"]["object_id"]))
+            model = FineBioObservation.model_validate(row)
+            if model.model_dump_json(exclude_none=True, exclude_defaults=True) != line.rstrip("\n"):
+                reserialise_mismatch += 1
+            result = results.get(key)
+            if result is None or "old" not in result:
+                masks_missing[view] += 1
+            else:
+                old = result["old"]
+                if (
+                    list(model.mask_bbox_px or ()) != old["mask_bbox_px"]
+                    or list(model.mask_centroid_px or ()) != old["mask_centroid_px"]
+                    or model.mask_area_px != old["mask_area_px"]
+                ):
+                    old_mismatch[view] += 1
+                update: dict[str, Any] = {
+                    "mask_axis_px": (
+                        None
+                        if result["mask_axis_px"] is None
+                        else tuple(tuple(p) for p in result["mask_axis_px"])
+                    ),
+                    "mask_elongation": result["mask_elongation"],
+                    "mask_width_px": result["mask_width_px"],
+                    "mask_axis_residual_px": result["mask_axis_residual_px"],
+                    "provenance": {**model.provenance, **result["provenance"]},
+                }
+                model = model.model_copy(update=update)
+            dst.write(model.model_dump_json(exclude_none=True, exclude_defaults=True) + "\n")
+            written += 1
+            dumped = model.model_dump(exclude_none=True)
+            per_class[model.object_class].append(dumped)
+            per_class_view[(model.object_class, view)].append(dumped)
+    summary: dict[str, Any] = {
+        "schema": SCHEMA,
+        "command": "remeasure",
+        "source_observations": str(source),
+        "worker_root": str(worker_root),
+        "worker_runs": worker_runs,
+        "start_frame_by_view": offsets,
+        "rows_written": written,
+        "detector_rows_copied": detector_rows,
+        "sam3_rows": sum(len(v) for v in keys.values()),
+        "sam3_rows_by_view": {v: len(keys[v]) for v in sorted(keys)},
+        "masks_unresolved_by_view": dict(unresolved),
+        "masks_missing_by_view": dict(masks_missing),
+        "old_fields_mismatch_by_view": dict(old_mismatch),
+        "reserialisation_mismatches": reserialise_mismatch,
+        "axis_settings": {
+            "elongation_threshold": AXIS_ELONGATION_THRESHOLD,
+            "method": (
+                "PCA on the pixel cloud seeds the axis and gives the elongation; at or above the "
+                "threshold a RANSAC line on the Zhang-Suen skeleton replaces it; endpoints are "
+                "the extreme mask pixels within 0.75 x width of the axis; width is the median "
+                "across-axis extent along the axis; residual the RMS skeleton distance"
+            ),
+        },
+        "per_class": {cls: _axis_stats(rows) for cls, rows in sorted(per_class.items())},
+        "per_class_view": {
+            f"{cls}/{view}": _axis_stats(rows)
+            for (cls, view), rows in sorted(per_class_view.items())
+            if cls in summary_classes
+        },
+        "summary_classes": list(summary_classes),
+        "licence_note": LICENCE_NOTE,
+    }
+    summary_path = source.parent / "observations_summary.json"
+    obs_summary: dict[str, Any] = (
+        json.loads(summary_path.read_text(encoding="utf-8")) if summary_path.is_file() else {}
+    )
+    obs_summary["rows_written"] = written
+    obs_summary["remeasure"] = {
+        k: summary[k]
+        for k in (
+            "source_observations",
+            "worker_root",
+            "worker_runs",
+            "start_frame_by_view",
+            "masks_missing_by_view",
+            "old_fields_mismatch_by_view",
+            "reserialisation_mismatches",
+            "axis_settings",
+        )
+    }
+    (output / "observations_summary.json").write_text(
+        json.dumps(obs_summary, indent=1) + "\n", encoding="utf-8"
+    )
+    (output / "remeasure_summary.json").write_text(
+        json.dumps(summary, indent=1) + "\n", encoding="utf-8"
+    )
+    (output / "remeasure_summary.md").write_text(remeasure_markdown(summary), encoding="utf-8")
+    return summary
+
+
+def remeasure_markdown(summary: dict[str, Any]) -> str:
+    def cell(stats: dict[str, Any], key: str, digits: int = 2) -> str:
+        block = stats.get(key) or {}
+        median, p10, p90 = (_fmt(block.get(k), digits) for k in ("median", "p10", "p90"))
+        return f"{median} ({p10}–{p90})"
+
+    def row(s: dict[str, Any]) -> str:
+        return (
+            f"{s['rows']} | {s['rows_with_axis']} | {_fmt(s['axis_fraction'])} | "
+            f"{cell(s, 'elongation')} | {cell(s, 'width_px', 1)} | "
+            f"{cell(s, 'axis_length_px', 0)} | {cell(s, 'axis_residual_px', 1)}"
+        )
+
+    lines = [
+        "# Mask axes, arm (b)",
+        "",
+        f"{summary['sam3_rows']} SAM3 rows re-measured from `{summary['source_observations']}`; "
+        f"{summary['detector_rows_copied']} detector rows copied unchanged; masks missing "
+        f"{sum(summary['masks_missing_by_view'].values())}, old fields changed "
+        f"{sum(summary['old_fields_mismatch_by_view'].values())}, re-serialisation mismatches "
+        f"{summary['reserialisation_mismatches']}.",
+        "",
+        "Elongation is sqrt(largest / smallest second-moment eigenvalue) of the mask (1.0 is "
+        f"round); a mask under {summary['axis_settings']['elongation_threshold']} is compact and "
+        "carries no axis. Width is the median across-axis extent along the axis in raw pixels; "
+        "the residual is the RMS distance of the skeleton to the axis. Cells are median "
+        "(p10–p90).",
+        "",
+        "## Per class",
+        "",
+        "| class | rows | with axis | fraction | elongation | width px | axis length px | "
+        "residual px | methods |",
+        "|---|---|---|---|---|---|---|---|---|",
+    ]
+    for cls, s in summary["per_class"].items():
+        lines.append(f"| {cls} | {row(s)} | {s['methods']} |")
+    lines += [
+        "",
+        "## Pipette classes per view",
+        "",
+        "| class / view | rows | with axis | fraction | elongation | width px | axis length px | "
+        "residual px |",
+        "|---|---|---|---|---|---|---|---|",
+    ]
+    for key, s in summary["per_class_view"].items():
+        lines.append(f"| {key} | {row(s)} |")
+    lines += ["", summary["licence_note"], ""]
+    return "\n".join(lines)
+
+
 # --------------------------------------------------------------------------- run an arm
 
 
@@ -1893,6 +2217,23 @@ def build_parser() -> argparse.ArgumentParser:
     filt.add_argument("--seeds", type=Path, required=True, help="seed run dir (seeds.json)")
     filt.add_argument("--output", type=Path, required=True, help="arm dir to write into")
 
+    remeasure = sub.add_parser(
+        "remeasure",
+        help="re-read the masks behind an observations.jsonl and add the mask axis fields",
+    )
+    remeasure.add_argument(
+        "--observations", type=Path, required=True, help="source observations.jsonl"
+    )
+    remeasure.add_argument("--worker-root", type=Path, required=True, help="<root>/<view>/<run>")
+    remeasure.add_argument("--output", type=Path, required=True, help="new directory to write")
+    remeasure.add_argument(
+        "--start-frame",
+        type=int,
+        default=None,
+        help="raw frame of the worker's analysis frame 0; default: inferred per view",
+    )
+    remeasure.add_argument("--jobs", type=int, default=8)
+
     board = sub.add_parser("scoreboard", help="arms x measures from measures.json files")
     board.add_argument(
         "--arm",
@@ -2009,6 +2350,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "filter-observations":
         summary = filter_observations_to_seeds(args.observations, args.seeds, args.output)
         print(json.dumps(summary["seed_filter"], indent=1))
+        return 0
+    if args.command == "remeasure":
+        summary = remeasure_observations(
+            args.observations,
+            args.worker_root,
+            args.output,
+            start_frame=args.start_frame,
+            jobs=args.jobs,
+        )
+        print(remeasure_markdown(summary))
         return 0
     if args.command == "scoreboard":
         arms = {}
