@@ -2286,6 +2286,31 @@ def build_parser() -> argparse.ArgumentParser:
         "<output>/tracks-lines/ with measures-lines.* and occlusion_inventory-lines.*",
     )
 
+    reproject = sub.add_parser(
+        "reproject-prompts", help="segment projections for a second SAM3 pass"
+    )
+    reproject.add_argument("--tracks", type=Path, required=True)
+    reproject.add_argument("--observations-dir", type=Path, required=True)
+    reproject.add_argument("--clip-config", type=Path, required=True)
+    reproject.add_argument("--rig", type=Path, required=True)
+    reproject.add_argument(
+        "--prior", type=Path, default=Path(multiview_tracks.DEFAULT_LINE_PRIOR_PATH)
+    )
+    reproject.add_argument("--output", type=Path, required=True)
+    reproject.add_argument(
+        "--frames", default=None, help="optional comma-separated raw frames for a paired control"
+    )
+    reproject.add_argument(
+        "--shift-px", type=float, default=0, help="control: shift perpendicular to the shaft"
+    )
+    merge = sub.add_parser("merge-observations", help="quality-gate and append reprojection masks")
+    merge.add_argument("--observations-dir", type=Path, required=True)
+    merge.add_argument("--requests-dir", type=Path, required=True)
+    merge.add_argument("--worker-root", type=Path, required=True)
+    merge.add_argument("--clip-config", type=Path, required=True)
+    merge.add_argument("--rig", type=Path, required=True)
+    merge.add_argument("--output", type=Path, required=True)
+
     sanity = sub.add_parser("sanity", help="first-view check of a worker run")
     sanity.add_argument("--run", type=Path, required=True, help="worker run dir or its root")
     sanity.add_argument("--arm", choices=("b", "c", "d"), required=True)
@@ -2395,6 +2420,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--other-trial", type=Path, default=None, help="the other trial's lines_scoreboard.json"
     )
     lines_board.add_argument("--fpv-poses", type=Path, default=None)
+    lines_board.add_argument("--reprojection-baseline-lines", type=Path, default=None)
+    lines_board.add_argument("--reprojection-requests", type=Path, default=None)
     lines_board.add_argument(
         "--tip-events",
         type=Path,
@@ -2541,6 +2568,59 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         print(json.dumps(reports, indent=1))
         return 0
+    if args.command in ("reproject-prompts", "merge-observations"):
+        from . import finebio_reprojection as reprojection
+
+        clip = load_clip(args.clip_config)
+        config = read_camera_config(clip.camera_config)
+        fixed = cameras_from_config(config)
+        fpv = resolve_fpv_source(config, None)
+        cam_cache = {}
+
+        def cameras_at(frame):
+            if frame not in cam_cache:
+                cams = dict(fixed)
+                head = fpv(frame)
+                if head is not None:
+                    cams[clip.fpv_view] = head
+                cam_cache[frame] = cams
+            return cam_cache[frame]
+
+        gate = multiview_tracks.Gates.from_rig(json.loads(args.rig.read_text())).association_px
+        if args.command == "reproject-prompts":
+            tracks = reprojection.line_rows(args.tracks)
+            selected = None if args.frames is None else {int(f) for f in args.frames.split(",")}
+            if selected is not None:
+                tracks = [row for row in tracks if row.frame_index in selected]
+            report = reprojection.generate_requests(
+                tracks,
+                reprojection.pipette_rows(args.observations_dir),
+                cameras_at,
+                views=clip.views,
+                start_frame=clip.start_frame,
+                gate_px=gate,
+                prior=multiview_tracks.load_line_prior(args.prior),
+                output=args.output,
+                shift_px=args.shift_px,
+            )
+            report["inputs"] = {
+                "tracks": str(args.tracks),
+                "observations": str(args.observations_dir),
+                "clip_config": str(args.clip_config),
+                "rig": str(args.rig),
+                "prior": str(args.prior),
+            }
+            report["selected_raw_frames"] = None if selected is None else sorted(selected)
+            (args.output / "requests_summary.json").write_text(json.dumps(report, indent=2) + "\n")
+        else:
+            rows, requests = reprojection.decode_rows(
+                args.worker_root, args.requests_dir, clip.start_frame, cameras_at
+            )
+            report = reprojection.merge_rows(
+                args.observations_dir, rows, requests, cameras_at, output=args.output, gate_px=gate
+            )
+        print(json.dumps(report, indent=2))
+        return 0
     if args.command == "mark-plan-slots":
         report = mark_plan_slots(
             args.seeds,
@@ -2606,6 +2686,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             negative_controls=[read(p) for p in args.negative_controls or ()] or None,
             other_trial=read(args.other_trial),
             fpv_poses=args.fpv_poses,
+            reprojection_baseline_lines=args.reprojection_baseline_lines,
+            reprojection_requests=args.reprojection_requests,
             tip_events=(read(args.tip_events) or {}).get("tip_events")
             if args.tip_events is not None
             else None,

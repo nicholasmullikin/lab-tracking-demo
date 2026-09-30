@@ -72,6 +72,7 @@ I picked the right mask on a sample of frames.
 | [19](docs/story.md#sep-26-gate-1-rejects-six-seeds) | Gate 1 rejected six seeds (two objects under one box, a glove, a table edge) and no verdict moved | [still](docs/story.md#sep-26-gate-1-rejects-six-seeds) |
 | [20](docs/story.md#sep-27-gate-2-rejects-30-masks-and-the-redo-holds) | Gate 2 rejected 30 of 337 masks, almost all pipettes in a hand. The label-free gap shrank from 20 percentage points to 5 | [still](docs/story.md#sep-27-gate-2-rejects-30-masks-and-the-redo-holds) |
 | [21 to 22](docs/story.md#sep-28-to-29-pipettes-as-3d-lines-and-where-it-stopped) | Pipettes tracked as 3D lines fit the shaft but cut the held pipette's ids 2.8x, not 5x, and named the wrong end where the hand covered it. Not adopted | <a href="docs/story.md#sep-28-to-29-pipettes-as-3d-lines-and-where-it-stopped"><img src="media/story/2026-09-28-pipette-lines.gif" width="140" alt="The line fits the shaft and its tip flips while the hand covers it"></a> |
+| [22](docs/story.md#sep-29-reprojection-prompts) | The orientation vote names the cone. Reprojection masks still pick gloves and other pipettes, and the second pass is not adopted | [readout](docs/results.md#reprojection-prompts) |
 
 ## Recordings
 

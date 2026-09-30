@@ -388,3 +388,29 @@ labels on the clean clicks; the identity problem remains.
 Evidence: `runs/finebio-lines-P03_03_01-20260928/orientation_readout.json`, both trials’
 `scoreboard-v5a/` and `runs/finebio-tips-P03_03_01-20260929/scoreboard-v5a/`. The run READMEs record
 this phase.
+
+## Sep 29: reprojection prompts
+
+**Reprojection prompting is not adopted under its rule.** I projected each tracked pipette into
+cameras missing its mask, decoded new masks and reran both rooms with the same flags.
+The original rows and colour cache remain the prefix of the merged files.
+
+| Measure | Trial 1 before | Trial 1 after | Trial 2 before | Trial 2 after | Measured against |
+|---|---|---|---|---|---|
+| Two axis views on one live active-class track | 8.1% | 10.4% | 34.4% | 41.3% | frozen original detector frames, baseline held subset |
+| Two class-mask axis views on held frames | 58.6% | 82.9% | 79.8% | 86.7% | frozen original detector frames, baseline held subset |
+| Two class-mask axis views over the window | 62.0% | 81.5% | 84.8% | 88.5% | frozen original detector frames over the window |
+| Frozen held frames | 432 | 432 | 218 | 218 | original held detector frames |
+| Active-class track ids | 21 | 40 | 20 | 26 | tracker identities |
+| Camera consistency, median px | 9.15 | 9.13 | 13.10 | 12.60 | dropped camera axis, changing cell count |
+
+The clean held-tip median changes from 4.27 cm to 10.98 cm.
+I checked the mask images and projected endpoints directly. Some prompts pick the forearm or a
+different resting pipette. Three colour labels can describe the same mask.
+Shape and camera agreement cannot prove identity.
+
+The 60 px shift control uses the same 30 time indices in both rooms. I also tested a box-filling
+mask with a straight axis. The fill gate catches that self-confirming shape.
+
+Evidence: `runs/finebio-lines-P03_03_01-20260928/reprojection_readout.json`, both rooms'
+`reprojection-review/` and `reprojection_control_pipeline.json`. The run READMEs record this phase.

@@ -228,6 +228,55 @@ Evidence: `runs/finebio-lines-P03_03_01-20260928/orientation_readout.json`, both
 `scoreboard-v5a/` and `runs/finebio-tips-P03_03_01-20260929/scoreboard-v5a/`. The run READMEs record
 this phase.
 
+## Reprojection prompts
+
+**Reprojection prompting is not adopted under the Part 2 rule.** I ran both rooms with the same
+orientation vote and steep single-view prior. The rule checks held-track two-view coverage, clean held tips and dropped-camera error.
+
+| Measure | Trial 1 before | Trial 1 after | Trial 2 before | Trial 2 after | Measured against |
+|---|---|---|---|---|---|
+| Two axis views on one live active-class track | 8.1% | 10.4% | 34.4% | 41.3% | frozen original detector frames, baseline held subset |
+| Two class-mask axis views on held frames | 58.6% | 82.9% | 79.8% | 86.7% | frozen original detector frames, baseline held subset |
+| Two class-mask axis views over the window | 62.0% | 81.5% | 84.8% | 88.5% | frozen original detector frames over the window |
+| Frozen held frames | 432 | 432 | 218 | 218 | original held detector frames |
+| Active-class track ids | 21 | 40 | 20 | 26 | tracker identities |
+| Camera consistency, median px | 9.15 | 9.13 | 13.10 | 12.60 | dropped camera axis, changing cell count |
+
+| Tracks | All median cm | Rest median cm | Held median cm | Matched | Wrong end | Measured against |
+|---|---|---|---|---|---|---|
+| lines-v3 | 3.03 | 2.35 | 13.04 | 47 of 48 | 14 | frozen clean click anchors |
+| lines-v4 | 3.47 | 2.30 | 5.80 | 47 of 48 | 8 | frozen clean click anchors |
+| lines-v5a | 2.38 | 1.26 | 4.27 | 47 of 48 | 1 | frozen clean click anchors |
+| lines-v5 | 4.48 | 1.70 | 10.98 | 47 of 48 | 7 | frozen clean click anchors |
+
+| Adoption clause | Limit | Trial 1 | Trial 2 | Measured against |
+|---|---|---|---|---|
+| Two axis views while held | above 50% and rising | fail | fail | frozen baseline held detector frames |
+| Camera residual increase | at most 1 px | pass | pass | baseline vote run |
+| Held tip median | under 6 cm | fail | no click labels | frozen clean anchors |
+
+I froze the baseline held frames before the tracker reruns. The old plan's coverage percentages use different denominators.
+Class masks can cover a camera without supporting one track. The first row counts the maximum
+axis support on any one live track of the active class in each frozen held frame.
+The pass requests one track per view, class and frame, with the lowest track id winning a tie.
+An existing SAM3 class row vetoes an addition even when it belongs to a different pipette.
+
+I opened the actual mask overlays and the before-and-after projections of every clean held anchor.
+The shape checks reject many gloves and racks. They still admit forearms, clothing and a resting
+pipette under several colour labels. More masks alone do not establish the object's identity.
+
+The shifted-box control uses the same 30 frozen time indices in both rooms. Its masks and paired
+tracker reruns are recorded separately from the full-window experiment. In trial 1, the mask-level
+control changes strongly, but paired tracker camera error changes only from 9.84 px
+to 9.94 px. In trial 2 it rises from 13.81 px to 22.32 px.
+In trial 1’s paired control, the held-tip median does not worsen. The sampled perturbation establishes prompt sensitivity;
+it does not independently validate the 3D estimate. The camera residual cell count also changes.
+A synthetic mask that fills its box is rejected despite a straight axis. The serial main mask passes cost 1.94 h.
+
+Evidence: `runs/finebio-lines-P03_03_01-20260928/reprojection_readout.json`, both rooms'
+`scoreboard-v5/` and `reprojection-review/`, and
+`runs/finebio-tips-P03_03_01-20260929/scoreboard-v5/`. The run READMEs record this phase.
+
 ## Assembly101 in numbers
 
 **SAM3 at 1280 px with an appended prompt memory is the best arm on the toy car, DAM4SAM ties it,

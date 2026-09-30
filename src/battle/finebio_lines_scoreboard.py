@@ -326,7 +326,8 @@ def frame_members(
             None if obs.mask_axis_px is None else np.asarray(obs.mask_axis_px, dtype=np.float64),
             np.asarray(obs.point_px, dtype=np.float64),
             obs.mask_elongation,
-            fpv_weight if view == FINEBIO_FPV_VIEW else 1.0,
+            (fpv_weight if view == FINEBIO_FPV_VIEW else 1.0)
+            * (0.25 if obs.provenance.get("reprojection_disagrees") else 1.0),
         )
         members[view] = (cams[view], axis)
     return members
@@ -1164,6 +1165,122 @@ def _both(a: Mapping[str, Any], b: Mapping[str, Any], key: str) -> bool | None:
 # --------------------------------------------------------------------------- the board
 
 
+def reprojection_coverage(
+    before: Sequence[FineBioObservation],
+    after: Sequence[FineBioObservation],
+    baseline_lines: Sequence[Track3D],
+    held_class: str,
+    window: tuple[int, int],
+    *,
+    min_score: float = 0.3,
+    after_lines: Sequence[Track3D] | None = None,
+) -> dict[str, Any]:
+    """Compare masks on a frozen detector denominator and baseline held-frame subset.
+
+    Counts are distinct cameras, not masks or tracks. A valid axis must pass the same
+    elongation and 25 px skeleton-residual gates on both sides. These are mask coverage
+    measures, not a claim that the views describe the same physical pipette.
+    """
+    frames = {
+        row.frame_index
+        for row in before
+        if window[0] <= row.frame_index < window[1]
+        and row.object_class == held_class
+        and row.source == "detector"
+        and row.pose_valid
+        and (row.detector_score or 0) >= min_score
+    }
+    held = {
+        row.frame_index
+        for row in baseline_lines
+        if row.state == "held" and (row.observed_class or row.object_class) == held_class
+    } & frames
+
+    def summarize(rows, track_rows):
+        views = defaultdict(set)
+        consistent = defaultdict(set)
+        axes = {}
+        for row in rows:
+            if (
+                row.frame_index not in frames
+                or row.object_class != held_class
+                or row.source == "detector"
+                or not row.pose_valid
+                or row.mask_axis_px is None
+                or (row.mask_elongation or 0) < ELONGATION_THRESHOLD
+                or row.mask_axis_residual_px is None
+                or row.mask_axis_residual_px > 25
+            ):
+                continue
+            views[row.frame_index].add(row.view)
+            axes[(row.view, row.frame_index, row.slot)] = row
+            if not row.provenance.get("reprojection_disagrees"):
+                consistent[row.frame_index].add(row.view)
+
+        def counts(denominator):
+            n = len(denominator)
+            one = sum(bool(views[frame]) for frame in denominator)
+            two = sum(len(views[frame]) >= 2 for frame in denominator)
+            two_consistent = sum(len(consistent[frame]) >= 2 for frame in denominator)
+            return {
+                "frames": n,
+                "one_or_more_axis_views": one,
+                "one_or_more_fraction": one / n if n else None,
+                "two_or_more_axis_views": two,
+                "two_or_more_fraction": two / n if n else None,
+                "two_or_more_without_disagreement": two_consistent,
+                "two_or_more_without_disagreement_fraction": two_consistent / n if n else None,
+            }
+
+        supported = defaultdict(int)
+        supported_consistent = defaultdict(int)
+        for row in track_rows:
+            if (
+                row.frame_index not in held
+                or (row.observed_class or row.object_class) != held_class
+                or row.state == "lost"
+            ):
+                continue
+            members = [
+                axes[(view, row.frame_index, slot)]
+                for view, slot in row.support_slots.items()
+                if (view, row.frame_index, slot) in axes
+            ]
+            supported[row.frame_index] = max(supported[row.frame_index], len(members))
+            supported_consistent[row.frame_index] = max(
+                supported_consistent[row.frame_index],
+                sum(not member.provenance.get("reprojection_disagrees") for member in members),
+            )
+        n = len(held)
+        one = sum(supported[f] >= 1 for f in held)
+        two = sum(supported[f] >= 2 for f in held)
+        two_consistent = sum(supported_consistent[f] >= 2 for f in held)
+        return {
+            "detector_frames": counts(frames),
+            "baseline_held_frames": counts(held),
+            "baseline_held_supported": {
+                "frames": n,
+                "one_or_more_axis_views": one,
+                "one_or_more_fraction": one / n if n else None,
+                "two_or_more_axis_views": two,
+                "two_or_more_fraction": two / n if n else None,
+                "two_or_more_without_disagreement": two_consistent,
+                "two_or_more_without_disagreement_fraction": two_consistent / n if n else None,
+            },
+        }
+
+    return {
+        "class": held_class,
+        "denominator": "original valid-pose detector frames at the tracker score threshold",
+        "held_denominator": "same frames held in the baseline orientation-vote run",
+        "supported_numerator": "maximum axis support on one live track of this class per frame",
+        "axis_gate": "elongated mask, skeleton residual at most 25 px, valid pose",
+        "claim_boundary": "camera coverage of class masks; identity is not verified",
+        "before": summarize(before, baseline_lines),
+        "after": summarize(after, after_lines if after_lines is not None else baseline_lines),
+    }
+
+
 def build_scoreboard(
     *,
     lines_tracks_dir: Path,
@@ -1182,6 +1299,8 @@ def build_scoreboard(
     fpv_poses: Path | None = None,
     inputs: Mapping[str, Any] | None = None,
     tip_events: Mapping[str, Any] | None = None,
+    reprojection_baseline_lines: Path | None = None,
+    reprojection_requests: Path | None = None,
 ) -> dict[str, Any]:
     lines_rows = load_tracks(lines_tracks_dir)
     lines_metrics = load_metrics(lines_tracks_dir)
@@ -1268,6 +1387,29 @@ def build_scoreboard(
         "claim_boundary": CLAIM_BOUNDARY,
         "licence_note": LICENCE_NOTE,
     }
+    observations_dir = observations if observations.is_dir() else observations.parent
+    merge_path = observations_dir / "merge_summary.json"
+    if reprojection_baseline_lines is not None and merge_path.is_file():
+        from .finebio_reprojection import line_rows, pipette_rows
+
+        merge = json.loads(merge_path.read_text())
+        board["reprojection"] = {
+            "merge": merge,
+            "requests": (
+                json.loads((reprojection_requests / "requests_summary.json").read_text())
+                if reprojection_requests is not None
+                else None
+            ),
+            "coverage": reprojection_coverage(
+                pipette_rows(Path(merge["source"])),
+                pipette_rows(observations),
+                line_rows(reprojection_baseline_lines),
+                held,
+                window,
+                min_score=float(params.get("min_detector_score", 0.3)),
+                after_lines=lines_rows,
+            ),
+        }
     board["rule"] = evaluate_rule(
         held_class=held,
         ids=ids,
@@ -1648,6 +1790,31 @@ def scoreboard_markdown(board: Mapping[str, Any]) -> str:
                 f"{_fmt(block.get('agreement'), 4)} | the episode's retrofit sign |"
             )
         lines.append("")
+    reprojection = board.get("reprojection")
+    if reprojection:
+        lines += ["## Reprojection masks", ""]
+        merge = reprojection["merge"]
+        counts = merge["counts"]
+        lines += [
+            f"Requests {merge['requests']}, returned masks {merge['returned_masks']}, "
+            f"accepted {counts.get('accepted', 0)}, disagreeing {counts.get('disagrees', 0)}.",
+            "",
+            "| denominator | run | frames | at least one axis view | at least two axis views | "
+            "two without flagged disagreement | measured against |",
+            "|---|---|---|---|---|---|---|",
+        ]
+        coverage = reprojection["coverage"]
+        for name in ("detector_frames", "baseline_held_frames", "baseline_held_supported"):
+            for run in ("before", "after"):
+                block = coverage[run][name]
+                lines.append(
+                    f"| {name} | {run} | {block['frames']} | "
+                    f"{_fmt(block['one_or_more_fraction'], 4)} | "
+                    f"{_fmt(block['two_or_more_fraction'], 4)} | "
+                    f"{_fmt(block['two_or_more_without_disagreement_fraction'], 4)} | "
+                    "original detector frames, same class and axis gates |"
+                )
+        lines += ["", coverage["claim_boundary"], ""]
     controls = board.get("negative_controls") or []
     lines += ["## Negative controls", ""]
     if not controls:

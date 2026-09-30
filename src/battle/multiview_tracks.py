@@ -410,6 +410,7 @@ class TrackerParams:
     # cues in `finebio_orientation`. The colour cue reads precomputed plunger ends and does
     # not decode video. `line_invert_colour_cue` feeds the colour cue the other end (the
     # negative control).
+    line_single_view_prior: bool = False
     line_orientation: str = "priority"
     line_invert_colour_cue: bool = False
 
@@ -666,6 +667,7 @@ class Obs:
     # the tip, and the clamped hue-share confidence). Absent when the view abstained.
     plunger_tip_end: int | None = None
     plunger_confidence: float | None = None
+    reprojection_disagrees: bool = False
 
     @property
     def tip_attached(self) -> bool:
@@ -693,7 +695,7 @@ class Obs:
             None if self.axis_px is None else np.asarray(self.axis_px, dtype=np.float64),
             self.point,
             self.elongation,
-            weight,
+            weight * (0.25 if self.reprojection_disagrees else 1.0),
             ends_px=ends_px,
         )
 
@@ -779,6 +781,7 @@ def _obs(row: FineBioObservation) -> Obs:
         end_widths_px=row.mask_end_widths_px,
         tip_side=row.tip_side,
         body_ends_px=row.body_end_px,
+        reprojection_disagrees=bool(row.provenance.get("reprojection_disagrees")),
     )
 
 
@@ -2822,7 +2825,14 @@ class MultiviewTracker:
             residual = self._single_view_residual(t, cams[v], o)
             t.residuals = {v: round(residual, 2)} if np.isfinite(residual) else {}
             t.line_update = "predicted"
-            if params.motion_model and t.mover:
+            prior_fitted = False
+            if params.line_single_view_prior and t.is_line:
+                prior_fitted = self._gravity_line_update(t, cams[v], o)
+                if prior_fitted:
+                    t.line_update = "gravity_prior"
+                    if self._cap_step(t, predicted, dt):
+                        t.line_update = "capped"
+            if not prior_fitted and params.motion_model and t.mover:
                 if t.is_line:
                     if self._lateral_line_update(t, cams[v], o):
                         t.line_update = "lateral"
@@ -3232,6 +3242,40 @@ class MultiviewTracker:
                     self.line_loo_px.append(float(record["perpendicular_px"]))
                     if record["angle_deg"] is not None and np.isfinite(record["angle_deg"]):
                         self.line_loo_deg.append(float(record["angle_deg"]))
+
+    def _gravity_line_update(self, t: Track, cam: Camera, o: Obs) -> bool:
+        from .finebio_reprojection import gravity_segment
+
+        if o.axis_px is None or not is_elongated(o.axis_obs()):
+            return False
+        if o.axis_residual_px is None or o.axis_residual_px > self.params.line_max_axis_residual_px:
+            return False
+        assert t.endpoints_cm is not None
+        if not _sees_broadside(cam, t.line(), self.params):
+            return False
+        hand = self.tracks.get(t.held_by or t.butt_offset_hand or "")
+        hand_point = None
+        if hand is not None and hand.state in LOCALISED_STATES:
+            hand_point = hand.position.copy()
+            if t.butt_offset is not None:
+                hand_point += t.butt_offset
+        ends = gravity_segment(
+            cam,
+            np.asarray(o.axis_px),
+            t.endpoints_cm,
+            self._prior_length(t),
+            hand_point,
+            min_view_angle_deg=self.params.line_min_view_angle_deg,
+        )
+        if ends is None:
+            return False
+        residual = _line_view_residual(cam, o, Line3D(ends.mean(axis=0), ends[1] - ends[0]))
+        if not np.isfinite(residual) or residual > _view_gate_px(cam.name, self.params):
+            return False
+        t.set_endpoints(ends)
+        t.line_residuals = {cam.name: round(residual, 2)}
+        t.line_this_frame = False
+        return True
 
     def _lateral_line_update(self, t: Track, cam: Camera, o: Obs) -> bool:
         """A moving line track seen in one view: an elongated mask moves each endpoint onto
@@ -5543,6 +5587,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         "box attached (v3), not always",
     )
     ext.add_argument(
+        "--line-single-view-prior",
+        action="store_true",
+        help="steep single-view line fit from gravity, length and the hand point",
+    )
+    ext.add_argument(
         "--line-orientation",
         choices=("priority", "vote"),
         default="priority",
@@ -5624,6 +5673,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         line_tail_over_hand=args.line_tail_over_hand,
         line_tip_length_rule=not args.no_line_tip_length_rule,
         line_birth_tip_slack=not args.no_line_birth_tip_slack,
+        line_single_view_prior=args.line_single_view_prior,
         line_orientation=args.line_orientation,
         line_invert_colour_cue=args.invert_colour_cue,
     )

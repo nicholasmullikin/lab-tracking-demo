@@ -149,6 +149,37 @@ segment in every camera tile; `--tracks-dir` takes `label=name` pairs when the a
 tracks in differently named directories. The lines recording for trial 1 took six minutes to
 build and lands at 870 MB.
 
+## Reprojection prompts
+
+**The second mask pass projects existing 3D segments into missing cameras and keeps the original
+observations as bytes.** It writes dense slots with colour-class labels. The merge rejects compact
+masks, skeleton residuals over 25 px and masks filling at least 80% of the prompt box.
+Accepted masks that disagree with the prompting line keep a provenance flag and receive one-quarter
+axis weight. The steep single-view fit is enabled explicitly.
+
+```bash
+uv run battle-finebio-arms reproject-prompts --tracks $L/arm-b-lines-v5a --observations-dir $L/observations-b-v4 --clip-config $C --rig $G --output $L/reprojection-prompts
+for view in T1 T2 T3 T4 T5 fpv; do
+  video=$(uv run python -c 'import json,sys; print(json.load(open(sys.argv[1]))["proxies"][sys.argv[2]])' "$C" "$view")
+  uv run battle-muggled-arms box-decode --video "$video" --view-id "$view" --box-stream $L/reprojection-prompts/$view.jsonl --run-root $L/reprojection-decode/$view --run-id reprojection-r1280 --max-frames 3600 --max-side-length 1280 --analysis-fps 29.97002997002997 --start-frame 0 --gpu-guard vram --gpu-guard-profile sam3_1280
+done
+uv run battle-finebio-arms merge-observations --observations-dir $L/observations-b-v4 --requests-dir $L/reprojection-prompts --worker-root $L/reprojection-decode --clip-config $C --rig $G --output $L/observations-b-v5
+uv run battle-finebio-colour plunger-ends --observations $L/observations-b-v5/reprojection_observations.jsonl --clip-config $C --output $L/observations-b-v5/reprojection_plunger_ends.jsonl
+cat $L/observations-b-v4/plunger_ends.jsonl $L/observations-b-v5/reprojection_plunger_ends.jsonl > $L/observations-b-v5/plunger_ends.jsonl
+uv run battle-finebio-arms run --arm b --lines --clip-config $C --detections $D --gates $G --seeds $S/filtered --worker-root $A/b-box-decode --observations-dir $L/observations-b-v5 --output $L/arm-b-lines-v5 --tracker-arg=--line-orientation --tracker-arg=vote --tracker-arg=--line-single-view-prior
+uv run battle-finebio-arms run --arm b --ext --clip-config $C --detections $D --gates $G --seeds $S/filtered --worker-root $A/b-box-decode --observations-dir $L/observations-b-v5 --output $L/arm-b-ext-v5
+uv run battle-finebio-arms lines-scoreboard --lines-dir $L/arm-b-lines-v5 --ext-dir $L/arm-b-ext-v5 --baseline-ext-dir $F/b-box-decode-arm/tracks-ext --observations $L/observations-b-v5 --clip-config $C --rig $G --prior configs/finebio/pipettes.json --stand-report $L/stand/stand_report.json --reprojection-baseline-lines $L/arm-b-lines-v5a --reprojection-requests $L/reprojection-prompts --output $L/scoreboard-v5
+```
+
+The GPU commands run serially. The colour pass samples only accepted additions and appends them
+to the existing cache. The scoreboard freezes the original detector frames and baseline held
+frames, and reports class masks separately from axes actually supporting a track.
+For the paired control, add `--shift-px 60 --frames <comma-separated-raw-frames>` to request
+generation and use fresh decode and merge directories.
+
+Evidence: both trials' `reprojection-prompts/`, `observations-b-v5/` and `scoreboard-v5/` under
+`runs/finebio-lines-<trial>-20260928/`. The run READMEs record this phase.
+
 ## Opening the recordings
 
 **Three recordings are worth opening, each with a World, a Cameras and an Evidence preset.** Pass
