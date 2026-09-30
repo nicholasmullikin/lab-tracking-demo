@@ -2501,3 +2501,269 @@ def test_p_two_state_prior_loads_and_the_old_file_shape_still_does(tmp_path) -> 
     assert not single.two_state and single.tip_for("blue_tip") == 0.0
     assert single.expected_length("yellow_pipette", attached=True) == pytest.approx(22.0)
     assert single.bare_for("yellow_pipette") == single.length_for("yellow_pipette")
+
+
+# Reprojection masks describe a prompted hypothesis, not independent object detections.
+def _supplement(row: FineBioObservation, **provenance) -> FineBioObservation:
+    return row.model_copy(
+        update={
+            "slot": row.object_class + "#prompted-from-another-run",
+            "provenance": {"prompt_source": "reprojection", **provenance},
+        }
+    )
+
+
+def _supplemental_tracker(rig):
+    from battle.multiview_tracks import MultiviewTracker
+
+    cams, _ = rig
+    params = TrackerParams(
+        **LINE_P,
+        line_classes=("blue_pipette", "red_pipette"),
+        line_reprojection_policy="supplemental",
+        line_orientation="vote",
+    )
+    tracker = MultiviewTracker(cams, lambda frame: None, params, line_prior=PRIOR)
+    ends = _segment([25, 0, -14], _unit([0.3, 0.2, -1]), PRIOR.length_for("blue_pipette"))
+    for f in range(3):
+        tracker.step(
+            f,
+            [
+                _axis_row(
+                    cams, v, f, *ends, "blue_pipette", noise_px=0, rng=np.random.default_rng(0)
+                )
+                for v in ("T1", "T2", "T4")
+            ],
+        )
+    assert len(tracker.tracks) == 1
+    return tracker, cams, ends
+
+
+def test_supplemental_keeps_detector_fallback_and_never_births(rig):
+    cams, _ = rig
+    ends = _segment([25, 0, -14], _unit([0.3, 0.2, -1]), 21.7)
+    params = TrackerParams(line_classes=("blue_pipette",), line_reprojection_policy="supplemental")
+    detector = _box_row(cams, "T1", 0, [25, 0, -14], "blue_pipette")
+    supplement = _supplement(
+        _axis_row(cams, "T1", 0, *ends, "blue_pipette", noise_px=0, rng=np.random.default_rng(0))
+    )
+    selected = select_observations(0, [detector, supplement], params)
+    assert selected.tracked["T1"][0].source == "detector"
+    assert selected.supplemental["T1"][0].index != selected.tracked["T1"][0].index
+    rows = [
+        _supplement(
+            _axis_row(cams, v, f, *ends, "blue_pipette", noise_px=0, rng=np.random.default_rng(0))
+        )
+        for f in range(5)
+        for v in ("T1", "T2", "T4")
+    ]
+    out = run_tracker(rows, cams, lambda f: None, list(range(5)), params)
+    assert not out.rows and not out.events
+
+
+def test_disagreeing_supplement_does_not_suppress_independent_detector(rig):
+    tracker, cams, ends = _supplemental_tracker(rig)
+    detector = _box_row(cams, "T4", 3, [25, 0, -14], "blue_pipette")
+    supplement = _supplement(
+        _axis_row(cams, "T4", 3, *ends, "blue_pipette", rng=np.random.default_rng(0)),
+        reprojection_disagrees=True,
+    )
+    selected = select_observations(3, [detector, supplement], tracker.params)
+    assert selected.tracked["T4"][0].source == "detector"
+    assert not selected.supplemental
+    assert selected.supplemental_rejections["prompt_disagreement"] == 1
+
+
+def test_supplemental_recovers_a_missing_axis_without_casting_its_prompt_class(rig):
+    tracker, cams, ends = _supplemental_tracker(rig)
+    t = next(iter(tracker.tracks.values()))
+    before = t.class_votes.copy()
+    tracker.step(
+        3,
+        [
+            _axis_row(
+                cams, "T1", 3, *ends, "blue_pipette", noise_px=0, rng=np.random.default_rng(0)
+            ),
+            _supplement(
+                _axis_row(
+                    cams, "T4", 3, *ends, "blue_pipette", noise_px=0, rng=np.random.default_rng(0)
+                )
+            ),
+        ],
+    )
+    assert len(tracker.tracks) == 1
+    assert set(t.support_views) == {"T1", "T4"}
+    assert t.class_votes["blue_pipette"] == before["blue_pipette"] + 1
+    assert tracker.line_supplemental_counts["accepted"] == 1
+    assert t.state == "observed"
+
+
+def test_supplemental_cannot_bootstrap_support_or_match_a_wrong_colour(rig):
+    tracker, cams, ends = _supplemental_tracker(rig)
+    tracker.step(
+        3,
+        [
+            _supplement(
+                _axis_row(
+                    cams, v, 3, *ends, "blue_pipette", noise_px=0, rng=np.random.default_rng(0)
+                )
+            )
+            for v in ("T1", "T4")
+        ],
+    )
+    assert tracker.line_supplemental_counts["accepted"] == 0
+    assert tracker.line_supplemental_counts["no_independent_support"] == 2
+    tracker, cams, ends = _supplemental_tracker(rig)
+    tracker.step(
+        3,
+        [
+            _axis_row(
+                cams, "T1", 3, *ends, "blue_pipette", noise_px=0, rng=np.random.default_rng(0)
+            ),
+            _supplement(
+                _axis_row(
+                    cams, "T4", 3, *ends, "red_pipette", noise_px=0, rng=np.random.default_rng(0)
+                )
+            ),
+        ],
+    )
+    assert tracker.line_supplemental_counts["accepted"] == 0
+    assert tracker.line_supplemental_counts["no_geometric_recipient"] == 1
+
+
+def test_supplemental_abstains_on_two_geometric_recipients_even_if_one_has_support(rig):
+    import copy
+
+    tracker, cams, ends = _supplemental_tracker(rig)
+    t = next(iter(tracker.tracks.values()))
+    other = copy.deepcopy(t)
+    other.track_id = "pipette-other"
+    tracker.tracks[other.track_id] = other
+    tracker.step(
+        3,
+        [
+            _axis_row(
+                cams, "T1", 3, *ends, "blue_pipette", noise_px=0, rng=np.random.default_rng(0)
+            ),
+            _supplement(
+                _axis_row(
+                    cams, "T4", 3, *ends, "blue_pipette", noise_px=0, rng=np.random.default_rng(0)
+                )
+            ),
+        ],
+    )
+    assert tracker.line_supplemental_counts["accepted"] == 0
+    assert tracker.line_supplemental_counts["ambiguous"] == 1
+
+
+def test_supplemental_cross_colour_duplicate_masks_are_both_rejected(rig):
+    tracker, cams, ends = _supplemental_tracker(rig)
+    rows = [
+        _supplement(_axis_row(cams, "T4", 3, *ends, cls, noise_px=0, rng=np.random.default_rng(0)))
+        for cls in ("blue_pipette", "red_pipette")
+    ]
+    selected = select_observations(3, rows, tracker.params)
+    assert not selected.supplemental["T4"]
+    assert selected.supplemental_rejections["cross_class_overlap"] == 2
+
+
+def test_supplemental_does_not_replace_a_constrained_original_fit(rig):
+    tracker, cams, ends = _supplemental_tracker(rig)
+    tracker.step(
+        3,
+        [
+            _axis_row(cams, v, 3, *ends, "blue_pipette", noise_px=0, rng=np.random.default_rng(0))
+            for v in ("T1", "T2")
+        ]
+        + [
+            _supplement(
+                _axis_row(
+                    cams, "T4", 3, *ends, "blue_pipette", noise_px=0, rng=np.random.default_rng(0)
+                )
+            )
+        ],
+    )
+    t = next(iter(tracker.tracks.values()))
+    assert set(t.support_views) == {"T1", "T2"}
+    assert tracker.line_supplemental_counts["already_constrained"] == 1
+
+
+def test_supplemental_policy_without_supplements_preserves_serialized_outputs(rig):
+    cams, _ = rig
+    ends = _segment([25, 0, -14], _unit([0.3, 0.2, -1]), 21.7)
+    rows = [
+        _axis_row(cams, v, f, *ends, "blue_pipette", noise_px=0, rng=np.random.default_rng(0))
+        for f in range(8)
+        for v in ("T1", "T2", "T4")
+    ]
+    params = TrackerParams(**LINE_P, line_classes=("blue_pipette",), line_orientation="vote")
+    baseline = run_tracker(rows, cams, lambda f: None, list(range(8)), params)
+    policy = run_tracker(
+        rows,
+        cams,
+        lambda f: None,
+        list(range(8)),
+        replace(params, line_reprojection_policy="supplemental"),
+    )
+    for attr in ("rows", "events", "residuals", "oriented_rows"):
+        assert [r.model_dump_json() for r in getattr(baseline, attr)] == [
+            r.model_dump_json() for r in getattr(policy, attr)
+        ]
+
+
+@pytest.mark.parametrize("failure", ["shifted", "rotated"])
+def test_supplemental_rejects_shifted_or_rotated_mask_axes_even_without_disagreement_flag(
+    rig, failure
+):
+    tracker, cams, ends = _supplemental_tracker(rig)
+    row = _axis_row(cams, "T4", 3, *ends, "blue_pipette", noise_px=0, rng=np.random.default_rng(0))
+    axis = np.asarray(row.mask_axis_px)
+    delta = axis[1] - axis[0]
+    normal = np.array([-delta[1], delta[0]]) / np.linalg.norm(delta)
+    if failure == "shifted":
+        axis += 60 * normal
+    else:
+        axis = axis.mean(axis=0) + np.array([-0.5, 0.5])[:, None] * np.linalg.norm(delta) * normal
+    row = row.model_copy(
+        update={"mask_axis_px": axis.tolist(), "mask_centroid_px": axis.mean(axis=0)}
+    )
+    tracker.step(
+        3,
+        [
+            _axis_row(
+                cams, "T1", 3, *ends, "blue_pipette", noise_px=0, rng=np.random.default_rng(0)
+            ),
+            _supplement(row),
+        ],
+    )
+    assert tracker.line_supplemental_counts["accepted"] == 0
+    assert tracker.line_supplemental_counts["no_geometric_recipient"] == 1
+
+
+def test_supplemental_upgrade_consumes_its_original_detector_before_births(rig):
+    tracker, cams, ends = _supplemental_tracker(rig)
+    detector_rows = [_box_row(cams, v, 3, [25, 0, -14], "blue_pipette") for v in ("T1", "T2", "T4")]
+    supplements = [
+        _supplement(
+            _axis_row(cams, v, 3, *ends, "blue_pipette", noise_px=0, rng=np.random.default_rng(0))
+        )
+        for v in ("T1", "T2", "T4")
+    ]
+    tracker.step(3, detector_rows + supplements)
+    assert len(tracker.tracks) == 1
+    assert tracker.line_supplemental_counts["accepted"] == 3
+    assert len(tracker._frame_obs.supplemental_consumed) == 3
+    assert all("prompted" not in slot for _, slot in tracker.sam3_slots)
+
+
+@pytest.mark.parametrize("line_classes", [(), ("blue_pipette",)])
+def test_supplemental_policy_leaves_other_object_classes_on_the_original_source_rule(
+    rig, line_classes
+):
+    cams, _ = rig
+    row = _box_row(cams, "T1", 0, [25, 0, -14], "cell_culture_plate", source="sam3_decode")
+    row = row.model_copy(update={"provenance": {"prompt_source": "reprojection"}})
+    params = TrackerParams(line_classes=line_classes, line_reprojection_policy="supplemental")
+    selected = select_observations(0, [row], params)
+    assert selected.tracked["T1"][0].object_class == "cell_culture_plate"
+    assert not selected.supplemental

@@ -277,6 +277,54 @@ Evidence: `runs/finebio-lines-P03_03_01-20260928/reprojection_readout.json`, bot
 `scoreboard-v5/` and `reprojection-review/`, and
 `runs/finebio-tips-P03_03_01-20260929/scoreboard-v5/`. The run READMEs record this phase.
 
+## Stricter pipette association
+
+**The stricter reprojection policy is implemented, but neither variant is adopted.**
+I reviewed the actual Rerun camera views, reviewed the plan twice, then replayed both rooms
+with an opt-in policy that treats prompted masks as extra support. Original observations
+associate first; prompted masks cannot create tracks or vote for their own colour labels.
+Ambiguous recipients and overlapping masks requested under different colours abstain.
+
+| Method | Held tip median cm (matched) | All tip median cm | Matched of 48 | Wrong end | P03 active ids | P20 active ids |
+|---|---|---|---|---|---|---|
+| v5a, accepted vote baseline | 4.271 (13) | 2.376 | 47 | 1 | 21 | 20 |
+| v5, rejected reprojection | 10.981 (13) | 4.477 | 47 | 7 | 40 | 26 |
+| Extra support only | 5.152 (12) | 2.435 | 46 | 5 | 25 | 22 |
+| Extra support plus gravity prior | 5.152 (12) | 2.494 | 47 | 2 | 24 | 24 |
+
+Both new variants lose the held-state anchor at raw 3066, slot 0. The prior variant gains
+a different event-state anchor, so its 47 matches do not retain the same anchors as v5a.
+On the same 12 matched held anchors, the median worsens from 3.734 to 5.152 cm.
+The resting-tip median improves from 1.258 to 0.930 cm in both variants.
+
+| Trial / method | Two axis views on a live active-class track | Camera consistency median px (cells) |
+|---|---|---|
+| P03 v5a | 8.1% of 432 frozen held frames | 9.151 (14,706) |
+| P03 extra support only | 10.2% of the same frames | 8.886 (15,403) |
+| P03 extra support plus prior | 10.4% of the same frames | 8.867 (15,632) |
+| P20 v5a | 34.4% of 218 frozen held frames | 13.099 (7,007) |
+| P20 extra support only | 30.3% of the same frames | 14.249 (8,508) |
+| P20 extra support plus prior | 50.0% of the same frames | 13.698 (7,841) |
+
+The camera cells change between methods. The coverage still counts support on any active-class
+track, not verified physical identity. P20 has no clean click anchors. The held-state anchors
+also include resting pipettes: this state comes from the baseline tracker, not a human holding label.
+
+I inspected all 13 before-and-after held-anchor panels. The prior variant preserves the
+resting-shaft endpoint at raw 2409, but loses raw 3066 T4 and worsens raw 1664 T2 from
+13.762 to 30.942 cm. The Rerun views still show unsupported lines across clothing and the bench.
+Reliable identity through a hand occlusion needs object-specific temporal evidence.
+
+Both rooms' baseline replay tracks, oriented tracks, events and residuals are byte-identical.
+Original masks and colour caches are unchanged. Paired 60 px controls at the same 30 time indices
+mostly lose their extra support, which tests rejection rather than validating the estimate.
+Thirteen new mechanism tests pass; 1,235 suite tests pass, with the unrelated remote archive
+probe excluded after stalling. The combined Rerun recording verifies without error.
+
+Evidence: `runs/finebio-pipette-improvement-20260930/readout.json`, `readout.md`,
+`comparison.rrd`, `comparison.rbl`, `rerun_review.json` and `held-anchor-panels-*.jpg`.
+The [reviewed plan](archive/plan-2026-09-30-pipette-improvement.md) records the two reviews.
+
 ## Assembly101 in numbers
 
 **SAM3 at 1280 px with an appended prompt memory is the best arm on the toy car, DAM4SAM ties it,

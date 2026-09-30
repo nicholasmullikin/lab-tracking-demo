@@ -34,6 +34,7 @@ bench phase, Sep 21 to 27) and **cross-cutting** (records that span both).
 | `preflight-2026-09-24-finebio.md` | FineBio | The check of the plan's assumptions before anything ran: camera mapping, the transparent plate, rig accuracy and the choice of trials. | its numbers live on in `tests/fixtures/finebio_preflight/` and `configs/finebio/`; the summary is in `docs/results.md` |
 | `plan-2026-09-25-finebio-3d-tracking.md` | FineBio | The FineBio 3D object tracking plan with its todo table and per-phase status, complete. | `docs/results.md` for the numbers and `docs/pipeline.md` for the commands |
 | `labeling-sessions-2026-09-25-finebio.md` | FineBio | The briefs for gate 1 (seeds) and gate 2 (anchors) on trial 1, both held. | the records under `docs/qa/` and their notes in `docs/qa/README.md` |
+| `plan-2026-09-30-pipette-improvement.md` | FineBio | The Rerun-led follow-up plan, two reviews, implemented supplemental-mask policy, locked two-room evaluation and rejected adoption. | `docs/results.md` and the run readout |
 
 Still live beside this directory: `docs/review-guide-2026-09-25-finebio-3d.md` (the 20-minute viewer route),
 `docs/LICENSES.md`, `docs/SOURCES.md` and the gate records under `docs/qa/`.

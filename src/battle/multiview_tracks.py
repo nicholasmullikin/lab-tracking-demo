@@ -411,6 +411,9 @@ class TrackerParams:
     # not decode video. `line_invert_colour_cue` feeds the colour cue the other end (the
     # negative control).
     line_single_view_prior: bool = False
+    # Prompted masks may supplement an independently supported line, but cannot replace
+    # original mask evidence, create identities or vote for their own prompt labels.
+    line_reprojection_policy: str = "legacy"
     line_orientation: str = "priority"
     line_invert_colour_cue: bool = False
 
@@ -668,6 +671,7 @@ class Obs:
     plunger_tip_end: int | None = None
     plunger_confidence: float | None = None
     reprojection_disagrees: bool = False
+    reprojection: bool = False
 
     @property
     def tip_attached(self) -> bool:
@@ -708,6 +712,9 @@ class FrameObservations:
     # Sep 29: per view, the `*_tip` detector boxes the line tracker may attach (empty with
     # the line classes off).
     tips: dict[str, list[Obs]] = field(default_factory=dict)
+    supplemental: dict[str, list[Obs]] = field(default_factory=dict)
+    supplemental_rejections: Counter = field(default_factory=Counter)
+    supplemental_consumed: set[tuple[str, int]] = field(default_factory=set)
 
 
 def attach_tip(obs: Obs, tip: Obs, attachment: Any, mode: str) -> Obs:
@@ -782,6 +789,7 @@ def _obs(row: FineBioObservation) -> Obs:
         tip_side=row.tip_side,
         body_ends_px=row.body_end_px,
         reprojection_disagrees=bool(row.provenance.get("reprojection_disagrees")),
+        reprojection=row.provenance.get("prompt_source") == "reprojection",
     )
 
 
@@ -804,10 +812,29 @@ def select_observations(
     detector: dict[str, list[Obs]] = defaultdict(list)
     sam3: dict[tuple[str, str], list[Obs]] = defaultdict(list)
     det_by_class: dict[tuple[str, str], list[Obs]] = defaultdict(list)
+    supplemental: dict[str, list[Obs]] = defaultdict(list)
+    rejected: Counter = Counter()
     for row in rows:
         if row.view == FINEBIO_FPV_VIEW and not row.pose_valid:
             continue
         obs = _obs(row)
+        if (
+            params.line_reprojection_policy == "supplemental"
+            and params.is_line_class(obs.object_class)
+            and obs.reprojection
+        ):
+            if obs.reprojection_disagrees:
+                rejected["prompt_disagreement"] += 1
+            elif (
+                obs.axis_px is None
+                or not is_elongated(obs.axis_obs())
+                or obs.axis_residual_px is None
+                or obs.axis_residual_px > params.line_max_axis_residual_px
+            ):
+                rejected["invalid_axis"] += 1
+            elif params.observation_source != "detector" and params.is_line_class(obs.object_class):
+                supplemental[row.view].append(obs)
+            continue
         if plunger_ends:
             hit = plunger_ends.get((row.view, row.frame_index, row.slot))
             if hit is not None and not hit[2] and hit[0] is not None and hit[1] > 0:
@@ -840,11 +867,36 @@ def select_observations(
     for view, items in tracked.items():
         for i, obs in enumerate(items):
             obs.index = i
+    for view, items in supplemental.items():
+        # Near-identical boxes requested under different colours are not independent
+        # identities (the resting-pipette failure). Abstain on both, not first-row wins.
+        collisions = set()
+        for a, b in combinations(range(len(items)), 2):
+            left, right = items[a], items[b]
+            if left.object_class == right.object_class:
+                continue
+            if left.box is None or right.box is None:
+                continue
+            x0, y0 = max(left.box[0], right.box[0]), max(left.box[1], right.box[1])
+            x1, y1 = min(left.box[2], right.box[2]), min(left.box[3], right.box[3])
+            intersection = max(0, x1 - x0) * max(0, y1 - y0)
+            areas = [(o.box[2] - o.box[0]) * (o.box[3] - o.box[1]) for o in (left, right)]
+            if intersection / max(1, sum(areas) - intersection) >= 0.75:
+                collisions.update((a, b))
+        rejected["cross_class_overlap"] += len(collisions)
+        supplemental[view] = [o for i, o in enumerate(items) if i not in collisions]
+    # Supplemental indices share the view's namespace with originals. Keeping them out
+    # of tracked preserves detector fallback, birth/reacquisition and hand-off behavior.
+    for view, items in supplemental.items():
+        for i, obs in enumerate(items, start=len(tracked.get(view, ()))):
+            obs.index = i
     tips: dict[str, list[Obs]] = {}
     if params.line_classes:
         for items in tracked.values():
             _to_geometric_class(items, params)
         for items in detector.values():
+            _to_geometric_class(items, params)
+        for items in supplemental.values():
             _to_geometric_class(items, params)
         if params.tip_boxes_on:
             tip_classes = {tip for tip, _ in params.line_tip_classes}
@@ -852,7 +904,14 @@ def select_observations(
                 mine = [o for o in items if o.object_class in tip_classes and o.box is not None]
                 if mine:
                     tips[view] = mine
-    return FrameObservations(frame=frame, tracked=dict(tracked), detector=dict(detector), tips=tips)
+    return FrameObservations(
+        frame=frame,
+        tracked=dict(tracked),
+        detector=dict(detector),
+        tips=tips,
+        supplemental=dict(supplemental),
+        supplemental_rejections=rejected,
+    )
 
 
 # --------------------------------------------------------------------------- assignment
@@ -2227,6 +2286,7 @@ class MultiviewTracker:
         self.line_held_offset_remeasured = 0
         self.line_class_vetoes = 0
         self.line_class_splits = 0
+        self.line_supplemental_counts: Counter = Counter()
         # -- Sep 29 disposable tips (all zero / empty with the extension off)
         self.line_tip_line_frames = 0
         self.line_tip_attached_frames = 0
@@ -2317,13 +2377,14 @@ class MultiviewTracker:
         self._previous_frame = frame
         cams = self._cams_for(frame)
         obs = select_observations(frame, rows, params, self.plunger_ends or None)
+        self.line_supplemental_counts.update(obs.supplemental_rejections)
         self._frame_obs = obs
 
         for t in self.live_tracks():
             self._predict(t, dt)
 
         assigned = self._associate(cams, obs)
-        taken: set[tuple[str, int]] = set()
+        taken: set[tuple[str, int]] = set(obs.supplemental_consumed)
         already_support0 = [t for t in self.live_tracks() if t.state in SUPPORT0_STATES]
         if params.group_tracks and self.volumes:
             # Observations already assigned to an individual track are not the group's.
@@ -2505,7 +2566,101 @@ class MultiviewTracker:
                 if cost[i, j] < HUNGARIAN_FORBIDDEN:
                     assigned[(tracks[i].track_id, v)] = items[j]
                     used_obs.add((v, items[j].index))
+        if self.params.line_reprojection_policy == "supplemental":
+            self._associate_supplemental_lines(tracks, cams, obs, assigned, used_obs)
         return assigned
+
+    def _supplemental_line_cost(self, t: Track, cam: Camera, o: Obs) -> float:
+        """Conservative geometric attribution, without an uncertainty-inflated gate.
+
+        Source track ids belong to a different rerun and are deliberately not matched.
+        A prompt's class can constrain its recipient but cannot establish that class.
+        """
+        if not t.is_line or decisive_class(t.class_votes) != o.colour_class:
+            return HUNGARIAN_FORBIDDEN
+        if depth_cm(cam, t.position) <= 0:
+            return HUNGARIAN_FORBIDDEN
+        if not _sees_broadside(cam, t.line(), self.params):
+            return HUNGARIAN_FORBIDDEN
+        cost = self._line_view_cost(t, cam, o)
+        if cost > _view_gate_px(o.view, self.params):
+            return HUNGARIAN_FORBIDDEN
+        assert t.endpoints_cm is not None and o.axis_px is not None
+        line = t.line()
+        mine = sorted(line.parameter(end) for end in t.endpoints_cm)
+        if (
+            _interval_gap(tuple(mine), _along_line_interval(cam, o, line))
+            > self.params.line_gate_cm
+        ):
+            return HUNGARIAN_FORBIDDEN
+        projected = cam.project(t.endpoints_cm)
+        observed = np.asarray(o.axis_px, dtype=np.float64)
+        a, b = projected[1] - projected[0], observed[1] - observed[0]
+        norm = float(np.linalg.norm(a) * np.linalg.norm(b))
+        if norm < 1e-9 or not np.isfinite(norm):
+            return HUNGARIAN_FORBIDDEN
+        angle = math.degrees(math.acos(float(np.clip(abs(a @ b) / norm, 0, 1))))
+        if angle > self.params.line_gate_deg:
+            return HUNGARIAN_FORBIDDEN
+        widths = self._width_medians(t, {o.view: cam})
+        if (
+            o.width_px is not None
+            and o.view in widths
+            and o.width_px > self.params.line_merged_width_factor * widths[o.view]
+        ):
+            return HUNGARIAN_FORBIDDEN
+        return cost
+
+    def _associate_supplemental_lines(
+        self,
+        tracks: Sequence[Track],
+        cams: dict[str, Camera],
+        obs: FrameObservations,
+        assigned: dict[tuple[str, str], Obs],
+        used_obs: set[tuple[str, int]],
+    ) -> None:
+        # Freeze original assignments: supplements cannot bootstrap one another's support.
+        primary = dict(assigned)
+        for view, items in obs.supplemental.items():
+            if view not in cams:
+                continue
+            for o in items:
+                counts = self.line_supplemental_counts
+                counts["considered"] += 1
+                recipients = [
+                    t
+                    for t in tracks
+                    if self._supplemental_line_cost(t, cams[view], o) < HUNGARIAN_FORBIDDEN
+                ]
+                if len(recipients) != 1:
+                    counts["ambiguous" if recipients else "no_geometric_recipient"] += 1
+                    continue
+                t = recipients[0]
+                originals = [p for (tid, _), p in primary.items() if tid == t.track_id]
+                if not any(p.colour_class == o.colour_class for p in originals):
+                    counts["no_independent_support"] += 1
+                    continue
+                if sum(is_elongated(p.axis_obs()) for p in originals) >= 2:
+                    counts["already_constrained"] += 1
+                    continue
+                key = (t.track_id, view)
+                existing = assigned.get(key)
+                if existing is not None:
+                    if existing.reprojection or is_elongated(existing.axis_obs()):
+                        counts["existing_axis"] += 1
+                        continue
+                    if existing.colour_class != o.colour_class or np.linalg.norm(
+                        existing.point - o.point
+                    ) > _view_gate_px(view, self.params):
+                        counts["detector_disagreement"] += 1
+                        continue
+                assigned[key] = o
+                if existing is not None:
+                    # An upgraded detector still supports this track; it must not become
+                    # an unassigned birth/reacquisition candidate later in the frame.
+                    obs.supplemental_consumed.add((view, existing.index))
+                used_obs.add((view, o.index))
+                counts["accepted"] += 1
 
     def _decisive_class(self, t: Track) -> str | None:
         """The class veto's plurality: the top class when it holds at least
@@ -2626,7 +2781,9 @@ class MultiviewTracker:
     def _record_line_support(self, t: Track, mine: dict[str, Obs], cams: dict[str, Camera]) -> None:
         votes: Counter = Counter()
         for v, o in mine.items():
-            if o.colour_class is not None:
+            if o.colour_class is not None and not (
+                self.params.line_reprojection_policy == "supplemental" and o.reprojection
+            ):
                 t.class_votes[o.colour_class] += 1
                 votes[o.colour_class] += 1
             # Sep 29: an attached tip is a second, larger colour patch; its class casts one
@@ -3527,6 +3684,8 @@ class MultiviewTracker:
         taper_cams: list[tuple[int, float, float]] = []
         tip_cams: list[tuple[int, float]] = []
         for view, o in mine.items():
+            if params.line_reprojection_policy == "supplemental" and o.reprojection:
+                continue
             if view not in cams:
                 continue
             axis = self._mask_axis(o)
@@ -3864,7 +4023,9 @@ class MultiviewTracker:
         t.per_view_slot[view] = o.slot
         if o.extent is not None:
             t.per_view_extent[view] = o.extent
-        if o.source in SAM3_SOURCES:
+        if o.source in SAM3_SOURCES and not (
+            self.params.line_reprojection_policy == "supplemental" and o.reprojection
+        ):
             self.slot_history[(view, o.slot)].append((frame, t.track_id))
             self.sam3_slots.add((view, o.slot))
         self.residual_rows.append(
@@ -5116,6 +5277,16 @@ class MultiviewTracker:
                     f"{params.line_class_split_window} voting frames splits the id"
                 ),
             },
+            "reprojection_policy": {
+                "policy": params.line_reprojection_policy,
+                "counts": dict(sorted(self.line_supplemental_counts.items())),
+                "rule": (
+                    "supplemental masks require unique geometry and independent same-class "
+                    "support; cannot create births, colour votes or orientation votes"
+                    if params.line_reprojection_policy == "supplemental"
+                    else "legacy: prompted masks follow ordinary source selection and association"
+                ),
+            },
             "loo_residual_px": summary(self.line_loo_px),
             "loo_angle_deg": summary(self.line_loo_deg),
             "length_cm": {
@@ -5587,6 +5758,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         "box attached (v3), not always",
     )
     ext.add_argument(
+        "--line-reprojection-policy",
+        choices=("legacy", "supplemental"),
+        default="legacy",
+        help="supplemental: associate originals first; prompted masks cannot create identities",
+    )
+    ext.add_argument(
         "--line-single-view-prior",
         action="store_true",
         help="steep single-view line fit from gravity, length and the hand point",
@@ -5674,6 +5851,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         line_tip_length_rule=not args.no_line_tip_length_rule,
         line_birth_tip_slack=not args.no_line_birth_tip_slack,
         line_single_view_prior=args.line_single_view_prior,
+        line_reprojection_policy=args.line_reprojection_policy,
         line_orientation=args.line_orientation,
         line_invert_colour_cue=args.invert_colour_cue,
     )

@@ -180,6 +180,26 @@ generation and use fresh decode and merge directories.
 Evidence: both trials' `reprojection-prompts/`, `observations-b-v5/` and `scoreboard-v5/` under
 `runs/finebio-lines-<trial>-20260928/`. The run READMEs record this phase.
 
+The Sep 30 stricter association experiment reuses those masks and caches. In a fresh output,
+add `--tracker-arg=--line-reprojection-policy --tracker-arg=supplemental` to the line run.
+This keeps original detector fallback, associates original evidence first and allows a prompted
+mask only on a unique, independently supported line track. It forbids prompted-mask births and
+excludes prompt labels from colour/orientation votes and the SAM3 identity proxy. It also refuses
+overlapping cross-colour requests and preserves a fit already constrained by two original axes.
+The default `legacy` reproduces the earlier source rule. Neither new variant is adopted;
+see [the results](results.md#stricter-pipette-association).
+
+The evaluated comparisons can be opened directly:
+
+```bash
+uv run rerun runs/finebio-pipette-improvement-20260930/comparison.rrd runs/finebio-pipette-improvement-20260930/comparison.rbl
+```
+
+The tabs show v5a, v5 and the two new variants with scored offline-oriented endpoints.
+Use the raw `frame` timeline; wait for video decoding after a seek. The run directory holds
+the locked protocol, both plan reviews, full commands, paired controls and all clean held-anchor
+panels. Its `readout.md` explains the lost anchor and the unchanged adoption decision.
+
 ## Opening the recordings
 
 **Three recordings are worth opening, each with a World, a Cameras and an Evidence preset.** Pass
