@@ -1495,6 +1495,25 @@ def build_parser() -> argparse.ArgumentParser:
         "--summary", type=Path, default=None, help="per-track JSON (default beside output)"
     )
     ann.add_argument("--root", type=Path, default=Path.cwd())
+    ends = sub.add_parser(
+        "plunger-ends",
+        help="one plunger sample per view that has an axis, written once for the orientation vote",
+    )
+    ends.add_argument("--observations", type=Path, required=True, help="dir or observations.jsonl")
+    ends.add_argument("--clip-config", type=Path, required=True)
+    ends.add_argument(
+        "--output",
+        type=Path,
+        required=True,
+        help="plunger_ends.jsonl (not written into the source observations)",
+    )
+    ends.add_argument("--pipettes", type=Path, default=Path("configs/finebio/pipettes.json"))
+    ends.add_argument("--root", type=Path, default=Path.cwd())
+    ends.add_argument(
+        "--force",
+        action="store_true",
+        help="decode again even when --output already exists",
+    )
     return parser
 
 
@@ -1553,6 +1572,104 @@ def run_config(args: argparse.Namespace) -> int:
     report = json.loads(Path(args.calibration).read_text(encoding="utf-8"))
     doc = merge_colour_block(args.pipettes, report["proposed_colour_block"])
     print(json.dumps(doc["colour"], indent=1))
+    return 0
+
+
+PLUNGER_CLASSES = (*SINGLE_CHANNEL_PIPETTES, "8_channel_pipette")
+
+
+def write_plunger_ends(
+    observations: Path,
+    frame_provider: Any,
+    output: Path,
+    *,
+    settings: ColourSettings = DEFAULT_SETTINGS,
+    classes: Sequence[str] = PLUNGER_CLASSES,
+) -> dict[str, Any]:
+    """Sample each axis row once and write a sidecar. The source file is not modified.
+
+    Rows are walked per view in frame order so the proxy decode reads forward. An ambiguous
+    sample (both ends showed a ring) is written and the vote abstains. A row with no ring
+    is omitted.
+    """
+    from .finebio_orientation import plunger_end_from_sample
+
+    wanted = set(classes)
+    rows: list[dict[str, Any]] = []
+    with observations_path(observations).open(encoding="utf-8") as handle:
+        for line in handle:
+            if '"mask_axis_px"' not in line:
+                continue
+            row = json.loads(line)
+            if (
+                row.get("object_class") in wanted
+                and row.get("mask_axis_px")
+                and row.get("source") != "detector"
+            ):
+                rows.append(row)
+    rows.sort(key=lambda row: (str(row["view"]), int(row["frame_index"]), str(row["slot"])))
+    written = 0
+    ambiguous = 0
+    frames: FrameLookup | None = None
+    frame_key: tuple[str, int] | None = None
+    output.parent.mkdir(parents=True, exist_ok=True)
+    partial = output.with_suffix(output.suffix + ".partial")
+    with partial.open("w", encoding="utf-8") as handle:
+        for index, row in enumerate(rows):
+            key = (str(row["view"]), int(row["frame_index"]))
+            if key != frame_key:
+                frames = FrameLookup(frame_provider, key[1])
+                frame_key = key
+            assert frames is not None
+            image = frames.get(key[0])
+            if image is None:
+                continue
+            sample = sample_from_observation(image, row, settings)
+            record = plunger_end_from_sample(sample, float(row.get("mask_width_px") or 0.0))
+            if record is None:
+                continue
+            if record["ambiguous"]:
+                ambiguous += 1
+            handle.write(
+                json.dumps(
+                    {
+                        "view": row["view"],
+                        "frame_index": int(row["frame_index"]),
+                        "slot": row["slot"],
+                        **record,
+                    }
+                )
+                + "\n"
+            )
+            written += 1
+            if index and index % 5000 == 0:
+                print(f"plunger-ends: {index} of {len(rows)} axis rows", flush=True)
+    partial.replace(output)
+    return {
+        "axis_rows": len(rows),
+        "written": written,
+        "ambiguous": ambiguous,
+        "output": str(output),
+    }
+
+
+def run_plunger_ends(args: argparse.Namespace) -> int:
+    if args.output.is_file() and not args.force:
+        print(f"plunger-ends: {args.output} exists, not decoding again")
+        return 0
+    root = Path(args.root).resolve()
+    clip = load_clip(args.clip_config, root)
+    settings = load_colour_settings(args.pipettes)
+    frames = ProxyFrameSource(clip["_proxies"], clip["_offset"])
+    try:
+        summary = write_plunger_ends(args.observations, frames, args.output, settings=settings)
+    finally:
+        frames.close()
+    summary["frame_reads"] = frames.reads
+    summary["frame_seeks"] = frames.seeks
+    summary_path = args.output.with_name(args.output.stem + "_summary.json")
+    summary_path.write_text(json.dumps(summary, indent=1) + "\n", encoding="utf-8")
+    print(json.dumps(summary))
     return 0
 
 
@@ -1616,6 +1733,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return run_config(args)
     if args.command == "annotate":
         return run_annotate(args)
+    if args.command == "plunger-ends":
+        return run_plunger_ends(args)
     return 1
 
 

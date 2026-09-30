@@ -512,3 +512,58 @@ def test_config_subcommand_merges_the_proposed_block(tmp_path: Path):
 def test_class_colour_table_covers_the_three_pipettes():
     assert set(CLASS_COLOUR.values()) == set(COLOURS)
     assert set(CLASS_COLOUR) == {"blue_pipette", "yellow_pipette", "red_pipette"}
+
+
+def test_plunger_precompute_decodes_once_per_view_frame_and_keeps_source(tmp_path, monkeypatch):
+    from battle import finebio_colour as colour
+    from battle.finebio_orientation import load_plunger_ends
+
+    rows = [
+        {
+            "view": view,
+            "frame_index": frame,
+            "slot": slot,
+            "object_class": "blue_pipette",
+            "source": "sam3_decode",
+            "mask_axis_px": [[0, 0], [100, 0]],
+            "mask_width_px": 25.0,
+        }
+        for view, frame, slot in [("T2", 1, "b"), ("T1", 2, "a"), ("T1", 1, "b"), ("T1", 1, "a")]
+    ]
+    source = tmp_path / "observations.jsonl"
+    source.write_text("".join(json.dumps(row) + "\n" for row in rows))
+    before = source.read_bytes()
+    reads = []
+
+    def provider(view, frame):
+        reads.append((view, frame))
+        return np.zeros((10, 10, 3), dtype=np.uint8)
+
+    def sample(image, row, settings):
+        return {"ambiguous": row["slot"] == "b", "tip_index": 1, "confidence": 0.8}
+
+    monkeypatch.setattr(colour, "sample_from_observation", sample)
+    output = tmp_path / "plunger_ends.jsonl"
+    summary = colour.write_plunger_ends(source, provider, output)
+    assert reads == [("T1", 1), ("T1", 2), ("T2", 1)]
+    assert summary["written"] == 4 and summary["ambiguous"] == 2
+    assert source.read_bytes() == before
+    assert not output.with_suffix(".jsonl.partial").exists()
+    cached = load_plunger_ends(output)
+    assert cached[("T1", 1, "a")] == (1, 0.8, False)
+    assert cached[("T1", 1, "b")] == (None, 0.0, True)
+    monkeypatch.setattr(colour, "ProxyFrameSource", lambda *a: pytest.fail("decoded cache again"))
+    assert (
+        colour.main(
+            [
+                "plunger-ends",
+                "--observations",
+                str(source),
+                "--clip-config",
+                str(tmp_path / "unused.json"),
+                "--output",
+                str(output),
+            ]
+        )
+        == 0
+    )

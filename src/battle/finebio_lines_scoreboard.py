@@ -130,8 +130,20 @@ def resolve_tracks_dir(path: Path, default_name: str) -> Path:
     raise FileNotFoundError(f"no tracks.jsonl under {path} or {candidate}")
 
 
+def tracks_path(tracks_dir: Path) -> Path:
+    """`tracks_oriented.jsonl` when it sits beside `tracks.jsonl`, else `tracks.jsonl`.
+
+    A v3 or v4 directory has no sibling, so those boards keep reading `tracks.jsonl`.
+    """
+    directory = Path(tracks_dir)
+    oriented = directory / "tracks_oriented.jsonl"
+    if oriented.is_file():
+        return oriented
+    return directory / "tracks.jsonl"
+
+
 def load_tracks(tracks_dir: Path) -> list[Track3D]:
-    return list(read_jsonl(Path(tracks_dir) / "tracks.jsonl", Track3D))
+    return list(read_jsonl(tracks_path(tracks_dir), Track3D))
 
 
 def load_metrics(tracks_dir: Path) -> dict[str, Any]:
@@ -1094,6 +1106,54 @@ def evaluate_rule(
     return out
 
 
+def orientation_summary(rows: Sequence[Track3D]) -> dict[str, Any]:
+    """Episodes, online flips, the tip-confidence distribution, and per-cue agreement
+    with the retrofit sign. Empty when the rows are not a vote run."""
+    from .finebio_orientation import CUE_NAMES, cue_agreement
+
+    voted = [row for row in rows if row.orientation_episode is not None and row.endpoints_cm]
+    if not voted:
+        return {"enabled": False}
+    episodes = {(row.track_id, row.orientation_episode) for row in voted}
+    flips = 0
+    by_track: dict[tuple[str, int], list[Track3D]] = defaultdict(list)
+    for row in voted:
+        by_track[(row.track_id, int(row.orientation_episode or 0))].append(row)
+    for group in by_track.values():
+        signs = [
+            row.orientation_online_sign
+            for row in sorted(group, key=lambda item: item.frame_index)
+            if row.orientation_online_sign in (1, -1)
+        ]
+        flips += sum(1 for left, right in zip(signs, signs[1:]) if left != right)
+    agreement: dict[str, Counter] = {cue: Counter() for cue in CUE_NAMES}
+    for row in voted:
+        for cue, verdict in cue_agreement(row.tip_votes, row.orientation_retrofit_sign).items():
+            agreement[cue][verdict] += 1
+    per_cue = {}
+    for cue, counter in agreement.items():
+        total = counter["agree"] + counter["differ"]
+        per_cue[cue] = {
+            "agree": counter["agree"],
+            "differ": counter["differ"],
+            "agreement": round(counter["agree"] / total, 4) if total else None,
+        }
+    return {
+        "enabled": True,
+        "source": (
+            "tracks_oriented.jsonl"
+            if any(row.orientation_retrofit_sign for row in voted)
+            else "tracks.jsonl"
+        ),
+        "episodes": len(episodes),
+        "flips_within_episode": flips,
+        "tip_confidence": _percentiles(
+            [float(row.tip_confidence) for row in voted if row.tip_confidence is not None]
+        ),
+        "cue_agreement": per_cue,
+    }
+
+
 def _both(a: Mapping[str, Any], b: Mapping[str, Any], key: str) -> bool | None:
     x, y = a.get(key), b.get(key)
     if x is None or y is None:
@@ -1202,6 +1262,7 @@ def build_scoreboard(
         "ambiguities": ambiguities(lines_rows, rest_frames, lines_metrics),
         "colour": colour_summary(colour_rows, lines_rows),
         "tips": tips_summary(lines_rows, lines_metrics, prior, tip_events),
+        "orientation": orientation_summary(lines_rows),
         "negative_controls": [dict(nc) for nc in negative_controls] if negative_controls else None,
         "gates": params.get("gates"),
         "claim_boundary": CLAIM_BOUNDARY,
@@ -1565,6 +1626,28 @@ def scoreboard_markdown(board: Mapping[str, Any]) -> str:
                 lines.append("")
         else:
             lines += ["Tip events: not run for this board.", ""]
+    orientation = board.get("orientation") or {}
+    lines += ["## Orientation vote", ""]
+    if not orientation.get("enabled"):
+        lines += ["Not a vote run. The tip bases above are the priority list.", ""]
+    else:
+        confidence = orientation.get("tip_confidence") or {}
+        lines += [
+            f"Episodes **{orientation.get('episodes')}**, flips within an episode "
+            f"**{orientation.get('flips_within_episode')}**. Tip confidence "
+            f"(sigmoid of the online log-odds) median {_fmt(confidence.get('median'))}, "
+            f"p10 {_fmt(confidence.get('p10'))}, p90 {_fmt(confidence.get('p90'))} "
+            f"(n {confidence.get('n', 0)}). A value near 0 or 1 is a decided end.",
+            "",
+            "| cue | agree | differ | agreement | measured against |",
+            "|---|---|---|---|---|",
+        ]
+        for cue, block in (orientation.get("cue_agreement") or {}).items():
+            lines.append(
+                f"| {cue} | {block.get('agree')} | {block.get('differ')} | "
+                f"{_fmt(block.get('agreement'), 4)} | the episode's retrofit sign |"
+            )
+        lines.append("")
     controls = board.get("negative_controls") or []
     lines += ["## Negative controls", ""]
     if not controls:

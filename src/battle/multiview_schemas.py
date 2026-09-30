@@ -562,6 +562,18 @@ class Track3D(VersionedModel):
     tip_class: str | None = None
     tip_attached_views: tuple[str, ...] | None = None
     tip_basis: str | None = None
+    # Sep 29 (orientation vote), optional so priority-mode rows stay valid and byte-identical.
+    # `tip_confidence` is the sigmoid of the online log-odds (near 1 when endpoint 0 of the
+    # track is the tip). `tip_votes` is that frame's per-cue signed log-odds in the track's
+    # continuous endpoint order (positive: endpoint 0 is the tip). The episode index and the
+    # online sign are what the retrofit and the scoreboard count; `orientation_retrofit_sign`
+    # is set on `tracks_oriented.jsonl` (positive: the track's endpoint 0 is the tip written
+    # back over the episode).
+    tip_confidence: float | None = Field(default=None, ge=0, le=1)
+    tip_votes: dict[str, float] | None = None
+    orientation_episode: int | None = Field(default=None, ge=0)
+    orientation_online_sign: int | None = None
+    orientation_retrofit_sign: int | None = None
     # Sep 29 (v4): the median visible butt-to-tip length (cm) the 3D-length tip rule read on
     # this frame; None while too few line frames measured one, and on rows of a tracker
     # without the rule.

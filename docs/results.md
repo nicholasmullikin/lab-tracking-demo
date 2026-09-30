@@ -201,6 +201,33 @@ Evidence: `runs/finebio-lines-P03_03_01-20260928/README.md` (sections "The pre-r
 `qa/finebio-P03_03_01-tip-clicks-2.human-record.json`. The archive closed before this phase, so
 the run READMEs are its record.
 
+## Orientation vote
+
+**The orientation vote is adopted under the Part 1 rule.** Against the clean second sitting, median
+tip error is 2.38 cm and 1 of 47 anchors names the wrong end. Rest error falls to 1.26 cm and held
+error to 4.27 cm. The rule asks for at most four wrong ends, a median under 2.5 cm and no rest
+regression.
+
+| Tracks | All median cm | Rest median cm | Held median cm | Wrong end | Measured against |
+|---|---|---|---|---|---|
+| lines-v3 | 3.03 | 2.35 | 13.04 | 14 of 47 | frozen click anchors |
+| lines-v4 | 3.47 | 2.30 | 5.80 | 8 of 47 | frozen click anchors |
+| lines-v5a | 2.38 | 1.26 | 4.27 | 1 of 47 | frozen click anchors |
+| lines-v5a-inverted | 3.20 | 2.63 | 4.51 | 9 of 47 | frozen click anchors |
+
+I ran both rooms with the fourth attempt’s flags plus `--line-orientation vote`. Each cue
+contributes through its strongest camera, weighted by visible length. Colour samples are computed
+once. The offline pass writes one orientation over each episode, using the peak absolute sum of its
+evidence. It changes endpoint labels, but does not repair an online hold on the wrong end.
+
+The inverted-colour control raises wrong-end anchors from 1 to 9. Cue agreement is against the final
+episode decision, not an independent accuracy measure. The hand cue disagrees on 1,574 frames in
+room 1.
+
+Evidence: `runs/finebio-lines-P03_03_01-20260928/orientation_readout.json`, both trials’
+`scoreboard-v5a/` and `runs/finebio-tips-P03_03_01-20260929/scoreboard-v5a/`. The run READMEs record
+this phase.
+
 ## Assembly101 in numbers
 
 **SAM3 at 1280 px with an appended prompt memory is the best arm on the toy car, DAM4SAM ties it,

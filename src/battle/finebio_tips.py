@@ -2810,6 +2810,9 @@ def score_tracks_file(
     detector class of the clicked cells (`pipette_idf1_by_cell_class`, the fallback: it
     inherits the detector's class confusions and is named as such)."""
     frames = sorted({a.raw_frame for a in anchors})
+    oriented = Path(path).with_name("tracks_oriented.jsonl")
+    if path.name != "tracks_oriented.jsonl" and oriented.is_file():
+        path = oriented
     rows_by_frame = read_track_rows(path, frames)
     if colour_path is None:
         colour_path = colour_tracks_beside(Path(path))

@@ -405,6 +405,13 @@ class TrackerParams:
     line_tip_length_min_frames: int = LINE_TIP_LENGTH_MIN_FRAMES
     line_tip_length_hysteresis_cm: float = LINE_TIP_LENGTH_HYSTERESIS_CM
     line_tip_length_truncated_cm: float = LINE_TIP_LENGTH_TRUNCATED_CM
+    # Sep 29, orientation vote. `priority` is the ordered bases above and stays the default,
+    # so earlier runs stay byte-identical. `vote` replaces that decision with the weighted
+    # cues in `finebio_orientation`. The colour cue reads precomputed plunger ends and does
+    # not decode video. `line_invert_colour_cue` feeds the colour cue the other end (the
+    # negative control).
+    line_orientation: str = "priority"
+    line_invert_colour_cue: bool = False
 
     def as_dict(self) -> dict[str, Any]:
         out = {k: getattr(self, k) for k in CORE_PARAM_KEYS}
@@ -655,6 +662,10 @@ class Obs:
     tip_mode: str | None = None
     tip_pixel: np.ndarray | None = None
     body_axis_px: tuple[tuple[float, float], tuple[float, float]] | None = None
+    # Sep 29, orientation vote: the precomputed plunger sample on this view (axis index of
+    # the tip, and the clamped hue-share confidence). Absent when the view abstained.
+    plunger_tip_end: int | None = None
+    plunger_confidence: float | None = None
 
     @property
     def tip_attached(self) -> bool:
@@ -781,7 +792,10 @@ def _to_geometric_class(items: Iterable[Obs], params: TrackerParams) -> None:
 
 
 def select_observations(
-    frame: int, rows: Iterable[FineBioObservation], params: TrackerParams
+    frame: int,
+    rows: Iterable[FineBioObservation],
+    params: TrackerParams,
+    plunger_ends: Mapping[tuple[str, int, str], tuple[int | None, float, bool]] | None = None,
 ) -> FrameObservations:
     """Apply the source rule and class confirmation to one frame's rows (all views)."""
     detector: dict[str, list[Obs]] = defaultdict(list)
@@ -791,6 +805,11 @@ def select_observations(
         if row.view == FINEBIO_FPV_VIEW and not row.pose_valid:
             continue
         obs = _obs(row)
+        if plunger_ends:
+            hit = plunger_ends.get((row.view, row.frame_index, row.slot))
+            if hit is not None and not hit[2] and hit[0] is not None and hit[1] > 0:
+                obs.plunger_tip_end = int(hit[0])
+                obs.plunger_confidence = float(hit[1])
         if row.source == "detector":
             if (row.detector_score or 0.0) < params.min_detector_score:
                 continue
@@ -994,6 +1013,15 @@ class Track:
     tail_votes: list[int] = field(default_factory=list)
     length_history: list[float] = field(default_factory=list)
     tip_rule_length_cm: float | None = None
+    # Sep 29, orientation vote (unused in priority mode). Online log-odds and sign in the
+    # track's continuous endpoint order; the episode index increments on resume and is not
+    # zeroed. The last frame's cue log-odds are kept only for that frame's row.
+    orient_log_odds: float = 0.0
+    orient_sign: int = 0
+    orient_episode: int = 0
+    orient_votes: dict[str, float] | None = None
+    orient_voted_frame: int | None = None
+    orient_contribution: float = 0.0
 
     @property
     def is_line(self) -> bool:
@@ -2113,6 +2141,7 @@ class TrackerOutput:
     events: list[TrackEvent]
     residuals: list[ResidualRow]
     metrics: dict[str, Any]
+    oriented_rows: list[Track3D] | None = None
 
 
 class MultiviewTracker:
@@ -2137,6 +2166,11 @@ class MultiviewTracker:
         self.rows: list[Track3D] = []
         self.events: list[TrackEvent] = []
         self.residual_rows: list[ResidualRow] = []
+        # Sep 29, orientation vote. The plunger map is joined onto observations; the records
+        # are the decay-free contributions the retrofit reads. Both stay empty in priority mode.
+        self.plunger_ends: dict[tuple[str, int, str], tuple[int | None, float, bool]] = {}
+        self.orient_records: list[Any] = []
+        self._frame_obs: FrameObservations | None = None
         # (view, SAM3 slot) -> [(frame, track id)]; detector slots are score ranks, carry no
         # identity, and are not recorded.
         self.slot_history: dict[tuple[str, str], list[tuple[int, str]]] = defaultdict(list)
@@ -2279,7 +2313,8 @@ class MultiviewTracker:
         dt = 1 if self._previous_frame is None else max(1, frame - self._previous_frame)
         self._previous_frame = frame
         cams = self._cams_for(frame)
-        obs = select_observations(frame, rows, params)
+        obs = select_observations(frame, rows, params, self.plunger_ends or None)
+        self._frame_obs = obs
 
         for t in self.live_tracks():
             self._predict(t, dt)
@@ -2680,6 +2715,10 @@ class MultiviewTracker:
             tail_votes=list(t.tail_votes),
             length_history=list(t.length_history),
             tip_rule_length_cm=t.tip_rule_length_cm,
+            orient_log_odds=t.orient_log_odds,
+            orient_sign=t.orient_sign,
+            orient_episode=0,
+            orient_voted_frame=t.orient_voted_frame,
         )
         if t.mover:
             self.mover_track_ids.add(new.track_id)
@@ -3349,6 +3388,160 @@ class MultiviewTracker:
             extent_from_prediction=completed.from_prediction,
         )
 
+    def _mask_axis(self, o: Obs) -> np.ndarray | None:
+        axis = o.body_axis_px if o.body_axis_px is not None else o.axis_px
+        if axis is None:
+            return None
+        return np.asarray(axis, dtype=np.float64).reshape(2, 2)
+
+    def _axis_length_px(self, o: Obs) -> float:
+        shown = o.axis_px if o.axis_px is not None else o.body_axis_px
+        if shown is None:
+            return 0.0
+        ends = np.asarray(shown, dtype=np.float64).reshape(2, 2)
+        return float(np.linalg.norm(ends[1] - ends[0]))
+
+    def _axis_to_track_ends(
+        self, t: Track, cam: Camera, axis: np.ndarray
+    ) -> tuple[int, int] | None:
+        """Axis-end index to track-endpoint index. None when both axis ends match one endpoint."""
+        assert t.endpoints_cm is not None
+        pixels = [project(cam, end) for end in t.endpoints_cm]
+        if any(pixel is None for pixel in pixels):
+            return None
+        mapped = [
+            int(np.argmin([np.linalg.norm(pixel - axis[k]) for pixel in pixels]))  # type: ignore[operator]
+            for k in (0, 1)
+        ]
+        if mapped[0] == mapped[1]:
+            return None
+        return mapped[0], mapped[1]
+
+    def _both_ends_in_hand_box(
+        self, t: Track, cams: dict[str, Camera], obs: FrameObservations | None
+    ) -> bool:
+        if obs is None or t.endpoints_cm is None:
+            return False
+        for view, cam in cams.items():
+            pixels = [project(cam, end) for end in t.endpoints_cm]
+            for det in obs.detector.get(view, ()):
+                if det.object_class not in self.params.hand_classes or det.box is None:
+                    continue
+                if all(pixel is not None and _pixel_in_box(pixel, det.box) for pixel in pixels):
+                    return True
+        return False
+
+    def _record_butt_offset_for_vote(self, t: Track, frame: int) -> None:
+        """The online butt, for the hold. The retrofit does not move this."""
+        if t.endpoints_cm is None or t.tip_is_endpoint_0 is None:
+            return
+        resolved = t.tip_and_butt()
+        if resolved is None:
+            return
+        butt = resolved[1]
+        best: tuple[float, Track] | None = None
+        for hand in self.live_tracks():
+            if (
+                hand.object_class not in self.params.hand_classes
+                or hand.state not in LOCALISED_STATES
+            ):
+                continue
+            dist = float(np.linalg.norm(butt - hand.position))
+            if dist <= LINE_HAND_REACH_CM and (best is None or dist < best[0]):
+                best = (dist, hand)
+        if best is None:
+            return
+        _, hand = best
+        t.butt_offset = butt - hand.position
+        t.butt_offset_hand = hand.track_id
+        t.butt_offset_frame = frame
+
+    def _resolve_tip_vote(
+        self,
+        t: Track,
+        cams: dict[str, Camera],
+        obs: FrameObservations | None,
+        frame: int,
+        mine: dict[str, Obs],
+    ) -> None:
+        """One contribution per cue, then the decayed accumulator. Basis `vote`."""
+        from .finebio_orientation import (
+            EpisodeAccumulator,
+            colour_cue,
+            frame_log_odds,
+            gravity_cue,
+            hand_cue,
+            taper_camera,
+            taper_cue,
+            tip_box_cue,
+        )
+
+        assert t.endpoints_cm is not None
+        params = self.params
+        cls = decisive_class(t.class_votes)
+        colour_cams: list[tuple[int, float, float]] = []
+        taper_cams: list[tuple[int, float, float]] = []
+        tip_cams: list[tuple[int, float]] = []
+        for view, o in mine.items():
+            if view not in cams:
+                continue
+            axis = self._mask_axis(o)
+            length = self._axis_length_px(o)
+            mapping = None if axis is None else self._axis_to_track_ends(t, cams[view], axis)
+            if mapping is not None and o.plunger_tip_end is not None and o.plunger_confidence:
+                tip_end = mapping[o.plunger_tip_end]
+                if params.line_invert_colour_cue:
+                    tip_end = 1 - tip_end
+                colour_cams.append((tip_end, float(o.plunger_confidence), length))
+            if mapping is not None:
+                obs_cls = cls or o.colour_class
+                voted = taper_camera(
+                    end_widths=o.end_widths_px,
+                    tip_side=o.tip_side,
+                    wide_is_tip=bool(obs_cls) and obs_cls in params.line_wide_tip_classes,
+                    axis_residual_px=o.axis_residual_px,
+                    axis_to_track=mapping,
+                    residual_max_px=params.line_max_axis_residual_px,
+                )
+                if voted is not None:
+                    taper_cams.append((voted[0], voted[1], length))
+            if o.tip_attached and o.tip_end is not None and mapping is not None:
+                tip_cams.append((mapping[int(o.tip_end)], length))
+        votes = [
+            cue
+            for cue in (
+                colour_cue(colour_cams),
+                taper_cue(taper_cams),
+                tip_box_cue(tip_cams),
+                hand_cue(
+                    t.endpoints_cm,
+                    [
+                        hand.position
+                        for hand in self.live_tracks()
+                        if hand.object_class in params.hand_classes
+                        and hand.state in LOCALISED_STATES
+                    ],
+                    both_ends_in_hand_box=self._both_ends_in_hand_box(t, cams, obs),
+                ),
+                gravity_cue(t.endpoints_cm),
+            )
+            if cue is not None
+        ]
+        total, per = frame_log_odds(votes)
+        acc = EpisodeAccumulator(
+            log_odds=t.orient_log_odds, sign=t.orient_sign, episode=t.orient_episode
+        )
+        elapsed = 1 if t.orient_voted_frame is None else max(1, frame - t.orient_voted_frame)
+        acc.add(total, elapsed_frames=elapsed)
+        t.orient_log_odds = acc.log_odds
+        t.orient_sign = acc.sign
+        t.orient_votes = {name: round(value, 4) for name, value in per.items()} or None
+        t.orient_voted_frame = frame
+        t.orient_contribution = total
+        if acc.sign:
+            self._set_tip(t, tip_is_endpoint_0=acc.sign > 0, basis="vote")
+        self._record_butt_offset_for_vote(t, frame)
+
     def _resolve_tip(
         self,
         t: Track,
@@ -3368,7 +3561,11 @@ class MultiviewTracker:
         the widths. Otherwise the ordering is kept by direction continuity (the update
         orients the measured direction along the predicted one). A hand track within reach
         of the butt leaves the butt-to-hand offset it measured (`butt_offset`), the only
-        offset a later hold may follow."""
+        offset a later hold may follow. `line_orientation="vote"` replaces the list with
+        the weighted cues and returns before any of it runs."""
+        if self.params.line_orientation == "vote":
+            self._resolve_tip_vote(t, cams, obs, frame, mine or {})
+            return
         assert t.endpoints_cm is not None
         params = self.params
         # The box basis follows the hysteresis state, not one frame's box: a loose tip
@@ -4465,6 +4662,11 @@ class MultiviewTracker:
             t.last_observed_position = t.position.copy()
             t.endpoint_velocity = None
         if cand.line is not None:
+            # A gap starts a new retrofit episode. The online log-odds and sign carry, so
+            # the flip margin still applies; `_resume` keeps tip_is_endpoint_0 and only
+            # flips the candidate below for direction continuity.
+            if self.params.line_orientation == "vote" and t.is_line:
+                t.orient_episode += 1
             if t.direction is not None and float(cand.line.direction @ t.direction) < 0:
                 # Direction continuity across the gap: the candidate's endpoint order is
                 # arbitrary, the track's tip / butt flag refers to its own order.
@@ -4509,7 +4711,9 @@ class MultiviewTracker:
             self._record_line_support(t, cand.members, cams)
             if t.is_line:
                 self._update_tip_state(t, cand.members)
-                if t.tip_attached is True:
+                if self.params.line_orientation == "vote":
+                    self._resolve_tip_vote(t, cams, self._frame_obs, frame, cand.members)
+                elif t.tip_attached is True:
                     self._resolve_tip_from_boxes(t, cams, cand.members)
 
     def _apply_candidate_line(self, t: Track, cand: Candidate, cams: dict[str, Camera]) -> None:
@@ -4599,12 +4803,46 @@ class MultiviewTracker:
                 self.duplicate_pair_frames += 1
         return {tid: tuple(sorted(ids)) for tid, ids in near.items()}
 
+    def _orientation_row_fields(self, t: Track, frame: int) -> dict[str, Any]:
+        from .finebio_orientation import DECAY_PER_FRAME, EpisodeAccumulator
+
+        elapsed = 0 if t.orient_voted_frame is None else max(0, frame - t.orient_voted_frame)
+        acc = EpisodeAccumulator(
+            log_odds=t.orient_log_odds * DECAY_PER_FRAME**elapsed, sign=t.orient_sign
+        )
+        votes = t.orient_votes if t.orient_voted_frame == frame else None
+        return {
+            "tip_basis": "vote",
+            "tip_resolved": acc.resolved and bool(acc.sign),
+            "tip_confidence": round(acc.confidence, 4),
+            "tip_votes": votes,
+            "orientation_episode": t.orient_episode,
+            "orientation_online_sign": t.orient_sign or None,
+        }
+
+    def _record_orientation(self, t: Track, frame: int) -> None:
+        from .finebio_orientation import OrientRecord
+
+        contribution = t.orient_contribution if t.orient_voted_frame == frame else 0.0
+        self.orient_records.append(
+            OrientRecord(
+                track_id=t.track_id,
+                frame_index=frame,
+                episode=t.orient_episode,
+                contribution=contribution,
+                endpoint0_is_track_end0=t.tip_is_endpoint_0 is not False,
+            )
+        )
+
     def _row(
         self, t: Track, frame: int, cams: dict[str, Camera], duplicates: tuple[str, ...] = ()
     ) -> Track3D:
         confidence, abstain = self._confidence(t, cams)
         possibly = tuple(sorted(set(t.possibly_same_as) | set(duplicates)))
         extra = self._line_row_fields(t) if self._is_geometric(t) else {}
+        if self.params.line_orientation == "vote" and t.is_line:
+            extra.update(self._orientation_row_fields(t, frame))
+            self._record_orientation(t, frame)
         return Track3D(
             frame_index=frame,
             track_id=t.track_id,
@@ -5012,6 +5250,35 @@ class MultiviewTracker:
         return dict(counts)
 
 
+def orient_track_rows(rows: Sequence[Track3D], records: Sequence[Any]) -> list[Track3D]:
+    """Write each episode's peak decay-free sign back over `endpoints_cm`.
+
+    The online butt offset, hold and state are left as the pass wrote them. A peak that
+    never clears the resolve threshold leaves the row alone.
+    """
+    from .finebio_orientation import peak_signs
+
+    signs = peak_signs(list(records))
+    by_frame = {(record.track_id, record.frame_index): record for record in records}
+    oriented: list[Track3D] = []
+    for row in rows:
+        record = by_frame.get((row.track_id, row.frame_index))
+        if record is None:
+            oriented.append(row)
+            continue
+        sign = signs.get((record.track_id, record.episode), 0)
+        update: dict[str, Any] = {"orientation_retrofit_sign": sign or None, "tip_basis": "vote"}
+        if sign and row.endpoints_cm is not None:
+            update["tip_resolved"] = True
+            if (sign > 0) != record.endpoint0_is_track_end0:
+                ends = row.endpoints_cm
+                update["endpoints_cm"] = (ends[1], ends[0])
+                if row.direction is not None:
+                    update["direction"] = tuple(-float(x) for x in row.direction)
+        oriented.append(row.model_copy(update=update))
+    return oriented
+
+
 def run_tracker(
     rows: Iterable[FineBioObservation],
     fixed_cams: dict[str, Camera],
@@ -5021,6 +5288,7 @@ def run_tracker(
     reference_labels: dict[str, str] | None = None,
     rig_static: dict[str, Sequence[float]] | None = None,
     line_prior: LinePrior | None = None,
+    plunger_ends: Mapping[tuple[str, int, str], tuple[int | None, float, bool]] | None = None,
 ) -> TrackerOutput:
     """Run the tracker over `frames` (default: every frame with a row). With
     `params.containers` set, the container volumes are built from the detector rows first
@@ -5043,16 +5311,22 @@ def run_tracker(
             rig_static,
         )
     tracker = MultiviewTracker(fixed_cams, fpv_source, params, volumes, line_prior=line_prior)
+    if plunger_ends:
+        tracker.plunger_ends = dict(plunger_ends)
     for frame in frame_list:
         tracker.step(frame, by_frame.get(frame, []))
     metrics = tracker.identity_metrics(reference_labels)
     if volume_report is not None:
         metrics["extensions"]["contained"]["volume_report"] = volume_report
+    oriented = None
+    if params.line_orientation == "vote":
+        oriented = orient_track_rows(tracker.rows, tracker.orient_records)
     return TrackerOutput(
         rows=tracker.rows,
         events=tracker.events,
         residuals=tracker.residual_rows,
         metrics=metrics,
+        oriented_rows=oriented,
     )
 
 
@@ -5268,6 +5542,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Sep 29 v4 ablation: a birth pair spans the body plus its tip only with a tip "
         "box attached (v3), not always",
     )
+    ext.add_argument(
+        "--line-orientation",
+        choices=("priority", "vote"),
+        default="priority",
+        help="priority: the ordered tip bases (the default, byte-identical). vote: the "
+        "weighted cues, with tracks_oriented.jsonl written beside tracks.jsonl",
+    )
+    ext.add_argument(
+        "--plunger-ends",
+        type=Path,
+        default=None,
+        help="precomputed per-view plunger ends (default: plunger_ends.jsonl beside the "
+        "observations). The tracker does not decode video",
+    )
+    ext.add_argument(
+        "--invert-colour-cue",
+        action="store_true",
+        help="negative control: the colour cue names the other end",
+    )
     args = parser.parse_args(argv)
 
     if args.fixtures is not None:
@@ -5331,7 +5624,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         line_tail_over_hand=args.line_tail_over_hand,
         line_tip_length_rule=not args.no_line_tip_length_rule,
         line_birth_tip_slack=not args.no_line_birth_tip_slack,
+        line_orientation=args.line_orientation,
+        line_invert_colour_cue=args.invert_colour_cue,
     )
+    plunger_path = args.plunger_ends
+    if plunger_path is None and args.line_orientation == "vote":
+        beside = observations.parent / "plunger_ends.jsonl"
+        if beside.is_file():
+            plunger_path = beside
+    plunger_ends = None
+    if plunger_path is not None:
+        from .finebio_orientation import load_plunger_ends
+
+        plunger_ends = load_plunger_ends(plunger_path)
     frames = parse_frames(args.frames, {r.frame_index for r in rows})
     labels = (
         json.loads(args.reference_labels.read_text(encoding="utf-8"))
@@ -5346,9 +5651,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         params,
         labels,
         rig_static=rig_static or None,
+        plunger_ends=plunger_ends,
     )
     args.output.mkdir(parents=True, exist_ok=True)
     write_jsonl(output.rows, args.output / "tracks.jsonl")
+    if output.oriented_rows is not None:
+        write_jsonl(output.oriented_rows, args.output / "tracks_oriented.jsonl")
     write_jsonl(output.events, args.output / "events.jsonl")
     write_jsonl(output.residuals, args.output / "residuals.jsonl")
     metrics = {

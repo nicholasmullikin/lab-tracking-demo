@@ -368,3 +368,23 @@ Evidence: `runs/finebio-lines-P03_03_01-20260928/`, `runs/finebio-lines-P20_03_0
 click records [`qa/finebio-P03_03_01-tip-clicks.human-record.json`](qa/finebio-P03_03_01-tip-clicks.human-record.json)
 and [`qa/finebio-P03_03_01-tip-clicks-2.human-record.json`](qa/finebio-P03_03_01-tip-clicks-2.human-record.json).
 The archive closed before this phase, so the run READMEs are its record.
+
+## Sep 29: the orientation vote names the cone
+
+**The orientation vote passes its pre-registered rule.** I replaced the ordered tip heuristics with
+five cues: colour, taper, hand side, gravity and attached tip boxes. The clean clicks give 1 wrong
+end among 47 matches, against 14 on the third attempt and eight on the fourth. Median error falls to
+2.38 cm, under the rule’s 2.5 cm ceiling. Rest error improves to 1.26 cm and held error to 4.27 cm.
+
+The colour control names the opposite end and raises wrong ends to 9. The hand cue agrees with the
+final episode orientation on only 39% of its room 1 frames. It had been allowed to overrule the
+other evidence. The offline pass now labels each episode from its strongest accumulated evidence,
+leaving the online hold untouched.
+
+Both rooms ran with the same flags. Room 1 still has 13 online orientation flips and room 2 has 37.
+The held pipettes still split into 21 ids in room 1 and 20 in room 2. The vote solves the endpoint
+labels on the clean clicks; the identity problem remains.
+
+Evidence: `runs/finebio-lines-P03_03_01-20260928/orientation_readout.json`, both trials’
+`scoreboard-v5a/` and `runs/finebio-tips-P03_03_01-20260929/scoreboard-v5a/`. The run READMEs record
+this phase.

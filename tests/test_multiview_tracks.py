@@ -2203,6 +2203,119 @@ def test_r_the_rows_tip_side_is_a_basis_under_the_hand_track_and_over_the_hand_b
         assert np.linalg.norm(np.array(blue_track[f].endpoints_cm[0]) - a) < 1.0, f
 
 
+def test_o_vote_an_attached_tip_box_is_a_vote(rig) -> None:
+    """Vote-mode twin of test O. The tip box is one cue. The basis is `vote` and the
+    written tip is the disposable tip, on the online rows and on the retrofit."""
+    cams, _fpv = rig
+    rng = np.random.default_rng(53)
+    frames = list(range(12))
+    prior = TWO_STATE_PRIOR
+    bare, tip_len = prior.bare_for("blue_pipette"), prior.tip_for("blue_tip")
+    direction = _unit([1.0, 0.15, 0.0])
+    butt = np.array([-12.0, -8.0, -1.0])
+    body_end = butt + direction * bare
+    tip_end = body_end + direction * tip_len
+    rows = []
+    for f in frames:
+        for v in ("T1", "T2", "T4", "T5"):
+            rows.append(_axis_row(cams, v, f, butt, body_end, "blue_pipette", rng=rng))
+        for v in ("T2", "T4"):
+            rows.append(_tip_box_row(cams, v, f, body_end, tip_end, "blue_tip"))
+    out = run_tracker(
+        rows,
+        cams,
+        lambda f: None,
+        frames,
+        TrackerParams(
+            observation_source="auto",
+            line_classes=("blue_pipette",),
+            line_orientation="vote",
+        ),
+        line_prior=prior,
+    )
+    pipette = [r for r in out.rows if r.object_class == "pipette"]
+    assert pipette
+    assert any(r.tip_basis == "vote" and r.tip_resolved for r in pipette)
+    for r in pipette:
+        if r.tip_resolved:
+            assert r.tip_basis == "vote"
+            assert np.linalg.norm(np.array(r.endpoints_cm[0]) - tip_end) < 1.5
+            assert r.tip_confidence is not None and r.tip_votes is not None
+    assert out.oriented_rows is not None
+    for r in out.oriented_rows:
+        if r.object_class == "pipette" and r.tip_resolved:
+            assert np.linalg.norm(np.array(r.endpoints_cm[0]) - tip_end) < 1.5
+
+
+def test_q_vote_the_width_profile_is_a_vote(rig) -> None:
+    """Vote-mode twin of test Q. The 8-channel's wide end is the tip; the yellow pipette's
+    narrow end is. The basis is `vote`."""
+    cams, _fpv = rig
+    rng = np.random.default_rng(61)
+    frames = list(range(8))
+    length = PRIOR.length_for("8_channel_pipette")
+    a, b = _segment([5.0, 2.0, -1.0], [1.0, 0.2, 0.0], length)
+    y0, y1 = _segment([5.0, -8.0, -1.0], [1.0, 0.2, 0.0], PRIOR.length_for("yellow_pipette"))
+    rows = []
+    for f in frames:
+        for v in FIXED:
+            rows.append(_end_width_rows(cams, v, f, a, b, "8_channel_pipette", rng=rng, wide_at=b))
+            rows.append(_end_width_rows(cams, v, f, y0, y1, "yellow_pipette", rng=rng, wide_at=y1))
+    out = run_tracker(
+        rows,
+        cams,
+        lambda f: None,
+        frames,
+        TrackerParams(
+            observation_source="auto",
+            line_classes=("8_channel_pipette", "yellow_pipette"),
+            line_orientation="vote",
+        ),
+    )
+    by_class = defaultdict(dict)
+    for r in out.rows:
+        if r.object_class == "pipette" and r.tip_resolved:
+            by_class[r.observed_class][r.frame_index] = r
+    assert by_class["8_channel_pipette"] and by_class["yellow_pipette"]
+    for r in by_class["8_channel_pipette"].values():
+        assert r.tip_basis == "vote"
+        assert np.linalg.norm(np.array(r.endpoints_cm[0]) - b) < 1.5
+    for r in by_class["yellow_pipette"].values():
+        assert r.tip_basis == "vote"
+        assert np.linalg.norm(np.array(r.endpoints_cm[0]) - y0) < 1.5
+
+
+def test_r_vote_the_rows_tip_side_is_a_vote_and_the_8_channel_tail_is_not(rig) -> None:
+    """Vote-mode twin of test R. The blue pipette's tail names the tip. The 8-channel's
+    tail is not a cue, and with no widths and a flat line it stays unresolved."""
+    cams, _fpv = rig
+    rng = np.random.default_rng(67)
+    frames = list(range(8))
+    a, b = _segment([5.0, 2.0, -1.0], [1.0, 0.2, 0.0], PRIOR.length_for("blue_pipette"))
+    e0, e1 = _segment([5.0, -8.0, -1.0], [1.0, 0.2, 0.0], PRIOR.length_for("8_channel_pipette"))
+    rows = []
+    for f in frames:
+        for v in FIXED:
+            rows.append(_tail_row(cams, v, f, a, b, "blue_pipette", rng=rng, tip_at=b))
+            rows.append(_tail_row(cams, v, f, e0, e1, "8_channel_pipette", rng=rng, tip_at=e1))
+    out = run_tracker(
+        rows,
+        cams,
+        lambda f: None,
+        frames,
+        TrackerParams(
+            observation_source="auto",
+            line_classes=("blue_pipette", "8_channel_pipette"),
+            line_orientation="vote",
+        ),
+    )
+    blue = [r for r in out.rows if r.observed_class == "blue_pipette" and r.tip_resolved]
+    eight = [r for r in out.rows if r.observed_class == "8_channel_pipette"]
+    assert blue and all(r.tip_basis == "vote" for r in blue)
+    assert all(np.linalg.norm(np.array(r.endpoints_cm[0]) - b) < 1.5 for r in blue)
+    assert eight and all(r.tip_resolved is False for r in eight)
+
+
 MODES_PRIOR = replace(
     TWO_STATE_PRIOR,
     modes={"blue_pipette": (22.0, 28.0), "red_pipette": (22.0, None)},
