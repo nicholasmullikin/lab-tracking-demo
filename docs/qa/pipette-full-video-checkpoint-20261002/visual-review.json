@@ -1,0 +1,33 @@
+{
+  "scope": "Direct inspection of original images and three mask/line variants on all six cameras; sparse visual review, not dense ground truth",
+  "additional_seconds": [
+    60,
+    120,
+    180,
+    240,
+    244,
+    271,
+    283
+  ],
+  "camera_originals": 42,
+  "variant_overlays": 126,
+  "early_review": "early-six-camera-review/visual-review.json",
+  "combined_camera_originals": 78,
+  "combined_variant_overlays": 234,
+  "full_frame_context_seconds": [
+    244
+  ],
+  "actual_full_rerun_inspected_seconds": [
+    120
+  ],
+  "findings": {
+    "60": "T1 follows held shaft/body. T2 earlier/visual masks combine held/table fragments; model-top has little held support. T3 follows held body but projected extent misses. T4 is occluded; T5 is a compact glove/head patch; FPV has no useful target mask.",
+    "120": "All T1 variants mask the paper sheet. T2 follows a partial held shaft; T3 has a short body/glove axis; T4 includes a nearby yellow multichannel tool. T5/FPV select resting pipettes while the blue pipette is held. Full Rerun screenshot directly confirms incompatible objects and wrong projected geometry.",
+    "180": "T1 continues masking paper. T2 has a partial held shaft with glove spill. T3 selects a table pipette. T4 is a compact glove/plunger patch. T5/FPV select resting pipettes.",
+    "240": "T1 remains on paper. Some other cameras follow a held pipette with a yellow marking. T2 combines separated table/held fragments; T3 has a short head patch; T4 variants differ in shaft retention. T5/FPV select table pipettes. The original blue may now be resting, so holding a pipette does not identify it as the intended blue target.",
+    "244": "Near the revised variants worst consistency interval, T1 masks paper and T2/T3/T4 provide short or mixed held-object patches. Earlier loses geometry support. T5/FPV retain table pipette masks. Full originals show both held and resting pipettes; global projected lines miss their physical shafts.",
+    "271": "T1 masks paper. T2 earlier/top follow a held object but visual-best has little support. T3 follows a held shaft/body; T4 includes glove/rack patches. T5/FPV remain on table pipettes. World projections remain inconsistent.",
+    "283": "T1 still masks paper. T2/T3 select table pipettes, T4 earlier includes a yellow tube/rack region, and revised T4 selects a shaft. T5/FPV select another table body. Several pipettes are present, so cross-view identity must be verified before interpreting motion."
+  },
+  "verdict": "Prompt recipe changes alone did not solve identity drift, object switching, visibility or reacquisition. Apparent speeds cannot be interpreted as reliable physical pipette motion. Sparse inspection does not quantify the frequency of failures."
+}

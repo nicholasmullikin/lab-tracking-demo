@@ -1,0 +1,59 @@
+{
+  "project_python": "/home/nick/src/battle/.venv/bin/python",
+  "python_version": "3.12.13 (main, Mar 24 2026, 22:49:22) [Clang 22.1.1 ]",
+  "opencv": "5.0.0",
+  "packages": {
+    "numpy": "2.5.3",
+    "rerun-sdk": "0.37.1",
+    "pydantic": "2.13.5",
+    "matplotlib": "3.11.2"
+  },
+  "code_sha256": {
+    "src/battle/pipette_video_worker.py": "48a6548be904bb7dd87e2830c3a83137dbdbdf8557c8f02a6dbb292f45b563b8",
+    "src/battle/pipette_video_metrics.py": "f214dd482c97be5e1f5f40e27675f064c602fcb5ea81622f3d8156ab444a7493",
+    "src/battle/pipette_video_run.py": "f4515a1461c2b502b6ae897df2340e4ebf3180f938541b168b7a473f40256318",
+    "src/battle/pipette_video_review.py": "a5acfdb292714fafb9503324b97e9f1c608ef539041b3b2b4d237669e8972197",
+    "src/battle/pipette_video_agreement.py": "0b21f5fd2d999869af8c8234367c1bd0ee0cb0c77143dedfc869df7f878f2cc5",
+    "src/battle/pipette_line_review.py": "dc434a8dea4812a7607982c3595d62c56cfa992e2648896d891422b61a14a034"
+  },
+  "camera_config_sha256": "bbc50fcb4ad42387c274ecc11b52f75e7743b643ef8cbb51f0f78df00c77f76b",
+  "raw_videos": {
+    "T1": {
+      "path": "/home/nick/src/battle/data/raw/finebio/finebio_videos_tpv_test/finebio_videos/P03_03_01_T1.mp4",
+      "bytes": 89877938,
+      "sha256": "268f4598e91dbf5b4cb58177edb05919fe19f26b8cefff6b9c56bc92a8c31109"
+    },
+    "T2": {
+      "path": "/home/nick/src/battle/data/raw/finebio/finebio_videos_tpv_test/finebio_videos/P03_03_01_T2.mp4",
+      "bytes": 100335023,
+      "sha256": "85adb3b1c83047b266b13f0eae74f9bfa059aa10e49d95dc2382530049d13ca0"
+    },
+    "T3": {
+      "path": "/home/nick/src/battle/data/raw/finebio/finebio_videos_tpv_test/finebio_videos/P03_03_01_T3.mp4",
+      "bytes": 101806659,
+      "sha256": "a9be451b4fcb84ef8429e5e2a2b822e9f730e77c05d926c24c641cf1459baccd"
+    },
+    "T4": {
+      "path": "/home/nick/src/battle/data/raw/finebio/finebio_videos_tpv_test/finebio_videos/P03_03_01_T4.mp4",
+      "bytes": 113159522,
+      "sha256": "38496f84d4ac80444c4452a254603a262eb5b126738cd9ec672414bd83b85c44"
+    },
+    "T5": {
+      "path": "/home/nick/src/battle/data/raw/finebio/finebio_videos_tpv_test/finebio_videos/P03_03_01_T5.mp4",
+      "bytes": 87648022,
+      "sha256": "aea307f099e160f67d752a2aed9fd60f6efa6a8a5b944c7ff055f615432994ba"
+    },
+    "fpv": {
+      "path": "/home/nick/src/battle/data/raw/finebio/finebio_videos_fpv_test/finebio_videos/P03_03_01.mp4",
+      "bytes": 267987005,
+      "sha256": "571e548b2494191790c8a1e5b50852b6a9979e7340dad6c7b1de5797a24d8148"
+    }
+  },
+  "initial_code_sha256": {
+    "src/battle/pipette_video_worker.py": "48a6548be904bb7dd87e2830c3a83137dbdbdf8557c8f02a6dbb292f45b563b8",
+    "src/battle/pipette_video_metrics.py": "f214dd482c97be5e1f5f40e27675f064c602fcb5ea81622f3d8156ab444a7493",
+    "src/battle/pipette_video_run.py": "f4515a1461c2b502b6ae897df2340e4ebf3180f938541b168b7a473f40256318",
+    "src/battle/pipette_video_review.py": "77d7620779a8e1acd26b73046308e30d4e323205eef671b56ed2c5945178c6af",
+    "src/battle/pipette_video_agreement.py": "0b21f5fd2d999869af8c8234367c1bd0ee0cb0c77143dedfc869df7f878f2cc5"
+  }
+}

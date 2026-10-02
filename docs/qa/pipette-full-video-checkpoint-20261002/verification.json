@@ -1,0 +1,47 @@
+{
+  "views": {
+    "T1": {
+      "frames": 8492,
+      "unique_mask_histories": 3,
+      "mask_files": 25476,
+      "contiguous_records": true
+    },
+    "T2": {
+      "frames": 8492,
+      "unique_mask_histories": 3,
+      "mask_files": 25476,
+      "contiguous_records": true
+    },
+    "T3": {
+      "frames": 8492,
+      "unique_mask_histories": 2,
+      "mask_files": 16984,
+      "contiguous_records": true
+    },
+    "T4": {
+      "frames": 8492,
+      "unique_mask_histories": 3,
+      "mask_files": 25476,
+      "contiguous_records": true
+    },
+    "T5": {
+      "frames": 8492,
+      "unique_mask_histories": 1,
+      "mask_files": 8492,
+      "contiguous_records": true
+    },
+    "fpv": {
+      "frames": 8492,
+      "unique_mask_histories": 2,
+      "mask_files": 16984,
+      "contiguous_records": true
+    }
+  },
+  "native_camera_frames": 50952,
+  "distinct_mask_files": 118888,
+  "geometry_frames": 8492,
+  "per_second_rows": 852,
+  "last_bin_native_frames": 10,
+  "display_sheets": 568,
+  "complete": true
+}

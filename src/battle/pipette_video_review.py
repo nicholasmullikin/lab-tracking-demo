@@ -31,6 +31,25 @@ def display_frames(count: int, fps: float) -> dict[int, int]:
     return {math.ceil(second * fps): second for second in range(math.floor((count - 1) / fps) + 1)}
 
 
+def correction_counts(second: int, fps: float, count: int, schedule: dict[str, list[int]]) -> dict:
+    """Mark native intervals spanning a reviewed-mask reset, which can create apparent motion."""
+    frames = range(math.ceil(second * fps), min(count, math.ceil((second + 1) * fps)))
+    events = [frame for times in schedule.values() for frame in times]
+    unique = set(events)
+    lag = round(fps)
+    return {
+        "correction_camera_events": sum(frame in frames for frame in events),
+        "native_frames_with_correction": sum(frame in unique for frame in frames),
+        "step_native_intervals_crossing_correction": sum(
+            frame > 0 and frame in unique for frame in frames
+        ),
+        "1s_native_intervals_crossing_correction": sum(
+            frame >= lag and any(frame - lag < event <= frame for event in unique)
+            for frame in frames
+        ),
+    }
+
+
 def shared_crop(image: np.ndarray, masks: list[np.ndarray]) -> tuple[slice, slice]:
     """Keep all variants in one crop, with enough context to expose adjacent-object leakage."""
     ys, xs = np.nonzero(np.logical_or.reduce(masks))
@@ -118,6 +137,8 @@ def plots(root: Path, rows: list[dict], scope: str = "Full video") -> None:
 
 
 def export(root: Path) -> None:
+    import csv
+
     import rerun as rr
     import rerun.blueprint as b
 
@@ -125,6 +146,14 @@ def export(root: Path) -> None:
     rows = json.loads((root / "per-second.json").read_text())
     fps = config["native_fps"]
     count = config["views"]["T1"]["frame_count"]
+    schedule = config.get("corrections_by_view", {})
+    for row in rows:
+        row.update(correction_counts(row["second"], fps, count, schedule))
+    (root / "per-second.json").write_text(json.dumps(rows, indent=2, allow_nan=False) + "\n")
+    with (root / "per-second.csv").open("w", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=list(rows[0]), lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(rows)
     samples = display_frames(count, fps)
     captures = {v: cv2.VideoCapture(config["views"][v]["video"]) for v in VIEWS}
     full_video = all(int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) == count for cap in captures.values())
@@ -426,6 +455,8 @@ def export(root: Path) -> None:
         "Each rate includes valid sample counts and its median and 90th percentile. "
         "Missing measurements remain blank.",
         "Adjacent-second consistency and coverage changes are also included.",
+        "Correction-event counts mark native intervals spanning a reviewed-mask reset. "
+        "These counts include intervals without valid motion samples; rates remain unfiltered.",
         "",
         "## Interpretation",
         "",
@@ -434,8 +465,8 @@ def export(root: Path) -> None:
         "drift and calibration error.",
         "Lower residuals with fewer surviving camera observations do not establish improvement.",
         "Visual-best is a reviewed selection bound, not an automatic production policy.",
-        "The direct preliminary review is in live-review/notes.json and "
-        "live-review/notes-600.json.",
+        "Direct inspection notes, when present, are in visual-review.json and "
+        "early-six-camera-review/visual-review.json.",
         "Full-video sheets and Rerun support further direct inspection; generation "
         "alone is not a visual quality judgment.",
         "",

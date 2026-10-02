@@ -1,0 +1,20 @@
+{
+  "statistic": "Median of valid per-second median 30-frame-lag apparent rates; not ground-truth physical motion",
+  "variants": {
+    "earlier-selected": {
+      "1s_midpoint_cm_s_median": 9.799680466235078,
+      "1s_axis_deg_s_median": 18.07712518595727,
+      "1s_directed_deg_s_median": 24.466717238784028
+    },
+    "recipe-model-top": {
+      "1s_midpoint_cm_s_median": 9.164714823751869,
+      "1s_axis_deg_s_median": 13.617937213849139,
+      "1s_directed_deg_s_median": 17.959856888598132
+    },
+    "recipe-visual-best": {
+      "1s_midpoint_cm_s_median": 10.487896245567764,
+      "1s_axis_deg_s_median": 14.30547728763531,
+      "1s_directed_deg_s_median": 24.771960134452332
+    }
+  }
+}

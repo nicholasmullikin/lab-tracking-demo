@@ -1,0 +1,38 @@
+{
+  "ground_truth": false,
+  "reference_type": "reviewed approximate SAM drafts",
+  "scope": "Reference camera frames not used as tracker seeds/corrections; usable drafts only. Sparse raw 0-600 references do not assess the rest of the video.",
+  "labels_path": "/home/nick/src/battle/runs/finebio-pipette-improvement-20260930/every100-review/labels.json",
+  "summary": [
+    {
+      "variant": "earlier-selected",
+      "matched_draft_cells": 21,
+      "mean_draft_reference_iou": 0.21233648809774902,
+      "median_draft_reference_iou": 0.0,
+      "mean_paired_iou_change": 0.0,
+      "median_paired_iou_change": 0.0,
+      "zero_overlap_cells": 13,
+      "empty_prediction_cells": 0
+    },
+    {
+      "variant": "recipe-model-top",
+      "matched_draft_cells": 21,
+      "mean_draft_reference_iou": 0.19335325316855242,
+      "median_draft_reference_iou": 0.0,
+      "mean_paired_iou_change": -0.018983234929196586,
+      "median_paired_iou_change": 0.0,
+      "zero_overlap_cells": 13,
+      "empty_prediction_cells": 0
+    },
+    {
+      "variant": "recipe-visual-best",
+      "matched_draft_cells": 21,
+      "mean_draft_reference_iou": 0.20835879882856023,
+      "median_draft_reference_iou": 0.0,
+      "mean_paired_iou_change": -0.003977689269188779,
+      "median_paired_iou_change": 0.0,
+      "zero_overlap_cells": 12,
+      "empty_prediction_cells": 0
+    }
+  ]
+}

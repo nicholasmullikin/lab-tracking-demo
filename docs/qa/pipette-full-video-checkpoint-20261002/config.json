@@ -1,0 +1,521 @@
+{
+  "checkpoint": "/home/nick/src/muggled_sam/model_weights/sam3.1_multiplex.pt",
+  "muggled_checkout": "/home/nick/src/muggled_sam",
+  "max_side_length": 504,
+  "native_fps": 29.97002997002997,
+  "sampling": "every native video frame",
+  "views": {
+    "T1": {
+      "video": "/home/nick/src/battle/data/raw/finebio/finebio_videos_tpv_test/finebio_videos/P03_03_01_T1.mp4",
+      "frame_count": 8492,
+      "fps": 29.97002997002997,
+      "size_wh": [
+        1920,
+        1080
+      ],
+      "groups": {
+        "g0": {
+          "corrections": {
+            "0": {
+              "path": "/home/nick/src/battle/runs/finebio-pipette-improvement-20260930/every100-review/0/final/masks/T1-blue.png",
+              "sha256": "e21b8c18346f92d0ee6180c0f46154ea307b767580b341ee58a1a6a004119b1a",
+              "provenance": {
+                "substituted": false,
+                "selection": {
+                  "round": 5,
+                  "candidate_index": 1
+                },
+                "quality": "needs-review",
+                "review_note": "Neighbour shaft pixels remain; smaller leakage than other revisions."
+              }
+            },
+            "500": {
+              "path": "/home/nick/src/battle/runs/finebio-pipette-improvement-20260930/every100-review/500/final/masks/T1-blue.png",
+              "sha256": "9bd0413bcb0c3c65c62d5e773eeddc0007d6125ab3be2084c087a8daa1c9b196",
+              "provenance": {
+                "substituted": false,
+                "selection": {
+                  "round": 5,
+                  "candidate_index": 1
+                },
+                "quality": "needs-review",
+                "review_note": "Much less glove spill, but a cable speck and uncertain tube boundary remain."
+              }
+            }
+          },
+          "variants": [
+            "earlier-selected"
+          ]
+        },
+        "g1": {
+          "corrections": {
+            "0": {
+              "path": "/home/nick/src/battle/runs/finebio-pipette-improvement-20260930/point-prompt-study/f000-T1/results/masks/p2-body-shaft-n1_candidate-00.png",
+              "sha256": "8b37863e29cbd62d45af979cc1babcad16dfe3ecb80ccf948a085af5e624a881",
+              "provenance": {
+                "substituted": true,
+                "condition": "p2-body-shaft-n1",
+                "candidate_index": 0,
+                "selection_policy": "recipe-model-top"
+              }
+            },
+            "500": {
+              "path": "/home/nick/src/battle/runs/finebio-pipette-improvement-20260930/point-prompt-study/f500-T1/results/masks/p2-body-shaft-n1_candidate-00.png",
+              "sha256": "55424ca1398da0400ca737051b85642003b66c192f64a6effa4bd60f859815e6",
+              "provenance": {
+                "substituted": true,
+                "condition": "p2-body-shaft-n1",
+                "candidate_index": 0,
+                "selection_policy": "recipe-model-top"
+              }
+            }
+          },
+          "variants": [
+            "recipe-model-top"
+          ]
+        },
+        "g2": {
+          "corrections": {
+            "0": {
+              "path": "/home/nick/src/battle/runs/finebio-pipette-improvement-20260930/point-prompt-study/f000-T1/results/masks/p2-body-shaft-n1_candidate-00.png",
+              "sha256": "8b37863e29cbd62d45af979cc1babcad16dfe3ecb80ccf948a085af5e624a881",
+              "provenance": {
+                "substituted": true,
+                "condition": "p2-body-shaft-n1",
+                "candidate_index": 0,
+                "selection_policy": "recipe-visual-best"
+              }
+            },
+            "500": {
+              "path": "/home/nick/src/battle/runs/finebio-pipette-improvement-20260930/point-prompt-study/f500-T1/results/masks/p2-body-shaft-n1_candidate-01.png",
+              "sha256": "42d23f0e3893f0195c3dd34bac94727e949ecc6b9cbe57067dec6d5088f9e869",
+              "provenance": {
+                "substituted": true,
+                "condition": "p2-body-shaft-n1",
+                "candidate_index": 1,
+                "selection_policy": "recipe-visual-best"
+              }
+            }
+          },
+          "variants": [
+            "recipe-visual-best"
+          ]
+        }
+      },
+      "aliases": {
+        "earlier-selected": "g0",
+        "recipe-model-top": "g1",
+        "recipe-visual-best": "g2"
+      }
+    },
+    "T2": {
+      "video": "/home/nick/src/battle/data/raw/finebio/finebio_videos_tpv_test/finebio_videos/P03_03_01_T2.mp4",
+      "frame_count": 8492,
+      "fps": 29.97002997002997,
+      "size_wh": [
+        1920,
+        1080
+      ],
+      "groups": {
+        "g0": {
+          "corrections": {
+            "0": {
+              "path": "/home/nick/src/battle/runs/finebio-pipette-improvement-20260930/every100-review/0/final/masks/T2-blue.png",
+              "sha256": "0d45006274ee2cfe587e926a1b6e97d32d33a0a858f8963a9fc06568d0bd90b2",
+              "provenance": {
+                "substituted": false,
+                "selection": {
+                  "round": 1,
+                  "candidate_index": 0
+                },
+                "quality": "usable-approximate-draft",
+                "review_note": "Roughly matches visible pipette pixels; occluded parts not inferred."
+              }
+            },
+            "100": {
+              "path": "/home/nick/src/battle/runs/finebio-pipette-improvement-20260930/every100-review/100/final/masks/T2-blue.png",
+              "sha256": "4d38607d9a266048a38f2bdffc1e35dfe49168cf6532b225ab61761efac79fb4",
+              "provenance": {
+                "substituted": false,
+                "selection": {
+                  "round": 1,
+                  "candidate_index": 0
+                },
+                "quality": "needs-review",
+                "review_note": "Incomplete mask or extraneous pixels: inspect original and candidates before use as a seed."
+              }
+            }
+          },
+          "variants": [
+            "earlier-selected"
+          ]
+        },
+        "g1": {
+          "corrections": {
+            "0": {
+              "path": "/home/nick/src/battle/runs/finebio-pipette-improvement-20260930/point-prompt-study/f000-T2/results/masks/p2-body-shaft-n1_candidate-00.png",
+              "sha256": "63dc384c0b086034e1ea98193a028b5ba6547f604b117778ffbfb97ea350056a",
+              "provenance": {
+                "substituted": true,
+                "condition": "p2-body-shaft-n1",
+                "candidate_index": 0,
+                "selection_policy": "recipe-model-top"
+              }
+            },
+            "100": {
+              "path": "/home/nick/src/battle/runs/finebio-pipette-improvement-20260930/point-prompt-study/f100-T2/results/masks/p2-body-shaft-n1_candidate-03.png",
+              "sha256": "a3babb471d589b37fdf2821de9ad5f90895f4d4f0fe0ce18e6cd8714ba0c7a53",
+              "provenance": {
+                "substituted": true,
+                "condition": "p2-body-shaft-n1",
+                "candidate_index": 3,
+                "selection_policy": "recipe-model-top"
+              }
+            }
+          },
+          "variants": [
+            "recipe-model-top"
+          ]
+        },
+        "g2": {
+          "corrections": {
+            "0": {
+              "path": "/home/nick/src/battle/runs/finebio-pipette-improvement-20260930/point-prompt-study/f000-T2/results/masks/p2-body-shaft-n1_candidate-00.png",
+              "sha256": "63dc384c0b086034e1ea98193a028b5ba6547f604b117778ffbfb97ea350056a",
+              "provenance": {
+                "substituted": true,
+                "condition": "p2-body-shaft-n1",
+                "candidate_index": 0,
+                "selection_policy": "recipe-visual-best"
+              }
+            },
+            "100": {
+              "path": "/home/nick/src/battle/runs/finebio-pipette-improvement-20260930/point-prompt-study/f100-T2/results/masks/p2-body-shaft-n1_candidate-01.png",
+              "sha256": "fad6c48221d8b44c6f0cb831cc35c2e41eac7c77aabed89726645608c7844899",
+              "provenance": {
+                "substituted": true,
+                "condition": "p2-body-shaft-n1",
+                "candidate_index": 1,
+                "selection_policy": "recipe-visual-best"
+              }
+            }
+          },
+          "variants": [
+            "recipe-visual-best"
+          ]
+        }
+      },
+      "aliases": {
+        "earlier-selected": "g0",
+        "recipe-model-top": "g1",
+        "recipe-visual-best": "g2"
+      }
+    },
+    "T3": {
+      "video": "/home/nick/src/battle/data/raw/finebio/finebio_videos_tpv_test/finebio_videos/P03_03_01_T3.mp4",
+      "frame_count": 8492,
+      "fps": 29.97002997002997,
+      "size_wh": [
+        1920,
+        1080
+      ],
+      "groups": {
+        "g0": {
+          "corrections": {
+            "0": {
+              "path": "/home/nick/src/battle/runs/finebio-pipette-improvement-20260930/every100-review/0/final/masks/T3-blue.png",
+              "sha256": "ea9c8a5c5e2ba42963515f58927bacbdd4ad6f5ed4678dd8f88f9f8ed3525c03",
+              "provenance": {
+                "substituted": false,
+                "selection": {
+                  "round": 1,
+                  "candidate_index": 0
+                },
+                "quality": "usable-approximate-draft",
+                "review_note": "Roughly matches visible pipette pixels; occluded parts not inferred."
+              }
+            },
+            "300": {
+              "path": "/home/nick/src/battle/runs/finebio-pipette-improvement-20260930/every100-review/300/final/masks/T3-blue.png",
+              "sha256": "561e5f87b8092ea9cf03e9ff0bafc3ad9304f1ada7cfc4b33a36e5c1c96be9f7",
+              "provenance": {
+                "substituted": false,
+                "selection": {
+                  "round": 5,
+                  "candidate_index": 1
+                },
+                "quality": "needs-review",
+                "review_note": "Large background spill removed; distal support-tube separation remains uncertain."
+              }
+            }
+          },
+          "variants": [
+            "earlier-selected"
+          ]
+        },
+        "g1": {
+          "corrections": {
+            "0": {
+              "path": "/home/nick/src/battle/runs/finebio-pipette-improvement-20260930/every100-review/0/final/masks/T3-blue.png",
+              "sha256": "ea9c8a5c5e2ba42963515f58927bacbdd4ad6f5ed4678dd8f88f9f8ed3525c03",
+              "provenance": {
+                "substituted": false,
+                "selection": {
+                  "round": 1,
+                  "candidate_index": 0
+                },
+                "quality": "usable-approximate-draft",
+                "review_note": "Roughly matches visible pipette pixels; occluded parts not inferred."
+              }
+            },
+            "300": {
+              "path": "/home/nick/src/battle/runs/finebio-pipette-improvement-20260930/point-prompt-study/f300-T3/results/masks/p2-body-shaft-n1_candidate-01.png",
+              "sha256": "2533f7d4407c79009884bcc9c98e0d005caea2325959d8c4fbdf980b6d26d531",
+              "provenance": {
+                "substituted": true,
+                "condition": "p2-body-shaft-n1",
+                "candidate_index": 1,
+                "selection_policy": "recipe-model-top"
+              }
+            }
+          },
+          "variants": [
+            "recipe-model-top",
+            "recipe-visual-best"
+          ]
+        }
+      },
+      "aliases": {
+        "earlier-selected": "g0",
+        "recipe-model-top": "g1",
+        "recipe-visual-best": "g1"
+      }
+    },
+    "T4": {
+      "video": "/home/nick/src/battle/data/raw/finebio/finebio_videos_tpv_test/finebio_videos/P03_03_01_T4.mp4",
+      "frame_count": 8492,
+      "fps": 29.97002997002997,
+      "size_wh": [
+        1920,
+        1080
+      ],
+      "groups": {
+        "g0": {
+          "corrections": {
+            "0": {
+              "path": "/home/nick/src/battle/runs/finebio-pipette-improvement-20260930/every100-review/0/final/masks/T4-blue.png",
+              "sha256": "19863e293505b081a1bc66eefa443dce4fa8f322c3649993b8e41ce8bca2a699",
+              "provenance": {
+                "substituted": false,
+                "selection": {
+                  "round": 1,
+                  "candidate_index": 0
+                },
+                "quality": "usable-approximate-draft",
+                "review_note": "Roughly matches visible pipette pixels; occluded parts not inferred."
+              }
+            },
+            "200": {
+              "path": "/home/nick/src/battle/runs/finebio-pipette-improvement-20260930/every100-review/200/final/masks/T4-blue.png",
+              "sha256": "355b986eb32a6548c86c9300c9316df8b668586ae07d9071f35457a1c8d35fd7",
+              "provenance": {
+                "substituted": false,
+                "selection": {
+                  "round": 1,
+                  "candidate_index": 1
+                },
+                "quality": "needs-review",
+                "review_note": "Incomplete mask or extraneous pixels: inspect original and candidates before use as a seed."
+              }
+            }
+          },
+          "variants": [
+            "earlier-selected"
+          ]
+        },
+        "g1": {
+          "corrections": {
+            "0": {
+              "path": "/home/nick/src/battle/runs/finebio-pipette-improvement-20260930/every100-review/0/final/masks/T4-blue.png",
+              "sha256": "19863e293505b081a1bc66eefa443dce4fa8f322c3649993b8e41ce8bca2a699",
+              "provenance": {
+                "substituted": false,
+                "selection": {
+                  "round": 1,
+                  "candidate_index": 0
+                },
+                "quality": "usable-approximate-draft",
+                "review_note": "Roughly matches visible pipette pixels; occluded parts not inferred."
+              }
+            },
+            "200": {
+              "path": "/home/nick/src/battle/runs/finebio-pipette-improvement-20260930/point-prompt-study/f200-T4/results/masks/p2-body-shaft-n1_candidate-03.png",
+              "sha256": "84c0d31a9db2a73ec6031e257adc5b8c1a92806d5db3a0e7d06d2d883b3f8197",
+              "provenance": {
+                "substituted": true,
+                "condition": "p2-body-shaft-n1",
+                "candidate_index": 3,
+                "selection_policy": "recipe-model-top"
+              }
+            }
+          },
+          "variants": [
+            "recipe-model-top"
+          ]
+        },
+        "g2": {
+          "corrections": {
+            "0": {
+              "path": "/home/nick/src/battle/runs/finebio-pipette-improvement-20260930/every100-review/0/final/masks/T4-blue.png",
+              "sha256": "19863e293505b081a1bc66eefa443dce4fa8f322c3649993b8e41ce8bca2a699",
+              "provenance": {
+                "substituted": false,
+                "selection": {
+                  "round": 1,
+                  "candidate_index": 0
+                },
+                "quality": "usable-approximate-draft",
+                "review_note": "Roughly matches visible pipette pixels; occluded parts not inferred."
+              }
+            },
+            "200": {
+              "path": "/home/nick/src/battle/runs/finebio-pipette-improvement-20260930/point-prompt-study/f200-T4/results/masks/p2-body-shaft-n1_candidate-00.png",
+              "sha256": "b4bb178cc18479da84af6aaa3e55b141a1269a51356577200873998e8622788e",
+              "provenance": {
+                "substituted": true,
+                "condition": "p2-body-shaft-n1",
+                "candidate_index": 0,
+                "selection_policy": "recipe-visual-best"
+              }
+            }
+          },
+          "variants": [
+            "recipe-visual-best"
+          ]
+        }
+      },
+      "aliases": {
+        "earlier-selected": "g0",
+        "recipe-model-top": "g1",
+        "recipe-visual-best": "g2"
+      }
+    },
+    "T5": {
+      "video": "/home/nick/src/battle/data/raw/finebio/finebio_videos_tpv_test/finebio_videos/P03_03_01_T5.mp4",
+      "frame_count": 8492,
+      "fps": 29.97002997002997,
+      "size_wh": [
+        1920,
+        1080
+      ],
+      "groups": {
+        "g0": {
+          "corrections": {
+            "0": {
+              "path": "/home/nick/src/battle/runs/finebio-pipette-improvement-20260930/every100-review/0/final/masks/T5-blue.png",
+              "sha256": "af828f97a29ac68231640f748de15cda84d989e28814d27a2dff0be62adb6502",
+              "provenance": {
+                "substituted": false,
+                "selection": {
+                  "round": 1,
+                  "candidate_index": 0
+                },
+                "quality": "usable-approximate-draft",
+                "review_note": "Roughly matches visible pipette pixels; occluded parts not inferred."
+              }
+            }
+          },
+          "variants": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ]
+        }
+      },
+      "aliases": {
+        "earlier-selected": "g0",
+        "recipe-model-top": "g0",
+        "recipe-visual-best": "g0"
+      }
+    },
+    "fpv": {
+      "video": "/home/nick/src/battle/data/raw/finebio/finebio_videos_fpv_test/finebio_videos/P03_03_01.mp4",
+      "frame_count": 8492,
+      "fps": 29.97002997002997,
+      "size_wh": [
+        1920,
+        1440
+      ],
+      "groups": {
+        "g0": {
+          "corrections": {
+            "0": {
+              "path": "/home/nick/src/battle/runs/finebio-pipette-improvement-20260930/every100-review/0/final/masks/fpv-blue.png",
+              "sha256": "68e55ba8a28b2238d84176689fb0b106b306b9b4a6183474c7564c05f4a31675",
+              "provenance": {
+                "substituted": false,
+                "selection": {
+                  "round": 3,
+                  "candidate_index": 3
+                },
+                "quality": "usable-approximate-draft",
+                "review_note": "Recovers the visible body, cap and shaft; minor boundary speckles."
+              }
+            }
+          },
+          "variants": [
+            "earlier-selected"
+          ]
+        },
+        "g1": {
+          "corrections": {
+            "0": {
+              "path": "/home/nick/src/battle/runs/finebio-pipette-improvement-20260930/point-prompt-study/f000-fpv/results/masks/p2-body-shaft-n1_candidate-00.png",
+              "sha256": "a082a38d5b259f4d7a940098d585b1082288b93f3d761380014ef7d7a63fbe08",
+              "provenance": {
+                "substituted": true,
+                "condition": "p2-body-shaft-n1",
+                "candidate_index": 0,
+                "selection_policy": "recipe-model-top"
+              }
+            }
+          },
+          "variants": [
+            "recipe-model-top",
+            "recipe-visual-best"
+          ]
+        }
+      },
+      "aliases": {
+        "earlier-selected": "g0",
+        "recipe-model-top": "g1",
+        "recipe-visual-best": "g1"
+      }
+    }
+  },
+  "correction_policy": "All views seeded at raw frame 0; matched control/study corrections only at the seven studied camera images; unassisted propagation thereafter.",
+  "corrections_by_view": {
+    "T1": [
+      0,
+      500
+    ],
+    "T2": [
+      0,
+      100
+    ],
+    "T3": [
+      0,
+      300
+    ],
+    "T4": [
+      0,
+      200
+    ],
+    "T5": [
+      0
+    ],
+    "fpv": [
+      0
+    ]
+  }
+}

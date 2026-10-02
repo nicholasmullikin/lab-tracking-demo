@@ -149,8 +149,10 @@ def main() -> None:
         for future in obs:
             future.result()
     aggregate(root)
+    from .pipette_video_agreement import evaluate
     from .pipette_video_review import export
 
+    evaluate(root, args.base / "every100-review/labels.json")
     export(root)
 
 

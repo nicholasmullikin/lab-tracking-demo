@@ -116,6 +116,34 @@ def cameras_at_raw_frame(rig: Any, frame: int, sizes: dict) -> dict:
     return cams
 
 
+def clip_image_segment(points: list | np.ndarray, size_wh: tuple[int, int]) -> np.ndarray | None:
+    """Clip in floating point before passing large, possibly off-image projections to OpenCV."""
+    points = np.asarray(points, dtype=float).reshape(2, 2)
+    if not np.isfinite(points).all():
+        return None
+    if float(np.max(np.abs(points))) * np.finfo(float).eps > 0.5:
+        return None  # Pixel intersections cannot be resolved reliably at this precision.
+    delta = points[1] - points[0]
+    if not np.isfinite(delta).all():
+        return None
+    low, high = 0.0, 1.0
+    limits = np.array(size_wh, dtype=float) - 1
+    for axis, maximum in enumerate(limits):
+        if delta[axis] == 0:
+            if not 0 <= points[0, axis] <= maximum:
+                return None
+            continue
+        a, b = (0 - points[0, axis]) / delta[axis], (maximum - points[0, axis]) / delta[axis]
+        low, high = max(low, min(a, b)), min(high, max(a, b))
+        if low > high:
+            return None
+    clipped = points[0] + np.array([low, high])[:, None] * delta
+    # Reject catastrophic cancellation instead of drawing a false border intersection.
+    if np.any(clipped < -0.5) or np.any(clipped > limits + 0.5):
+        return None
+    return np.clip(clipped, 0, limits)
+
+
 def draw_overlay(
     image: np.ndarray, mask: np.ndarray, row: dict, projected: list | None, tip_end: int | None
 ) -> np.ndarray:
@@ -129,12 +157,19 @@ def draw_overlay(
             cv2.circle(out, tuple(point), 5, (0, 220, 255), -1)
             cv2.putText(out, f"L{i}", tuple(point + 7), 0, 0.5, (0, 220, 255), 1)
     if projected is not None:
-        p = np.rint(projected).astype(int)
+        projected = np.asarray(projected, dtype=float)
+        size = (out.shape[1], out.shape[0])
+        clipped = clip_image_segment(projected, size)
+        if clipped is None:
+            return out
+        p = np.rint(clipped).astype(int)
         cv2.line(out, tuple(p[0]), tuple(p[1]), (60, 255, 60), 3, cv2.LINE_AA)
-        for i, point in enumerate(p):
+        inside = np.all((projected >= 0) & (projected <= np.array(size) - 1), axis=1)
+        for i in np.flatnonzero(inside):
+            point = np.rint(projected[i]).astype(int)
             cv2.circle(out, tuple(point), 7, (255, 255, 255), 2)
             cv2.putText(out, f"W{i}", tuple(point + 9), 0, 0.6, (255, 255, 255), 2)
-        if tip_end is not None:
+        if tip_end is not None and inside[tip_end]:
             cv2.arrowedLine(
                 out,
                 tuple(p[1 - tip_end]),

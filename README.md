@@ -15,7 +15,36 @@ numbers are in [`docs/results.md`](docs/results.md), the commands are in
 The six cameras on the bench and the tracker's top-down view of them. The highlighted micro tube
 keeps the same identity while the centrifuge lid is closed over it.
 
-## Current checkpoint
+## Full-video pipette result
+
+**The revised prompts do not solve pipette drift over the full video.** I ran every native frame
+from raw 0 to 8491 in all six cameras. The recording lasts 283.35 seconds.
+The comparison uses one blue-pipette mask history per variant and camera, with the same correction times.
+
+| Mask set | Median paired consistency change, px | Measured against |
+|---|---:|---|
+| Recipe's model-top candidates | +0.054 | Earlier masks on 29,640 matching native camera/frame residual cells; positive means worse |
+| Recipe's visually selected candidates | +0.024 | Earlier masks on 30,924 matching cells |
+
+I directly compared originals and masks across the recording. The masks switch between pipettes,
+include gloves and racks, and eventually follow a paper sheet in T1. Geometry availability does
+not establish correct identity. The revised prompts leave the median paired error essentially unchanged.
+
+The [per-second CSV](runs/finebio-pipette-improvement-20260930/full-video-line-comparison/per-second.csv)
+measures apparent midpoint translation in cm/s, axis rotation in degrees/s, consistency and coverage.
+It includes valid sample counts, missing values and intervals that cross mask corrections.
+Drift and changing visible extent make these rates unreliable as physical pipette speeds.
+
+Open the [whole-video review](runs/finebio-pipette-improvement-20260930/full-video-line-comparison/review.html)
+or [per-second plot](runs/finebio-pipette-improvement-20260930/full-video-line-comparison/per-second.png).
+Inference uses every native frame; the visual export samples once per second.
+The next improvement should address identity and reacquisition across views.
+Production tracking remains unchanged.
+
+Evidence: `runs/finebio-pipette-improvement-20260930/full-video-line-comparison/` and
+[saved measurements and inspection notes](docs/qa/pipette-full-video-checkpoint-20261002/README.md).
+
+## Prompt study checkpoint
 
 **A good box, two positive points and one targeted negative gave the strongest masks in the
 latest pipette study.** Put the positives inside the visible body and exposed shaft. Put the

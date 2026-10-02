@@ -57,6 +57,25 @@ def test_display_does_not_invent_a_frame_at_the_duration_boundary():
     assert max(full) == 8482
 
 
+def test_correction_flags_cover_the_lagged_window_and_ignore_seed_as_a_step():
+    from battle.pipette_video_review import correction_counts
+
+    fps = 30000 / 1001
+    schedule = {"T1": [0], "T2": [0, 100]}
+    initial = correction_counts(0, fps, 8492, schedule)
+    assert initial["correction_camera_events"] == 2
+    assert initial["native_frames_with_correction"] == 1
+    assert initial["step_native_intervals_crossing_correction"] == 0
+    assert initial["1s_native_intervals_crossing_correction"] == 0
+    during = correction_counts(3, fps, 8492, schedule)
+    after = correction_counts(4, fps, 8492, schedule)
+    assert during["correction_camera_events"] == 1
+    assert during["1s_native_intervals_crossing_correction"] == 20
+    assert after["correction_camera_events"] == 0
+    assert after["1s_native_intervals_crossing_correction"] == 10
+    assert correction_counts(5, fps, 8492, schedule)["1s_native_intervals_crossing_correction"] == 0
+
+
 def test_residual_comparison_matches_views_and_preserves_unavailable_cells():
     def row(view, value):
         return {"view": view, "fitted": value is not None, "perpendicular_px": value}

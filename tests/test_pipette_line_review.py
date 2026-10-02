@@ -11,10 +11,31 @@ from battle.pipette_line_review import (
     CONDITION,
     cameras_at_raw_frame,
     choose_mask,
+    clip_image_segment,
     comparison_summary,
     conservative_direction,
+    draw_overlay,
     endpoint_correspondence,
 )
+
+
+def test_extreme_projection_is_clipped_without_moving_endpoint_labels_to_the_border():
+    projected = np.array([[-1e12, 50], [1e12, 50]])
+    np.testing.assert_allclose(
+        clip_image_segment(projected, (100, 100)), [[0, 50], [99, 50]], atol=0.01
+    )
+    original = np.zeros((100, 100, 3), np.uint8)
+    result = draw_overlay(
+        original, np.zeros((100, 100), bool), {"axis": {"axis_px": None}}, projected, 1
+    )
+    np.testing.assert_array_equal(result[50, 50], [60, 255, 60])
+    assert not np.any(np.all(result == 255, axis=2))  # No false W0/W1 markers at clip boundaries.
+    np.testing.assert_array_equal(projected, [[-1e12, 50], [1e12, 50]])
+
+
+def test_off_image_and_nonfinite_segments_do_not_become_false_overlays():
+    assert clip_image_segment([[1e12, 1e12], [2e12, 2e12]], (100, 100)) is None
+    assert clip_image_segment([[None, 20], [10, 20]], (100, 100)) is None
 
 
 def test_substitutions_use_correct_selection_policy_and_preserve_other_views():
