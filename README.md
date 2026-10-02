@@ -2,10 +2,12 @@
 A 3D object tracker for a wet-lab bench made with SAM3, six cameras and no training
 
 This is a method lab that went from SAM3 smoke tests on a toy car assembly (Assembly101) to a
-six-camera 3D object tracker on a wet-lab bench (FineBio) during its first 22 days. The current
-work focuses on pipette masks and initialization. I trained nothing and annotated no ground
-truth, so every number on this page says what it was measured against. This page is the
-five-minute version. The day by day is in [`docs/story.md`](docs/story.md), the
+six-camera 3D object tracker on a wet-lab bench (FineBio) over the past few weeks. The current
+work focuses on multiplex pipette tracking and shaft orientation. I trained nothing and
+annotated no ground truth. The bench pipeline uses the FineBio authors' pretrained DINO
+detector to propose object class labels and bounding boxes that prompt SAM3. Those labels
+are model predictions; every number on this page says what it was measured against.
+This page is the five-minute version. The day by day is in [`docs/story.md`](docs/story.md), the
 numbers are in [`docs/results.md`](docs/results.md), the commands are in
 [`docs/pipeline.md`](docs/pipeline.md) and the lab's shorthand is translated in the
 [glossary](docs/writing-style.md#glossary).
@@ -15,99 +17,70 @@ numbers are in [`docs/results.md`](docs/results.md), the commands are in
 The six cameras on the bench and the tracker's top-down view of them. The highlighted micro tube
 keeps the same identity while the centrifuge lid is closed over it.
 
-## Full-video pipette result
+## Pipette orientation progress
 
-**The revised prompts do not solve pipette drift over the full video.** I ran every native frame
-from raw 0 to 8491 in all six cameras. The recording lasts 283.35 seconds.
-The comparison uses one blue-pipette mask history per variant and camera, with the same correction times.
+**Four pipettes now run together in SAM3.1 memory across all six cameras, with reviewed
+10- and 30-second recordings and mask propagation completed through 150 seconds.**
+The recordings show labeled masks and fitted 2D shaft axes for blue, yellow, red and
+multichannel pipettes, alongside blue-only 3D position, shaft orientation and dispensing-end
+estimates. Missing axes and unresolved directions remain visible as gaps.
+This multiplex experiment starts from visually reviewed box/point prompts and frozen seed
+masks, with the four pipette labels assigned to fixed slots.
 
-| Mask set | Median paired consistency change, px | Measured against |
-|---|---:|---|
-| Recipe's model-top candidates | +0.054 | Earlier masks on 29,640 matching native camera/frame residual cells; positive means worse |
-| Recipe's visually selected candidates | +0.024 | Earlier masks on 30,924 matching cells |
+The [story](docs/story.md#sep-30-to-oct-1-better-prompts-do-not-guarantee-better-shafts)
+connects the prompt study, shaft reconstruction, full-video drift and recovered multiplex experiment.
+The [orientation review](docs/review-guide-pipette-orientation.md) is the five-minute route
+through the camera evidence and saved Rerun demo.
 
-I directly compared originals and masks across the recording. The masks switch between pipettes,
-include gloves and racks, and eventually follow a paper sheet in T1. Geometry availability does
-not establish correct identity. The revised prompts leave the median paired error essentially unchanged.
+![Blue follows pickup; contamination still affects the fitted shaft](media/story/2026-10-02-pipette-multiplex-pickup.gif)
 
-The [per-second CSV](runs/finebio-pipette-improvement-20260930/full-video-line-comparison/per-second.csv)
-measures apparent midpoint translation in cm/s, axis rotation in degrees/s, consistency and coverage.
-It includes valid sample counts, missing values and intervals that cross mask corrections.
-Drift and changing visible extent make these rates unreliable as physical pipette speeds.
+Blue follows pickup in the first reviewed ten seconds while the other pipettes stay at rest.
+The demo shows blue's 3D shaft and dispensing-end estimate alongside masks and 2D axes for
+all four pipettes. At raw 200, glove leakage corrupts the fit and direction abstains.
+Later projections can overshoot or misalign. The saved demo freezes raw 0–899, the reviewed
+30-second baseline. It exposes identity drift in T1 and forearm contamination in T4.
 
-Open the [whole-video review](runs/finebio-pipette-improvement-20260930/full-video-line-comparison/review.html)
-or [per-second plot](runs/finebio-pipette-improvement-20260930/full-video-line-comparison/per-second.png).
-Inference uses every native frame; the visual export samples once per second.
-The next improvement should address identity and reacquisition across views.
+Latest completed milestones (October 2):
+
+| Milestone | Verified result |
+|---|---|
+| Restore the saved multiplex run | The first 30 frames reproduce all 240 saved masks pixel for pixel, with unchanged slot IDs |
+| Initialize all four pipettes | All 24 raw-frame-0 seeds directly reviewed and frozen; blue stays in slot 0 |
+| Review the first 30 seconds | Three native-rate 10-second Rerun clips verified and inspected at both ends, with all-pipette 2D axes and blue-only 3D geometry |
+| Extend memory tracking | All six workers completed 4,496 native frames (150 seconds) from raw 0 without later corrective prompts; all 24 masks at the raw-899 resume boundary are unchanged |
+
+Geometry analysis for the 150-second stage is in progress; its longer-term identity and
+orientation quality have not yet been visually reviewed. The full-video extension, isolated
+mask-policy comparisons and temporal orientation comparison remain pending. The
+[checkpoint record](docs/qa/pipette-multiplex-20261002/README.md) links the configurations,
+seed reviews and short-stage evidence. These milestones establish a working, reproducible
+review pipeline; the visual judgments are review evidence, not independent ground truth.
+
+Three recent experiments explain why this is still an orientation and identity problem:
+
+| Experiment | Result | Measured against |
+|---|---|---|
+| Prompt study | Body/shaft positives and one targeted negative give 6 mostly correct model-top masks out of 7; one body point gives 3 | One AI reviewer's visual grades on seven correlated views |
+| Sparse line comparison | Earlier masks: 6.62 px; model-top recipe: 6.99 px; visual-best recipe: 5.98 px | Median dropped-camera residual on 39 matched cells; seven images replaced |
+| Full native video | Model-top median paired change +0.054 px; visual-best +0.024 px | Earlier residuals on 29,640 and 30,924 matching cells; positive means worse |
+
+Better still-image masks did not establish better tracking. The earlier full-video masks switch
+between pipettes and pick up gloves, racks and paper. Fixed slots, camera consistency and
+resolved-direction counts do not establish correct physical identity or tip accuracy.
+The earlier [temporal orientation vote](docs/results.md#orientation-vote) passed its separate
+rule against manual endpoint clicks; the latest multiplex color/taper experiment uses a different protocol.
 Production tracking remains unchanged.
 
-Evidence: `runs/finebio-pipette-improvement-20260930/full-video-line-comparison/` and
-[saved measurements and inspection notes](docs/qa/pipette-full-video-checkpoint-20261002/README.md).
+The [results page](docs/results.md#pipette-prompt-and-line-study) keeps the measurements and
+comparison definitions. The [pipeline](docs/pipeline.md#pipette-studies-and-saved-orientation-demo)
+keeps export, restore and serving commands. Earlier interactive mask and line studies remain
+linked from their [checkpoints](docs/README.md#checkpoints).
 
-## Prompt study checkpoint
-
-**A good box, two positive points and one targeted negative gave the strongest masks in the
-latest pipette study.** Put the positives inside the visible body and exposed shaft. Put the
-negative inside a glove, rack or neighbouring object that the mask wrongly includes. Start with
-fewer clicks and stop when the mask is good.
-
-The study compared 19 prompt recipes on seven views of one blue pipette. Each recipe was decoded
-independently, with all points supplied together and no previous-mask feedback. All 532 candidate
-masks were inspected against the original images.
-
-| Recipe, with a box | Mostly correct masks chosen by SAM3 / seven views | Measured against |
-|---|---:|---|
-| One body positive | 3 | One AI reviewer's visual grade of at least four out of five |
-| Body and shaft positives, one targeted negative | 6 | Same visual rubric |
-| Five positives | 2 | Same visual rubric |
-| Eight positives | 2 | Same visual rubric |
-
-SAM3 sometimes ranked a glove-contaminated mask above a cleaner candidate. More clicks did not
-consistently help. These are exploratory visual judgments on correlated views, not ground-truth
-IoU or tracking accuracy. Rack leakage and support-tube contamination remain unresolved.
-
-The earlier initialization review sampled raw frames 0 through 600 every 100 in all six cameras.
-After five passes, 26 of 42 masks were approximate usable drafts; 16 still need review. That
-review uses a different rubric from the point study. Production tracking still starts at raw
-frame 600, and the study masks have not been adopted.
-
-Open the [interactive point comparison](runs/finebio-pipette-improvement-20260930/point-prompt-study/review.html)
-on this machine. The [saved study report](docs/qa/pipette-checkpoint-20261001/point-prompt-study/README.md)
-and [checkpoint notes](docs/qa/pipette-checkpoint-20261001/README.md) preserve the findings,
-label selections, dependencies and steps to resume. The next experiment is validation on unseen
-views, followed by sequential corrective clicks with previous-mask feedback.
-
-Evidence: `runs/finebio-pipette-improvement-20260930/point-prompt-study/` and
-`every100-review/`; [checkpoint](docs/qa/pipette-checkpoint-20261001/README.md), saved Oct 1 2026
-in local commit `dbbad8a`. A 1.25 GB local archive preserves the reviews, masks, GIFs and Rerun
-files. All 3,365 artifact files were verified against their hashes. The archive is on this
-machine, and the checkpoint commit has not been pushed.
-
-## Pipette line comparison
-
-**The new model-top masks do not improve 3D line consistency on the sampled frames.** The
-comparison reconstructs the blue pipette at seven times across all six cameras. Each recipe
-variant replaces only the seven images from the prompt study; the other masks stay fixed.
-
-| Mask set | Median residual, px | Measured against |
-|---|---:|---|
-| Earlier selected masks | 6.62 | 39 matched camera/time cells, each camera's mask axis against a line fitted without that camera |
-| Recipe's model-top candidates | 6.99 | Same cells and comparison |
-| Recipe's visually selected candidates | 5.98 | Same cells; optimistic manual candidate selection |
-
-All three sets produce seven 3D fits. The resting shaft looks strong. At frame 200, the
-model-top T4 mask tilts the axis toward the rack and worsens the fit. Held views still have
-endpoint overshoot and tube contamination. Colour/taper cues resolve direction at five times
-and abstain at frames 100 and 600. These consistency residuals are not ground-truth accuracy.
-
-Open the [camera and 3D comparison](runs/finebio-pipette-improvement-20260930/line-comparison/review.html)
-or the [saved line-review checkpoint](docs/qa/pipette-line-checkpoint-20261001/README.md).
-The next step is candidate selection based on shaft geometry, followed by targeted mask
-corrections and validation on unseen frames. Production tracking remains unchanged.
-
-Evidence: `runs/finebio-pipette-improvement-20260930/line-comparison/`, with explicit notes for
-all 42 camera images, 126 reviewed overlays and a separate Rerun recording. Rebuild with
-`.venv/bin/python -m battle.pipette_line_review` after restoring the saved input masks.
+Evidence: `runs/finebio-pipette-improvement-20260930/` and `runs/pipette-multiplex-20261002/`;
+[mask](docs/qa/pipette-checkpoint-20261001/README.md),
+[line](docs/qa/pipette-line-checkpoint-20261001/README.md),
+[full-video](docs/qa/pipette-full-video-checkpoint-20261002/README.md) and
+[multiplex](docs/qa/pipette-multiplex-20261002/README.md) checkpoints.
 
 ## What it does
 
@@ -143,8 +116,7 @@ The five numbers that matter, and what each one was measured against:
 ## Day by day
 
 Each line is the failure that caused the next change and links to that day in
-[`docs/story.md`](docs/story.md). This table covers the first 22 days. Later work is summarized
-in the checkpoint above. The only success clip is the one at the top. At gate 1 I accepted or rejected each seed box. At gate 2
+[`docs/story.md`](docs/story.md). This table connects the early tracker work to the latest pipette studies. At gate 1 I accepted or rejected each seed box. At gate 2
 I picked the right mask on a sample of frames.
 
 | Day | What went wrong, and what it forced | Clip |
@@ -168,8 +140,16 @@ I picked the right mask on a sample of frames.
 | [20](docs/story.md#sep-27-gate-2-rejects-30-masks-and-the-redo-holds) | Gate 2 rejected 30 of 337 masks, almost all pipettes in a hand. The label-free gap shrank from 20 percentage points to 5 | [still](docs/story.md#sep-27-gate-2-rejects-30-masks-and-the-redo-holds) |
 | [21 to 22](docs/story.md#sep-28-to-29-pipettes-as-3d-lines-and-where-it-stopped) | Pipettes tracked as 3D lines fit the shaft but cut the held pipette's ids 2.8x, not 5x, and named the wrong end where the hand covered it. Not adopted | <a href="docs/story.md#sep-28-to-29-pipettes-as-3d-lines-and-where-it-stopped"><img src="media/story/2026-09-28-pipette-lines.gif" width="140" alt="The line fits the shaft and its tip flips while the hand covers it"></a> |
 | [22](docs/story.md#sep-29-reprojection-prompts) | The orientation vote names the cone. Reprojection masks still pick gloves and other pipettes, and the second pass is not adopted | [readout](docs/results.md#reprojection-prompts) |
+| [23 to 24](docs/story.md#sep-30-to-oct-1-better-prompts-do-not-guarantee-better-shafts) | More clicks did not reliably improve masks, and the model-top recipe worsened sampled shaft consistency | [comparison](media/story/2026-10-01-pipette-prompt-and-axis.png) |
+| [25](docs/story.md#oct-2-the-full-video-exposes-identity-drift) | Native propagation drifted onto paper and other tools despite available geometry | [drift](media/story/2026-10-02-pipette-video-drift.gif) |
+| [25](docs/story.md#oct-2-multiplex-slots-restore-the-orientation-experiment) | Four slots follow the initial pickup; glove leakage still damages blue orientation | [pickup](media/story/2026-10-02-pipette-multiplex-pickup.gif) |
 
 ## Recordings
+
+Start with the [saved pipette orientation demo](docs/review-guide-pipette-orientation.md).
+It includes a compact overview, native detail clips and private Tailscale HTTPS serving.
+The older bench-tracker recordings below preserve the two-room comparison.
+
 
 Three recordings are worth opening. Each one has a World, a Cameras and an Evidence preset next to
 it. They live under `runs/`, which is not committed, so they have to be rebuilt first with the
