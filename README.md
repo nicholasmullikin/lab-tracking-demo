@@ -2,9 +2,10 @@
 A 3D object tracker for a wet-lab bench made with SAM3, six cameras and no training
 
 This is a method lab that went from SAM3 smoke tests on a toy car assembly (Assembly101) to a
-six-camera 3D object tracker on a wet-lab bench (FineBio) in 22 days. I trained nothing and
-annotated no ground truth, so every number on this page says what it was measured against. This
-page is the five-minute version. The day by day is in [`docs/story.md`](docs/story.md), the
+six-camera 3D object tracker on a wet-lab bench (FineBio) during its first 22 days. The current
+work focuses on pipette masks and initialization. I trained nothing and annotated no ground
+truth, so every number on this page says what it was measured against. This page is the
+five-minute version. The day by day is in [`docs/story.md`](docs/story.md), the
 numbers are in [`docs/results.md`](docs/results.md), the commands are in
 [`docs/pipeline.md`](docs/pipeline.md) and the lab's shorthand is translated in the
 [glossary](docs/writing-style.md#glossary).
@@ -13,6 +14,45 @@ numbers are in [`docs/results.md`](docs/results.md), the commands are in
 
 The six cameras on the bench and the tracker's top-down view of them. The highlighted micro tube
 keeps the same identity while the centrifuge lid is closed over it.
+
+## Current checkpoint
+
+**A good box, two positive points and one targeted negative gave the strongest masks in the
+latest pipette study.** Put the positives inside the visible body and exposed shaft. Put the
+negative inside a glove, rack or neighbouring object that the mask wrongly includes. Start with
+fewer clicks and stop when the mask is good.
+
+The study compared 19 prompt recipes on seven views of one blue pipette. Each recipe was decoded
+independently, with all points supplied together and no previous-mask feedback. All 532 candidate
+masks were inspected against the original images.
+
+| Recipe, with a box | Mostly correct masks chosen by SAM3 / seven views | Measured against |
+|---|---:|---|
+| One body positive | 3 | One AI reviewer's visual grade of at least four out of five |
+| Body and shaft positives, one targeted negative | 6 | Same visual rubric |
+| Five positives | 2 | Same visual rubric |
+| Eight positives | 2 | Same visual rubric |
+
+SAM3 sometimes ranked a glove-contaminated mask above a cleaner candidate. More clicks did not
+consistently help. These are exploratory visual judgments on correlated views, not ground-truth
+IoU or tracking accuracy. Rack leakage and support-tube contamination remain unresolved.
+
+The earlier initialization review sampled raw frames 0 through 600 every 100 in all six cameras.
+After five passes, 26 of 42 masks were approximate usable drafts; 16 still need review. That
+review uses a different rubric from the point study. Production tracking still starts at raw
+frame 600, and the study masks have not been adopted.
+
+Open the [interactive point comparison](runs/finebio-pipette-improvement-20260930/point-prompt-study/review.html)
+on this machine. The [saved study report](docs/qa/pipette-checkpoint-20261001/point-prompt-study/README.md)
+and [checkpoint notes](docs/qa/pipette-checkpoint-20261001/README.md) preserve the findings,
+label selections, dependencies and steps to resume. The next experiment is validation on unseen
+views, followed by sequential corrective clicks with previous-mask feedback.
+
+Evidence: `runs/finebio-pipette-improvement-20260930/point-prompt-study/` and
+`every100-review/`; [checkpoint](docs/qa/pipette-checkpoint-20261001/README.md), saved Oct 1 2026
+in local commit `dbbad8a`. A 1.25 GB local archive preserves the reviews, masks, GIFs and Rerun
+files. All 3,365 artifact files were verified against their hashes. The archive is on this
+machine, and the checkpoint commit has not been pushed.
 
 ## What it does
 
@@ -48,8 +88,8 @@ The five numbers that matter, and what each one was measured against:
 ## Day by day
 
 Each line is the failure that caused the next change and links to that day in
-[`docs/story.md`](docs/story.md). Day 1 is the first run and day 22 is the last. The only
-success clip is the one at the top. At gate 1 I accepted or rejected each seed box. At gate 2
+[`docs/story.md`](docs/story.md). This table covers the first 22 days. Later work is summarized
+in the checkpoint above. The only success clip is the one at the top. At gate 1 I accepted or rejected each seed box. At gate 2
 I picked the right mask on a sample of frames.
 
 | Day | What went wrong, and what it forced | Clip |
@@ -92,10 +132,21 @@ The 20-minute route through both trials is in the
 It covers the negative control, the centrifuge story three ways, the transparent plate, the object
 in the hand, a confidence drop that is a real failure, the decision and what did not transfer.
 
+The earlier pipette initialization review has a separate Rerun recording. It shows sparse samples
+at raw frames 0 through 600 and the selected masks before and after refinement:
+
+```bash
+uv run rerun runs/finebio-pipette-improvement-20260930/every100-review/refinement.rrd runs/finebio-pipette-improvement-20260930/every100-review/labels.rbl
+```
+
+The newer point study is in the interactive HTML comparison above. Both reviews are local outputs
+under `runs/`; the checkpoint notes describe archive restoration.
+
 ## Notes
 
-Every number here is one model compared with another, or a model compared with my choice among
-that model's masks. None of them is accuracy against ground truth. The long version is in
+The pipeline numbers compare one model with another, or a model with my choice among its masks.
+The point-study counts are one AI reviewer's visual judgments. None of these is accuracy against
+ground truth. The long version of the pipeline claim boundaries is in
 [`docs/results.md`](docs/results.md#claim-boundaries).
 
 - The FineBio detector was trained on FineBio's own objects and on frames from these same cameras.
@@ -130,8 +181,9 @@ has the terms they carry and says they must be removed before any redistribution
   carry a held pipette on the hand and refuse a new id until the hand lets go. Named, not built.
 - Room 2 has no human gate. Gate 2 was only run on trial 1, so room 2 has no number anchored on
   my choices. The web workspace for it exists and the sitting would take about 1.5 h.
-- Nothing was swept. Frames before a re-seed, the memory write threshold, the hysteresis widths, the
-  window length and the container heights are all still at their first values.
+- Production tracking parameters have not been swept. Frames before a re-seed, the memory write
+  threshold, the hysteresis widths, the window length and the container heights remain at their
+  first values. The point-prompt comparison above tests mask initialization only.
 - Cost per trial. About 2.3 h of GPU for the two mask arms on one RTX 5070 Ti, 25 minutes for the
   detector pass, 8 minutes of CPU for the recording and about 2 h of my time for the two gates.
 
