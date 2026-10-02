@@ -14,6 +14,11 @@ rely on the strength of foundation models' ability to keep track of objects. I f
 though SAM 3 is a powerful tool, it has serious limitations for parts that are small and frequently
 occluded.
 
+Additionally, the primary approach I took was to be as methodical as possible and record all results in 
+a reproducible way. All data used to label + train at each step was recorded in this repo so that we could 
+easily reproduce older results, by included all scripts, configs + raw data. (Raw / intermediate data not committed, but saved
+locally)
+
 To help speed up data labeling, the pipeline uses the FineBio authors' pre-trained DINO
 detector to propose object class labels and bounding boxes that prompt SAM3. Those labels
 are model predictions. This page is the five-minute version. The day by day is in [`docs/story.md`](docs/story.md), the
