@@ -1,4 +1,4 @@
-# Battle
+# SAM3 MultiCam Tracker
 A 3D object tracker for a wet-lab bench made with SAM3, six cameras and no training
 
 This is a method lab that went from SAM3 smoke tests on a toy car assembly (Assembly101) to a
