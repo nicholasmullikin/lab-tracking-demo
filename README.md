@@ -54,6 +54,32 @@ in local commit `dbbad8a`. A 1.25 GB local archive preserves the reviews, masks,
 files. All 3,365 artifact files were verified against their hashes. The archive is on this
 machine, and the checkpoint commit has not been pushed.
 
+## Pipette line comparison
+
+**The new model-top masks do not improve 3D line consistency on the sampled frames.** The
+comparison reconstructs the blue pipette at seven times across all six cameras. Each recipe
+variant replaces only the seven images from the prompt study; the other masks stay fixed.
+
+| Mask set | Median residual, px | Measured against |
+|---|---:|---|
+| Earlier selected masks | 6.62 | 39 matched camera/time cells, each camera's mask axis against a line fitted without that camera |
+| Recipe's model-top candidates | 6.99 | Same cells and comparison |
+| Recipe's visually selected candidates | 5.98 | Same cells; optimistic manual candidate selection |
+
+All three sets produce seven 3D fits. The resting shaft looks strong. At frame 200, the
+model-top T4 mask tilts the axis toward the rack and worsens the fit. Held views still have
+endpoint overshoot and tube contamination. Colour/taper cues resolve direction at five times
+and abstain at frames 100 and 600. These consistency residuals are not ground-truth accuracy.
+
+Open the [camera and 3D comparison](runs/finebio-pipette-improvement-20260930/line-comparison/review.html)
+or the [saved line-review checkpoint](docs/qa/pipette-line-checkpoint-20261001/README.md).
+The next step is candidate selection based on shaft geometry, followed by targeted mask
+corrections and validation on unseen frames. Production tracking remains unchanged.
+
+Evidence: `runs/finebio-pipette-improvement-20260930/line-comparison/`, with explicit notes for
+all 42 camera images, 126 reviewed overlays and a separate Rerun recording. Rebuild with
+`.venv/bin/python -m battle.pipette_line_review` after restoring the saved input masks.
+
 ## What it does
 
 Every static object on the bench gets one 3D identity from six cameras and a detector's boxes. This
@@ -141,6 +167,12 @@ uv run rerun runs/finebio-pipette-improvement-20260930/every100-review/refinemen
 
 The newer point study is in the interactive HTML comparison above. Both reviews are local outputs
 under `runs/`; the checkpoint notes describe archive restoration.
+
+The camera-axis and 3D-line comparison opens with its world view, six camera crops and cue evidence:
+
+```bash
+uv run rerun runs/finebio-pipette-improvement-20260930/line-comparison/pipette-lines.rrd runs/finebio-pipette-improvement-20260930/line-comparison/pipette-lines.rbl
+```
 
 ## Notes
 

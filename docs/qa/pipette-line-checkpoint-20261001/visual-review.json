@@ -1,0 +1,533 @@
+{
+  "reviewer": "single AI visual reviewer",
+  "blinded": false,
+  "ground_truth": false,
+  "method": "Directly inspected all seven six-camera before/after crop sheets (126 overlays) against originals, plus full-frame and Rerun views. No human reference points were created.",
+  "frames": {
+    "0": {
+      "views": {
+        "T1": {
+          "note": "Shaft axis follows resting blue pipette; small neighbouring mask flecks remain.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        },
+        "T2": {
+          "note": "Body and shaft alignment strong; dispensing end is upper left.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        },
+        "T3": {
+          "note": "Shaft axis and direction clear across all variants.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        },
+        "T4": {
+          "note": "Long axis follows shaft; modest lateral offset is visible.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        },
+        "T5": {
+          "note": "Axis and dispensing direction clear; endpoint is approximate.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        },
+        "fpv": {
+          "note": "Thin shaft axis follows target; button-side endpoint is slightly offset.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        }
+      },
+      "direction": {
+        "earlier-selected": {
+          "assessment": "points toward visible dispensing side",
+          "physical_tip_location_accuracy": "not established"
+        },
+        "recipe-model-top": {
+          "assessment": "points toward visible dispensing side",
+          "physical_tip_location_accuracy": "not established"
+        },
+        "recipe-visual-best": {
+          "assessment": "points toward visible dispensing side",
+          "physical_tip_location_accuracy": "not established"
+        }
+      }
+    },
+    "100": {
+      "views": {
+        "T1": {
+          "note": "Short local axis mainly describes exposed body; 3D projection follows shaft but plunger end extends above visible button.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        },
+        "T2": {
+          "note": "Disconnected head/shaft mask gives a diagonal axis; rack spill remains at shaft endpoint.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        },
+        "T3": {
+          "note": "Short local axis mainly describes exposed body; fused line follows shaft with endpoint uncertainty.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        },
+        "T4": {
+          "note": "End-on body mask compact, no shaft axis; fused projection alone is not proof of a correct local fit.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        },
+        "T5": {
+          "note": "Local shaft axis usable; fused extent reaches beyond visible plunger-side mask.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        },
+        "fpv": {
+          "note": "Local and projected axes mostly align; distal transparent boundary and endpoints uncertain.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        }
+      },
+      "direction": {
+        "earlier-selected": {
+          "assessment": "abstained",
+          "physical_tip_location_accuracy": "not established"
+        },
+        "recipe-model-top": {
+          "assessment": "abstained",
+          "physical_tip_location_accuracy": "not established"
+        },
+        "recipe-visual-best": {
+          "assessment": "abstained",
+          "physical_tip_location_accuracy": "not established"
+        }
+      }
+    },
+    "200": {
+      "views": {
+        "T1": {
+          "note": "Axis follows shaft, but reconstructed dispensing-side extent visibly extends beyond opaque shaft.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        },
+        "T2": {
+          "note": "Body/shaft axis approximately aligned; tip extent extends toward/off crop boundary.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        },
+        "T3": {
+          "note": "Axis follows shaft; long reconstructed extent overshoots visible shaft and may include non-pipette pixels.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        },
+        "T4": {
+          "note": "Model-top substituted mask rotates local axis toward rack/background; visually selected mask follows shaft more closely.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        },
+        "T5": {
+          "note": "Axis follows body; projected extent exceeds visible shaft end.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        },
+        "fpv": {
+          "note": "Long shaft line visible; endpoint overshoot and model-top cross-view shift are apparent.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        }
+      },
+      "direction": {
+        "earlier-selected": {
+          "assessment": "points toward visible dispensing side",
+          "physical_tip_location_accuracy": "not established"
+        },
+        "recipe-model-top": {
+          "assessment": "points toward visible dispensing side",
+          "physical_tip_location_accuracy": "not established"
+        },
+        "recipe-visual-best": {
+          "assessment": "points toward visible dispensing side",
+          "physical_tip_location_accuracy": "not established"
+        }
+      }
+    },
+    "300": {
+      "views": {
+        "T1": {
+          "note": "Local axis mostly follows shaft; transparent distal tip remains uncertain.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        },
+        "T2": {
+          "note": "Axis mostly follows shaft; lower end meets the other hand/tube and has an uncertain boundary.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        },
+        "T3": {
+          "note": "New mask leaves very similar axis; dispensing-end precision is still uncertain.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        },
+        "T4": {
+          "note": "Local mask axis biased by head/glove; projected line displaced near plunger-side body.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        },
+        "T5": {
+          "note": "Local axis shortens visible shaft; projected line displaced near the body/plunger side.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        },
+        "fpv": {
+          "note": "Long shaft axis mostly follows target; distal boundary uncertain and body-side projection displaced.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        }
+      },
+      "direction": {
+        "earlier-selected": {
+          "assessment": "points toward visible dispensing side",
+          "physical_tip_location_accuracy": "not established"
+        },
+        "recipe-model-top": {
+          "assessment": "points toward visible dispensing side",
+          "physical_tip_location_accuracy": "not established"
+        },
+        "recipe-visual-best": {
+          "assessment": "points toward visible dispensing side",
+          "physical_tip_location_accuracy": "not established"
+        }
+      }
+    },
+    "400": {
+      "views": {
+        "T1": {
+          "note": "Axis roughly follows visible shaft; tube/hand contact makes distal endpoint uncertain.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        },
+        "T2": {
+          "note": "Axis follows shaft but includes tube-contact region; projected body-side endpoint displaced.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        },
+        "T3": {
+          "note": "Axis mostly follows shaft; distal tip/tube boundary remains unresolved.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        },
+        "T4": {
+          "note": "Compact body mask has no local shaft axis; projected line displaced relative to foreshortened shaft.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        },
+        "T5": {
+          "note": "Local shaft axis available; projected plunger-side line is displaced.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        },
+        "fpv": {
+          "note": "Local axis follows shaft; projected distal direction mostly follows shaft, body-side fit offset.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        }
+      },
+      "direction": {
+        "earlier-selected": {
+          "assessment": "points toward visible dispensing side",
+          "physical_tip_location_accuracy": "not established"
+        },
+        "recipe-model-top": {
+          "assessment": "points toward visible dispensing side",
+          "physical_tip_location_accuracy": "not established"
+        },
+        "recipe-visual-best": {
+          "assessment": "points toward visible dispensing side",
+          "physical_tip_location_accuracy": "not established"
+        }
+      }
+    },
+    "500": {
+      "views": {
+        "T1": {
+          "note": "Two-positive/one-negative substitution changes axis very little; support-tube contamination remains.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        },
+        "T2": {
+          "note": "Shaft axis approximate; other hand/tube makes dispensing endpoint unassessable.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        },
+        "T3": {
+          "note": "Local shaft axis mostly aligned; dispensing endpoint at tube boundary uncertain.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        },
+        "T4": {
+          "note": "Compact body mask has no local axis; foreshortening limits review of projected direction.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        },
+        "T5": {
+          "note": "Local axis follows shaft; projected plunger-side location offset.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        },
+        "fpv": {
+          "note": "Local axis follows shaft; projected dispensing-side extent drifts sideways near tube contact.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        }
+      },
+      "direction": {
+        "earlier-selected": {
+          "assessment": "points toward visible dispensing side",
+          "physical_tip_location_accuracy": "not established"
+        },
+        "recipe-model-top": {
+          "assessment": "points toward visible dispensing side",
+          "physical_tip_location_accuracy": "not established"
+        },
+        "recipe-visual-best": {
+          "assessment": "points toward visible dispensing side",
+          "physical_tip_location_accuracy": "not established"
+        }
+      }
+    },
+    "600": {
+      "views": {
+        "T1": {
+          "note": "Local and fused axes mostly aligned; distal endpoint at tube/hand boundary uncertain.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        },
+        "T2": {
+          "note": "Axis roughly follows shaft; body-side projection shifted and tube contact contaminates endpoint.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        },
+        "T3": {
+          "note": "Shaft axis mostly follows target; distal tip boundary unresolved.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        },
+        "T4": {
+          "note": "Local/fused axes available but endpoints displaced relative to button/body.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        },
+        "T5": {
+          "note": "Axis follows exposed shaft; reconstructed body/plunger endpoint offset.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        },
+        "fpv": {
+          "note": "Local shaft axis usable; projected dispensing-side end offset sideways.",
+          "variants_inspected": [
+            "earlier-selected",
+            "recipe-model-top",
+            "recipe-visual-best"
+          ],
+          "endpoint_accuracy": "not numerically scored; transparent/occluded boundaries unassessable"
+        }
+      },
+      "direction": {
+        "earlier-selected": {
+          "assessment": "abstained",
+          "physical_tip_location_accuracy": "not established"
+        },
+        "recipe-model-top": {
+          "assessment": "abstained",
+          "physical_tip_location_accuracy": "not established"
+        },
+        "recipe-visual-best": {
+          "assessment": "abstained",
+          "physical_tip_location_accuracy": "not established"
+        }
+      }
+    }
+  },
+  "failure_classes": {
+    "segmentation": [
+      "100/T2 rack spill",
+      "200/T4 top-candidate rack/background influence",
+      "500/T1 support tube"
+    ],
+    "axis_fitting": [
+      "200/T4 sensitivity to local contamination",
+      "300/T4 biased local axis"
+    ],
+    "direction": [
+      "100 and 600 colour/taper conflict; abstention"
+    ],
+    "extent": [
+      "200 excessive reconstructed visible extent",
+      "300-600 transparent tip and tube-contact ambiguity"
+    ],
+    "camera_geometry": [
+      "Cross-view offsets remain in T4/T5/FPV; config reports fixed-view marker residuals about 0.7-6.7px; no new camera solve was performed."
+    ]
+  }
+}

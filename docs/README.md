@@ -22,6 +22,8 @@ numbers. The glossary that maps the lab's shorthand to plain words is in `writin
 
 - [Pipette tracking, 2026-10-01](qa/pipette-checkpoint-20261001/README.md): annotation state, point-prompt study, saved artifacts and resumption instructions.
 
+- [Pipette camera and 3D lines](qa/pipette-line-checkpoint-20261001/README.md): paired mask comparison, visual failure notes and reconstruction results.
+
 ## Archive
 
 Every historical document was moved to [`archive/`](archive/README.md) on one day, prose untouched,

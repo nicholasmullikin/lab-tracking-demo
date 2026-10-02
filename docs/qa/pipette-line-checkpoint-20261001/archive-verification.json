@@ -1,0 +1,18 @@
+{
+  "archive": "runs/checkpoints/pipette-lines-20261001/pipette-line-comparison.tar.gz",
+  "archive_bytes": 174927396,
+  "archive_sha256": "aa177519438955f251f117ccbb61afe4c81c238dc285be46804d9caf0d75d683",
+  "verified_output_files": 280,
+  "verified_original_images": 42,
+  "verified_variant_overlays": 126,
+  "substitutions_per_recipe_variant": 7,
+  "viewer_recording_id": "raw0-600-line-review-v1-20261001",
+  "viewer_screenshots_directly_inspected": [
+    "rerun-overview.png",
+    "rerun-frame-200.png"
+  ],
+  "code_tests_passed": 64,
+  "documentation_tests_passed": 37,
+  "off_machine_backup": false,
+  "implementation_sha256": "f1d944ab81c449bf2ac7c5f30ecd8c49aa587217cea0280a6b64c2d47a401850"
+}
