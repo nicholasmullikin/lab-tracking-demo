@@ -200,6 +200,47 @@ Use the raw `frame` timeline; wait for video decoding after a seek. The run dire
 the locked protocol, both plan reviews, full commands, paired controls and all clean held-anchor
 panels. Its `readout.md` explains the lost anchor and the unchanged adoption decision.
 
+## Pipette studies and saved orientation demo
+
+**The new demo exports reviewed cached masks and geometry without running inference.**
+The prompt, sparse-line, full-video and multiplex studies remain separate experiments.
+Their frame ranges, prompt schedules and comparison policies are in the linked
+[checkpoints](README.md#checkpoints).
+
+```bash
+.venv/bin/python -m battle.pipette_line_review
+.venv/bin/python -m battle.pipette_video_review
+.venv/bin/python -m battle.pipette_multiplex_review analyze --root runs/pipette-multiplex-20261002 --policy baseline --frames 900
+```
+
+The last command is for a completed 900-frame stage only; do not analyze a stage whose
+camera observations are still being written. The multiplex review needs the original videos
+and masks, the camera config and the project environment. Model inference runs separately.
+
+The saved demo freezes the completed 900-frame baseline. Its instantaneous color/taper vote
+is retained because policy and temporal-orientation comparisons remain unfinished.
+Export a later completed review into a new directory when those results are available.
+
+```bash
+.venv/bin/python -m battle.pipette_demo --source runs/pipette-multiplex-20261002 --policy baseline --frames 900 --orientation baseline --output runs/pipette-demo-20261002-final
+.venv/bin/rerun --memory-limit 8GiB runs/pipette-demo-20261002-final/overview.rrd runs/pipette-demo-20261002-final/overview-demo.rbl
+bash scripts/serve_pipette_demo.sh --dry-run
+bash scripts/serve_pipette_demo.sh --background
+```
+
+The exporter requires an exact matching stage review and contiguous observations in all six
+cameras. It saves native-rate geometry, an overview with two camera images per second,
+300-frame native clips and four blueprints. Display images are limited to 960 px;
+all displayed mask and axis coordinates scale together. Measurements retain original units.
+An unresolved frame clears the previous arrow, and a missing fit clears the previous shaft.
+
+The archive, checksums, source/configuration snapshot and manifest preserve the demo independently
+of the live viewer. Recordings embed their images and masks. Rebuilding needs the original
+files; reopening does not. Outputs remain outside Git. The archive is a local copy.
+
+See the [five-minute orientation review](review-guide-pipette-orientation.md) for layouts,
+private HTTPS setup, stop/restart commands and interpretation.
+
 ## Opening the recordings
 
 **Three recordings are worth opening, each with a World, a Cameras and an Evidence preset.** Pass
@@ -281,7 +322,9 @@ uv run battle-anchor-iou --run pm-append=<run dir> --run dam4sam=<run dir> --out
 
 ## Reviewing from another machine
 
-**The recordings can be reviewed from any device on your own tailnet with the native viewer.**
+**Saved recordings can be reviewed privately over Tailscale.**
+The [pipette orientation demo](review-guide-pipette-orientation.md#private-browser-review) uses
+HTTPS for browser review, with separate local ports and an 8 GiB buffer.
 `scripts/serve_review_over_tailscale.sh [recording.rrd [preset.rbl]]` binds this machine's Tailscale
 address and prints the connect command; the client side is one installer and one connect script in
 [`../scripts/rerun_client/README.md`](../scripts/rerun_client/README.md).

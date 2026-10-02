@@ -1,0 +1,18 @@
+{
+  "native_frames": 8492,
+  "seconds": 283.34973333333335,
+  "display_samples": 8492,
+  "cameras": [
+    "T1",
+    "T2",
+    "T3",
+    "T4",
+    "T5",
+    "fpv"
+  ],
+  "display_sampling": "every native frame",
+  "metrics_sampling": "once per second",
+  "full_video": true,
+  "recording_id": "raw0-8491-every-frame-v1",
+  "rrd": "pipette-full-video-native.rrd"
+}

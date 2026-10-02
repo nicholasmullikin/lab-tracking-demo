@@ -1,0 +1,79 @@
+{
+  "python": "3.12.13 (main, Mar 24 2026, 22:49:22) [Clang 22.1.1 ]",
+  "files": {
+    "src/battle/muggled_worker.py": {
+      "sha256": "d776cc63715e721824813791fda7671a24eef27635bf619c312bf9b639d8c6ce",
+      "size_bytes": 124986
+    },
+    "src/battle/pipette_multiplex_run.py": {
+      "sha256": "8cf32f5c60fe82fdaf61b58385111b0be06446eae556ceee1de54c411062ffba",
+      "size_bytes": 8902
+    },
+    "src/battle/pipette_multiplex_review.py": {
+      "sha256": "ba3b34bd48b12000fa58993c4a1ebf773bec3927e9475811f2d167aef5b9fa53",
+      "size_bytes": 15052
+    },
+    "src/battle/finebio_observations.py": {
+      "sha256": "62fa39687c378da86055cb3ce782bd4603d97f85cc7c6dbff57b57ac4dc89fb4",
+      "size_bytes": 35695
+    },
+    "src/battle/multiview_lines.py": {
+      "sha256": "56477a117e4fb19a8ebd8b7b8ad616af2a566ac672f2ed3a1eddd8a96645ecac",
+      "size_bytes": 36348
+    },
+    "src/battle/finebio_orientation.py": {
+      "sha256": "350f881eaceb9f4f813d96920197017cee25af6ed0e937776c0ec552da8f69bd",
+      "size_bytes": 15166
+    },
+    "src/battle/pipette_line_review.py": {
+      "sha256": "dc434a8dea4812a7607982c3595d62c56cfa992e2648896d891422b61a14a034",
+      "size_bytes": 29225
+    },
+    "src/battle/pipette_video_metrics.py": {
+      "sha256": "f214dd482c97be5e1f5f40e27675f064c602fcb5ea81622f3d8156ab444a7493",
+      "size_bytes": 16186
+    },
+    "src/battle/finebio_colour.py": {
+      "sha256": "5750d166f9425eb773ffa6d58a1ecbaea31e7e3eb599d35689f8eb88b6e4e82f",
+      "size_bytes": 72058
+    },
+    "configs/finebio/pipettes.json": {
+      "sha256": "6bd261dc759f1188976b7462c456584a0c1924977bbbec6ef0c4b3dedd7a85b3",
+      "size_bytes": 11698
+    },
+    "configs/finebio/cameras/P03_03_01.json": {
+      "sha256": "bbc50fcb4ad42387c274ecc11b52f75e7743b643ef8cbb51f0f78df00c77f76b",
+      "size_bytes": 8060
+    },
+    "../muggled_sam/model_weights/sam3.1_multiplex.pt": {
+      "sha256": "0567debeec80ba4ac6369540c6c248025283cb3ff2b92827509e57e2b3541cb6",
+      "size_bytes": 3502755717
+    },
+    "data/raw/finebio/finebio_videos_tpv_test/finebio_videos/P03_03_01_T1.mp4": {
+      "sha256": "268f4598e91dbf5b4cb58177edb05919fe19f26b8cefff6b9c56bc92a8c31109",
+      "size_bytes": 89877938
+    },
+    "data/raw/finebio/finebio_videos_tpv_test/finebio_videos/P03_03_01_T2.mp4": {
+      "sha256": "85adb3b1c83047b266b13f0eae74f9bfa059aa10e49d95dc2382530049d13ca0",
+      "size_bytes": 100335023
+    },
+    "data/raw/finebio/finebio_videos_tpv_test/finebio_videos/P03_03_01_T3.mp4": {
+      "sha256": "a9be451b4fcb84ef8429e5e2a2b822e9f730e77c05d926c24c641cf1459baccd",
+      "size_bytes": 101806659
+    },
+    "data/raw/finebio/finebio_videos_tpv_test/finebio_videos/P03_03_01_T4.mp4": {
+      "sha256": "38496f84d4ac80444c4452a254603a262eb5b126738cd9ec672414bd83b85c44",
+      "size_bytes": 113159522
+    },
+    "data/raw/finebio/finebio_videos_tpv_test/finebio_videos/P03_03_01_T5.mp4": {
+      "sha256": "aea307f099e160f67d752a2aed9fd60f6efa6a8a5b944c7ff055f615432994ba",
+      "size_bytes": 87648022
+    },
+    "data/raw/finebio/finebio_videos_fpv_test/finebio_videos/P03_03_01.mp4": {
+      "sha256": "571e548b2494191790c8a1e5b50852b6a9979e7340dad6c7b1de5797a24d8148",
+      "size_bytes": 267987005
+    }
+  },
+  "production_defaults_changed": false,
+  "gpu": "NVIDIA GeForce RTX 5070 Ti, 16303 MiB, 610.57.04"
+}

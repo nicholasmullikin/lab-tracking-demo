@@ -136,7 +136,7 @@ def plots(root: Path, rows: list[dict], scope: str = "Full video") -> None:
     plt.close(fig)
 
 
-def export(root: Path) -> None:
+def export(root: Path, *, every_frame: bool = False, frame_limit: int | None = None) -> None:
     import csv
 
     import rerun as rr
@@ -146,23 +146,35 @@ def export(root: Path) -> None:
     rows = json.loads((root / "per-second.json").read_text())
     fps = config["native_fps"]
     count = config["views"]["T1"]["frame_count"]
+    if frame_limit is not None:
+        if not every_frame or frame_limit < 1:
+            raise ValueError("A positive frame limit requires --every-frame")
+        count = min(count, frame_limit)
     schedule = config.get("corrections_by_view", {})
     for row in rows:
         row.update(correction_counts(row["second"], fps, count, schedule))
-    (root / "per-second.json").write_text(json.dumps(rows, indent=2, allow_nan=False) + "\n")
-    with (root / "per-second.csv").open("w", newline="") as file:
-        writer = csv.DictWriter(file, fieldnames=list(rows[0]), lineterminator="\n")
-        writer.writeheader()
-        writer.writerows(rows)
+    if not every_frame:
+        (root / "per-second.json").write_text(json.dumps(rows, indent=2, allow_nan=False) + "\n")
+        with (root / "per-second.csv").open("w", newline="") as file:
+            writer = csv.DictWriter(file, fieldnames=list(rows[0]), lineterminator="\n")
+            writer.writeheader()
+            writer.writerows(rows)
     samples = display_frames(count, fps)
+    metric_rows = {(row["second"], row["variant"]): row for row in rows}
+    filename = "pipette-full-video-native" if every_frame else "pipette-full-video"
+    if frame_limit is not None:
+        filename += f"-raw0-{count - 1}"
+    display_description = "every native frame" if every_frame else "once per second"
     captures = {v: cv2.VideoCapture(config["views"][v]["video"]) for v in VIEWS}
     full_video = all(int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) == count for cap in captures.values())
     scope = "Full video" if full_video else "Early segment"
-    plots(root, rows, scope)
+    if not every_frame:
+        plots(root, rows, scope)
     sheets = root / "sheets"
     sheets.mkdir(exist_ok=True)
-    rr.init("finebio-pipette-full-video", recording_id=f"raw0-{count - 1}-native-v1-20261002")
-    rr.save(root / "pipette-full-video.rrd")
+    suffix = "every-frame-v1" if every_frame else "native-v1-20261002"
+    rr.init("finebio-pipette-full-video", recording_id=f"raw0-{count - 1}-{suffix}")
+    rr.save(root / f"{filename}.rrd")
     rr.log("world", rr.ViewCoordinates.RIGHT_HAND_Z_DOWN, static=True)
     for variant, colour in zip(VARIANTS, COLOURS, strict=True):
         rgb = tuple(int(colour[i : i + 2], 16) for i in (1, 3, 5))
@@ -176,7 +188,7 @@ def export(root: Path) -> None:
         "method",
         rr.TextDocument(
             "Every native frame analyzed in six cameras. "
-            "Images and 3D lines displayed once per second. "
+            f"Images and 3D lines displayed {display_description}. "
             "Cyan mask; yellow local axis; green projected visible extent; "
             "magenta dispensing arrow only on cue agreement. "
             "Earlier selections compared with model-top and optimistic visual-best study masks. "
@@ -202,6 +214,8 @@ def export(root: Path) -> None:
     first_ends = None
     with (root / "geometry.jsonl").open() as stream:
         for expected_frame, line in enumerate(stream):
+            if expected_frame >= count:
+                break
             data = json.loads(line)
             frame = data["raw_frame"]
             if frame != expected_frame:
@@ -220,12 +234,12 @@ def export(root: Path) -> None:
                 total["paired_old"].extend(paired["baseline_px"])
                 total["paired_new"].extend(paired["revised_px"])
                 total["delta"].extend(paired["delta_px"])
-            if frame not in samples:
+            if frame not in samples and not every_frame:
                 for capture in captures.values():
                     if not capture.grab():
                         raise ValueError(f"Source ended at {frame}")
                 continue
-            second = samples[frame]
+            second = math.floor(frame / fps)
             rr.set_time("source_frame", sequence=frame)
             rr.set_time("seconds", duration=frame / fps)
             full_rows, crop_rows = [], []
@@ -270,8 +284,9 @@ def export(root: Path) -> None:
                         rr.Image(cv2.cvtColor(pair, cv2.COLOR_BGR2RGB)).compress(jpeg_quality=94),
                     )
             full, cropped = np.vstack(full_rows), np.vstack(crop_rows)
-            cv2.imwrite(str(sheets / f"{second:03d}-full.jpg"), full)
-            cv2.imwrite(str(sheets / f"{second:03d}-crops.jpg"), cropped)
+            if not every_frame:
+                cv2.imwrite(str(sheets / f"{second:03d}-full.jpg"), full)
+                cv2.imwrite(str(sheets / f"{second:03d}-crops.jpg"), cropped)
             rr.log(
                 "comparison/full",
                 rr.Image(cv2.cvtColor(full, cv2.COLOR_BGR2RGB)).compress(jpeg_quality=92),
@@ -304,12 +319,15 @@ def export(root: Path) -> None:
                                 radii=0.15,
                             ),
                         )
-                row = next(x for x in rows if x["variant"] == variant and x["second"] == second)
-                for key in METRICS:
-                    value = row[key]
-                    path = f"metrics/{key}/{variant}"
-                    rr.log(path, rr.Clear(recursive=False) if value is None else rr.Scalars(value))
-            if second % 30 == 0:
+                if frame in samples:
+                    row = metric_rows[second, variant]
+                    for key in METRICS:
+                        value = row[key]
+                        path = f"metrics/{key}/{variant}"
+                        rr.log(
+                            path, rr.Clear(recursive=False) if value is None else rr.Scalars(value)
+                        )
+            if frame in samples and second % 30 == 0:
                 print(f"Exported original/mask review {second}s / {count / fps:.2f}s", flush=True)
     for capture in captures.values():
         capture.release()
@@ -359,8 +377,32 @@ def export(root: Path) -> None:
         auto_views=False,
     )
     rr.send_blueprint(bp)
-    bp.save("finebio-pipette-full-video", root / "pipette-full-video.rbl")
+    bp.save("finebio-pipette-full-video", root / f"{filename}.rbl")
     rr.disconnect()
+    if every_frame:
+        completion = (
+            f"{filename}-complete.json"
+            if frame_limit is not None
+            else "native-export-complete.json"
+        )
+        (root / completion).write_text(
+            json.dumps(
+                {
+                    "native_frames": count,
+                    "seconds": count / fps,
+                    "display_samples": count,
+                    "cameras": list(VIEWS),
+                    "display_sampling": "every native frame",
+                    "metrics_sampling": "once per second",
+                    "full_video": full_video,
+                    "recording_id": f"raw0-{count - 1}-{suffix}",
+                    "rrd": f"{filename}.rrd",
+                },
+                indent=2,
+            )
+            + "\n"
+        )
+        return
     summary = []
     for variant, total in totals.items():
         summary.append(
@@ -544,7 +586,18 @@ def main() -> None:
         type=Path,
         default=Path("runs/finebio-pipette-improvement-20260930/full-video-line-comparison"),
     )
-    export(parser.parse_args().root)
+    parser.add_argument(
+        "--every-frame",
+        action="store_true",
+        help="Export every native frame to a separate Rerun recording using saved results",
+    )
+    parser.add_argument(
+        "--frames", type=int, help="Limit the native-frame Rerun export to the first N frames"
+    )
+    args = parser.parse_args()
+    if args.frames is not None and (not args.every_frame or args.frames < 1):
+        parser.error("--frames requires --every-frame and a positive frame count")
+    export(args.root, every_frame=args.every_frame, frame_limit=args.frames)
 
 
 if __name__ == "__main__":

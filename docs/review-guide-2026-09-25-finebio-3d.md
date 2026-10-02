@@ -1,5 +1,9 @@
 # Review guide, Sep 25 2026: the FineBio 3D object-tracking recordings (trial 1 `P03_03_01`, trial 2 `P20_03_01`)
 
+For the latest pipette shaft and dispensing-end work, start with the
+[pipette orientation review](review-guide-pipette-orientation.md). This guide retains the
+older detector-based tracker, container examples and two-room comparison.
+
 One Rerun recording per trial window (raw frames [600, 4200), 20.02–140.14 s, six views)
 with three layout presets, built by `battle-finebio-viewer` from the tracking arms, the
 confidence and events passes, the rig check, the seeds and the lane-B proxies

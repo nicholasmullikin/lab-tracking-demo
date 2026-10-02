@@ -12,10 +12,13 @@ numbers are in [`docs/results.md`](docs/results.md), the commands are in
 [`docs/pipeline.md`](docs/pipeline.md) and the lab's shorthand is translated in the
 [glossary](docs/writing-style.md#glossary).
 
-![One tube, one identity, through a closed centrifuge lid](media/story/2026-09-25-finebio-3d.gif)
+![Latest pipette demo: labeled camera masks and blue pipette 3D shaft and dispensing-end estimate](media/story/2026-10-02-pipette-demo-headline.gif)
 
-The six cameras on the bench and the tracker's top-down view of them. The highlighted micro tube
-keeps the same identity while the centrifuge lid is closed over it.
+The first ten seconds of the latest reviewed demo: masks and 2D shaft axes for all four pipettes,
+with the blue pipette's fitted 3D shaft and estimated dispensing end on the left. Camera images
+update at 2 Hz; the saved 3D geometry runs at native frame rate. This baseline still shows
+contamination and unresolved directions. The [interactive demo guide](docs/review-guide-pipette-orientation.md)
+explains the overlays, mask toggle and review evidence.
 
 ## Pipette orientation progress
 
@@ -83,6 +86,11 @@ Evidence: `runs/finebio-pipette-improvement-20260930/` and `runs/pipette-multipl
 [multiplex](docs/qa/pipette-multiplex-20261002/README.md) checkpoints.
 
 ## What it does
+
+![One tube, one identity, through a closed centrifuge lid](media/story/2026-09-25-finebio-3d.gif)
+
+The earlier bench tracker: six cameras and a top-down view. The highlighted micro tube
+keeps the same identity while the centrifuge lid is closed over it.
 
 Every static object on the bench gets one 3D identity from six cameras and a detector's boxes. This
 worked in both rooms I tried. The pipeline has six parts.

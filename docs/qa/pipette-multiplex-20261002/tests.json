@@ -1,0 +1,18 @@
+{
+  "targeted_checks": {
+    "passed": 201,
+    "skipped": 14,
+    "deselected": 3
+  },
+  "new_resume_tests_passed": 3,
+  "existing_worker_memory_geometry_orientation_measurement_tests": "passed",
+  "saved_T2_replay": {
+    "native_frames": 30,
+    "slot_ids_identical": true,
+    "pixel_identical_masks": 240
+  },
+  "rerun_clip_verify": "Three -labeled.rrd recordings verified without error; all six ends directly inspected",
+  "rerun_original_logs": "300 originals per camera in each final 300-native-frame recording",
+  "scope": "CPU tests plus direct saved-run GPU replay and pixel-identical checkpoint boundaries; GPU pytest cases not run",
+  "new_study_tests_passed": 5
+}

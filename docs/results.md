@@ -325,6 +325,83 @@ Evidence: `runs/finebio-pipette-improvement-20260930/readout.json`, `readout.md`
 `comparison.rrd`, `comparison.rbl`, `rerun_review.json` and `held-anchor-panels-*.jpg`.
 The [reviewed plan](archive/plan-2026-09-30-pipette-improvement.md) records the two reviews.
 
+## Pipette prompt and line study
+
+**Better still-image prompts do not establish better temporal orientation.** The exploratory
+study inspected 532 candidate masks from 19 recipes on seven correlated blue-pipette views.
+The subsequent line comparison changed only those seven images; the remaining masks stayed fixed.
+
+| Comparison | Result | Measured against |
+|---|---|---|
+| Box and one body positive | 3 mostly correct model-top masks out of 7 | One AI reviewer's visual grade of at least 4 out of 5 |
+| Box, body/shaft positives, targeted negative | 6 out of 7 | Same visual rubric |
+| Box and five positives / eight positives | 2 out of 7 each | Same visual rubric |
+| Earlier selected masks | 6.62 px median residual | 39 matched dropped-camera cells at seven sampled times |
+| Model-top recipe replacements | 6.99 px | Same cells; only seven images replaced |
+| Visually selected replacements | 5.98 px | Same cells; optimistic candidate selection |
+
+Every variant produced seven 3D fits and resolved five dispensing directions.
+The other two times abstained. Rack leakage biased the model-top T4 axis at raw 200;
+held masks still had extent overshoot and support-tube contamination.
+The sparse color/taper method differs from the earlier temporal orientation vote.
+
+Evidence: `runs/finebio-pipette-improvement-20260930/point-prompt-study/` and `line-comparison/`;
+[mask checkpoint](qa/pipette-checkpoint-20261001/README.md) and
+[line checkpoint](qa/pipette-line-checkpoint-20261001/README.md).
+
+## Full-video pipette propagation
+
+**Revised prompt recipes leave median paired consistency essentially unchanged and retain
+identity drift.** Each camera processes all 8,492 native frames, raw 0–8491, over 283.35 seconds.
+Variants receive corrections at the same camera-specific times; no prompts follow raw 500.
+
+| Variant | Fit fraction | Resolved direction fraction | Median paired residual change | Measured against |
+|---|---:|---:|---:|---|
+| Earlier selections | 0.9783 | 0.7989 | 0 px | Earlier residual cells |
+| Model-top recipe | 0.9980 | 0.7865 | +0.0540 px | 29,640 matched earlier camera/frame cells |
+| Visually selected recipe | 0.9978 | 0.8132 | +0.0236 px | 30,924 matched earlier cells |
+
+Positive paired changes mean worse consistency. Direct review found paper, glove, rack and
+other-pipette masks despite available geometry. Per-second translation and rotation rates
+measure apparent tracker motion and cannot establish physical speeds.
+The native run used 504 px model inputs and independent single-object memories;
+it is a separate experiment from the restored 1280 px multiplex configuration.
+
+Evidence: `runs/finebio-pipette-improvement-20260930/full-video-line-comparison/`;
+[full-video checkpoint](qa/pipette-full-video-checkpoint-20261002/README.md).
+
+## Multiplex pipette orientation
+
+**The restored four-slot experiment follows pickup in its first reviewed ten seconds,
+but contamination still damages blue orientation.** The T2 replay reproduces 240 of 240 masks
+on 30 frames. Four reviewed raw-0 seeds per camera start independent, named pipette slots.
+
+| Measure | First reviewed stage | Measured against |
+|---|---:|---|
+| Native frames | 300 | Raw 0–299, six cameras, 10.01 seconds |
+| Blue 3D fits | 299 | Saved native geometry, availability only |
+| Resolved blue directions | 245 | Conservative color/taper decisions, availability only |
+| Direct review times | 5 | Raw 0, 30, 100, 200 and 299; one AI reviewer's image inspection |
+
+Blue follows the held original while yellow, red and multichannel remain resting.
+FPV glove leakage at raw 200 damages the global fit, and direction abstains.
+Raw 299 projections overshoot or misalign. Multichannel handle occlusion and broad heads
+still limit its 2D axis interpretation. No physical identity or endpoint accuracy is inferred
+from fit availability, slot continuity or resolved-direction counts.
+
+The completed 900-frame stage spans 30.03 seconds and has 899 blue fits and 844 resolved
+directions. Four additional review times cover raw 300, 500, 600 and 899. At raw 899,
+T1 blue has drifted onto a resting shaft fragment; T4 includes forearm pixels.
+The algorithm resolves a direction there, while visual review leaves physical direction unresolved.
+
+The saved demo freezes the completed 900-frame baseline with instantaneous color/taper direction.
+The longer extension, mask-policy comparisons and temporal-orientation comparison remain unfinished.
+The [review guide](review-guide-pipette-orientation.md) explains its layouts and camera checks.
+Production defaults and the detector-based tracker remain unchanged.
+
+Evidence: `runs/pipette-multiplex-20261002/`;
+[multiplex checkpoint](qa/pipette-multiplex-20261002/README.md).
+
 ## Assembly101 in numbers
 
 **SAM3 at 1280 px with an appended prompt memory is the best arm on the toy car, DAM4SAM ties it,

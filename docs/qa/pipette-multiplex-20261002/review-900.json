@@ -1,0 +1,149 @@
+{
+  "stage_frames": 900,
+  "reviewer": "single AI direct visual inspection",
+  "ground_truth": false,
+  "frames": {
+    "300": {
+      "identity": "All four objects recognizable in all six views; blue remains the held original.",
+      "contamination": "Partial blue hand/head masks; FPV retains only a short fragment. Small neighbour flecks remain.",
+      "missing": "FPV visible blue shaft substantially unsegmented; T4 hand occludes body.",
+      "shaft_alignment": "Blue global reprojections overshoot T1/T3 and misalign FPV/T4. Resting tool axes generally align, but partial multichannel shafts remain ambiguous.",
+      "dispensing_direction": "Predicted distal end agrees in clear exocentric views; precise physical 3D direction unresolved because projections disagree.",
+      "missing_observations": {
+        "T1": [],
+        "T2": [],
+        "T3": [],
+        "T4": [],
+        "T5": [],
+        "fpv": []
+      },
+      "present_without_axis": {
+        "T1": [],
+        "T2": [
+          "multichannel_pipette"
+        ],
+        "T3": [],
+        "T4": [],
+        "T5": [],
+        "fpv": []
+      }
+    },
+    "500": {
+      "identity": "Blue follows original held tool; yellow/red/multichannel retain resting tools.",
+      "contamination": "Small head/hand pixels in blue; FPV blue remains a tiny disconnected observation. T5 red distant fleck lengthens axis.",
+      "missing": "T4 blue axis absent from compact head mask; FPV visible shaft mostly missing.",
+      "shaft_alignment": "Blue T1/T2/T3/T5 axes and global projection largely align. FPV projection crosses resting tools rather than blue. T4 no fitted 2D shaft.",
+      "dispensing_direction": "Distal end correct in T1/T2/T3/T4/T5 reprojections; FPV unresolved. Global precision remains limited by cross-camera inconsistency.",
+      "missing_observations": {
+        "T1": [],
+        "T2": [],
+        "T3": [],
+        "T4": [],
+        "T5": [],
+        "fpv": []
+      },
+      "present_without_axis": {
+        "T1": [],
+        "T2": [
+          "multichannel_pipette"
+        ],
+        "T3": [],
+        "T4": [
+          "blue_pipette"
+        ],
+        "T5": [],
+        "fpv": []
+      }
+    },
+    "600": {
+      "identity": "Held blue and three resting objects remain recognizable; FPV blue reduced to a tiny fragment.",
+      "contamination": "Partial blue head/hand mask; T5 red distant pixels distort axis.",
+      "missing": "FPV most visible blue shaft missing; T4 body partially occluded.",
+      "shaft_alignment": "Blue exocentric axes mostly follow shaft; FPV global projection is severely wrong, with one endpoint near/behind camera plane. Existing fit preserved as evidence, not accepted accuracy.",
+      "dispensing_direction": "Clear exocentric projected end is distal; physical 3D precision and FPV dispensing direction unresolved.",
+      "missing_observations": {
+        "T1": [],
+        "T2": [],
+        "T3": [],
+        "T4": [],
+        "T5": [],
+        "fpv": [
+          "multichannel_pipette"
+        ]
+      },
+      "present_without_axis": {
+        "T1": [],
+        "T2": [
+          "multichannel_pipette"
+        ],
+        "T3": [],
+        "T4": [],
+        "T5": [],
+        "fpv": []
+      }
+    },
+    "899": {
+      "identity": "T1 blue slot drifted onto resting pipette shaft fragment while original blue is held. T2/T3/T4/T5/FPV retain recognizable blue portions. Other slots remain on respective resting tools.",
+      "contamination": "T4 blue includes forearm pixels. FPV multichannel includes distant island near far hand, corrupting its axis. T5 red distant speck also affects axis.",
+      "missing": "Blue axes absent in T1/T3/FPV; visible held shaft is hidden or poorly segmented.",
+      "shaft_alignment": "T4 blue axis follows contaminated forearm; T2 axis includes sparse separated portions. Global blue line not reliably aligned across cameras. Resting multichannel FPV and red T5 axes corrupted by islands.",
+      "dispensing_direction": "Algorithm resolves end 1, but physical dispensing direction is unresolved from these partial/contaminated observations. No independently established wrong-end claim.",
+      "missing_observations": {
+        "T1": [],
+        "T2": [],
+        "T3": [],
+        "T4": [],
+        "T5": [],
+        "fpv": []
+      },
+      "present_without_axis": {
+        "T1": [
+          "blue_pipette"
+        ],
+        "T2": [
+          "multichannel_pipette"
+        ],
+        "T3": [
+          "blue_pipette"
+        ],
+        "T4": [],
+        "T5": [],
+        "fpv": [
+          "blue_pipette"
+        ]
+      }
+    }
+  },
+  "review_artifacts": "Native originals, mask crops and axis/projection/direction crops in baseline/clips",
+  "viewer_endpoints_inspected": [
+    300,
+    599,
+    600,
+    899
+  ],
+  "new_clip_viewer_review": "Both final 300-frame recordings verified and directly inspected at each end in fresh 8GB viewer. Absent masks rendered transparent; raw899 FPV multichannel island remains real.",
+  "native_geometry_summary": {
+    "frames": 900,
+    "blue_fit_frames": 899,
+    "blue_resolved_direction_frames": 844
+  },
+  "next_stage": "4496 native frames; no corrective prompts",
+  "policy_changes": [],
+  "export_review": {
+    "parent_clear_issue": "Initial export showed stale FPV multichannel at raw599 despite absent observation. Flat-clear replacement was not independently verified because opening the same file URL reused the loaded recording. Fresh explicit-transparent-absence export directly verified correct at raw599.",
+    "raw599_mask_judgment": "Multichannel absent in FPV; earlier viewer-only background layer is not evidence of current mask contamination.",
+    "raw899_mask_judgment": "FPV multichannel background island exists in actual cached mask and remains a tracking failure."
+  },
+  "labeled_export_note": "Visible masks with missing axes retain labels at their centroids. First three clips use -labeled.rrd (label-only amendments merged by existing Rerun CLI; originals logged once).",
+  "final_labeled_recording_endpoints_inspected": [
+    300,
+    599,
+    600,
+    899
+  ],
+  "extra_viewer_checks": [
+    "T4 blue at raw100 labeled despite missing axis",
+    "Raw200 blue dispensing arrow absent because direction unresolved",
+    "Raw599/600 FPV multichannel absent in both masks and viewer"
+  ]
+}

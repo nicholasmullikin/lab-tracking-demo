@@ -204,3 +204,17 @@ clicks on one trial: they rank trackers against each other and are not ground tr
 
 Evidence: `runs/finebio-tips-P03_03_01-20260929/scoreboard/tip_scoreboard.md` and that
 workspace's README, plan todo `p3-tip-anchors`.
+
+
+## Recent pipette studies
+
+The [initialization and prompt checkpoint](pipette-checkpoint-20261001/README.md) preserves
+reviewed label selections and exploratory prompt grades. The
+[line checkpoint](pipette-line-checkpoint-20261001/README.md) records the partial-substitution
+six-camera comparison. The [full-video checkpoint](pipette-full-video-checkpoint-20261002/README.md)
+records matched native propagation, apparent motion and sparse drift inspection.
+
+The [multiplex checkpoint](pipette-multiplex-20261002/README.md) records configuration replay,
+reviewed seeds and completed stages. Its direct image notes are separate from the older human
+endpoint clicks. The [orientation review guide](../review-guide-pipette-orientation.md) explains
+how to inspect the saved demo and interpret these different comparisons.

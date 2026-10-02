@@ -1,11 +1,9 @@
-# The story in 20 days
+# The story of the tracking lab
 
-This page tells the lab's 20 days one day at a time, and each section opens with that day's
-verdict. The clips are struggle-first: each shows the failure that drove the next change, and
-the one success clip is the tube that keeps its identity through a closed centrifuge lid.
-Every section ends with the number that changed and where the evidence sits; the lab's
-shorthand is in the [glossary](writing-style.md#glossary) and the numbers in full are in
-[`results.md`](results.md).
+This page follows the failures and changes that built the tracking lab, from the first smoke
+runs to the latest pipette orientation experiment. Each section starts with its result and
+links the camera evidence. The [results page](results.md) keeps the measurements, and the
+[orientation review](review-guide-pipette-orientation.md) shows where the current pipette work stands.
 
 ## Sep 8: text prompts fail on the head camera
 
@@ -414,3 +412,78 @@ mask with a straight axis. The fill gate catches that self-confirming shape.
 
 Evidence: `runs/finebio-lines-P03_03_01-20260928/reprojection_readout.json`, both rooms'
 `reprojection-review/` and `reprojection_control_pipeline.json`. The run READMEs record this phase.
+
+
+## Sep 30 to Oct 1: better prompts do not guarantee better shafts
+
+**Two positive points and one targeted negative improve still-image masks, but the model's
+first-choice masks do not improve the sampled 3D lines.** I compared 19 recipes on seven views
+of one blue pipette and inspected all 532 candidates. A box with body and shaft positives
+plus one leakage negative produced six mostly correct model-top masks; one body point produced three.
+Five or eight positives produced two each. More clicks did not reliably help.
+
+![Prompt choices and shaft fitting on a difficult camera view](../media/story/2026-10-01-pipette-prompt-and-axis.png)
+
+I then replaced only those seven study images in the six-camera line comparison.
+The earlier masks gave a 6.62 px median dropped-camera residual on 39 matched cells.
+Model-top replacements gave 6.99 px; visually selected replacements gave 5.98 px.
+At raw 200, a T4 mask tilted the axis toward the rack. Direction resolved at five of seven
+sampled times and abstained at two. These visual grades and consistency measures use different protocols.
+
+The new result narrowed the next experiment: propagate the masks through the recording and
+check physical identity, rather than treating a cleaner still as a tracking improvement.
+The previous temporal orientation vote remains a separate result against manually clicked endpoints.
+
+Evidence: `runs/finebio-pipette-improvement-20260930/point-prompt-study/` and `line-comparison/`;
+[mask checkpoint](qa/pipette-checkpoint-20261001/README.md) and
+[line checkpoint](qa/pipette-line-checkpoint-20261001/README.md).
+
+## Oct 2: the full video exposes identity drift
+
+**The revised prompts do not solve pipette identity drift over the full recording.**
+I propagated the earlier and revised blue masks through 8,492 native frames in every camera,
+with matched correction times and no later prompts after raw 500.
+The median paired residual change was +0.054 px for model-top selections and +0.024 px
+for visually selected candidates. Positive means worse consistency; the differences are tiny.
+
+![The earlier blue slot follows paper instead of the pipette](../media/story/2026-10-02-pipette-video-drift.gif)
+
+Direct review found masks on gloves, racks, paper and different pipettes.
+A geometric fit can remain available after the cameras disagree about which object is blue.
+The apparent translation and rotation rates therefore describe tracker motion, not physical pipette speed.
+The recording export also revealed a practical limit: the 26 GB native recording overwhelmed
+viewer memory, so detailed review needs smaller clips.
+
+Evidence: `runs/finebio-pipette-improvement-20260930/full-video-line-comparison/`;
+[full-video checkpoint](qa/pipette-full-video-checkpoint-20261002/README.md).
+
+## Oct 2: multiplex slots restore the orientation experiment
+
+**Four fixed pipette slots restore the intended multi-object experiment; orientation still
+needs camera-level review.** I recovered the earlier T2 configuration and replayed 30 frames:
+all 240 masks were pixel-identical, with unchanged slot IDs.
+I froze reviewed raw-0 masks for blue, yellow, red and multichannel pipettes in all six cameras.
+
+![Blue follows pickup while the other pipettes stay at rest](../media/story/2026-10-02-pipette-multiplex-pickup.gif)
+
+The first reviewed ten seconds follow the original blue pipette through pickup.
+The other slots remain on resting tools. Blue has native-rate 3D shaft fits and a conservative
+color/taper dispensing-end estimate; the other pipettes have masks and 2D axes.
+At raw 200, glove leakage corrupts the fit and direction abstains. At raw 299, projections
+overshoot or misalign. Stable slots and fit coverage alone do not certify identity or orientation.
+
+The 30-second stage exposes drift: at raw 899, T1's blue slot follows a resting shaft fragment
+while the original blue pipette is held. T4 includes forearm pixels. The algorithm still resolves
+a dispensing end, but direct inspection leaves physical direction unresolved.
+
+The [orientation review](review-guide-pipette-orientation.md) connects these camera checks to
+saved Rerun recordings and the latest completed checkpoint. Its overview keeps native-rate
+geometry with sampled images; separate clips preserve detailed motion.
+The [README headline clip](../media/story/2026-10-02-pipette-demo-headline.gif) captures the
+first ten seconds of that viewer, with explicit pipette labels and the blue 3D fit beside
+four camera views. The GIF samples geometry at 5 fps and camera images at 2 Hz.
+The saved bundle freezes the completed 30-second baseline. Longer tracking, isolated mask-policy
+comparisons and temporal-orientation review remain unfinished.
+
+Evidence: `runs/pipette-multiplex-20261002/`;
+[multiplex checkpoint](qa/pipette-multiplex-20261002/README.md).

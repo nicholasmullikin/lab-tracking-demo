@@ -1,0 +1,7 @@
+{
+  "frames": 30,
+  "slot_identities_identical": true,
+  "masks": 240,
+  "identical_masks": 240,
+  "minimum_iou": 1.0
+}

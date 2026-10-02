@@ -951,7 +951,8 @@ def render_tiles(
                     per_tile_hook(
                         source, frame, tile, tile_transform(image.shape, size, crops[s_index])
                     )
-            label_tile(tile, source.label)
+                if entry.options.get("show_source_labels", True):
+                    label_tile(tile, source.label)
             tiles.append(tile)
         grid = tile_grid(tiles, columns)
         if per_frame_hook is not None:
@@ -1252,10 +1253,60 @@ def render_overlay_or_grid(
     if counter_class:
         ids_at = _id_counter(tracks, entry.frames.indices(), offset, counter_class)
         detail["distinct_ids_in_clip"] = {counter_class: ids_at[-1] if ids_at else 0}
-    frames, records = render_tiles(entry, root, colour_of=colour_of, tag_of=tag_of)
+    geometry = {}
+    if opts.get("geometry"):
+        wanted = set(entry.frames.indices())
+        with _require(root, opts["geometry"], "geometry").open() as source:
+            for text in source:
+                row = json.loads(text)
+                if row["raw_frame"] in wanted:
+                    geometry[row["raw_frame"]] = row
+        if set(geometry) != wanted:
+            raise ValueError("Story geometry is missing a requested native frame")
+        detail["geometry"] = opts["geometry"]
+
+    def geometry_overlay(source, frame, tile, transform):
+        if not geometry:
+            return
+        from .pipette_line_review import clip_image_segment
+
+        row = geometry[frame]
+        blue = row["views"][source.view]["blue_pipette"]
+        axis = blue["axis"]["axis_px"]
+        if axis is not None:
+            points = np.array([transform.to_tile(*p) for p in axis])
+            clipped = clip_image_segment(points, (tile.shape[1], tile.shape[0]))
+            if clipped is not None:
+                cv2.line(tile, *clipped.round().astype(int), (0, 230, 255), 2)
+        projected = blue.get("projected_world_endpoints_px")
+        if projected is not None:
+            points = np.array([transform.to_tile(*p) for p in projected])
+            clipped = clip_image_segment(points, (tile.shape[1], tile.shape[0]))
+            if clipped is not None:
+                cv2.line(tile, *clipped.round().astype(int), (70, 255, 40), 2)
+            tip = row["blue"]["direction"]["tip_end"]
+            if tip is not None:
+                end = points[tip]
+                if (
+                    np.isfinite(end).all()
+                    and np.all(end >= 0)
+                    and np.all(end < (tile.shape[1], tile.shape[0]))
+                ):
+                    cv2.circle(tile, tuple(end.round().astype(int)), 4, (220, 80, 255), -1)
+
+    frames, records = render_tiles(
+        entry, root, colour_of=colour_of, tag_of=tag_of, per_tile_hook=geometry_overlay
+    )
     detail["tiles"] = records
     indices = entry.frames.indices()
-    if counter_class:
+    if geometry:
+
+        def label(i):
+            frame = indices[i]
+            tip = geometry[frame]["blue"]["direction"]["tip_end"]
+            status = "unresolved" if tip is None else "estimated end"
+            return f"raw {frame} | {status}"
+    elif counter_class:
         label = lambda i: f"{counter_class} ids so far: {ids_at[i]}"  # noqa: E731
     elif opts.get("frame_label", True):
         label = lambda i: f"frame {indices[i]}"  # noqa: E731

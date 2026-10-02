@@ -1,0 +1,280 @@
+{
+  "reviewed_seeds": true,
+  "native_fps": 29.97002997002997,
+  "max_side_length": 1280,
+  "labels": [
+    "blue_pipette",
+    "yellow_pipette",
+    "red_pipette",
+    "multichannel_pipette"
+  ],
+  "blue_slot": 0,
+  "memory": {
+    "max_frame_memory": 4,
+    "prompt_memory_semantics": "append",
+    "max_prompt_memory": 32,
+    "is_recent_first": false
+  },
+  "direction_policy": "existing conservative colour/taper",
+  "corrections": [],
+  "views": {
+    "T1": {
+      "video": "data/raw/finebio/finebio_videos_tpv_test/finebio_videos/P03_03_01_T1.mp4",
+      "frame_count": 8492,
+      "fps": 29.97002997002997,
+      "size_wh": [
+        1920,
+        1080
+      ],
+      "schedule": {
+        "seeds": [
+          {
+            "target": "blue_pipette",
+            "initial_multiplex_slot": 0,
+            "mask_path": "runs/pipette-multiplex-20261002/seeds/frozen/T1-blue_pipette.png",
+            "mask_sha256": "6c99929574c8871fbd7379c68e07674be17174e2d14ea2f3782da06edf2c4911",
+            "selected_by": "agent"
+          },
+          {
+            "target": "yellow_pipette",
+            "initial_multiplex_slot": 1,
+            "mask_path": "runs/pipette-multiplex-20261002/seeds/frozen/T1-yellow_pipette.png",
+            "mask_sha256": "8a58d786510e3b98b24ab39cb25551bb344d1b363d708d672cdd5918a0f3abbb",
+            "selected_by": "agent"
+          },
+          {
+            "target": "red_pipette",
+            "initial_multiplex_slot": 2,
+            "mask_path": "runs/pipette-multiplex-20261002/seeds/frozen/T1-red_pipette.png",
+            "mask_sha256": "e0ffd0be911f9963f4e75c33de87cec6cc8a7a50fd033228ea84ba8a8a8e9fda",
+            "selected_by": "agent"
+          },
+          {
+            "target": "multichannel_pipette",
+            "initial_multiplex_slot": 3,
+            "mask_path": "runs/pipette-multiplex-20261002/seeds/frozen/T1-multichannel_pipette.png",
+            "mask_sha256": "c875e73cd6d40d3abeed11d3e88e4b496e42bc5e2fe167a69cdc97198bc71a1a",
+            "selected_by": "agent"
+          }
+        ],
+        "corrections": [],
+        "memory_semantics": "append_prompt_memory_and_reset_frame_memory"
+      }
+    },
+    "T2": {
+      "video": "data/raw/finebio/finebio_videos_tpv_test/finebio_videos/P03_03_01_T2.mp4",
+      "frame_count": 8492,
+      "fps": 29.97002997002997,
+      "size_wh": [
+        1920,
+        1080
+      ],
+      "schedule": {
+        "seeds": [
+          {
+            "target": "blue_pipette",
+            "initial_multiplex_slot": 0,
+            "mask_path": "runs/pipette-multiplex-20261002/seeds/frozen/T2-blue_pipette.png",
+            "mask_sha256": "d8731bec6cb655d4399ce52cf024373512fe6fc59e6fe3389bf11abc0728b2ae",
+            "selected_by": "agent"
+          },
+          {
+            "target": "yellow_pipette",
+            "initial_multiplex_slot": 1,
+            "mask_path": "runs/pipette-multiplex-20261002/seeds/frozen/T2-yellow_pipette.png",
+            "mask_sha256": "98f4838027a8a750e612b1e64bb14ae063e5c1f3c808eb6ea79d22fec4c88470",
+            "selected_by": "agent"
+          },
+          {
+            "target": "red_pipette",
+            "initial_multiplex_slot": 2,
+            "mask_path": "runs/pipette-multiplex-20261002/seeds/frozen/T2-red_pipette.png",
+            "mask_sha256": "4caafe81e32f508a0969ad5c827a86b0315d62256de1635a0e4a03f7fe4b569b",
+            "selected_by": "agent"
+          },
+          {
+            "target": "multichannel_pipette",
+            "initial_multiplex_slot": 3,
+            "mask_path": "runs/pipette-multiplex-20261002/seeds/frozen/T2-multichannel_pipette.png",
+            "mask_sha256": "af1b45d7736c0c04023fbe4e12ac88afbba62f708d7ffeea676efefa9c0bb2f6",
+            "selected_by": "agent"
+          }
+        ],
+        "corrections": [],
+        "memory_semantics": "append_prompt_memory_and_reset_frame_memory"
+      }
+    },
+    "T3": {
+      "video": "data/raw/finebio/finebio_videos_tpv_test/finebio_videos/P03_03_01_T3.mp4",
+      "frame_count": 8492,
+      "fps": 29.97002997002997,
+      "size_wh": [
+        1920,
+        1080
+      ],
+      "schedule": {
+        "seeds": [
+          {
+            "target": "blue_pipette",
+            "initial_multiplex_slot": 0,
+            "mask_path": "runs/pipette-multiplex-20261002/seeds/frozen/T3-blue_pipette.png",
+            "mask_sha256": "ed6ebae632bc24277a3bc8c77820fc9194e68e2199b6e11ad89b7fa45f3c9aa0",
+            "selected_by": "agent"
+          },
+          {
+            "target": "yellow_pipette",
+            "initial_multiplex_slot": 1,
+            "mask_path": "runs/pipette-multiplex-20261002/seeds/frozen/T3-yellow_pipette.png",
+            "mask_sha256": "c40d0a14cfaaac09789509e41ee25ebdcc2ca620c29c06eee6a0e6d0f9668fb7",
+            "selected_by": "agent"
+          },
+          {
+            "target": "red_pipette",
+            "initial_multiplex_slot": 2,
+            "mask_path": "runs/pipette-multiplex-20261002/seeds/frozen/T3-red_pipette.png",
+            "mask_sha256": "05592eea0683d38624f857836d354c37cedc38347776337e9c1eeeb447f49979",
+            "selected_by": "agent"
+          },
+          {
+            "target": "multichannel_pipette",
+            "initial_multiplex_slot": 3,
+            "mask_path": "runs/pipette-multiplex-20261002/seeds/frozen/T3-multichannel_pipette.png",
+            "mask_sha256": "4664c13b3d8053ede64748f89622bbebe52192829bf051c11e20bc769fd5d7c8",
+            "selected_by": "agent"
+          }
+        ],
+        "corrections": [],
+        "memory_semantics": "append_prompt_memory_and_reset_frame_memory"
+      }
+    },
+    "T4": {
+      "video": "data/raw/finebio/finebio_videos_tpv_test/finebio_videos/P03_03_01_T4.mp4",
+      "frame_count": 8492,
+      "fps": 29.97002997002997,
+      "size_wh": [
+        1920,
+        1080
+      ],
+      "schedule": {
+        "seeds": [
+          {
+            "target": "blue_pipette",
+            "initial_multiplex_slot": 0,
+            "mask_path": "runs/pipette-multiplex-20261002/seeds/frozen/T4-blue_pipette.png",
+            "mask_sha256": "74302e314905dfa1332d427468eca32dfd2e47a6ba4a1193581f2732606bc129",
+            "selected_by": "agent"
+          },
+          {
+            "target": "yellow_pipette",
+            "initial_multiplex_slot": 1,
+            "mask_path": "runs/pipette-multiplex-20261002/seeds/frozen/T4-yellow_pipette.png",
+            "mask_sha256": "c71451c3e0a311a9988e249181b545aa2aefc733bb1da248dd6a818a0c74d5ce",
+            "selected_by": "agent"
+          },
+          {
+            "target": "red_pipette",
+            "initial_multiplex_slot": 2,
+            "mask_path": "runs/pipette-multiplex-20261002/seeds/frozen/T4-red_pipette.png",
+            "mask_sha256": "b4a46a8bf6ce1f3e104e6961e2fa8c537fb2d2a7ac0414e277c0446d34f5ff9e",
+            "selected_by": "agent"
+          },
+          {
+            "target": "multichannel_pipette",
+            "initial_multiplex_slot": 3,
+            "mask_path": "runs/pipette-multiplex-20261002/seeds/frozen/T4-multichannel_pipette.png",
+            "mask_sha256": "4e8abf645c2eac058098c0f318d47872e6c2fc973db0efbacf0f36077b187eb4",
+            "selected_by": "agent"
+          }
+        ],
+        "corrections": [],
+        "memory_semantics": "append_prompt_memory_and_reset_frame_memory"
+      }
+    },
+    "T5": {
+      "video": "data/raw/finebio/finebio_videos_tpv_test/finebio_videos/P03_03_01_T5.mp4",
+      "frame_count": 8492,
+      "fps": 29.97002997002997,
+      "size_wh": [
+        1920,
+        1080
+      ],
+      "schedule": {
+        "seeds": [
+          {
+            "target": "blue_pipette",
+            "initial_multiplex_slot": 0,
+            "mask_path": "runs/pipette-multiplex-20261002/seeds/frozen/T5-blue_pipette.png",
+            "mask_sha256": "5cade89f37604e55af2aee17d5cefafbe4c32e12ed67587e6982f5be15b1cc9c",
+            "selected_by": "agent"
+          },
+          {
+            "target": "yellow_pipette",
+            "initial_multiplex_slot": 1,
+            "mask_path": "runs/pipette-multiplex-20261002/seeds/frozen/T5-yellow_pipette.png",
+            "mask_sha256": "a2faa6d22be9370ee841fba8e0019fdef813f97f08777ab8aaca768978e87a8b",
+            "selected_by": "agent"
+          },
+          {
+            "target": "red_pipette",
+            "initial_multiplex_slot": 2,
+            "mask_path": "runs/pipette-multiplex-20261002/seeds/frozen/T5-red_pipette.png",
+            "mask_sha256": "aedbce8c66a3f7d2dfd680ab57d21bf81be76803b00295a205310b96ade6666b",
+            "selected_by": "agent"
+          },
+          {
+            "target": "multichannel_pipette",
+            "initial_multiplex_slot": 3,
+            "mask_path": "runs/pipette-multiplex-20261002/seeds/frozen/T5-multichannel_pipette.png",
+            "mask_sha256": "190f3587b4e2539591e70bd6ba671a8a6ad24219d84d94f3fda5d66e181f0346",
+            "selected_by": "agent"
+          }
+        ],
+        "corrections": [],
+        "memory_semantics": "append_prompt_memory_and_reset_frame_memory"
+      }
+    },
+    "fpv": {
+      "video": "data/raw/finebio/finebio_videos_fpv_test/finebio_videos/P03_03_01.mp4",
+      "frame_count": 8492,
+      "fps": 29.97002997002997,
+      "size_wh": [
+        1920,
+        1440
+      ],
+      "schedule": {
+        "seeds": [
+          {
+            "target": "blue_pipette",
+            "initial_multiplex_slot": 0,
+            "mask_path": "runs/pipette-multiplex-20261002/seeds/frozen/fpv-blue_pipette.png",
+            "mask_sha256": "92e4b02637f7a3c3a2e4e79558719bed898906490254d287700aac1007dfc5c7",
+            "selected_by": "agent"
+          },
+          {
+            "target": "yellow_pipette",
+            "initial_multiplex_slot": 1,
+            "mask_path": "runs/pipette-multiplex-20261002/seeds/frozen/fpv-yellow_pipette.png",
+            "mask_sha256": "5c2c973154cc302487704781c44e6abc5410f24e38b5d41ddd837f042ea81c2f",
+            "selected_by": "agent"
+          },
+          {
+            "target": "red_pipette",
+            "initial_multiplex_slot": 2,
+            "mask_path": "runs/pipette-multiplex-20261002/seeds/frozen/fpv-red_pipette.png",
+            "mask_sha256": "71485b18339420cbb3dbc52a8ec22c2e5505a627eca70f44e9ccef36a1e93f28",
+            "selected_by": "agent"
+          },
+          {
+            "target": "multichannel_pipette",
+            "initial_multiplex_slot": 3,
+            "mask_path": "runs/pipette-multiplex-20261002/seeds/frozen/fpv-multichannel_pipette.png",
+            "mask_sha256": "775f73c3fb157ad33034e808f94514b408e18ba4de60b292e98dc367674b9f7f",
+            "selected_by": "agent"
+          }
+        ],
+        "corrections": [],
+        "memory_semantics": "append_prompt_memory_and_reset_frame_memory"
+      }
+    }
+  }
+}

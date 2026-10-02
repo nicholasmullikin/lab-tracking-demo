@@ -82,6 +82,46 @@ def test_load_manifest_refuses_duplicate_and_wrong_schema(tmp_path: Path) -> Non
         sm.load_manifest(_write_manifest(tmp_path, doc))
 
 
+def test_cached_pipette_geometry_marks_only_resolved_end(tmp_path: Path) -> None:
+    run = _fixture_run(tmp_path)
+    rows = []
+    for frame in range(4):
+        rows.append(
+            {
+                "raw_frame": frame,
+                "views": {
+                    "T1": {
+                        "blue_pipette": {
+                            "axis": {"axis_px": [[12, 20], [40, 20]]},
+                            "projected_world_endpoints_px": [[12, 20], [40, 20]],
+                        }
+                    }
+                },
+                "blue": {"direction": {"tip_end": 0 if frame == 0 else None}},
+            }
+        )
+    geometry = tmp_path / "geometry.jsonl"
+    geometry.write_text("".join(json.dumps(row) + "\n" for row in rows))
+    entry = sm.MediaEntry(
+        id="pipette",
+        day="2026-10-02",
+        kind="grid",
+        caption="Native orientation",
+        width=320,
+        frames=sm.FrameRange(0, 4),
+        sources=[{"video": str(run / "input.mp4"), "view": "T1", "show_masks": False}],
+        options={"geometry": str(geometry)},
+    )
+    frames, detail = sm.render_overlay_or_grid(entry, tmp_path)
+    assert detail["geometry"] == str(geometry)
+    # 64×36 source scales exactly to 320×180; magenta dispensing marker at (12, 20).
+    assert tuple(frames[0][100, 60]) == (220, 80, 255)
+    assert tuple(frames[1][100, 60]) != (220, 80, 255)
+    geometry.write_text(json.dumps(rows[0]) + "\n")
+    with pytest.raises(ValueError, match="missing a requested"):
+        sm.render_overlay_or_grid(entry, tmp_path)
+
+
 # --------------------------------------------------------------------------- fixture clip
 
 

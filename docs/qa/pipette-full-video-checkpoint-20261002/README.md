@@ -91,6 +91,25 @@ From the repository root:
 ```
 
 The standalone model worker uses the muggled_sam Python environment and cached checkpoint.
+To export every frame from the saved results, run:
+
+```bash
+.venv/bin/python -m battle.pipette_video_review --every-frame
+.venv/bin/rerun runs/finebio-pipette-improvement-20260930/full-video-line-comparison/pipette-full-video-native.rrd runs/finebio-pipette-improvement-20260930/full-video-line-comparison/pipette-full-video-native.rbl
+```
+
+The full native-frame recording is about 26 GB and was too memory-intensive in the viewer.
+For the first 30 seconds at full frame rate, use this smaller recording:
+
+```bash
+.venv/bin/python -m battle.pipette_video_review --every-frame --frames 900
+.venv/bin/rerun --memory-limit 8GB runs/finebio-pipette-improvement-20260930/full-video-line-comparison/pipette-full-video-native-raw0-899.rrd runs/finebio-pipette-improvement-20260930/full-video-line-comparison/pipette-full-video-native-raw0-899.rbl
+```
+
+This separate recording displays all native frames and retains the per-second measurement curves.
+It leaves the sampled HTML review and recorded measurements intact.
+The completion marker is `native-export-complete.json` in the local run directory.
+
 [config.json](config.json) records inputs, prompt schedules and model paths.
 The environment files record versions and source/input hashes. Raw inputs and masks remain local.
 No full artifact archive was created for this run; this tracked checkpoint preserves measurements and notes.

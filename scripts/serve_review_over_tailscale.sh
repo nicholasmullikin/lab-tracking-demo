@@ -27,6 +27,7 @@ default_rbl="runs/interaction-review-first-minute-v6/segmentation.rbl"
 web_port=9090
 grpc_port=9876
 memory_limit="4GiB"
+viewer_memory_limit="8GiB"
 https_port=""
 dry_run=0
 rrd=""
@@ -47,6 +48,9 @@ Usage: scripts/serve_review_over_tailscale.sh [options] [recording.rrd [blueprin
 Options:
   --server-memory-limit SIZE  gRPC server buffer (default ${memory_limit})
   --https-port N              bind 127.0.0.1 for 'tailscale serve --bg --https=N http://127.0.0.1:${web_port}'
+  --web-viewer-port N         local web port (default ${web_port})
+  --grpc-port N               local proxy port (default ${grpc_port})
+  --viewer-memory-limit SIZE  viewer memory limit (default ${viewer_memory_limit})
   --dry-run                   print the resolved rerun command and exit
   -h, --help                  this text
 EOF
@@ -63,6 +67,16 @@ while (($# > 0)); do
       [[ $# -ge 2 ]] || die "$1 needs a value"
       [[ $2 =~ ^[0-9]+$ ]] || die "--https-port must be a port number, got '$2'"
       https_port=$2
+      shift 2
+      ;;
+    --web-viewer-port | --grpc-port)
+      [[ $# -ge 2 && $2 =~ ^[0-9]+$ ]] || die "$1 needs a port number"
+      if [[ $1 == --web-viewer-port ]]; then web_port=$2; else grpc_port=$2; fi
+      shift 2
+      ;;
+    --viewer-memory-limit)
+      [[ $# -ge 2 ]] || die "$1 needs a value"
+      viewer_memory_limit=$2
       shift 2
       ;;
     --dry-run)
@@ -127,6 +141,7 @@ cmd=(uv run --project "${repo_root}" rerun --serve-web
   --bind "${bind_ip}"
   --web-viewer-port "${web_port}"
   --port "${grpc_port}"
+  --memory-limit "${viewer_memory_limit}"
   --server-memory-limit "${memory_limit}")
 for origin in "${origins[@]}"; do
   cmd+=(--cors-allow-origin "${origin}")
@@ -145,7 +160,7 @@ if [[ -n ${https_port} ]]; then
   echo "  tailscale serve --bg --https=${https_port} http://127.0.0.1:${web_port}"
   echo "  tailscale serve --bg --https=${https_grpc_port} http://127.0.0.1:${grpc_port}"
   echo "Web viewer (browser, secure context so H.264 can decode):"
-  echo "  https://${ts_dns}:${https_port}/?url=rerun+https://${ts_dns}:${https_grpc_port}/proxy"
+  echo "  https://${ts_dns}:${https_port}/?renderer=webgl&persist=false&theme=dark&url=rerun%2Bhttps%3A%2F%2F${ts_dns}%3A${https_grpc_port}%2Fproxy"
   echo "Native viewer (from this machine only, loopback bind):"
   echo "  rerun --connect rerun+http://127.0.0.1:${grpc_port}/proxy"
 else

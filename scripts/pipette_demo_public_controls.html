@@ -1,0 +1,95 @@
+<style>
+  #demo-controls { position: fixed; inset: 0 0 auto; z-index: 10; box-sizing: border-box;
+    height: 116px; padding: 10px 16px; background: #151b20; color: #edf2f7;
+    font: 14px system-ui, sans-serif; border-bottom: 1px solid #36444f; }
+  #demo-controls .row { display: flex; align-items: center; gap: 18px; margin-bottom: 8px; flex-wrap: wrap; }
+  #demo-controls strong { font-size: 17px; }
+  #demo-controls select { background: #26343f; color: white; padding: 5px 8px; border-radius: 5px; }
+  #demo-controls input { accent-color: #54bfff; width: 17px; height: 17px; vertical-align: middle; }
+  #demo-controls label { cursor: pointer; }
+  #demo-controls .hint { color: #bdcbd6; font-size: 12px; }
+  #demo-controls .legend { display: flex; gap: 18px; }
+  #demo-controls .blue { color: #54bfff; }
+  #demo-controls .yellow { color: #ffdb40; }
+  #demo-controls .red { color: #ff6868; }
+  #demo-controls .multi { color: #ca83ff; }
+  #viewer-shell { position: absolute; top: 116px; bottom: 0; left: 0; right: 0; }
+  @media (max-width: 750px) {
+    #demo-controls { height: 164px; font-size: 12px; padding: 8px; }
+    #demo-controls .row { gap: 10px; margin-bottom: 5px; }
+    #demo-controls .legend { gap: 10px; flex-wrap: wrap; }
+    #viewer-shell { top: 164px; }
+  }
+</style>
+<header id="demo-controls" aria-label="Pipette demo controls">
+  <div class="row"><strong>Pipette tracking</strong>
+    <span class="hint">Reviewed 30-second checkpoint · 3D fit for the blue pipette</span></div>
+  <div class="row">
+    <label>View <select id="demo-view" disabled>
+      <option value="orientation">3D + cameras</option>
+      <option value="cameras">All cameras</option>
+      <option value="evidence">Evidence and review notes</option>
+    </select></label>
+    <label title="Show or hide the colored segmentation areas in every camera. Shaft lines and pipette labels stay visible.">
+      <input id="demo-masks" type="checkbox" checked disabled> Show masks</label>
+    <span id="demo-status" class="hint" role="status">Loading recording…</span>
+  </div>
+  <div class="row">
+    <div class="legend" aria-label="Pipette colors"><span class="blue">● Blue pipette</span>
+      <span class="yellow">● Yellow pipette</span><span class="red">● Red pipette</span>
+      <span class="multi">● Multichannel pipette</span></div>
+    <span class="hint">Green line: 3D fit projected into camera · Magenta: estimated dispensing end</span>
+  </div>
+</header>
+<script>
+  (() => {
+    const view = document.getElementById("demo-view");
+    const masks = document.getElementById("demo-masks");
+    const status = document.getElementById("demo-status");
+    let revision = 0;
+    function describe() {
+      status.textContent = view.value === "evidence" ? "Review notes and fit diagnostics" :
+        masks.checked ? "Masks shown · colored areas are model predictions" :
+          "Masks hidden · shaft lines and pipette labels remain visible";
+    }
+    async function update() {
+      const handle = window._handle;
+      if (!handle?.get_active_recording_id()) return;
+      const id = handle.get_active_recording_id();
+      const timeline = handle.get_active_timeline(id);
+      const time = handle.get_time_for_timeline(id, timeline);
+      const playing = handle.get_playing(id);
+      const state = masks.checked ? "on" : "off";
+      view.disabled = masks.disabled = true;
+      try {
+        const response = await fetch(`/view-${view.value}-masks-${state}.rbl`);
+        if (!response.ok) throw new Error("Display update failed");
+        const channel = `demo-display-${++revision}`;
+        handle.open_channel(channel, "Demo display controls");
+        handle.send_rrd_to_channel(channel, new Uint8Array(await response.arrayBuffer()));
+        handle.close_channel(channel);
+        setTimeout(() => {
+        handle.set_active_timeline(id, timeline);
+        handle.set_time_for_timeline(id, timeline, time);
+        handle.set_playing(id, playing);
+        view.disabled = masks.disabled = false;
+        describe();
+        }, 500);
+      } catch (error) {
+        status.textContent = error.message;
+        view.disabled = masks.disabled = false;
+      }
+    }
+    view.addEventListener("change", update);
+    masks.addEventListener("change", update);
+    const ready = setInterval(() => {
+      const handle = window._handle, id = handle?.get_active_recording_id();
+      if (id && handle.get_timeline_time_range(id, "raw_frame")?.max === 899) {
+        view.disabled = masks.disabled = false;
+        describe();
+        clearInterval(ready);
+        update();
+      }
+    }, 250);
+  })();
+</script>

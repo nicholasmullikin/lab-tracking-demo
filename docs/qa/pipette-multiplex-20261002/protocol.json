@@ -1,0 +1,60 @@
+{
+  "goal": "Four fixed-slot pipettes in all six cameras from native raw 0; all-pipette 2D axes; blue-only 3D line and dispensing direction",
+  "max_side_length": 1280,
+  "memory": {
+    "max_frame_memory": 4,
+    "max_prompt_memory": 32,
+    "prompt_memory_semantics": "append",
+    "is_recent_first": false
+  },
+  "baseline_later_corrections": [],
+  "stages_native_frames": [
+    300,
+    900,
+    4496,
+    8492
+  ],
+  "review_raw_frames": [
+    30,
+    100,
+    200,
+    300,
+    500,
+    600,
+    899
+  ],
+  "review_seconds": [
+    60,
+    120,
+    180,
+    240,
+    244,
+    271,
+    283
+  ],
+  "mask_ablation_order": [
+    "baseline",
+    "exclusivity alone",
+    "memory checks alone",
+    "combination only after separate qualification"
+  ],
+  "acceptance": {
+    "new_reviewed_wrong_objects": 0,
+    "new_reviewed_wrong_ends": 0,
+    "maximum_correct_blue_coverage_loss_pp": 2,
+    "maximum_two_camera_axis_coverage_loss_pp": 2,
+    "maximum_matched_residual_increase_px": 1,
+    "requires_identity_contamination_or_correct_blue_improvement": true
+  },
+  "orientation_acceptance": {
+    "fewer_reviewed_wrong_ends_or_episode_flips": true,
+    "new_reviewed_wrong_ends": 0,
+    "maximum_resolved_direction_loss_pp": 2
+  },
+  "ground_truth": false,
+  "production_defaults_changed": false,
+  "viewer_memory_limit": "8GB",
+  "clip_frames": 300,
+  "original_logs_per_camera_frame": 1,
+  "composite_image_logs": 0
+}

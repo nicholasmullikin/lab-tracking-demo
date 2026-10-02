@@ -1,6 +1,6 @@
 # Documentation index
 
-Five live pages tell the story of this lab for a reader with five minutes; everything historical
+The live pages tell the story of this lab for a reader with five minutes; everything historical
 sits verbatim under `archive/`. Start with the root README, then the day-by-day story, then the
 numbers. The glossary that maps the lab's shorthand to plain words is in `writing-style.md`.
 
@@ -8,11 +8,12 @@ numbers. The glossary that maps the lab's shorthand to plain words is in `writin
 
 | Page | What it tells you |
 |---|---|
-| [`../README.md`](../README.md) | What the lab built in 22 days, the five numbers that matter, what is real and what is not, and how to set up |
+| [`../README.md`](../README.md) | What the lab built and the latest pipette progress, the five numbers that matter, what is real and what is not, and how to set up |
 | [`story.md`](story.md) | One section per active day, each with a GIF, a headline and the number that changed |
-| [`results.md`](results.md) | The goals scorecard in the founder's words, the two-trial FineBio table, the tip-vote, reprojection and stricter association readouts, the numbers anchored on the masks I chose, the Assembly101 headline, the claim boundaries |
+| [`results.md`](results.md) | The goals scorecard in the founder's words, the two-trial FineBio table, the tip-vote, reprojection, prompt, full-video and multiplex readouts, the numbers anchored on the masks I chose, the Assembly101 headline, the claim boundaries |
 | [`pipeline.md`](pipeline.md) | Setup, the FineBio pipeline one command per stage, the two gates, the recordings, the Assembly101 review package, tests, the GPU queue, pruning |
 | [`review-guide-2026-09-25-finebio-3d.md`](review-guide-2026-09-25-finebio-3d.md) | The 20-minute route through the FineBio recordings: presets, storyboard, cross-checks, the numbers |
+| [`review-guide-pipette-orientation.md`](review-guide-pipette-orientation.md) | The five-minute pipette orientation route, saved bundle and private browser review |
 | [`writing-style.md`](writing-style.md) | The ten rules the live pages follow, the house style taken from The Economist Style Guide, the [glossary](writing-style.md#glossary) and one before-and-after |
 | [`LICENSES.md`](LICENSES.md) | The license and handling policy for every input, and the terms the committed story media carry |
 | [`SOURCES.md`](SOURCES.md) | The source and provenance record for every dataset, model and external repository used |
@@ -23,6 +24,10 @@ numbers. The glossary that maps the lab's shorthand to plain words is in `writin
 - [Pipette tracking, 2026-10-01](qa/pipette-checkpoint-20261001/README.md): annotation state, point-prompt study, saved artifacts and resumption instructions.
 
 - [Pipette camera and 3D lines](qa/pipette-line-checkpoint-20261001/README.md): paired mask comparison, visual failure notes and reconstruction results.
+
+- [Full-video pipette propagation](qa/pipette-full-video-checkpoint-20261002/README.md): matched native-frame comparisons, drift review and sampled/native exports.
+
+- [Multiplex pipette orientation](qa/pipette-multiplex-20261002/README.md): recovered configuration, frozen four-slot seeds and reviewed tracking stages.
 
 ## Archive
 
