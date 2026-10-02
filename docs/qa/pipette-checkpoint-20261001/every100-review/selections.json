@@ -1,0 +1,268 @@
+{
+  "0": {
+    "T1": {
+      "round": 5,
+      "candidate_index": 1,
+      "quality": "needs-review",
+      "review_note": "Neighbour shaft pixels remain; smaller leakage than other revisions."
+    },
+    "T2": {
+      "round": 1,
+      "candidate_index": 0,
+      "quality": "usable-approximate-draft",
+      "review_note": "Roughly matches visible pipette pixels; occluded parts not inferred."
+    },
+    "T3": {
+      "round": 1,
+      "candidate_index": 0,
+      "quality": "usable-approximate-draft",
+      "review_note": "Roughly matches visible pipette pixels; occluded parts not inferred."
+    },
+    "T4": {
+      "round": 1,
+      "candidate_index": 0,
+      "quality": "usable-approximate-draft",
+      "review_note": "Roughly matches visible pipette pixels; occluded parts not inferred."
+    },
+    "T5": {
+      "round": 1,
+      "candidate_index": 0,
+      "quality": "usable-approximate-draft",
+      "review_note": "Roughly matches visible pipette pixels; occluded parts not inferred."
+    },
+    "fpv": {
+      "round": 3,
+      "candidate_index": 3,
+      "quality": "usable-approximate-draft",
+      "review_note": "Recovers the visible body, cap and shaft; minor boundary speckles."
+    }
+  },
+  "100": {
+    "T1": {
+      "round": 1,
+      "candidate_index": 1,
+      "quality": "usable-approximate-draft",
+      "review_note": "Roughly matches visible pipette pixels; occluded parts not inferred."
+    },
+    "T2": {
+      "round": 1,
+      "candidate_index": 0,
+      "quality": "needs-review",
+      "review_note": "Incomplete mask or extraneous pixels: inspect original and candidates before use as a seed."
+    },
+    "T3": {
+      "round": 1,
+      "candidate_index": 1,
+      "quality": "usable-approximate-draft",
+      "review_note": "Roughly matches visible pipette pixels; occluded parts not inferred."
+    },
+    "T4": {
+      "round": 4,
+      "candidate_index": 0,
+      "quality": "usable-approximate-draft",
+      "review_note": "Recovers pipette head and cap while excluding the glove."
+    },
+    "T5": {
+      "round": 1,
+      "candidate_index": 1,
+      "quality": "usable-approximate-draft",
+      "review_note": "Roughly matches visible pipette pixels; occluded parts not inferred."
+    },
+    "fpv": {
+      "round": 3,
+      "candidate_index": 3,
+      "quality": "needs-review",
+      "review_note": "Less spray-bottle leakage, but stray background pixels remain."
+    }
+  },
+  "200": {
+    "T1": {
+      "round": 5,
+      "candidate_index": 1,
+      "quality": "usable-approximate-draft",
+      "review_note": "Visible body and shaft recovered with substantially less glove and neighbour leakage."
+    },
+    "T2": {
+      "round": 3,
+      "candidate_index": 0,
+      "quality": "usable-approximate-draft",
+      "review_note": "Visible head and shaft; removes the glove/cuff sliver."
+    },
+    "T3": {
+      "round": 1,
+      "candidate_index": 0,
+      "quality": "usable-approximate-draft",
+      "review_note": "Roughly matches visible pipette pixels; occluded parts not inferred."
+    },
+    "T4": {
+      "round": 1,
+      "candidate_index": 1,
+      "quality": "needs-review",
+      "review_note": "Incomplete mask or extraneous pixels: inspect original and candidates before use as a seed."
+    },
+    "T5": {
+      "round": 3,
+      "candidate_index": 3,
+      "quality": "usable-approximate-draft",
+      "review_note": "Visible shaft and head recovered with glove excluded."
+    },
+    "fpv": {
+      "round": 5,
+      "candidate_index": 1,
+      "quality": "usable-approximate-draft",
+      "review_note": "Cleaner visible shaft/body; removes tip-rack spill."
+    }
+  },
+  "300": {
+    "T1": {
+      "round": 5,
+      "candidate_index": 1,
+      "quality": "usable-approximate-draft",
+      "review_note": "Clean visible body and shaft; cap largely occluded by fingers."
+    },
+    "T2": {
+      "round": 5,
+      "candidate_index": 1,
+      "quality": "needs-review",
+      "review_note": "Cleaner background, but support tube remains included at distal end."
+    },
+    "T3": {
+      "round": 5,
+      "candidate_index": 1,
+      "quality": "needs-review",
+      "review_note": "Large background spill removed; distal support-tube separation remains uncertain."
+    },
+    "T4": {
+      "round": 1,
+      "candidate_index": 0,
+      "quality": "usable-approximate-draft",
+      "review_note": "Roughly matches visible pipette pixels; occluded parts not inferred."
+    },
+    "T5": {
+      "round": 5,
+      "candidate_index": 1,
+      "quality": "usable-approximate-draft",
+      "review_note": "Recovers exposed shaft/body and cap; clothing leakage removed."
+    },
+    "fpv": {
+      "round": 1,
+      "candidate_index": 0,
+      "quality": "usable-approximate-draft",
+      "review_note": "Roughly matches visible pipette pixels; occluded parts not inferred."
+    }
+  },
+  "400": {
+    "T1": {
+      "round": 5,
+      "candidate_index": 1,
+      "quality": "needs-review",
+      "review_note": "Glove and cable spill mostly removed; visible cap is undersegmented and distal tube uncertain."
+    },
+    "T2": {
+      "round": 1,
+      "candidate_index": 1,
+      "quality": "usable-approximate-draft",
+      "review_note": "Roughly matches visible pipette pixels; occluded parts not inferred."
+    },
+    "T3": {
+      "round": 5,
+      "candidate_index": 1,
+      "quality": "needs-review",
+      "review_note": "Cleaner background; distal support-tube pixels remain."
+    },
+    "T4": {
+      "round": 3,
+      "candidate_index": 3,
+      "quality": "usable-approximate-draft",
+      "review_note": "Cleaner head and exposed shaft, glove and support-tube rim mostly excluded."
+    },
+    "T5": {
+      "round": 1,
+      "candidate_index": 1,
+      "quality": "usable-approximate-draft",
+      "review_note": "Roughly matches visible pipette pixels; occluded parts not inferred."
+    },
+    "fpv": {
+      "round": 5,
+      "candidate_index": 1,
+      "quality": "needs-review",
+      "review_note": "Cleaner shaft/body; a small chair/background strip remains."
+    }
+  },
+  "500": {
+    "T1": {
+      "round": 5,
+      "candidate_index": 1,
+      "quality": "needs-review",
+      "review_note": "Much less glove spill, but a cable speck and uncertain tube boundary remain."
+    },
+    "T2": {
+      "round": 5,
+      "candidate_index": 1,
+      "quality": "needs-review",
+      "review_note": "Removes shirt spill; support-tube boundary remains merged."
+    },
+    "T3": {
+      "round": 5,
+      "candidate_index": 1,
+      "quality": "needs-review",
+      "review_note": "Removes background spill; distal support-tube separation remains uncertain."
+    },
+    "T4": {
+      "round": 5,
+      "candidate_index": 1,
+      "quality": "needs-review",
+      "review_note": "Cleaner head/body; distal shaft and tube boundary still need review."
+    },
+    "T5": {
+      "round": 2,
+      "candidate_index": 1,
+      "quality": "usable-approximate-draft",
+      "review_note": "Roughly matches visible pipette pixels; occluded parts not inferred."
+    },
+    "fpv": {
+      "round": 4,
+      "candidate_index": 0,
+      "quality": "usable-approximate-draft",
+      "review_note": "Recovers visible shaft/body while removing chair and tube-rim leakage."
+    }
+  },
+  "600": {
+    "T1": {
+      "round": 5,
+      "candidate_index": 1,
+      "quality": "needs-review",
+      "review_note": "Less glove spill; small glove pixels and uncertain tube boundary remain."
+    },
+    "T2": {
+      "round": 5,
+      "candidate_index": 1,
+      "quality": "needs-review",
+      "review_note": "Cleaner visible body/shaft, but support-tube boundary remains merged."
+    },
+    "T3": {
+      "round": 5,
+      "candidate_index": 1,
+      "quality": "needs-review",
+      "review_note": "Removes extensive background spill; distal tube and tip still uncertain."
+    },
+    "T4": {
+      "round": 3,
+      "candidate_index": 0,
+      "quality": "usable-approximate-draft",
+      "review_note": "Cleaner head/shaft with glove and tube-rim pixels mostly excluded."
+    },
+    "T5": {
+      "round": 1,
+      "candidate_index": 1,
+      "quality": "usable-approximate-draft",
+      "review_note": "Roughly matches visible pipette pixels; occluded parts not inferred."
+    },
+    "fpv": {
+      "round": 1,
+      "candidate_index": 0,
+      "quality": "usable-approximate-draft",
+      "review_note": "Roughly matches visible pipette pixels; occluded parts not inferred."
+    }
+  }
+}

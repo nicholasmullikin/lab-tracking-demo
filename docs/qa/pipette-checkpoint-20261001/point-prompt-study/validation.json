@@ -1,0 +1,41 @@
+{
+  "native_binary_masks": 532,
+  "selected_or_top_outside_display_crop": [
+    [
+      "f000-T2",
+      "p5-spread",
+      3,
+      2
+    ],
+    [
+      "f000-T2",
+      "p8-spread",
+      1,
+      1
+    ],
+    [
+      "f000-T2",
+      "points-only-p3",
+      0,
+      380
+    ],
+    [
+      "f000-T2",
+      "points-only-p3-n3",
+      0,
+      11
+    ],
+    [
+      "f000-T2",
+      "p3-wrong-positive",
+      3,
+      3
+    ],
+    [
+      "f300-T3",
+      "points-only-p3",
+      0,
+      10
+    ]
+  ]
+}

@@ -1,0 +1,1017 @@
+{
+  "source_frames": [
+    0,
+    100,
+    200,
+    300,
+    400,
+    500,
+    600
+  ],
+  "step": 100,
+  "physical_id": "blue",
+  "ground_truth": false,
+  "video_propagation_run": false,
+  "production_start_frame_unchanged": 600,
+  "decoder_calls": 130,
+  "candidate_masks": 520,
+  "decodes_by_round": {
+    "1": 42,
+    "2": 14,
+    "3": 27,
+    "4": 27,
+    "5": 20
+  },
+  "recommended_start": 0,
+  "refinement": {
+    "targeted_images": 27,
+    "decoder_calls": 74,
+    "candidate_masks": 296,
+    "usable_before": 15,
+    "usable_after": 26,
+    "needs_review_after": 16
+  },
+  "review_method": "Directly viewed originals, enlarged coordinate crops, all five passes of candidate sheets and all 27 original/before/after comparisons. Explicit visual selection, retaining earlier masks when revisions regressed. Qualitative judgments, not ground truth or measured tracking accuracy.",
+  "frames": {
+    "0": {
+      "source_frame": 0,
+      "source_time_seconds": 0.0,
+      "state": "resting",
+      "note": "T1: Neighbour shaft pixels remain; smaller leakage than other revisions.; fpv: Recovers the visible body, cap and shaft; minor boundary speckles.",
+      "views": {
+        "T1": {
+          "physical_id": "blue",
+          "state": "resting",
+          "image_size_wh": [
+            1920,
+            1080
+          ],
+          "selection": {
+            "round": 5,
+            "candidate_index": 1
+          },
+          "mask_uri": "0/final/masks/T1-blue.png",
+          "quality": "needs-review",
+          "review_note": "Neighbour shaft pixels remain; smaller leakage than other revisions.",
+          "prompt_box_xyxy": [
+            720,
+            360,
+            837,
+            480
+          ],
+          "mask_pixels": 3016
+        },
+        "T2": {
+          "physical_id": "blue",
+          "state": "resting",
+          "image_size_wh": [
+            1920,
+            1080
+          ],
+          "selection": {
+            "round": 1,
+            "candidate_index": 0
+          },
+          "mask_uri": "0/final/masks/T2-blue.png",
+          "quality": "usable-approximate-draft",
+          "review_note": "Roughly matches visible pipette pixels; occluded parts not inferred.",
+          "prompt_box_xyxy": [
+            503,
+            376,
+            754,
+            552
+          ],
+          "mask_pixels": 7539
+        },
+        "T3": {
+          "physical_id": "blue",
+          "state": "resting",
+          "image_size_wh": [
+            1920,
+            1080
+          ],
+          "selection": {
+            "round": 1,
+            "candidate_index": 0
+          },
+          "mask_uri": "0/final/masks/T3-blue.png",
+          "quality": "usable-approximate-draft",
+          "review_note": "Roughly matches visible pipette pixels; occluded parts not inferred.",
+          "prompt_box_xyxy": [
+            1139,
+            488,
+            1383,
+            552
+          ],
+          "mask_pixels": 5228
+        },
+        "T4": {
+          "physical_id": "blue",
+          "state": "resting",
+          "image_size_wh": [
+            1920,
+            1080
+          ],
+          "selection": {
+            "round": 1,
+            "candidate_index": 0
+          },
+          "mask_uri": "0/final/masks/T4-blue.png",
+          "quality": "usable-approximate-draft",
+          "review_note": "Roughly matches visible pipette pixels; occluded parts not inferred.",
+          "prompt_box_xyxy": [
+            752,
+            710,
+            927,
+            990
+          ],
+          "mask_pixels": 9005
+        },
+        "T5": {
+          "physical_id": "blue",
+          "state": "resting",
+          "image_size_wh": [
+            1920,
+            1080
+          ],
+          "selection": {
+            "round": 1,
+            "candidate_index": 0
+          },
+          "mask_uri": "0/final/masks/T5-blue.png",
+          "quality": "usable-approximate-draft",
+          "review_note": "Roughly matches visible pipette pixels; occluded parts not inferred.",
+          "prompt_box_xyxy": [
+            1190,
+            684,
+            1276,
+            916
+          ],
+          "mask_pixels": 5926
+        },
+        "fpv": {
+          "physical_id": "blue",
+          "state": "resting",
+          "image_size_wh": [
+            1920,
+            1440
+          ],
+          "selection": {
+            "round": 3,
+            "candidate_index": 3
+          },
+          "mask_uri": "0/final/masks/fpv-blue.png",
+          "quality": "usable-approximate-draft",
+          "review_note": "Recovers the visible body, cap and shaft; minor boundary speckles.",
+          "prompt_box_xyxy": [
+            1515,
+            871,
+            1595,
+            1288
+          ],
+          "mask_pixels": 16137
+        }
+      }
+    },
+    "100": {
+      "source_frame": 100,
+      "source_time_seconds": 3.336666666666667,
+      "state": "held",
+      "note": "T2: Incomplete mask or extraneous pixels: inspect original and candidates before use as a seed.; T4: Recovers pipette head and cap while excluding the glove.; fpv: Less spray-bottle leakage, but stray background pixels remain.",
+      "views": {
+        "T1": {
+          "physical_id": "blue",
+          "state": "held",
+          "image_size_wh": [
+            1920,
+            1080
+          ],
+          "selection": {
+            "round": 1,
+            "candidate_index": 1
+          },
+          "mask_uri": "100/final/masks/T1-blue.png",
+          "quality": "usable-approximate-draft",
+          "review_note": "Roughly matches visible pipette pixels; occluded parts not inferred.",
+          "prompt_box_xyxy": [
+            422,
+            250,
+            546,
+            439
+          ],
+          "mask_pixels": 2288
+        },
+        "T2": {
+          "physical_id": "blue",
+          "state": "held",
+          "image_size_wh": [
+            1920,
+            1080
+          ],
+          "selection": {
+            "round": 1,
+            "candidate_index": 0
+          },
+          "mask_uri": "100/final/masks/T2-blue.png",
+          "quality": "needs-review",
+          "review_note": "Incomplete mask or extraneous pixels: inspect original and candidates before use as a seed.",
+          "prompt_box_xyxy": [
+            323,
+            431,
+            617,
+            694
+          ],
+          "mask_pixels": 11804
+        },
+        "T3": {
+          "physical_id": "blue",
+          "state": "held",
+          "image_size_wh": [
+            1920,
+            1080
+          ],
+          "selection": {
+            "round": 1,
+            "candidate_index": 1
+          },
+          "mask_uri": "100/final/masks/T3-blue.png",
+          "quality": "usable-approximate-draft",
+          "review_note": "Roughly matches visible pipette pixels; occluded parts not inferred.",
+          "prompt_box_xyxy": [
+            1100,
+            121,
+            1201,
+            335
+          ],
+          "mask_pixels": 2462
+        },
+        "T4": {
+          "physical_id": "blue",
+          "state": "held",
+          "image_size_wh": [
+            1920,
+            1080
+          ],
+          "selection": {
+            "round": 4,
+            "candidate_index": 0
+          },
+          "mask_uri": "100/final/masks/T4-blue.png",
+          "quality": "usable-approximate-draft",
+          "review_note": "Recovers pipette head and cap while excluding the glove.",
+          "prompt_box_xyxy": [
+            1280,
+            551,
+            1350,
+            654
+          ],
+          "mask_pixels": 5140
+        },
+        "T5": {
+          "physical_id": "blue",
+          "state": "held",
+          "image_size_wh": [
+            1920,
+            1080
+          ],
+          "selection": {
+            "round": 1,
+            "candidate_index": 1
+          },
+          "mask_uri": "100/final/masks/T5-blue.png",
+          "quality": "usable-approximate-draft",
+          "review_note": "Roughly matches visible pipette pixels; occluded parts not inferred.",
+          "prompt_box_xyxy": [
+            1445,
+            574,
+            1755,
+            665
+          ],
+          "mask_pixels": 4615
+        },
+        "fpv": {
+          "physical_id": "blue",
+          "state": "held",
+          "image_size_wh": [
+            1920,
+            1440
+          ],
+          "selection": {
+            "round": 3,
+            "candidate_index": 3
+          },
+          "mask_uri": "100/final/masks/fpv-blue.png",
+          "quality": "needs-review",
+          "review_note": "Less spray-bottle leakage, but stray background pixels remain.",
+          "prompt_box_xyxy": [
+            1265,
+            170,
+            1640,
+            491
+          ],
+          "mask_pixels": 9839
+        }
+      }
+    },
+    "200": {
+      "source_frame": 200,
+      "source_time_seconds": 6.673333333333334,
+      "state": "held",
+      "note": "T1: Visible body and shaft recovered with substantially less glove and neighbour leakage.; T2: Visible head and shaft; removes the glove/cuff sliver.; T4: Incomplete mask or extraneous pixels: inspect original and candidates before use as a seed.; T5: Visible shaft and head recovered with glove excluded.; fpv: Cleaner visible shaft/body; removes tip-rack spill.",
+      "views": {
+        "T1": {
+          "physical_id": "blue",
+          "state": "held",
+          "image_size_wh": [
+            1920,
+            1080
+          ],
+          "selection": {
+            "round": 5,
+            "candidate_index": 1
+          },
+          "mask_uri": "200/final/masks/T1-blue.png",
+          "quality": "usable-approximate-draft",
+          "review_note": "Visible body and shaft recovered with substantially less glove and neighbour leakage.",
+          "prompt_box_xyxy": [
+            596,
+            242,
+            767,
+            438
+          ],
+          "mask_pixels": 2489
+        },
+        "T2": {
+          "physical_id": "blue",
+          "state": "held",
+          "image_size_wh": [
+            1920,
+            1080
+          ],
+          "selection": {
+            "round": 3,
+            "candidate_index": 0
+          },
+          "mask_uri": "200/final/masks/T2-blue.png",
+          "quality": "usable-approximate-draft",
+          "review_note": "Visible head and shaft; removes the glove/cuff sliver.",
+          "prompt_box_xyxy": [
+            610,
+            238,
+            930,
+            413
+          ],
+          "mask_pixels": 5541
+        },
+        "T3": {
+          "physical_id": "blue",
+          "state": "held",
+          "image_size_wh": [
+            1920,
+            1080
+          ],
+          "selection": {
+            "round": 1,
+            "candidate_index": 0
+          },
+          "mask_uri": "200/final/masks/T3-blue.png",
+          "quality": "usable-approximate-draft",
+          "review_note": "Roughly matches visible pipette pixels; occluded parts not inferred.",
+          "prompt_box_xyxy": [
+            1110,
+            221,
+            1257,
+            496
+          ],
+          "mask_pixels": 4830
+        },
+        "T4": {
+          "physical_id": "blue",
+          "state": "held",
+          "image_size_wh": [
+            1920,
+            1080
+          ],
+          "selection": {
+            "round": 1,
+            "candidate_index": 1
+          },
+          "mask_uri": "200/final/masks/T4-blue.png",
+          "quality": "needs-review",
+          "review_note": "Incomplete mask or extraneous pixels: inspect original and candidates before use as a seed.",
+          "prompt_box_xyxy": [
+            730,
+            530,
+            995,
+            620
+          ],
+          "mask_pixels": 5889
+        },
+        "T5": {
+          "physical_id": "blue",
+          "state": "held",
+          "image_size_wh": [
+            1920,
+            1080
+          ],
+          "selection": {
+            "round": 3,
+            "candidate_index": 3
+          },
+          "mask_uri": "200/final/masks/T5-blue.png",
+          "quality": "usable-approximate-draft",
+          "review_note": "Visible shaft and head recovered with glove excluded.",
+          "prompt_box_xyxy": [
+            1078,
+            715,
+            1450,
+            793
+          ],
+          "mask_pixels": 5052
+        },
+        "fpv": {
+          "physical_id": "blue",
+          "state": "held",
+          "image_size_wh": [
+            1920,
+            1440
+          ],
+          "selection": {
+            "round": 5,
+            "candidate_index": 1
+          },
+          "mask_uri": "200/final/masks/fpv-blue.png",
+          "quality": "usable-approximate-draft",
+          "review_note": "Cleaner visible shaft/body; removes tip-rack spill.",
+          "prompt_box_xyxy": [
+            1120,
+            644,
+            1920,
+            730
+          ],
+          "mask_pixels": 15397
+        }
+      }
+    },
+    "300": {
+      "source_frame": 300,
+      "source_time_seconds": 10.01,
+      "state": "held",
+      "note": "T1: Clean visible body and shaft; cap largely occluded by fingers.; T2: Cleaner background, but support tube remains included at distal end.; T3: Large background spill removed; distal support-tube separation remains uncertain.; T5: Recovers exposed shaft/body and cap; clothing leakage removed.",
+      "views": {
+        "T1": {
+          "physical_id": "blue",
+          "state": "held",
+          "image_size_wh": [
+            1920,
+            1080
+          ],
+          "selection": {
+            "round": 5,
+            "candidate_index": 1
+          },
+          "mask_uri": "300/final/masks/T1-blue.png",
+          "quality": "usable-approximate-draft",
+          "review_note": "Clean visible body and shaft; cap largely occluded by fingers.",
+          "prompt_box_xyxy": [
+            710,
+            159,
+            823,
+            324
+          ],
+          "mask_pixels": 1751
+        },
+        "T2": {
+          "physical_id": "blue",
+          "state": "held",
+          "image_size_wh": [
+            1920,
+            1080
+          ],
+          "selection": {
+            "round": 5,
+            "candidate_index": 1
+          },
+          "mask_uri": "300/final/masks/T2-blue.png",
+          "quality": "needs-review",
+          "review_note": "Cleaner background, but support tube remains included at distal end.",
+          "prompt_box_xyxy": [
+            352,
+            67,
+            760,
+            296
+          ],
+          "mask_pixels": 5384
+        },
+        "T3": {
+          "physical_id": "blue",
+          "state": "held",
+          "image_size_wh": [
+            1920,
+            1080
+          ],
+          "selection": {
+            "round": 5,
+            "candidate_index": 1
+          },
+          "mask_uri": "300/final/masks/T3-blue.png",
+          "quality": "needs-review",
+          "review_note": "Large background spill removed; distal support-tube separation remains uncertain.",
+          "prompt_box_xyxy": [
+            1275,
+            225,
+            1520,
+            542
+          ],
+          "mask_pixels": 5274
+        },
+        "T4": {
+          "physical_id": "blue",
+          "state": "held",
+          "image_size_wh": [
+            1920,
+            1080
+          ],
+          "selection": {
+            "round": 1,
+            "candidate_index": 0
+          },
+          "mask_uri": "300/final/masks/T4-blue.png",
+          "quality": "usable-approximate-draft",
+          "review_note": "Roughly matches visible pipette pixels; occluded parts not inferred.",
+          "prompt_box_xyxy": [
+            627,
+            690,
+            805,
+            925
+          ],
+          "mask_pixels": 6163
+        },
+        "T5": {
+          "physical_id": "blue",
+          "state": "held",
+          "image_size_wh": [
+            1920,
+            1080
+          ],
+          "selection": {
+            "round": 5,
+            "candidate_index": 1
+          },
+          "mask_uri": "300/final/masks/T5-blue.png",
+          "quality": "usable-approximate-draft",
+          "review_note": "Recovers exposed shaft/body and cap; clothing leakage removed.",
+          "prompt_box_xyxy": [
+            1154,
+            910,
+            1438,
+            1080
+          ],
+          "mask_pixels": 4901
+        },
+        "fpv": {
+          "physical_id": "blue",
+          "state": "held",
+          "image_size_wh": [
+            1920,
+            1440
+          ],
+          "selection": {
+            "round": 1,
+            "candidate_index": 0
+          },
+          "mask_uri": "300/final/masks/fpv-blue.png",
+          "quality": "usable-approximate-draft",
+          "review_note": "Roughly matches visible pipette pixels; occluded parts not inferred.",
+          "prompt_box_xyxy": [
+            1065,
+            614,
+            1920,
+            755
+          ],
+          "mask_pixels": 31327
+        }
+      }
+    },
+    "400": {
+      "source_frame": 400,
+      "source_time_seconds": 13.346666666666668,
+      "state": "held",
+      "note": "T1: Glove and cable spill mostly removed; visible cap is undersegmented and distal tube uncertain.; T3: Cleaner background; distal support-tube pixels remain.; T4: Cleaner head and exposed shaft, glove and support-tube rim mostly excluded.; fpv: Cleaner shaft/body; a small chair/background strip remains.",
+      "views": {
+        "T1": {
+          "physical_id": "blue",
+          "state": "held",
+          "image_size_wh": [
+            1920,
+            1080
+          ],
+          "selection": {
+            "round": 5,
+            "candidate_index": 1
+          },
+          "mask_uri": "400/final/masks/T1-blue.png",
+          "quality": "needs-review",
+          "review_note": "Glove and cable spill mostly removed; visible cap is undersegmented and distal tube uncertain.",
+          "prompt_box_xyxy": [
+            732,
+            185,
+            900,
+            355
+          ],
+          "mask_pixels": 2261
+        },
+        "T2": {
+          "physical_id": "blue",
+          "state": "held",
+          "image_size_wh": [
+            1920,
+            1080
+          ],
+          "selection": {
+            "round": 1,
+            "candidate_index": 1
+          },
+          "mask_uri": "400/final/masks/T2-blue.png",
+          "quality": "usable-approximate-draft",
+          "review_note": "Roughly matches visible pipette pixels; occluded parts not inferred.",
+          "prompt_box_xyxy": [
+            431,
+            70,
+            729,
+            279
+          ],
+          "mask_pixels": 5292
+        },
+        "T3": {
+          "physical_id": "blue",
+          "state": "held",
+          "image_size_wh": [
+            1920,
+            1080
+          ],
+          "selection": {
+            "round": 5,
+            "candidate_index": 1
+          },
+          "mask_uri": "400/final/masks/T3-blue.png",
+          "quality": "needs-review",
+          "review_note": "Cleaner background; distal support-tube pixels remain.",
+          "prompt_box_xyxy": [
+            1358,
+            305,
+            1504,
+            580
+          ],
+          "mask_pixels": 4368
+        },
+        "T4": {
+          "physical_id": "blue",
+          "state": "held",
+          "image_size_wh": [
+            1920,
+            1080
+          ],
+          "selection": {
+            "round": 3,
+            "candidate_index": 3
+          },
+          "mask_uri": "400/final/masks/T4-blue.png",
+          "quality": "usable-approximate-draft",
+          "review_note": "Cleaner head and exposed shaft, glove and support-tube rim mostly excluded.",
+          "prompt_box_xyxy": [
+            570,
+            727,
+            672,
+            875
+          ],
+          "mask_pixels": 3861
+        },
+        "T5": {
+          "physical_id": "blue",
+          "state": "held",
+          "image_size_wh": [
+            1920,
+            1080
+          ],
+          "selection": {
+            "round": 1,
+            "candidate_index": 1
+          },
+          "mask_uri": "400/final/masks/T5-blue.png",
+          "quality": "usable-approximate-draft",
+          "review_note": "Roughly matches visible pipette pixels; occluded parts not inferred.",
+          "prompt_box_xyxy": [
+            1067,
+            915,
+            1390,
+            1068
+          ],
+          "mask_pixels": 4379
+        },
+        "fpv": {
+          "physical_id": "blue",
+          "state": "held",
+          "image_size_wh": [
+            1920,
+            1440
+          ],
+          "selection": {
+            "round": 5,
+            "candidate_index": 1
+          },
+          "mask_uri": "400/final/masks/fpv-blue.png",
+          "quality": "needs-review",
+          "review_note": "Cleaner shaft/body; a small chair/background strip remains.",
+          "prompt_box_xyxy": [
+            1260,
+            690,
+            1920,
+            838
+          ],
+          "mask_pixels": 33655
+        }
+      }
+    },
+    "500": {
+      "source_frame": 500,
+      "source_time_seconds": 16.683333333333334,
+      "state": "held",
+      "note": "T1: Much less glove spill, but a cable speck and uncertain tube boundary remain.; T2: Removes shirt spill; support-tube boundary remains merged.; T3: Removes background spill; distal support-tube separation remains uncertain.; T4: Cleaner head/body; distal shaft and tube boundary still need review.; fpv: Recovers visible shaft/body while removing chair and tube-rim leakage.",
+      "views": {
+        "T1": {
+          "physical_id": "blue",
+          "state": "held",
+          "image_size_wh": [
+            1920,
+            1080
+          ],
+          "selection": {
+            "round": 5,
+            "candidate_index": 1
+          },
+          "mask_uri": "500/final/masks/T1-blue.png",
+          "quality": "needs-review",
+          "review_note": "Much less glove spill, but a cable speck and uncertain tube boundary remain.",
+          "prompt_box_xyxy": [
+            748,
+            180,
+            903,
+            360
+          ],
+          "mask_pixels": 2515
+        },
+        "T2": {
+          "physical_id": "blue",
+          "state": "held",
+          "image_size_wh": [
+            1920,
+            1080
+          ],
+          "selection": {
+            "round": 5,
+            "candidate_index": 1
+          },
+          "mask_uri": "500/final/masks/T2-blue.png",
+          "quality": "needs-review",
+          "review_note": "Removes shirt spill; support-tube boundary remains merged.",
+          "prompt_box_xyxy": [
+            425,
+            95,
+            728,
+            282
+          ],
+          "mask_pixels": 4222
+        },
+        "T3": {
+          "physical_id": "blue",
+          "state": "held",
+          "image_size_wh": [
+            1920,
+            1080
+          ],
+          "selection": {
+            "round": 5,
+            "candidate_index": 1
+          },
+          "mask_uri": "500/final/masks/T3-blue.png",
+          "quality": "needs-review",
+          "review_note": "Removes background spill; distal support-tube separation remains uncertain.",
+          "prompt_box_xyxy": [
+            1350,
+            310,
+            1511,
+            584
+          ],
+          "mask_pixels": 4435
+        },
+        "T4": {
+          "physical_id": "blue",
+          "state": "held",
+          "image_size_wh": [
+            1920,
+            1080
+          ],
+          "selection": {
+            "round": 5,
+            "candidate_index": 1
+          },
+          "mask_uri": "500/final/masks/T4-blue.png",
+          "quality": "needs-review",
+          "review_note": "Cleaner head/body; distal shaft and tube boundary still need review.",
+          "prompt_box_xyxy": [
+            569,
+            744,
+            695,
+            876
+          ],
+          "mask_pixels": 4680
+        },
+        "T5": {
+          "physical_id": "blue",
+          "state": "held",
+          "image_size_wh": [
+            1920,
+            1080
+          ],
+          "selection": {
+            "round": 2,
+            "candidate_index": 1
+          },
+          "mask_uri": "500/final/masks/T5-blue.png",
+          "quality": "usable-approximate-draft",
+          "review_note": "Roughly matches visible pipette pixels; occluded parts not inferred.",
+          "prompt_box_xyxy": [
+            1115,
+            928,
+            1400,
+            1074
+          ],
+          "mask_pixels": 3981
+        },
+        "fpv": {
+          "physical_id": "blue",
+          "state": "held",
+          "image_size_wh": [
+            1920,
+            1440
+          ],
+          "selection": {
+            "round": 4,
+            "candidate_index": 0
+          },
+          "mask_uri": "500/final/masks/fpv-blue.png",
+          "quality": "usable-approximate-draft",
+          "review_note": "Recovers visible shaft/body while removing chair and tube-rim leakage.",
+          "prompt_box_xyxy": [
+            1220,
+            768,
+            1920,
+            821
+          ],
+          "mask_pixels": 28296
+        }
+      }
+    },
+    "600": {
+      "source_frame": 600,
+      "source_time_seconds": 20.02,
+      "state": "held",
+      "note": "T1: Less glove spill; small glove pixels and uncertain tube boundary remain.; T2: Cleaner visible body/shaft, but support-tube boundary remains merged.; T3: Removes extensive background spill; distal tube and tip still uncertain.; T4: Cleaner head/shaft with glove and tube-rim pixels mostly excluded.",
+      "views": {
+        "T1": {
+          "physical_id": "blue",
+          "state": "held",
+          "image_size_wh": [
+            1920,
+            1080
+          ],
+          "selection": {
+            "round": 5,
+            "candidate_index": 1
+          },
+          "mask_uri": "600/final/masks/T1-blue.png",
+          "quality": "needs-review",
+          "review_note": "Less glove spill; small glove pixels and uncertain tube boundary remain.",
+          "prompt_box_xyxy": [
+            752,
+            170,
+            916,
+            353
+          ],
+          "mask_pixels": 2152
+        },
+        "T2": {
+          "physical_id": "blue",
+          "state": "held",
+          "image_size_wh": [
+            1920,
+            1080
+          ],
+          "selection": {
+            "round": 5,
+            "candidate_index": 1
+          },
+          "mask_uri": "600/final/masks/T2-blue.png",
+          "quality": "needs-review",
+          "review_note": "Cleaner visible body/shaft, but support-tube boundary remains merged.",
+          "prompt_box_xyxy": [
+            361,
+            59,
+            774,
+            264
+          ],
+          "mask_pixels": 5021
+        },
+        "T3": {
+          "physical_id": "blue",
+          "state": "held",
+          "image_size_wh": [
+            1920,
+            1080
+          ],
+          "selection": {
+            "round": 5,
+            "candidate_index": 1
+          },
+          "mask_uri": "600/final/masks/T3-blue.png",
+          "quality": "needs-review",
+          "review_note": "Removes extensive background spill; distal tube and tip still uncertain.",
+          "prompt_box_xyxy": [
+            1328,
+            286,
+            1541,
+            585
+          ],
+          "mask_pixels": 4391
+        },
+        "T4": {
+          "physical_id": "blue",
+          "state": "held",
+          "image_size_wh": [
+            1920,
+            1080
+          ],
+          "selection": {
+            "round": 3,
+            "candidate_index": 0
+          },
+          "mask_uri": "600/final/masks/T4-blue.png",
+          "quality": "usable-approximate-draft",
+          "review_note": "Cleaner head/shaft with glove and tube-rim pixels mostly excluded.",
+          "prompt_box_xyxy": [
+            551,
+            739,
+            724,
+            948
+          ],
+          "mask_pixels": 8489
+        },
+        "T5": {
+          "physical_id": "blue",
+          "state": "held",
+          "image_size_wh": [
+            1920,
+            1080
+          ],
+          "selection": {
+            "round": 1,
+            "candidate_index": 1
+          },
+          "mask_uri": "600/final/masks/T5-blue.png",
+          "quality": "usable-approximate-draft",
+          "review_note": "Roughly matches visible pipette pixels; occluded parts not inferred.",
+          "prompt_box_xyxy": [
+            1110,
+            928,
+            1436,
+            1080
+          ],
+          "mask_pixels": 4618
+        },
+        "fpv": {
+          "physical_id": "blue",
+          "state": "held",
+          "image_size_wh": [
+            1920,
+            1440
+          ],
+          "selection": {
+            "round": 1,
+            "candidate_index": 0
+          },
+          "mask_uri": "600/final/masks/fpv-blue.png",
+          "quality": "usable-approximate-draft",
+          "review_note": "Roughly matches visible pipette pixels; occluded parts not inferred.",
+          "prompt_box_xyxy": [
+            1425,
+            955,
+            1920,
+            1050
+          ],
+          "mask_pixels": 18311
+        }
+      }
+    }
+  }
+}

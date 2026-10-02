@@ -1,0 +1,1021 @@
+{
+  "ground_truth": false,
+  "reviewer": "single AI visual reviewer",
+  "rating_scale": {
+    "5": "clean approximate visible pixels",
+    "4": "mostly correct with small errors or uncertain tip",
+    "3": "notable leakage or missing part",
+    "2": "major non-target inclusion",
+    "1": "wrong object or failed"
+  },
+  "decoder_calls": 133,
+  "candidate_masks_inspected": 532,
+  "cases": {
+    "f000-T2": {
+      "note": "Good box already works. Eight positives and a false positive make the top-ranked mask leak into neighbours; a better candidate still exists.",
+      "conditions": {
+        "box-only": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 5,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 5
+        },
+        "p1-body": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 5,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 5
+        },
+        "p1-shaft": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 5,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 5
+        },
+        "p1-cap": {
+          "selected_candidate_index": 3,
+          "best_of_four_visual_grade": 5,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 5
+        },
+        "p2-body-shaft": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 5,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 5
+        },
+        "p3-parts": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 5,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 5
+        },
+        "p5-spread": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 5,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 5
+        },
+        "p8-spread": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 5,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 4
+        },
+        "p3-n1": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 5,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 5
+        },
+        "p3-n3": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 5,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 5
+        },
+        "p5-n3": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 5,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 5
+        },
+        "p8-n3": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 5,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 4
+        },
+        "p3-far3": {
+          "selected_candidate_index": 3,
+          "best_of_four_visual_grade": 5,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 4
+        },
+        "points-only-p3": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 5,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 3
+        },
+        "points-only-p3-n3": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 5,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 5
+        },
+        "p3-wrong-positive": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 5,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 3
+        },
+        "p1-body-n1": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 5,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 5
+        },
+        "p2-body-shaft-n1": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 5,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 5
+        },
+        "p2-body-shaft-n3": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 5,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 5
+        }
+      }
+    },
+    "f000-T1": {
+      "note": "Body+shaft is more useful than cap alone. Repeated positives increase neighbouring-pipette spill. None fully resolves neighbour contamination.",
+      "conditions": {
+        "box-only": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 3
+        },
+        "p1-body": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 3
+        },
+        "p1-shaft": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 3
+        },
+        "p1-cap": {
+          "selected_candidate_index": 3,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 3
+        },
+        "p2-body-shaft": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 4
+        },
+        "p3-parts": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 3
+        },
+        "p5-spread": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 3
+        },
+        "p8-spread": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 2
+        },
+        "p3-n1": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 4
+        },
+        "p3-n3": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 4
+        },
+        "p5-n3": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 3
+        },
+        "p8-n3": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 3
+        },
+        "p3-far3": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 3
+        },
+        "points-only-p3": {
+          "selected_candidate_index": 3,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 3
+        },
+        "points-only-p3-n3": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 3
+        },
+        "p3-wrong-positive": {
+          "selected_candidate_index": 3,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 3
+        },
+        "p1-body-n1": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 3
+        },
+        "p2-body-shaft-n1": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 4
+        },
+        "p2-body-shaft-n3": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 3
+        }
+      }
+    },
+    "f000-fpv": {
+      "note": "Corrected box alone is strong; many positives add holes. This case supports fixing the box before adding clicks.",
+      "conditions": {
+        "box-only": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 5,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 5
+        },
+        "p1-body": {
+          "selected_candidate_index": 3,
+          "best_of_four_visual_grade": 5,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 5
+        },
+        "p1-shaft": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 5,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 5
+        },
+        "p1-cap": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 5,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 5
+        },
+        "p2-body-shaft": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 5,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 5
+        },
+        "p3-parts": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 5,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 5
+        },
+        "p5-spread": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 5,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 5
+        },
+        "p8-spread": {
+          "selected_candidate_index": 3,
+          "best_of_four_visual_grade": 5,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 4
+        },
+        "p3-n1": {
+          "selected_candidate_index": 3,
+          "best_of_four_visual_grade": 5,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 5
+        },
+        "p3-n3": {
+          "selected_candidate_index": 3,
+          "best_of_four_visual_grade": 5,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 5
+        },
+        "p5-n3": {
+          "selected_candidate_index": 3,
+          "best_of_four_visual_grade": 5,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 5
+        },
+        "p8-n3": {
+          "selected_candidate_index": 3,
+          "best_of_four_visual_grade": 5,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 3
+        },
+        "p3-far3": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 5,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 5
+        },
+        "points-only-p3": {
+          "selected_candidate_index": 3,
+          "best_of_four_visual_grade": 5,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 5
+        },
+        "points-only-p3-n3": {
+          "selected_candidate_index": 3,
+          "best_of_four_visual_grade": 5,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 5
+        },
+        "p3-wrong-positive": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 4
+        },
+        "p1-body-n1": {
+          "selected_candidate_index": 3,
+          "best_of_four_visual_grade": 5,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 5
+        },
+        "p2-body-shaft-n1": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 5,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 5
+        },
+        "p2-body-shaft-n3": {
+          "selected_candidate_index": 3,
+          "best_of_four_visual_grade": 5,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 5
+        }
+      }
+    },
+    "f100-T2": {
+      "note": "Rack/shaft ambiguity remains. Body-only has the cleanest available candidate; additional positives can expand the glove or omit the separate shaft.",
+      "conditions": {
+        "box-only": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 3
+        },
+        "p1-body": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 3
+        },
+        "p1-shaft": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 3
+        },
+        "p1-cap": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 3
+        },
+        "p2-body-shaft": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 2
+        },
+        "p3-parts": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 3
+        },
+        "p5-spread": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 2
+        },
+        "p8-spread": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 2
+        },
+        "p3-n1": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 3
+        },
+        "p3-n3": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 3
+        },
+        "p5-n3": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 3
+        },
+        "p8-n3": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 3
+        },
+        "p3-far3": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 2
+        },
+        "points-only-p3": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 3
+        },
+        "points-only-p3-n3": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 3
+        },
+        "p3-wrong-positive": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 2
+        },
+        "p1-body-n1": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 3
+        },
+        "p2-body-shaft-n1": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 3
+        },
+        "p2-body-shaft-n3": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 3
+        }
+      }
+    },
+    "f200-T4": {
+      "note": "Targeted negatives reduce rack spill. Three positives plus one or three negatives produce the strongest reviewed candidates, with residual errors.",
+      "conditions": {
+        "box-only": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 2
+        },
+        "p1-body": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 2
+        },
+        "p1-shaft": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 2
+        },
+        "p1-cap": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 2
+        },
+        "p2-body-shaft": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 2
+        },
+        "p3-parts": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 2
+        },
+        "p5-spread": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 3
+        },
+        "p8-spread": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 3
+        },
+        "p3-n1": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 3
+        },
+        "p3-n3": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 4
+        },
+        "p5-n3": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 4
+        },
+        "p8-n3": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 4
+        },
+        "p3-far3": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 2
+        },
+        "points-only-p3": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 4
+        },
+        "points-only-p3-n3": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 4
+        },
+        "p3-wrong-positive": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 2
+        },
+        "p1-body-n1": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 4
+        },
+        "p2-body-shaft-n1": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 4
+        },
+        "p2-body-shaft-n3": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 4
+        }
+      }
+    },
+    "f300-T3": {
+      "note": "Body or shaft alone, and body+shaft, control glove spill. Cap/hook-only and numerous positives are worse. Distal transparent tip remains uncertain.",
+      "conditions": {
+        "box-only": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 2
+        },
+        "p1-body": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 1,
+          "model_top_visual_grade": 4
+        },
+        "p1-shaft": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 1,
+          "model_top_visual_grade": 4
+        },
+        "p1-cap": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 2
+        },
+        "p2-body-shaft": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 4
+        },
+        "p3-parts": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 4
+        },
+        "p5-spread": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 3
+        },
+        "p8-spread": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 2
+        },
+        "p3-n1": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 1,
+          "model_top_visual_grade": 3
+        },
+        "p3-n3": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 3
+        },
+        "p5-n3": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 3
+        },
+        "p8-n3": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 2
+        },
+        "p3-far3": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 2
+        },
+        "points-only-p3": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 3
+        },
+        "points-only-p3-n3": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 3
+        },
+        "p3-wrong-positive": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 2
+        },
+        "p1-body-n1": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 1,
+          "model_top_visual_grade": 4
+        },
+        "p2-body-shaft-n1": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 1,
+          "model_top_visual_grade": 4
+        },
+        "p2-body-shaft-n3": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 1,
+          "model_top_visual_grade": 4
+        }
+      }
+    },
+    "f500-T1": {
+      "note": "Model top rank frequently selects the glove. Removing the cap click and using one body/shaft positive pair plus a glove negative greatly reduces that error. Tube separation remains unresolved.",
+      "conditions": {
+        "box-only": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 2
+        },
+        "p1-body": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 2
+        },
+        "p1-shaft": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 2
+        },
+        "p1-cap": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 2
+        },
+        "p2-body-shaft": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 2
+        },
+        "p3-parts": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 2
+        },
+        "p5-spread": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 2,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 2
+        },
+        "p8-spread": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 2,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 2
+        },
+        "p3-n1": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 2
+        },
+        "p3-n3": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 2
+        },
+        "p5-n3": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 2
+        },
+        "p8-n3": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 2
+        },
+        "p3-far3": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 3,
+          "model_top_visual_grade": 2
+        },
+        "points-only-p3": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 3,
+          "model_top_candidate_index": 1,
+          "model_top_visual_grade": 3
+        },
+        "points-only-p3-n3": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 3
+        },
+        "p3-wrong-positive": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 2,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 2
+        },
+        "p1-body-n1": {
+          "selected_candidate_index": 0,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 4
+        },
+        "p2-body-shaft-n1": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 4
+        },
+        "p2-body-shaft-n3": {
+          "selected_candidate_index": 1,
+          "best_of_four_visual_grade": 4,
+          "model_top_candidate_index": 0,
+          "model_top_visual_grade": 3
+        }
+      }
+    }
+  },
+  "summary": [
+    {
+      "condition": "box-only",
+      "positive_points": 0,
+      "negative_points": 0,
+      "box_prompt": true,
+      "mostly_correct_available": 4,
+      "mostly_correct_model_top": 2,
+      "major_spill_model_top": 3
+    },
+    {
+      "condition": "p1-body",
+      "positive_points": 1,
+      "negative_points": 0,
+      "box_prompt": true,
+      "mostly_correct_available": 6,
+      "mostly_correct_model_top": 3,
+      "major_spill_model_top": 2
+    },
+    {
+      "condition": "p1-shaft",
+      "positive_points": 1,
+      "negative_points": 0,
+      "box_prompt": true,
+      "mostly_correct_available": 5,
+      "mostly_correct_model_top": 3,
+      "major_spill_model_top": 2
+    },
+    {
+      "condition": "p1-cap",
+      "positive_points": 1,
+      "negative_points": 0,
+      "box_prompt": true,
+      "mostly_correct_available": 2,
+      "mostly_correct_model_top": 2,
+      "major_spill_model_top": 3
+    },
+    {
+      "condition": "p2-body-shaft",
+      "positive_points": 2,
+      "negative_points": 0,
+      "box_prompt": true,
+      "mostly_correct_available": 5,
+      "mostly_correct_model_top": 4,
+      "major_spill_model_top": 3
+    },
+    {
+      "condition": "p3-parts",
+      "positive_points": 3,
+      "negative_points": 0,
+      "box_prompt": true,
+      "mostly_correct_available": 4,
+      "mostly_correct_model_top": 3,
+      "major_spill_model_top": 2
+    },
+    {
+      "condition": "p5-spread",
+      "positive_points": 5,
+      "negative_points": 0,
+      "box_prompt": true,
+      "mostly_correct_available": 3,
+      "mostly_correct_model_top": 2,
+      "major_spill_model_top": 2
+    },
+    {
+      "condition": "p8-spread",
+      "positive_points": 8,
+      "negative_points": 0,
+      "box_prompt": true,
+      "mostly_correct_available": 2,
+      "mostly_correct_model_top": 2,
+      "major_spill_model_top": 4
+    },
+    {
+      "condition": "p3-n1",
+      "positive_points": 3,
+      "negative_points": 1,
+      "box_prompt": true,
+      "mostly_correct_available": 6,
+      "mostly_correct_model_top": 3,
+      "major_spill_model_top": 1
+    },
+    {
+      "condition": "p3-n3",
+      "positive_points": 3,
+      "negative_points": 3,
+      "box_prompt": true,
+      "mostly_correct_available": 6,
+      "mostly_correct_model_top": 4,
+      "major_spill_model_top": 1
+    },
+    {
+      "condition": "p5-n3",
+      "positive_points": 5,
+      "negative_points": 3,
+      "box_prompt": true,
+      "mostly_correct_available": 4,
+      "mostly_correct_model_top": 3,
+      "major_spill_model_top": 1
+    },
+    {
+      "condition": "p8-n3",
+      "positive_points": 8,
+      "negative_points": 3,
+      "box_prompt": true,
+      "mostly_correct_available": 3,
+      "mostly_correct_model_top": 2,
+      "major_spill_model_top": 2
+    },
+    {
+      "condition": "p3-far3",
+      "positive_points": 3,
+      "negative_points": 3,
+      "box_prompt": true,
+      "mostly_correct_available": 2,
+      "mostly_correct_model_top": 2,
+      "major_spill_model_top": 4
+    },
+    {
+      "condition": "points-only-p3",
+      "positive_points": 3,
+      "negative_points": 0,
+      "box_prompt": false,
+      "mostly_correct_available": 3,
+      "mostly_correct_model_top": 2,
+      "major_spill_model_top": 0
+    },
+    {
+      "condition": "points-only-p3-n3",
+      "positive_points": 3,
+      "negative_points": 3,
+      "box_prompt": false,
+      "mostly_correct_available": 5,
+      "mostly_correct_model_top": 3,
+      "major_spill_model_top": 0
+    },
+    {
+      "condition": "p3-wrong-positive",
+      "positive_points": 4,
+      "negative_points": 0,
+      "box_prompt": true,
+      "mostly_correct_available": 2,
+      "mostly_correct_model_top": 1,
+      "major_spill_model_top": 4
+    },
+    {
+      "condition": "p1-body-n1",
+      "positive_points": 1,
+      "negative_points": 1,
+      "box_prompt": true,
+      "mostly_correct_available": 6,
+      "mostly_correct_model_top": 5,
+      "major_spill_model_top": 0
+    },
+    {
+      "condition": "p2-body-shaft-n1",
+      "positive_points": 2,
+      "negative_points": 1,
+      "box_prompt": true,
+      "mostly_correct_available": 6,
+      "mostly_correct_model_top": 6,
+      "major_spill_model_top": 0
+    },
+    {
+      "condition": "p2-body-shaft-n3",
+      "positive_points": 2,
+      "negative_points": 3,
+      "box_prompt": true,
+      "mostly_correct_available": 6,
+      "mostly_correct_model_top": 4,
+      "major_spill_model_top": 0
+    }
+  ]
+}

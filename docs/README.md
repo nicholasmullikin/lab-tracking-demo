@@ -18,6 +18,10 @@ numbers. The glossary that maps the lab's shorthand to plain words is in `writin
 | [`SOURCES.md`](SOURCES.md) | The source and provenance record for every dataset, model and external repository used |
 | [`qa/README.md`](qa/README.md) | The review records: gate decisions, review anchors and QA files, tracked as numbers and hashes without pixels |
 
+## Checkpoints
+
+- [Pipette tracking, 2026-10-01](qa/pipette-checkpoint-20261001/README.md): annotation state, point-prompt study, saved artifacts and resumption instructions.
+
 ## Archive
 
 Every historical document was moved to [`archive/`](archive/README.md) on one day, prose untouched,

@@ -1,0 +1,8 @@
+{
+  "archive": "runs/checkpoints/pipette-20261001/pipette-review-and-study.tar.gz",
+  "archive_bytes": 1251457920,
+  "archive_sha256": "103a48f21c7e54991f5ac008ef7d0b4f30aa4a90de99b473dd338df628760822",
+  "verified_artifact_files": 3365,
+  "verification": "Archive SHA256, decompression, and every archived artifact hash/size checked; hardlinks resolved",
+  "off_machine_backup": false
+}
