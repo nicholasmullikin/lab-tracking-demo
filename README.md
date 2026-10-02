@@ -1,13 +1,22 @@
 # SAM3 MultiCam Tracker
 A 3D object tracker for a wet-lab bench made with SAM3, six cameras and no training
 
-This is a method lab that went from SAM3 smoke tests on a toy car assembly (Assembly101) to a
-six-camera 3D object tracker on a wet-lab bench (FineBio) over the past few weeks. The current
-work focuses on multiplex pipette tracking and shaft orientation. I trained nothing and
-annotated no ground truth. The bench pipeline uses the FineBio authors' pretrained DINO
+This is a project that I build with SAM3 to see if we could use it to effectively track the 
+location of objects that are viewed from multiple angles, but frequently occluded and touching
+each other. I started with a 12 camera dataset that captured toy cars getting assembled and 
+disassembled (Assembly101). I found that SAM3 particularly struggled on pieces of the same color
+that ended up touching. I moved onto a dataset (FineBio) that focused on lab work with 7 cameras. 
+This dataset ended up being much easier to run this tool on and so I decided to add on and try to
+measure the orientation of pipettes in 3d space as it got occluded.
+
+For both of these datasets, I wanted to eliminate manual work / training as much as possible and
+rely on the strength of foundation models' ability to keep track of objects. I found that even 
+though SAM 3 is a powerful tool, it has serious limitations for parts that are small and frequently
+occluded.
+
+To help speed up data labeling, the pipeline uses the FineBio authors' pre-trained DINO
 detector to propose object class labels and bounding boxes that prompt SAM3. Those labels
-are model predictions; every number on this page says what it was measured against.
-This page is the five-minute version. The day by day is in [`docs/story.md`](docs/story.md), the
+are model predictions. This page is the five-minute version. The day by day is in [`docs/story.md`](docs/story.md), the
 numbers are in [`docs/results.md`](docs/results.md), the commands are in
 [`docs/pipeline.md`](docs/pipeline.md) and the lab's shorthand is translated in the
 [glossary](docs/writing-style.md#glossary).
@@ -16,7 +25,7 @@ numbers are in [`docs/results.md`](docs/results.md), the commands are in
 
 The first ten seconds of the latest reviewed demo: masks and 2D shaft axes for all four pipettes,
 with the blue pipette's fitted 3D shaft and estimated dispensing end on the left. Camera images
-update at 2 Hz; the saved 3D geometry runs at native frame rate. This baseline still shows
+update at 2 Hz and the saved 3D geometry runs at native frame rate. This baseline still shows
 contamination and unresolved directions. The [interactive demo guide](docs/review-guide-pipette-orientation.md)
 explains the overlays, mask toggle and review evidence.
 
