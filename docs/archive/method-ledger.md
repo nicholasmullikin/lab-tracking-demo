@@ -19,9 +19,7 @@ tracked. States map to the versioned `MethodState` schema: `pending`, `ready`,
 
 ### The original ask (Sep 8, 2026)
 
-The verbatim request is preserved at the top of `battle_plan.agent.final.md` at the repository
-root (kept locally, untracked and gitignored since Sep 24; tracked until then, so it is in the
-history). In short: get several
+The original request was to get several
 perception repositories working out of the box on Assembly101, visualize all of their
 outputs in one Rerun recording, skip building a data pipeline, respect a 16 GB card and
 limited time, and do it in a way that demonstrates a properly run ML project. Candidate

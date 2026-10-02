@@ -12,10 +12,8 @@ short story: the original ask, a goals scorecard, a dated timeline from Sep 8 to
 present, and a plan-versus-actual list of where and why the work diverged. Its second
 half holds the detailed per-run records with their claim boundaries. The plan the
 project was measured against is preserved unedited in
-[`docs/plan-2026-09-08-assembly-rerun-lab.md`](docs/plan-2026-09-08-assembly-rerun-lab.md),
-and the research brief that preceded it, with the verbatim first request, is
-`battle_plan.agent.final.md` at the repository root (kept locally, untracked and gitignored
-since Sep 24; it was tracked until then and is in the history). The Assembly101 phase closed on
+[`docs/plan-2026-09-08-assembly-rerun-lab.md`](docs/plan-2026-09-08-assembly-rerun-lab.md).
+The preceding personal research brief is excluded for privacy. The Assembly101 phase closed on
 Sep 24 (ledger entry "Sep 24: Assembly101 phase closed", tag `assembly101-lab-close`); the
 FineBio 3D object-tracking phase was planned, preflighted, run and closed on Sep 24-25 (plan copy
 with its Outcome [`docs/plan-2026-09-25-finebio-3d-tracking.md`](docs/plan-2026-09-25-finebio-3d-tracking.md),

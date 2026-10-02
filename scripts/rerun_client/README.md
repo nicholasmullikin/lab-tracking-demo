@@ -22,8 +22,11 @@ On the client, run `install.sh` on macOS or Linux and `install.ps1` on Windows, 
 
 ```bash
 bash install.sh                                   # uv -> rerun-sdk==0.37.1 -> ffmpeg -> versions
-bash connect.sh 100.64.0.7                     # = rerun --connect rerun+http://100.64.0.7:9876/proxy
+bash connect.sh host.example.ts.net               # replace with your server's host or IP
 ```
+
+Use the server address printed by the serve script. The installers can run without a host;
+the connection scripts require one.
 
 Rules: the client's `rerun` must be exactly the server's `rerun-sdk` version. `RERUN_VERSION` at
 the top of the installers mirrors `pyproject.toml`, so bump both together. Rerun's native viewer

@@ -10,10 +10,10 @@
 # are decoded through a separately installed `ffmpeg` executable found on PATH,
 # minimum version 5.1 (https://rerun.io/docs/concepts/logging-and-ingestion/video).
 #
-# Usage: powershell -ExecutionPolicy Bypass -File install.ps1 [-ServerHost 100.64.0.7]
+# Usage: powershell -ExecutionPolicy Bypass -File install.ps1 [-ServerHost host.example.ts.net]
 # Env:   $env:SKIP_FFMPEG_INSTALL = "1"   only check for ffmpeg, never install a package
 param(
-    [string]$ServerHost = "100.64.0.7"
+    [string]$ServerHost = "host.example.ts.net"
 )
 $ErrorActionPreference = "Stop"
 

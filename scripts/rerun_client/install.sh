@@ -12,13 +12,13 @@
 # minimum version 5.1 (https://rerun.io/docs/concepts/logging-and-ingestion/video).
 # `rerun --version` must list "ffmpeg" under "Video features".
 #
-# Usage: install.sh [server-host]      (default 100.64.0.7, the Tailscale IPv4)
+# Usage: install.sh [server-host]      (optional; prints a connection example)
 # Env:   SKIP_FFMPEG_INSTALL=1         only check for ffmpeg, never install a package
 #        UV_TOOL_DIR / UV_TOOL_BIN_DIR are honoured by uv (used by the self-test)
 set -euo pipefail
 
 RERUN_VERSION="0.37.1"
-SERVER_HOST="${1:-100.64.0.7}"
+SERVER_HOST="${1:-host.example.ts.net}"
 GRPC_PORT=9876
 FFMPEG_MIN="5.1"
 

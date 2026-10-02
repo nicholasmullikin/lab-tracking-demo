@@ -3,9 +3,7 @@
 Preserved as written on the evening of Sep 8, 2026, after two rounds of review and
 immediately before work began ("Ok begin", 21:56). It is the plan the project was
 measured against; it has not been edited to match what happened. For what happened, see
-[`method-ledger.md`](method-ledger.md). The original one-line ask and the research
-brief this plan replaced are in `battle_plan.agent.final.md` at the repository root (kept
-locally, untracked and gitignored since Sep 24; tracked until then, so it is in the history).
+[`method-ledger.md`](method-ledger.md). The preceding personal research brief is excluded for privacy.
 
 Paths below refer to the repository as it was planned; several were renamed during
 implementation (`src/battle_lab/` became `src/battle/`, `configs/methods.yaml` is
@@ -16,7 +14,7 @@ configs, and `SOURCES.md`/`LICENSES.md` live under `docs/`).
 
 ## Scope and success criteria
 - Optimize for the selected one-week / 15–25 hour budget: one continuous tracker, one static-view hand baseline, the shared Rerun review surface, and only then strictly time-boxed exploratory trials.
-- Replace the prior end-to-end “mini-Transfyr” ambition with a perception-method lab first. The evidence and candidate methods come from [battle_plan.agent.final.md](../../battle_plan.agent.final.md), especially its tracking, hand-pose, and multi-view chapters.
+- Replace the prior end-to-end “mini-Transfyr” ambition with a perception-method lab first.
 - The primary experiment input is one pinned, synchronized three-minute Assembly101 segment across an RGB static view and a monochrome ego view. The unified Rerun recording, normalized artifacts, and method ledger are the deliverables; a screen recording is optional and not a goal.
 - A method counts as working only when it: (1) completes inference over its declared full-duration target view set, (2) retains its unmodified native artifact, (3) produces a validated normalized artifact, (4) appears on the shared Rerun timeline, and (5) records runtime, peak VRAM, source commit, checkpoint, and license. A 10–20 second window is only an installation/smoke-test gate.
 - Do not train, fine-tune, annotate, build a downloader/orchestrator pipeline, or claim benchmark accuracy in this phase. Use ground truth only as an optional visual reference, not as an evaluation project.

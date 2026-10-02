@@ -1,7 +1,9 @@
 # Open the native Rerun viewer against the review server's gRPC proxy.
-# Usage: powershell -ExecutionPolicy Bypass -File connect.ps1 [-ServerHost 100.64.0.7]
+# Usage: powershell -ExecutionPolicy Bypass -File connect.ps1 -ServerHost host.example.ts.net
 param(
-    [string]$ServerHost = "100.64.0.7"
+    [Parameter(Mandatory = $true)]
+    [ValidateNotNullOrEmpty()]
+    [string]$ServerHost
 )
 $ErrorActionPreference = "Stop"
 if (-not (Get-Command rerun -ErrorAction SilentlyContinue)) {
